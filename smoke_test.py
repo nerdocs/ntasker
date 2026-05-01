@@ -457,6 +457,46 @@ def main() -> int:
         )
     print("OK rendered task.md is generic (no persona names, no user paths)")
 
+    # 37e. Loader accepts both "187" and "#187" -- and rejects garbage.
+    import importlib.util  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
+    from pathlib import Path as _Path  # noqa: PLC0415
+
+    helper_src = _ca.read_helper_py()
+    with tempfile.TemporaryDirectory() as _tmp:
+        _loader_path = _Path(_tmp) / "_ntasker_loader.py"
+        _loader_path.write_text(helper_src, encoding="utf-8")
+        _spec = importlib.util.spec_from_file_location("_ntasker_loader", str(_loader_path))
+        assert _spec and _spec.loader
+        _loader = importlib.util.module_from_spec(_spec)
+        _spec.loader.exec_module(_loader)
+    import re as _re  # noqa: PLC0415
+
+    # Internal: the validation pattern accepts both forms.
+    assert _re.fullmatch(r"#?\d+", "187"), "loader regex must match '187'"
+    assert _re.fullmatch(r"#?\d+", "#187"), "loader regex must match '#187'"
+    assert not _re.fullmatch(r"#?\d+", "##187"), "loader regex must reject '##187'"
+    assert not _re.fullmatch(r"#?\d+", "abc"), "loader regex must reject 'abc'"
+
+    # End-to-end: feed an unreachable id through main() with both prefixes;
+    # main() should validate and proceed to "not found" (exit 1), not bail
+    # on validation (exit 2). Guarantees both forms hit load_via_*.
+    _orig_load_server = _loader.load_via_server
+    _orig_load_cli = _loader.load_via_cli
+    _loader.load_via_server = lambda tid: None  # type: ignore[assignment]
+    _loader.load_via_cli = lambda tid: None  # type: ignore[assignment]
+    try:
+        rc_plain = _loader.main(["_ntasker_loader.py", "999999999"])
+        rc_hash = _loader.main(["_ntasker_loader.py", "#999999999"])
+        rc_bad = _loader.main(["_ntasker_loader.py", "##99"])
+    finally:
+        _loader.load_via_server = _orig_load_server
+        _loader.load_via_cli = _orig_load_cli
+    assert rc_plain == 1, f"plain id should reach not-found path, got rc={rc_plain}"
+    assert rc_hash == 1, f"#-prefixed id should reach not-found path, got rc={rc_hash}"
+    assert rc_bad == 2, f"double-# id should fail validation (rc=2), got rc={rc_bad}"
+    print("OK loader accepts both '187' and '#187' (rejects '##187')")
+
     # 38. validate_command_name rejects path traversal / injection.
     for bad in ["../etc", "with/slash", "dot.s", "spa ce", "", "name;rm"]:
         try:

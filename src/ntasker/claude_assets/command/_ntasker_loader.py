@@ -75,12 +75,15 @@ def render(data: dict) -> str:
 
 def main(argv: list[str]) -> int:
     if len(argv) != 2:
-        print("Aufruf: _ntasker_loader.py <id>", file=sys.stderr)
+        print("Usage: _ntasker_loader.py <id>", file=sys.stderr)
         return 2
-    tid = argv[1].strip()
-    if not re.fullmatch(r"\d+", tid):
-        print(f"Ungueltige Task-ID: {tid!r}", file=sys.stderr)
+    raw = argv[1].strip()
+    # Accept both "187" and "#187" -- the slash-command argument may keep
+    # the leading "#" from how task IDs are referenced everywhere else.
+    if not re.fullmatch(r"#?\d+", raw):
+        print(f"Invalid task id: {raw!r}", file=sys.stderr)
         return 2
+    tid = raw.lstrip("#")
     data = load_via_server(tid) or load_via_cli(tid)
     if data is None:
         print(

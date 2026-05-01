@@ -1,6 +1,6 @@
 ---
 description: Load an nTasker task into the session for processing
-argument-hint: <task-id>
+argument-hint: <task-id> | #<task-id>
 allowed-tools: Bash(python3 {HELPER_PATH}:*)
 ---
 

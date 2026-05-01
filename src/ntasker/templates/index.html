@@ -157,6 +157,23 @@
                     </button>
                 </div>
 
+                <div class="text-muted small mb-2">
+                    <div class="col-auto ms-auto d-print-none">
+                        <div class="btn-list">
+                            <button type="button"
+                                    class="btn btn-ghost-secondary btn-sm"
+                                    @click="cleanupTags()"
+                                    title="Ungenutzte Tags löschen">
+                                {# `ti-broom` is not part of the vendored tabler-icons webfont (v3.19.0). #}
+                                {# The webfont ships a limited subset of the full SVG icon set; #}
+                                {# `ti-sparkles` is the closest available "cleanup" glyph. #}
+                                <i class="ti ti-sparkles me-1 fs-3"></i>
+                                Tags aufräumen
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
                 <template x-for="t in tags" :key="t.name">
                     <label class="form-check d-flex align-items-center w-100 mb-1" :title="t.name">
                         <input type="checkbox" class="form-check-input"
@@ -204,20 +221,6 @@
                             <i class="ti ti-list-check me-2 fs-2"></i>
                             Aufgaben
                         </h2>
-                    </div>
-                    <div class="col-auto ms-auto d-print-none">
-                        <div class="btn-list">
-                            <button type="button"
-                                    class="btn btn-ghost-secondary btn-sm"
-                                    @click="cleanupTags()"
-                                    title="Ungenutzte Tags löschen">
-                                {# `ti-broom` is not part of the vendored tabler-icons webfont (v3.19.0). #}
-                                {# The webfont ships a limited subset of the full SVG icon set; #}
-                                {# `ti-sparkles` is the closest available "cleanup" glyph. #}
-                                <i class="ti ti-sparkles me-1 fs-3"></i>
-                                Tags aufräumen
-                            </button>
-                        </div>
                     </div>
                 </div>
             </div>

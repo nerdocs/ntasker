@@ -4,6 +4,9 @@ All notable changes to the nerdocs Tracker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [0.3.3] — 2026-05-01
+- Version badge in page header (next to "Aufgaben" title).
+
 ## [0.3.2] — 2026-05-01
 - Bugfix: cache-buster `?v=<version>` on all assets + `Cache-Control: no-store`; resolves browser-cache phantom buttons.
 

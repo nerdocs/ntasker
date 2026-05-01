@@ -25,7 +25,7 @@ from pydantic import BaseModel, Field
 # new CSS/JS instead of replaying a stale ``index.html`` -> stale
 # ``app.js`` from disk cache (the cause of "phantom button" reports
 # after the v0.3.1 fix shipped: clients still saw the old DOM).
-VERSION = "0.3.3"
+VERSION = "0.3.4"
 
 # Sentinel for "tasks without a project" (cross-project tasks). Used in
 # multi-value project filters: ?project=__none__ -> include rows with project IS NULL.

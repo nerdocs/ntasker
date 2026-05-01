@@ -144,6 +144,7 @@
             <h1 class="navbar-brand navbar-brand-autodark d-flex align-items-center mb-0">
                 <i class="ti ti-checkbox me-2 fs-2"></i>
                 nerdocs Tracker
+                <span class="badge bg-secondary-lt ms-2 font-monospace small align-middle">v{{ version }}</span>
             </h1>
             <div class="navbar-nav flex-row order-md-last ms-auto">
                 <button class="btn btn-sm btn-ghost-secondary" @click="toggleTheme()" :aria-label="theme === 'dark' ? 'Hellmodus' : 'Dunkelmodus'">
@@ -162,7 +163,6 @@
                         <h2 class="page-title">
                             <i class="ti ti-list-check me-2 fs-2"></i>
                             Aufgaben
-                            <span class="badge bg-secondary-lt ms-2 font-monospace small align-middle">v{{ version }}</span>
                         </h2>
                     </div>
                     <div class="col-auto ms-auto d-print-none">

@@ -1,6 +1,6 @@
 [project]
 name = "nerdocs-tracker"
-version = "0.3.3"
+version = "0.3.4"
 description = "Lightweight local task tracker for the nerdocs HQ. Single-user, FastAPI + SQLite."
 requires-python = ">=3.12"
 dependencies = [

@@ -556,11 +556,15 @@ function tracker() {
         },
 
         // ---- ID copy + toast feedback ----
+        // Copies the ready-to-paste Claude Code slash-command "/task #<id>"
+        // so the user can hand the task off to an agent in one paste.
+        // The slash-command name is hard-coded; users who installed the
+        // assets with --command-name=foo need to patch this string.
         async copyId(id) {
-            const text = `#${id}`;
+            const text = `/task #${id}`;
             try {
                 await navigator.clipboard.writeText(text);
-                this.showToast(`ID ${text} kopiert`, 'success');
+                this.showToast(`Kopiert: ${text}`, 'success');
             } catch {
                 // Fallback for non-secure contexts (Clipboard API unavailable).
                 const ta = document.createElement('textarea');
@@ -571,7 +575,7 @@ function tracker() {
                 ta.select();
                 try {
                     document.execCommand('copy');
-                    this.showToast(`ID ${text} kopiert`, 'success');
+                    this.showToast(`Kopiert: ${text}`, 'success');
                 } catch {
                     this.showToast('Kopieren fehlgeschlagen', 'danger');
                 }

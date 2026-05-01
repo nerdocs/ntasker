@@ -497,6 +497,19 @@ def main() -> int:
     assert rc_bad == 2, f"double-# id should fail validation (rc=2), got rc={rc_bad}"
     print("OK loader accepts both '187' and '#187' (rejects '##187')")
 
+    # 37f. Click-to-copy puts "/task #<id>" on the clipboard, not just "#<id>".
+    _app_js_path = _Path(__file__).parent / "src" / "ntasker" / "static" / "app.js"
+    _app_js = _app_js_path.read_text(encoding="utf-8")
+    assert "`/task #${id}`" in _app_js, (
+        "copyId must place the ready-to-paste slash-command on clipboard"
+    )
+    # Old "#${id}" alone should no longer be the clipboard payload inside copyId.
+    _copy_id_block = _app_js.split("async copyId(id) {", 1)[1].split("},", 1)[0]
+    assert "`#${id}`" not in _copy_id_block, (
+        "copyId still copies plain '#<id>' -- expected '/task #<id>'"
+    )
+    print("OK copyId clipboard payload is '/task #<id>' (slash-command ready)")
+
     # 38. validate_command_name rejects path traversal / injection.
     for bad in ["../etc", "with/slash", "dot.s", "spa ce", "", "name;rm"]:
         try:

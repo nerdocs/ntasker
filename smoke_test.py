@@ -457,6 +457,34 @@ def main() -> int:
         )
     print("OK rendered task.md is generic (no persona names, no user paths)")
 
+    # 37d2. Rendered command template enforces ask-before-done (v1.2.1).
+    # The /task workflow must NOT instruct the agent to autonomously mark the
+    # task as done -- it must ask the user first and only proceed on explicit OK.
+    assert ("Ask" in rendered) or ("ask" in rendered), (
+        "task.md.template must contain an ask-before-done step ('Ask' / 'ask')"
+    )
+    # Explicit prohibition wording must be present.
+    import re as _re_check  # noqa: PLC0415
+    assert _re_check.search(r"[Nn]ever mark `?status:\s*done`?", rendered), (
+        "task.md.template must explicitly forbid marking status: done autonomously"
+    )
+    assert "autonomously" in rendered, (
+        "task.md.template must use the word 'autonomously' in the prohibition"
+    )
+    # If a `ntasker done` line is rendered, it must sit in a section that also
+    # talks about asking / explicit user OK -- not as a bare "do it" instruction.
+    if "ntasker done" in rendered:
+        assert ("Ask the user" in rendered) or ("explicit user OK" in rendered), (
+            "task.md.template renders `ntasker done` but is missing the "
+            "ask-first wording ('Ask the user' / 'explicit user OK')"
+        )
+    # The old bare "On completion: mark the task as done." wording must be gone.
+    assert "On completion:** mark the task as done" not in rendered, (
+        "task.md.template still carries the pre-1.2.1 'mark the task as done' "
+        "wording without an ask-first gate"
+    )
+    print("OK task.md asks before marking done (no autonomous status writes)")
+
     # 37e. Loader accepts both "187" and "#187" -- and rejects garbage.
     import importlib.util  # noqa: PLC0415
     import tempfile  # noqa: PLC0415

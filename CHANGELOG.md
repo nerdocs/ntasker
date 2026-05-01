@@ -4,6 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [1.2.1] — 2026-05-01
+- Changed: /task workflow now asks for explicit user confirmation before marking a task as done (no autonomous status writes).
+
 ## [1.2.0] — 2026-05-01
 - Changed: generalised packaged Claude Code assets (skill + slash-command template) -- removed user-specific routing and paths.
 - Changed: documentation polished -- "nerdocs Tracker" -> "nTasker", path examples generic.

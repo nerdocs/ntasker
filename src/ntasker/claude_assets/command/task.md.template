@@ -17,18 +17,23 @@ You have been handed task #$ARGUMENTS from nTasker.
 1. **Read the task data above** (title, description, project, tags, phase, priority).
 2. **If a `Project` is assigned** and you know where its code lives on this machine, switch to that working directory before making changes.
 3. **On unclear requirements:** ask, do not assume.
-4. **On completion:** mark the task as done.
-   ```bash
-   ntasker done $ARGUMENTS
-   # or:
-   curl -s -X PATCH http://127.0.0.1:8766/api/tasks/$ARGUMENTS \
-     -H 'Content-Type: application/json' \
-     -d '{"status":"done"}'
-   ```
+4. **When you believe the task is done:**
+   - Post a compact status summary in chat (what changed, key files, test status).
+   - **Ask** the user "may I mark #$ARGUMENTS as done?" before sending the PATCH.
+   - **Never** mark `status: done` autonomously, even if the work looks complete -- the user decides what counts as finished.
+   - Only on explicit user OK ("yes" / "set it done" / equivalent) run:
+     ```bash
+     ntasker done $ARGUMENTS
+     # or:
+     curl -s -X PATCH http://127.0.0.1:8766/api/tasks/$ARGUMENTS \
+       -H 'Content-Type: application/json' \
+       -d '{"status":"done"}'
+     ```
 
 **Hard rules:**
 
-- No autonomous tracker writes -- the only write allowed at the end of this task is `status: done` for #$ARGUMENTS.
+- Never mark `status: done` without an explicit user OK in this turn.
+- No autonomous tracker writes -- the only write allowed at the end of this task is `status: done` for #$ARGUMENTS, and only after explicit user OK.
 - Archiving stays a manual decision -- never set `archived: true` on someone else's behalf.
 
 Start with step 1.

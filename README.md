@@ -71,6 +71,17 @@ Via ENV: `NTASKER_PROJECTS_DIR=/path/to/projects ntasker serve` (overrides the D
 
 The validator requires the path to be absolute, exist, be a directory, and be readable.
 
+### How `projects_dir` is interpreted
+
+ntasker tracks a directory. Each immediate subdirectory (or symlink to a
+project repo) inside `projects_dir` is exposed as a selectable Project in
+the UI sidebar and the `project=` API filter. Tasks can be assigned to
+one of these projects (by folder/symlink name) or stay cross-project
+(`null`). The directory listing is read on demand on every request --
+there is no scan job and no DB-cached project list. Add or remove a
+folder/symlink in `projects_dir` and it shows up (or disappears) on the
+next reload.
+
 ## Claude Code Integration
 
 ntasker ships a Claude Code skill (`SKILL.md`) and slash-command loader (`/task <id>`)

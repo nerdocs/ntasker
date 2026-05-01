@@ -1,0 +1,571 @@
+<!doctype html>
+<html lang="de" data-bs-theme="light">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>nerdocs Tracker</title>
+    {# Tabler CSS + Icons (vendored, offline-faehig — siehe static/vendor/LICENSES.md) #}
+    {# `?v=` query string is a cache-buster: a version bump in app.py forces #}
+    {# clients to refetch instead of replaying stale CSS/JS from disk cache. #}
+    <link rel="stylesheet" href="/static/vendor/tabler/tabler.min.css?v={{ version }}">
+    <link rel="stylesheet" href="/static/vendor/tabler-icons/tabler-icons.min.css?v={{ version }}">
+    <link rel="stylesheet" href="/static/style.css?v={{ version }}">
+</head>
+<body>
+<div class="d-flex" style="min-height: 100vh;" x-data="tracker()" x-init="init()">
+
+    {# Sidebar: project + tag filter (full-width checkboxes). Hidden on mobile (<768px). #}
+    {# Sticky-positioned aside outside the .page wrapper. Tabler/Bootstrap surface #}
+    {# variables drive the bg so dark-mode behaves correctly. Sidebar lives in its #}
+    {# own scroll context; main page-wrapper scrolls independently. #}
+    <aside class="tracker-sidebar d-none d-md-flex flex-column border-end p-3"
+           style="width: 280px; flex-shrink: 0; position: sticky; top: 0; align-self: flex-start; max-height: 100vh; overflow-y: auto; background-color: var(--tblr-bg-surface-secondary, var(--tblr-bg-surface));">
+
+        {# ------------------------------------------------------------- #}
+        {# Projects section                                              #}
+        {# ------------------------------------------------------------- #}
+        <div class="d-flex align-items-center justify-content-between mb-2">
+            <span class="text-secondary text-uppercase small fw-bold">
+                <i class="ti ti-folders me-1"></i>
+                Projekte
+            </span>
+            <button type="button" class="btn btn-sm btn-ghost-secondary px-2 py-0"
+                    @click="toggleAllProjects()"
+                    :title="allProjectsActive ? 'Alle demarkieren' : 'Alle markieren'">
+                <i class="ti fs-3" :class="allProjectsActive ? 'ti-square-off' : 'ti-square-check'"></i>
+            </button>
+        </div>
+
+        <div class="text-muted small mb-2" x-show="projectFilter.length === 0 && tagFilter.length === 0">
+            Kein Filter aktiv — alle Aufgaben sichtbar.
+        </div>
+
+        {# Cross-project sentinel #}
+        <template x-for="proj in projects" :key="proj.name">
+            <label class="form-check d-flex align-items-center w-100 mb-1"
+                   :title="proj.name === '__none__' ? 'Aufgaben ohne Projekt' : proj.name">
+                <input type="checkbox" class="form-check-input"
+                       :checked="projectFilter.includes(proj.name)"
+                       @change="toggleProject(proj.name)">
+                <span class="form-check-label ms-2 text-truncate flex-fill d-flex align-items-center">
+                    <template x-if="proj.name === '__none__'">
+                        <span>
+                            <i class="ti ti-asterisk me-1 text-secondary"></i>
+                            Projektübergreifend
+                        </span>
+                    </template>
+                    <template x-if="proj.name !== '__none__'">
+                        <span x-text="proj.name"></span>
+                    </template>
+                </span>
+                <span class="badge bg-secondary-lt ms-2" x-text="proj.open_count"></span>
+            </label>
+        </template>
+
+        <div class="text-muted small mt-3" x-show="projects.length <= 1">
+            Keine Projekt-Symlinks gefunden.
+        </div>
+
+        {# ------------------------------------------------------------- #}
+        {# Phases section -- always visible, fixed order (workflow)      #}
+        {# ------------------------------------------------------------- #}
+        <hr class="my-3">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+            <span class="text-secondary text-uppercase small fw-bold">
+                <i class="ti ti-flag me-1"></i>
+                Phasen
+            </span>
+            <button type="button" class="btn btn-sm btn-ghost-secondary px-2 py-0"
+                    x-show="phaseFilter.length > 0"
+                    @click="clearPhaseFilter()"
+                    title="Phasen-Filter leeren">
+                <i class="ti ti-x fs-3"></i>
+            </button>
+        </div>
+
+        <template x-for="ph in phases" :key="ph.value">
+            <label class="form-check d-flex align-items-center w-100 mb-1" :title="ph.label">
+                <input type="checkbox" class="form-check-input"
+                       :checked="phaseFilter.includes(ph.value)"
+                       @change="togglePhase(ph.value)">
+                <span class="form-check-label ms-2 d-flex align-items-center flex-fill">
+                    <i class="ti me-1"
+                       :class="{
+                           'ti-progress': ph.value === 'wip',
+                           'ti-clock': ph.value === 'planned',
+                           'ti-crystal-ball': ph.value === 'later',
+                           'ti-help': ph.value === '__none__',
+                       }"></i>
+                    <span x-text="ph.label"></span>
+                </span>
+                <span class="badge bg-secondary-lt ms-2" x-text="ph.open_count"></span>
+            </label>
+        </template>
+
+        {# ------------------------------------------------------------- #}
+        {# Tags section -- only visible if any tag exists                #}
+        {# ------------------------------------------------------------- #}
+        <template x-if="tags.length > 0">
+            <div>
+                <hr class="my-3">
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                    <span class="text-secondary text-uppercase small fw-bold">
+                        <i class="ti ti-tags me-1"></i>
+                        Tags
+                    </span>
+                    <button type="button" class="btn btn-sm btn-ghost-secondary px-2 py-0"
+                            x-show="tagFilter.length > 0"
+                            @click="clearTagFilter()"
+                            title="Tag-Filter leeren">
+                        <i class="ti ti-x fs-3"></i>
+                    </button>
+                </div>
+
+                <template x-for="t in tags" :key="t.name">
+                    <label class="form-check d-flex align-items-center w-100 mb-1" :title="t.name">
+                        <input type="checkbox" class="form-check-input"
+                               :checked="tagFilter.includes(t.name)"
+                               @change="toggleTag(t.name)">
+                        <span class="form-check-label ms-2 text-truncate flex-fill">
+                            #<span x-text="t.name"></span>
+                        </span>
+                        <span class="badge bg-secondary-lt ms-2" x-text="t.open_count"></span>
+                    </label>
+                </template>
+            </div>
+        </template>
+    </aside>
+
+    {# Main content (full-width inside its column) #}
+    <div class="page flex-fill" style="min-width: 0;">
+
+    <header class="navbar navbar-expand-md d-print-none">
+        <div class="container-xl">
+            <h1 class="navbar-brand navbar-brand-autodark d-flex align-items-center mb-0">
+                <i class="ti ti-checkbox me-2 fs-2"></i>
+                nerdocs Tracker
+            </h1>
+            <div class="navbar-nav flex-row order-md-last ms-auto">
+                <button class="btn btn-sm btn-ghost-secondary" @click="toggleTheme()" :aria-label="theme === 'dark' ? 'Hellmodus' : 'Dunkelmodus'">
+                    <i class="ti me-1 fs-3" :class="theme === 'dark' ? 'ti-sun' : 'ti-moon'"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <div class="page-wrapper">
+        {# Tabler page-header: title left, actions (tag cleanup) right #}
+        <div class="page-header d-print-none">
+            <div class="container-xl">
+                <div class="row g-2 align-items-center">
+                    <div class="col">
+                        <h2 class="page-title">
+                            <i class="ti ti-list-check me-2 fs-2"></i>
+                            Aufgaben
+                        </h2>
+                    </div>
+                    <div class="col-auto ms-auto d-print-none">
+                        <div class="btn-list">
+                            <button type="button"
+                                    class="btn btn-ghost-secondary btn-sm"
+                                    @click="cleanupTags()"
+                                    title="Ungenutzte Tags löschen">
+                                {# `ti-broom` is not part of the vendored tabler-icons webfont (v3.19.0). #}
+                                {# The webfont ships a limited subset of the full SVG icon set; #}
+                                {# `ti-sparkles` is the closest available "cleanup" glyph. #}
+                                <i class="ti ti-sparkles me-1 fs-3"></i>
+                                Tags aufräumen
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="page-body">
+            <div class="container-xl">
+
+                {# New-task form #}
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="ti ti-plus me-1"></i>
+                            Neue Aufgabe
+                        </h3>
+                    </div>
+                    <div class="card-body">
+                        <form @submit.prevent="createTask()">
+                            <div class="row g-2">
+                                <div class="col-md-3">
+                                    <label class="form-label">Projekt</label>
+                                    <select class="form-select" x-model="form.project">
+                                        <option value="">— projektübergreifend —</option>
+                                        <template x-for="p in projectNames" :key="p">
+                                            <option :value="p" x-text="p"></option>
+                                        </template>
+                                    </select>
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label">Phase</label>
+                                    <select class="form-select" x-model="form.phase">
+                                        <option value="">—</option>
+                                        <option value="wip">In Arbeit</option>
+                                        <option value="planned">Geplant</option>
+                                        <option value="later">Später</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-7">
+                                    <label class="form-label">Titel <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control" x-model="form.title" required maxlength="500" placeholder="Was ist zu tun?">
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label">Beschreibung</label>
+                                    <textarea class="form-control" rows="2" x-model="form.description" placeholder="Optional"></textarea>
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label">Tags</label>
+                                    {# Tag-Input: AlpineJS-driven combobox. Tags as badges, free-text input, autocomplete dropdown. #}
+                                    <div class="position-relative" x-data="{ focused: false }">
+                                        <div class="form-control d-flex flex-wrap align-items-center gap-1"
+                                             style="cursor: text; min-height: calc(1.5em + 0.75rem + 2px);"
+                                             @click="$refs.formTagInput.focus()">
+                                            <template x-for="(tg, idx) in form.tags" :key="tg + idx">
+                                                <span class="badge bg-purple-lt d-inline-flex align-items-center">
+                                                    #<span x-text="tg" class="ms-1"></span>
+                                                    <button type="button" class="btn-close btn-close-sm ms-1"
+                                                            style="font-size: 0.6rem;"
+                                                            aria-label="Tag entfernen"
+                                                            @click.stop="removeTagFromForm(idx)"></button>
+                                                </span>
+                                            </template>
+                                            <input type="text" class="border-0 flex-fill p-0"
+                                                   style="outline: none; background: transparent; min-width: 6rem;"
+                                                   x-model="form.tagInput"
+                                                   x-ref="formTagInput"
+                                                   @focus="focused = true"
+                                                   @blur="setTimeout(() => focused = false, 150)"
+                                                   @keydown.enter.prevent="commitTagInput('form')"
+                                                   @keydown="onTagKeydown($event, 'form')"
+                                                   placeholder="Tag eingeben, Enter zum Hinzufügen">
+                                        </div>
+                                        <div class="dropdown-menu show w-100 mt-1"
+                                             x-show="focused && tagSuggestions('form').length > 0"
+                                             style="max-height: 200px; overflow-y: auto;"
+                                             x-cloak>
+                                            <template x-for="s in tagSuggestions('form')" :key="s">
+                                                <button type="button" class="dropdown-item"
+                                                        @mousedown.prevent="selectSuggestion('form', s)">
+                                                    #<span x-text="s"></span>
+                                                </button>
+                                            </template>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-12 text-end">
+                                    <button type="submit" class="btn btn-sm btn-primary" :disabled="!form.title">
+                                        <i class="ti ti-plus me-1 fs-3"></i>
+                                        Anlegen
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                {# Filter bar: search only — project, tag, phase filters live in the sidebar. #}
+                <div class="card mb-3">
+                    <div class="card-body py-2">
+                        <div class="input-icon">
+                            <span class="input-icon-addon"><i class="ti ti-search"></i></span>
+                            <input type="text" class="form-control form-control-sm" x-model="filter.search" @input.debounce.300ms="loadTasks()" placeholder="Suchen in Titel und Beschreibung…">
+                        </div>
+                    </div>
+                </div>
+
+                {# Tabs #}
+                <ul class="nav nav-tabs mb-3" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" :class="tab === 'open' ? 'active' : ''" @click="setTab('open')">
+                            <i class="ti ti-list me-1"></i>
+                            Offen
+                            <span class="badge bg-blue-lt ms-1" x-text="counts.open"></span>
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" :class="tab === 'done' ? 'active' : ''" @click="setTab('done')">
+                            <i class="ti ti-check me-1"></i>
+                            Erledigt
+                            <span class="badge bg-green-lt ms-1" x-text="counts.done"></span>
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" :class="tab === 'archive' ? 'active' : ''" @click="setTab('archive')">
+                            <i class="ti ti-archive me-1"></i>
+                            Archiv
+                            <span class="badge bg-secondary-lt ms-1" x-text="counts.archive"></span>
+                        </button>
+                    </li>
+                </ul>
+
+                {# Task list #}
+                <div class="card">
+                    <div class="list-group list-group-flush" x-show="tasks.length > 0">
+                        <template x-for="task in tasks" :key="task.id">
+                            <div class="list-group-item">
+                                <div class="row align-items-start">
+                                    <div class="col-auto">
+                                        <input type="checkbox" class="form-check-input mt-2"
+                                               :checked="task.status === 'done'"
+                                               @change="toggleStatus(task)">
+                                    </div>
+                                    <div class="col">
+                                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                                            {# ID badge: monospace, click-to-copy. @click.stop prevents row toggle. #}
+                                            <span class="task-id badge bg-secondary-lt text-secondary font-monospace"
+                                                  role="button"
+                                                  :title="`Klicken zum Kopieren: #${task.id}`"
+                                                  @click.stop="copyId(task.id)"
+                                                  x-text="`#${task.id}`"></span>
+
+                                            <strong class="task-title"
+                                                    x-text="task.title"
+                                                    :class="task.status === 'done' ? 'text-muted text-decoration-line-through' : ''"
+                                                    style="cursor: pointer"
+                                                    @click="task._expanded = !task._expanded"></strong>
+
+                                            {# Project badge -- click to toggle project filter #}
+                                            <template x-if="task.project">
+                                                <span class="badge bg-blue-lt"
+                                                      role="button"
+                                                      style="cursor: pointer"
+                                                      :title="'Filter: Projekt ' + task.project"
+                                                      @click.stop="toggleProject(task.project)"
+                                                      x-text="task.project"></span>
+                                            </template>
+                                            {# Cross-project marker (no project) -- click toggles __none__ #}
+                                            <template x-if="!task.project">
+                                                <span class="badge bg-secondary-lt"
+                                                      role="button"
+                                                      style="cursor: pointer"
+                                                      title="Filter: Projektübergreifend"
+                                                      @click.stop="toggleProject('__none__')">
+                                                    <i class="ti ti-asterisk me-1"></i>—
+                                                </span>
+                                            </template>
+
+                                            {# Phase badge -- click to toggle phase filter #}
+                                            <template x-if="task.phase === 'wip'">
+                                                <span class="badge bg-yellow-lt"
+                                                      role="button"
+                                                      style="cursor: pointer"
+                                                      title="Filter: Phase In Arbeit"
+                                                      @click.stop="togglePhase('wip')">
+                                                    <i class="ti ti-progress me-1"></i>WIP
+                                                </span>
+                                            </template>
+                                            <template x-if="task.phase === 'planned'">
+                                                <span class="badge bg-azure-lt"
+                                                      role="button"
+                                                      style="cursor: pointer"
+                                                      title="Filter: Phase Geplant"
+                                                      @click.stop="togglePhase('planned')">
+                                                    <i class="ti ti-clock me-1"></i>Geplant
+                                                </span>
+                                            </template>
+                                            <template x-if="task.phase === 'later'">
+                                                <span class="badge bg-purple-lt"
+                                                      role="button"
+                                                      style="cursor: pointer"
+                                                      title="Filter: Phase Später"
+                                                      @click.stop="togglePhase('later')">
+                                                    <i class="ti ti-crystal-ball me-1"></i>Später
+                                                </span>
+                                            </template>
+
+                                            {# Tag badges -- click to toggle tag filter #}
+                                            <template x-for="tag in task.tags" :key="tag">
+                                                <span class="badge bg-purple-lt"
+                                                      role="button"
+                                                      style="cursor: pointer"
+                                                      :title="'Filter: Tag ' + tag"
+                                                      @click.stop="toggleTag(tag)">#<span x-text="tag"></span></span>
+                                            </template>
+                                        </div>
+
+                                        <div x-show="task._expanded && task.description"
+                                             class="mt-2 text-muted small"
+                                             style="white-space: pre-wrap"
+                                             x-text="task.description"></div>
+
+                                        <div class="text-muted small mt-1">
+                                            <span :title="formatAbsolute(task.created_at)">
+                                                <i class="ti ti-calendar-plus me-1"></i>
+                                                <span x-text="formatRelative(task.created_at)"></span>
+                                            </span>
+                                            <template x-if="task.completed_at">
+                                                <span class="ms-2" :title="formatAbsolute(task.completed_at)">
+                                                    <i class="ti ti-circle-check me-1"></i>
+                                                    <span x-text="formatRelative(task.completed_at)"></span>
+                                                </span>
+                                            </template>
+                                        </div>
+                                    </div>
+                                    <div class="col-auto">
+                                        <div class="btn-list">
+                                            <button class="btn btn-sm btn-ghost-secondary" @click="startEdit(task)" aria-label="Bearbeiten" title="Bearbeiten">
+                                                <i class="ti ti-pencil fs-3"></i>
+                                            </button>
+                                            <template x-if="!task.archived">
+                                                {# Use `ti-archive` (not `ti-archive-arrow-down`): the latter is not #}
+                                                {# present in the vendored tabler-icons webfont (v3.19.0). The font #}
+                                                {# ships only a subset of the full SVG icon set; using a missing #}
+                                                {# class produces an invisible-but-clickable phantom button. #}
+                                                <button class="btn btn-sm btn-ghost-secondary" @click="archiveTask(task)" aria-label="Archivieren" title="Archivieren">
+                                                    <i class="ti ti-archive fs-3"></i>
+                                                </button>
+                                            </template>
+                                            <template x-if="task.archived">
+                                                <button class="btn btn-sm btn-ghost-secondary" @click="unarchiveTask(task)" aria-label="Wiederherstellen" title="Wiederherstellen">
+                                                    <i class="ti ti-archive-off fs-3"></i>
+                                                </button>
+                                            </template>
+                                            {# Delete is only valid for archived tasks. Bind directly to #}
+                                            {# task.archived (data truth) instead of `tab === 'archive'` #}
+                                            {# (UI state) — keeps the button out of the DOM in any tab where #}
+                                            {# the task is not archived, even if Alpine recycles a DOM node #}
+                                            {# across tab switches. #}
+                                            <template x-if="task.archived">
+                                                <button class="btn btn-sm btn-ghost-danger" @click="deleteTask(task)" aria-label="Löschen" title="Endgültig löschen">
+                                                    <i class="ti ti-trash fs-3"></i>
+                                                </button>
+                                            </template>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+
+                    <div x-show="tasks.length === 0" class="empty">
+                        <div class="empty-icon">
+                            <i class="ti ti-inbox fs-1"></i>
+                        </div>
+                        <p class="empty-title">Keine Aufgaben</p>
+                        <p class="empty-subtitle text-muted" x-text="emptyHint()"></p>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    {# Edit modal #}
+    <div class="modal modal-blur fade" tabindex="-1" x-show="editing" x-cloak
+         :class="editing ? 'show d-block' : ''"
+         :style="editing ? 'background-color: rgba(0,0,0,0.4)' : ''"
+         @keydown.escape.window="editing = null">
+        <div class="modal-dialog" role="document" x-show="editing" @click.outside="editing = null">
+            <div class="modal-content" x-show="editing">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="ti ti-pencil me-1"></i>
+                        <template x-if="editing">
+                            <span>Task <span class="font-monospace" x-text="`#${editing.id}`"></span> bearbeiten</span>
+                        </template>
+                    </h5>
+                    <button type="button" class="btn-close" @click="editing = null" aria-label="Schließen"></button>
+                </div>
+                <template x-if="editing">
+                <div class="modal-body">
+                    <div class="mb-2">
+                        <label class="form-label">Projekt</label>
+                        <select class="form-select" x-model="editing.project">
+                            <option :value="null">— projektübergreifend —</option>
+                            <template x-for="p in projectNames" :key="p">
+                                <option :value="p" x-text="p"></option>
+                            </template>
+                        </select>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Phase</label>
+                        <select class="form-select" x-model="editing.phase">
+                            <option :value="null">—</option>
+                            <option value="wip">In Arbeit</option>
+                            <option value="planned">Geplant</option>
+                            <option value="later">Später</option>
+                        </select>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Titel</label>
+                        <input type="text" class="form-control" x-model="editing.title" maxlength="500">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Beschreibung</label>
+                        <textarea class="form-control" rows="6" x-model="editing.description"></textarea>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Tags</label>
+                        {# Edit-modal tag input: same pattern as new-task form, bound to editing.tags. #}
+                        <div class="position-relative" x-data="{ focused: false }">
+                            <div class="form-control d-flex flex-wrap align-items-center gap-1"
+                                 style="cursor: text; min-height: calc(1.5em + 0.75rem + 2px);"
+                                 @click="$refs.editTagInput.focus()">
+                                <template x-for="(tg, idx) in editing.tags" :key="tg + idx">
+                                    <span class="badge bg-purple-lt d-inline-flex align-items-center">
+                                        #<span x-text="tg" class="ms-1"></span>
+                                        <button type="button" class="btn-close btn-close-sm ms-1"
+                                                style="font-size: 0.6rem;"
+                                                aria-label="Tag entfernen"
+                                                @click.stop="removeTagFromEditing(idx)"></button>
+                                    </span>
+                                </template>
+                                <input type="text" class="border-0 flex-fill p-0"
+                                       style="outline: none; background: transparent; min-width: 6rem;"
+                                       x-model="editing._tagInput"
+                                       x-ref="editTagInput"
+                                       @focus="focused = true"
+                                       @blur="setTimeout(() => focused = false, 150)"
+                                       @keydown.enter.prevent="commitTagInput('edit')"
+                                       @keydown="onTagKeydown($event, 'edit')"
+                                       placeholder="Tag eingeben, Enter zum Hinzufügen">
+                            </div>
+                            <div class="dropdown-menu show w-100 mt-1"
+                                 x-show="focused && tagSuggestions('edit').length > 0"
+                                 style="max-height: 200px; overflow-y: auto;"
+                                 x-cloak>
+                                <template x-for="s in tagSuggestions('edit')" :key="s">
+                                    <button type="button" class="dropdown-item"
+                                            @mousedown.prevent="selectSuggestion('edit', s)">
+                                        #<span x-text="s"></span>
+                                    </button>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                </template>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-ghost-secondary" @click="editing = null">
+                        Abbrechen
+                    </button>
+                    <button type="button" class="btn btn-sm btn-primary" @click="saveEdit()">
+                        <i class="ti ti-device-floppy me-1 fs-3"></i>
+                        Speichern
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+{# Toast container (Tabler/Bootstrap-compatible). Toasts injected by app.js. #}
+<div id="toast-container"
+     class="toast-container position-fixed bottom-0 end-0 p-3"
+     style="z-index: 1100"
+     aria-live="polite" aria-atomic="true"></div>
+
+<script src="/static/vendor/alpine/alpine.min.js?v={{ version }}" defer></script>
+<script src="/static/app.js?v={{ version }}"></script>
+</body>
+</html>

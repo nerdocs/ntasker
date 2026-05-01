@@ -1,0 +1,27 @@
+/* nerdocs Tracker -- minor overrides. */
+
+[x-cloak] {
+    display: none !important;
+}
+
+.list-group-item .btn-list {
+    flex-wrap: nowrap;
+}
+
+/* Slightly tighter list rows. */
+.list-group-item {
+    padding: 0.625rem 1rem;
+}
+
+/* ID badge — visually clickable, hover state for affordance. */
+.task-id {
+    cursor: pointer;
+    user-select: none;
+    transition: filter 0.1s ease;
+}
+.task-id:hover {
+    filter: brightness(0.95);
+}
+[data-bs-theme="dark"] .task-id:hover {
+    filter: brightness(1.2);
+}

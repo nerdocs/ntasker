@@ -1,4 +1,4 @@
-# nerdocs Tracker
+# ntasker
 
 Lightweight local task tracker for the nerdocs HQ. Single-user, FastAPI + SQLite, Tabler.io UI.
 
@@ -6,26 +6,93 @@ Lightweight local task tracker for the nerdocs HQ. Single-user, FastAPI + SQLite
 
 - Backend: FastAPI + uvicorn, Python stdlib `sqlite3`
 - Frontend: HTML + AlpineJS + Tabler.io, all assets vendored under
-  `static/vendor/` -- offline-capable, no build step, no CDN at runtime
-- Storage: `tasks.db` next to `app.py`
+  `src/ntasker/static/vendor/` -- offline-capable, no build step, no CDN at runtime
+- Storage: SQLite at `platformdirs.user_data_dir("nTasker")/tasks.db` by default
+  (Linux: `~/.local/share/nTasker/tasks.db`)
+- Layout: PyPA src-layout, package `src/ntasker/`, entry point `ntasker = ntasker.cli:main`
 
-Vendored assets and licences: see `static/vendor/LICENSES.md`.
+Vendored assets and licences: see `src/ntasker/static/vendor/LICENSES.md`.
 
 ## Bind
 
-Hardcoded to `127.0.0.1:8766`. Do **not** expose this on a network -- there is no auth.
+Default `127.0.0.1:8766`. Do **not** expose this on a network -- there is no auth.
+Override via `ntasker serve --host <h> --port <p>` if you really need to.
 This is a personal local tool, not a multi-user service.
+
+## DB path resolution
+
+Highest precedence wins:
+
+1. `--db <path>` flag on every CLI invocation.
+2. Environment variable `NTASKER_DB`.
+3. `platformdirs.user_data_dir("nTasker") / "tasks.db"` (default).
+
+Per-OS defaults:
+
+| OS      | Path                                                     |
+|---------|----------------------------------------------------------|
+| Linux   | `~/.local/share/nTasker/tasks.db`                        |
+| macOS   | `~/Library/Application Support/nTasker/tasks.db`         |
+| Windows | `%LOCALAPPDATA%\nTasker\tasks.db`                        |
+
+Only the Linux path is regularly tested; the others are derived via `platformdirs`.
 
 ## Setup
 
 ```bash
-cd /home/christian/nerdocs/tracker
-make install      # uv sync
-make migrate      # one-shot: import existing TODO.md
-make run          # start server -> http://127.0.0.1:8766
+# As a tool (recommended):
+uv tool install ~/nerdocs/ntasker
+ntasker init           # create DB at the default platformdirs path
+ntasker serve          # start server on http://127.0.0.1:8766
 ```
 
 Open <http://127.0.0.1:8766> in a browser.
+
+For repo-local development:
+
+```bash
+cd ~/nerdocs/ntasker
+make install   # uv sync
+make init      # uv run ntasker init
+make run       # uv run ntasker serve --reload
+```
+
+## Settings
+
+Required for the project sidebar to populate: configure where your project
+symlinks live.
+
+Via UI:  open `/settings` in the browser, fill in `projects_dir`, save.
+Via CLI: `ntasker config set projects_dir ~/Projekte`
+Via ENV: `NTASKER_PROJECTS_DIR=/path/to/projects ntasker serve` (overrides the DB value).
+
+The validator requires the path to be absolute, exist, be a directory, and be readable.
+
+## CLI
+
+| Command                     | What it does                                                  |
+|-----------------------------|---------------------------------------------------------------|
+| `ntasker init`              | Create / migrate the schema at the active DB path             |
+| `ntasker serve`             | Run the FastAPI server (defaults: 127.0.0.1:8766)             |
+| `ntasker list [filters]`    | List tasks; supports `--project`, `--tag`, `--phase`, ...     |
+| `ntasker show <id>`         | Show a single task; pair with `--json` for raw output         |
+| `ntasker add --title=...`   | Create a task; optional `--project --phase --priority --tag`  |
+| `ntasker done <id>`         | Mark a task as done                                           |
+| `ntasker patch <id> [...]`  | Patch arbitrary fields (`--title`, `--phase`, `--status`, ...)|
+| `ntasker tag-add <id> <t>`  | Append a tag                                                  |
+| `ntasker tag-rm  <id> <t>`  | Remove a tag                                                  |
+| `ntasker stats [filters]`   | Tab counts (open/done/archive) honoring filters               |
+| `ntasker config list`       | Show all settings                                             |
+| `ntasker config get <k>`    | Read a setting                                                |
+| `ntasker config set <k> <v>`| Write a setting (validated)                                   |
+| `ntasker config unset <k>`  | Remove a setting                                              |
+
+Global flags:
+
+- `--db <path>` -- override the resolved DB path for this invocation.
+- `--version` -- print the package version and exit.
+
+Most listing commands accept `--json` for machine-readable output.
 
 ## Smoke test
 
@@ -33,23 +100,30 @@ Open <http://127.0.0.1:8766> in a browser.
 make smoke
 ```
 
-Runs an in-process FastAPI test client against a temp DB.
+Runs an in-process FastAPI test client against a temp DB *and* exercises a
+couple of CLI subcommands via subprocess.
 
 ## API
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/` | The single-page UI |
-| GET | `/api/projects` | `[{name, open_count}]`, `__none__` first, then symlinks |
+| GET | `/` | The single-page task UI |
+| GET | `/settings` | The settings UI |
+| GET | `/api/projects` | `[{name, open_count}]`, `__none__` first; sets `X-Settings-Missing: projects_dir` if unconfigured |
 | GET | `/api/tags` | `[{name, open_count}]`, sorted by `open_count DESC, name ASC` |
 | POST | `/api/tags/cleanup` | Delete dangling tags (no `task_tags` row). Returns `{removed, removed_names}`. Idempotent. |
 | GET | `/api/phases` | `[{value, label, open_count}]`, fixed workflow order: `wip`, `planned`, `later`, `__none__` |
-| GET | `/api/tasks` | Filters: `project` (multi), `tag` (multi, OR), `phase` (multi, OR; `__none__` = phase IS NULL), `status`, `archived`, `search`. project + tag + phase combine with **AND**. |
+| GET | `/api/priorities` | `[{value, label, open_count}]`, fixed order: `critical`, `high`, `normal`, `low` |
+| GET | `/api/tasks` | Filters: `project` (multi), `tag` (multi, OR), `phase` (multi, OR; `__none__` = phase IS NULL), `priority` (multi), `status`, `archived`, `search`. Filters across params combine with **AND**. |
 | GET | `/api/tasks/{id}` | Single task incl. `tags` |
-| GET | `/api/stats` | Tab counts (`open`/`done`/`archive`), respects all filters incl. `phase` |
-| POST | `/api/tasks` | `{project?, title, description?, phase?, tags?}` |
-| PATCH | `/api/tasks/{id}` | Any subset of `{title, description, project, phase, status, archived, tags}` -- `tags` is a **full replace** |
+| GET | `/api/stats` | Tab counts (`open`/`done`/`archive`), respects all filters |
+| POST | `/api/tasks` | `{project?, title, description?, phase?, priority?, tags?}` |
+| PATCH | `/api/tasks/{id}` | Any subset of `{title, description, project, phase, priority, status, archived, tags}` -- `tags` is a **full replace** |
 | DELETE | `/api/tasks/{id}` | Hard delete (the UI archives by default) |
+| GET | `/api/settings` | List all settings rows |
+| GET | `/api/settings/{key}` | Single setting or 404 |
+| PUT | `/api/settings/{key}` | `{value: "..."}` -- 200 on accept, 400 if a registered validator rejects |
+| DELETE | `/api/settings/{key}` | 204 on success, 404 if not present |
 
 OpenAPI: <http://127.0.0.1:8766/api/docs>
 
@@ -63,6 +137,7 @@ CREATE TABLE tasks (
     description TEXT,
     status TEXT NOT NULL DEFAULT 'open',
     phase TEXT,
+    priority TEXT NOT NULL DEFAULT 'normal',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     completed_at TEXT,
     archived INTEGER NOT NULL DEFAULT 0
@@ -76,41 +151,41 @@ CREATE TABLE task_tags (
     tag_id  INTEGER NOT NULL REFERENCES tags(id)  ON DELETE CASCADE,
     PRIMARY KEY (task_id, tag_id)
 );
+CREATE TABLE settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 ```
 
 `status`: `open` | `done`. `phase`: `wip` | `planned` | `later` | NULL.
+`priority`: `critical` | `high` | `normal` | `low` (NOT NULL, default `normal`).
 Tag names are normalised to lowercase on write; `UNIQUE COLLATE NOCASE` keeps it tidy.
 
 ## Design notes
 
-- DB init on startup; pure idempotent `CREATE TABLE IF NOT EXISTS`. The legacy
-  `source` column on `tasks` is dropped on first run after upgrade
-  (SQLite >= 3.35; older runtimes leave the now-unused column in place).
+- DB init on startup; pure idempotent `CREATE TABLE IF NOT EXISTS`. Legacy
+  columns are dropped or added in `try/except OperationalError` blocks --
+  no Alembic, no migration files.
 - All SQL parameterised (`?`); no string interpolation.
-- Project list is read live from `nerdocs/Projekte/` symlinks each request -- no caching.
+- Project list is read live each request from the symlinks under the
+  configured `projects_dir` -- no caching.
 - Sidebar `open_count` values are absolute (always count all open + non-archived
   tasks), so toggling filters does not flicker the sidebar.
 - Hard-delete is intentionally rare; archive is the default. Deleting a task
   cascades through `task_tags` but leaves `tags` rows in place (zero-cost dangling).
-- Project-badge / phase-badge / tag-badge in a task row are clickable: each one
+- Project / phase / tag / priority badges in a task row are clickable: each one
   toggles the matching filter. `@click.stop` prevents the parent row interactions.
 - Dates stored as UTC ISO strings, rendered locally via `Intl.RelativeTimeFormat('de-DE')`.
 
-## Migration from TODO.md
+## Project home
 
-`migrate_todo.py` parses the bullet items in `nerdocs/TODO.md` mapping the leading
-status emoji to `status` + `phase` + `archived`. Title comes from the leading
-`**bold**` chunk; description from the rest of the line. Project is detected by
-substring-matching the longest known project symlink name. After a successful run
-`TODO.md` is renamed to `TODO.md.migrated-<DATE>` so a re-run does not double-import.
+GitLab: <https://gitlab.com/nerdocs/ntasker>
 
 ## Changelog
 
-- **0.3.2** -- Fix: cache-bust static assets via `?v={VERSION}` query suffix on every `<link>`/`<script>`; HTML shell served with `Cache-Control: no-store`. After v0.3.1 shipped, browsers were still replaying the pre-fix `app.js`/`index.html` from disk cache, surfacing as the persistent "phantom button" report.
-- **0.3.1** -- Fix: delete-button condition rebound from `tab === 'archive'` (UI state) to `task.archived` (data truth); defensive guard in `deleteTask()` rejects non-archived rows.
-- **0.3.0** -- Phase filter as multi-select sidebar checkboxes (server-side, OR-combined incl. `__none__`); manual tag-cleanup button in page-header (`POST /api/tags/cleanup`); old phase combobox in body removed.
-- **0.2.0** -- Generic per-task tags (multi-OR filter), clickable filter
-  badges in task rows, sidebar open-counts per project + tag,
-  legacy `source` column removed.
-- **0.1.0** -- Initial release: tasks + projects, multi-value project filter,
-  one-shot TODO.md migration.
+See [`CHANGELOG.md`](CHANGELOG.md). Highlights:
+
+- **1.0.0** -- Renamed `nerdocs-tracker` -> `ntasker`; src-Layout; CLI with subcommands; settings module + UI; configurable `projects_dir`; DB moved to `platformdirs` default. **Breaking.**
+- **0.4.0** -- `priority` field with sidebar filter and badge.
+- **0.3.x** -- Cache-buster, version badge, archive button polish.

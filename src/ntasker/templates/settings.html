@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="de" data-bs-theme="light">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ntasker — Einstellungen</title>
+    {# Same vendored Tabler/Tabler-Icons as the main UI; ?v={version} cache-buster. #}
+    <link rel="stylesheet" href="/static/vendor/tabler/tabler.min.css?v={{ version }}">
+    <link rel="stylesheet" href="/static/vendor/tabler-icons/tabler-icons.min.css?v={{ version }}">
+    <link rel="stylesheet" href="/static/style.css?v={{ version }}">
+</head>
+<body>
+<div class="page" x-data="settingsPage()" x-init="init()">
+
+    <header class="navbar navbar-expand-md d-print-none">
+        <div class="container-xl">
+            <h1 class="navbar-brand navbar-brand-autodark d-flex align-items-center mb-0">
+                <a href="/" class="text-reset text-decoration-none d-flex align-items-center">
+                    <i class="ti ti-checkbox me-2 fs-2"></i>
+                    ntasker
+                    <span class="badge bg-secondary-lt ms-2 font-monospace small align-middle">v{{ version }}</span>
+                </a>
+            </h1>
+        </div>
+    </header>
+
+    <div class="page-wrapper">
+        <div class="page-header d-print-none">
+            <div class="container-xl">
+                <div class="row g-2 align-items-center">
+                    <div class="col">
+                        <h2 class="page-title">
+                            <i class="ti ti-settings me-2 fs-2"></i>
+                            Einstellungen
+                        </h2>
+                    </div>
+                    <div class="col-auto">
+                        <a href="/" class="btn btn-sm btn-ghost-secondary">
+                            <i class="ti ti-arrow-left me-1 fs-3"></i>
+                            zurueck zu Aufgaben
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="page-body">
+            <div class="container-xl">
+
+                {# Known-keys section: bekannte Settings mit Hint-Text. #}
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="ti ti-key me-1"></i>
+                            Bekannte Schluessel
+                        </h3>
+                    </div>
+                    <div class="card-body">
+                        {% for key in known_keys %}
+                        <div class="mb-3">
+                            <label class="form-label fw-bold" :for="`known-{{ key }}`">
+                                <code>{{ key }}</code>
+                            </label>
+                            {% if hints.get(key) %}
+                            <div class="text-muted small mb-1">{{ hints[key] }}</div>
+                            {% endif %}
+                            <div class="input-group">
+                                <input type="text" class="form-control"
+                                       id="known-{{ key }}"
+                                       x-model="known['{{ key }}']"
+                                       placeholder="(noch nicht gesetzt)">
+                                <button type="button" class="btn btn-primary"
+                                        @click="saveKnown('{{ key }}')">
+                                    <i class="ti ti-device-floppy me-1 fs-3"></i>
+                                    Speichern
+                                </button>
+                                <button type="button" class="btn btn-ghost-danger"
+                                        @click="unsetKnown('{{ key }}')"
+                                        :disabled="!known['{{ key }}']">
+                                    <i class="ti ti-trash fs-3"></i>
+                                </button>
+                            </div>
+                            {# CAVE: `d-block` per :class statt fix -- Bootstrap setzt          #}
+                            {# `.d-block { display: block !important }`, das wuerde das        #}
+                            {# `style="display: none"` aus AlpineJS x-show ueberschreiben      #}
+                            {# (gleicher Bug wie beim projects_dir-Banner). Daher nur dann     #}
+                            {# d-block zuweisen, wenn ein Error tatsaechlich vorliegt.         #}
+                            <div class="invalid-feedback"
+                                 :class="errors['{{ key }}'] ? 'd-block' : ''"
+                                 x-text="errors['{{ key }}']"></div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                {# All settings (read-only listing, includes ad-hoc keys). #}
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="ti ti-list me-1"></i>
+                            Alle Settings (DB-Inhalt)
+                        </h3>
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-sm" x-show="rows.length > 0">
+                            <thead>
+                                <tr>
+                                    <th>Schluessel</th>
+                                    <th>Wert</th>
+                                    <th>aktualisiert</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="r in rows" :key="r.key">
+                                    <tr>
+                                        <td><code x-text="r.key"></code></td>
+                                        <td class="text-truncate" style="max-width: 24rem;" x-text="r.value"></td>
+                                        <td class="text-muted small" x-text="r.updated_at"></td>
+                                        <td class="text-end">
+                                            <button class="btn btn-sm btn-ghost-danger"
+                                                    @click="unsetRow(r.key)"
+                                                    aria-label="Loeschen">
+                                                <i class="ti ti-trash fs-3"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                        <div x-show="rows.length === 0" class="empty">
+                            <p class="empty-title">Keine Settings gesetzt.</p>
+                            <p class="empty-subtitle text-muted">
+                                Konfiguriere oben einen bekannten Schluessel, oder setze ihn via CLI:
+                                <code>ntasker config set &lt;key&gt; &lt;value&gt;</code>.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    {# Toast container -- reuses Tabler toast styling. #}
+    <div id="toast-container"
+         class="toast-container position-fixed bottom-0 end-0 p-3"
+         style="z-index: 1100"
+         aria-live="polite" aria-atomic="true"></div>
+
+</div>
+
+<script src="/static/vendor/alpine/alpine.min.js?v={{ version }}" defer></script>
+<script>
+function settingsPage() {
+    return {
+        rows: [],
+        known: {},
+        errors: {},
+
+        async init() {
+            await this.refresh();
+        },
+
+        async refresh() {
+            const r = await fetch('/api/settings');
+            this.rows = await r.json();
+            // Snapshot known-key values into the editable fields.
+            const byKey = {};
+            for (const row of this.rows) byKey[row.key] = row.value;
+            // Populate ALL known keys (incl. unset ones) so x-model bindings
+            // have a slot. Unset keys default to empty string.
+            const knownKeys = {{ known_keys | tojson }};
+            for (const k of knownKeys) this.known[k] = byKey[k] || '';
+        },
+
+        async saveKnown(key) {
+            this.errors[key] = '';
+            const value = this.known[key];
+            const r = await fetch(`/api/settings/${encodeURIComponent(key)}`, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({value: value}),
+            });
+            if (!r.ok) {
+                const body = await r.json().catch(() => ({}));
+                this.errors[key] = body.detail || `HTTP ${r.status}`;
+                return;
+            }
+            await this.refresh();
+            this.toast(`${key} gespeichert.`);
+        },
+
+        async unsetKnown(key) {
+            const r = await fetch(`/api/settings/${encodeURIComponent(key)}`, {method: 'DELETE'});
+            if (r.status === 204) {
+                this.known[key] = '';
+                await this.refresh();
+                this.toast(`${key} entfernt.`);
+            }
+        },
+
+        async unsetRow(key) {
+            await this.unsetKnown(key);
+        },
+
+        toast(msg) {
+            const c = document.getElementById('toast-container');
+            const el = document.createElement('div');
+            el.className = 'toast show align-items-center text-bg-secondary border-0';
+            el.setAttribute('role', 'alert');
+            el.innerHTML = `<div class="d-flex"><div class="toast-body">${msg}</div></div>`;
+            c.appendChild(el);
+            setTimeout(() => el.remove(), 3000);
+        },
+    };
+}
+</script>
+</body>
+</html>

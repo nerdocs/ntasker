@@ -1,16 +1,25 @@
-.PHONY: install migrate run smoke clean
+.PHONY: install init run smoke clean
 
 install:
 	uv sync
 
-migrate:
-	uv run python migrate_todo.py
+init:
+	uv run ntasker init
 
 run:
-	uv run uvicorn app:app --host 127.0.0.1 --port 8766 --reload
+	uv run ntasker serve --reload
 
 smoke:
 	uv run python smoke_test.py
 
+# Removes ONLY the local repo-root tasks.db (legacy / dev artefacts).
+# The default user-data DB at ``platformdirs.user_data_dir('nTasker')/tasks.db``
+# is intentionally left alone -- ``make clean`` is for repo hygiene, not for
+# nuking real data. Remove the user-data DB by hand if you really want to.
 clean:
-	rm -f tasks.db
+	@if [ -f tasks.db ]; then \
+		echo "Removing local repo-root tasks.db (the user-data DB stays)."; \
+		rm -f tasks.db; \
+	else \
+		echo "No local tasks.db to remove."; \
+	fi

@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>nerdocs Tracker</title>
+    <title>ntasker</title>
     {# Tabler CSS + Icons (vendored, offline-faehig — siehe static/vendor/LICENSES.md) #}
     {# `?v=` query string is a cache-buster: a version bump in app.py forces #}
     {# clients to refetch instead of replaying stale CSS/JS from disk cache. #}
@@ -179,10 +179,14 @@
         <div class="container-xl">
             <h1 class="navbar-brand navbar-brand-autodark d-flex align-items-center mb-0">
                 <i class="ti ti-checkbox me-2 fs-2"></i>
-                nerdocs Tracker
+                ntasker
                 <span class="badge bg-secondary-lt ms-2 font-monospace small align-middle">v{{ version }}</span>
             </h1>
             <div class="navbar-nav flex-row order-md-last ms-auto">
+                <a href="/settings" class="btn btn-sm btn-ghost-secondary me-1" title="Einstellungen">
+                    <i class="ti ti-settings me-1 fs-3"></i>
+                    Einstellungen
+                </a>
                 <button class="btn btn-sm btn-ghost-secondary" @click="toggleTheme()" :aria-label="theme === 'dark' ? 'Hellmodus' : 'Dunkelmodus'">
                     <i class="ti me-1 fs-3" :class="theme === 'dark' ? 'ti-sun' : 'ti-moon'"></i>
                 </button>
@@ -221,6 +225,26 @@
 
         <div class="page-body">
             <div class="container-xl">
+
+                {# Banner: projects_dir nicht konfiguriert. Auto-versteckt sobald gesetzt. #}
+                {# CAVE: x-show MUSS auf einem Wrapper-Element ohne Bootstrap-Display-Utility #}
+                {# (`d-flex`, `d-block`, ...) sitzen. AlpineJS setzt `style="display: none"` #}
+                {# ohne `!important`; Tabler/Bootstrap setzt `.d-flex { display: flex !important }`. #}
+                {# Direkt auf demselben Element gewinnt das Utility und der Banner bleibt sichtbar, #}
+                {# obwohl projectsDirMissing === false. Loesung: Wrapper traegt x-show + x-cloak, #}
+                {# Inner-Div traegt das d-flex. #}
+                <div x-show="projectsDirMissing" x-cloak>
+                    <div class="alert alert-warning d-flex align-items-center">
+                        <i class="ti ti-alert-triangle me-2 fs-2"></i>
+                        <div class="flex-fill">
+                            Bitte Projekte-Verzeichnis konfigurieren — sonst bleibt die Projekt-Liste leer.
+                        </div>
+                        <a href="/settings" class="btn btn-sm btn-warning ms-2">
+                            <i class="ti ti-settings me-1 fs-3"></i>
+                            zu den Einstellungen
+                        </a>
+                    </div>
+                </div>
 
                 {# New-task form #}
                 <div class="card mb-3">

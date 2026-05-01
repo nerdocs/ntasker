@@ -1,8 +1,16 @@
 # Changelog
 
-All notable changes to the nerdocs Tracker.
+All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
+
+## [1.0.0] — 2026-05-01
+- BREAKING: Renamed package from nerdocs-tracker to ntasker.
+- BREAKING: DB path moved to platformdirs default — see migration note in README.
+- Added: CLI with subcommands (init, serve, list, show, add, done, patch, tag-add, tag-rm, stats, config).
+- Added: Settings KV-store with /settings UI page and /api/settings endpoints.
+- Added: projects_dir is now configurable (Settings UI or NTASKER_PROJECTS_DIR env).
+- Changed: src-Layout (PyPA standard).
 
 ## [0.4.0] — 2026-05-01
 - Neues Feld `priority` (low/normal/high/critical) mit Sidebar-Filter und Badge.
@@ -38,7 +46,6 @@ Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
 ## [0.1.0] — 2026-05-01
 - Initial release: FastAPI + SQLite + AlpineJS + Tabler.
-- Schema: `tasks(id, project, title, description, status, phase, created_at, completed_at, archived, source)`.
+- Schema: `tasks(id, project, title, description, status, phase, created_at, completed_at, archived)`.
 - Three tabs: open / done / archive. Project filter, phase filter, full-text search.
-- One-shot migration from `nerdocs/TODO.md` (177 tasks imported).
 - Bind 127.0.0.1:8766, single-user, no auth.

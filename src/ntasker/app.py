@@ -1,16 +1,18 @@
-"""nerdocs Tracker -- lightweight local task tracker.
+"""FastAPI application for ntasker.
 
-Single-user FastAPI app backed by SQLite. Bound hard to 127.0.0.1.
-No auth: this is a local desktop tool for Christian. Do not expose.
+Submodule of the :mod:`ntasker` package; the CLI entry ``ntasker serve``
+runs this app via uvicorn (see :mod:`ntasker.cli`). Static files and
+templates are loaded via :func:`importlib.resources.files` so the package
+works equally well from a wheel install and a local checkout.
+
+Bind is the CLI's responsibility -- this module only exposes ``app``.
 """
 
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Iterator
-from contextlib import contextmanager
 from datetime import datetime
-from pathlib import Path
+from importlib.resources import files
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -19,13 +21,26 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
-# Single source of truth for the app version. Surfaced into the HTML
-# template as a cache-buster (``?v=<VERSION>`` query suffix on every
-# static asset URL) so a release reliably forces clients to fetch the
-# new CSS/JS instead of replaying a stale ``index.html`` -> stale
-# ``app.js`` from disk cache (the cause of "phantom button" reports
-# after the v0.3.1 fix shipped: clients still saw the old DOM).
-VERSION = "0.4.0"
+from ntasker import __version__ as VERSION
+from ntasker.db import (
+    get_conn,
+    init_db,
+    load_tags_bulk,
+    load_tags_for,
+    normalize_tags,
+    row_to_task,
+    set_task_tags,
+)
+from ntasker.settings import (
+    HINTS,
+    VALIDATORS,
+    delete_setting,
+    ensure_settings_table,
+    get_projects_dir,
+    get_setting_raw,
+    list_settings,
+    set_setting,
+)
 
 # Sentinel for "tasks without a project" (cross-project tasks). Used in
 # multi-value project filters: ?project=__none__ -> include rows with project IS NULL.
@@ -36,8 +51,7 @@ PROJECT_NULL_LEGACY = "__null__"
 # Sentinel for "tasks without a phase" (analogous to PROJECT_NONE_SENTINEL).
 PHASE_NONE_SENTINEL = "__none__"
 
-# Fixed phase order + labels for the sidebar feed. Order is intentional
-# (workflow-natural), not alphabetical, and not by count.
+# Fixed phase order + labels for the sidebar feed.
 PHASE_ORDER: list[tuple[str, str]] = [
     ("wip", "in Arbeit"),
     ("planned", "geplant"),
@@ -46,9 +60,7 @@ PHASE_ORDER: list[tuple[str, str]] = [
 ]
 PHASE_VALID = {value for value, _ in PHASE_ORDER}
 
-# Fixed priority order for the sidebar feed. Workflow-natural (highest first),
-# not alphabetical. The column is NOT NULL with DEFAULT 'normal' -- no
-# __none__ sentinel needed here.
+# Fixed priority order for the sidebar feed.
 PRIORITY_ORDER: list[tuple[str, str]] = [
     ("critical", "kritisch"),
     ("high", "hoch"),
@@ -58,223 +70,34 @@ PRIORITY_ORDER: list[tuple[str, str]] = [
 PRIORITY_VALID = {value for value, _ in PRIORITY_ORDER}
 PRIORITY_DEFAULT = "normal"
 
+
 # ---------------------------------------------------------------------------
-# Paths
+# Resource paths -- via importlib.resources so this works from a wheel install
 # ---------------------------------------------------------------------------
 
-BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR / "tasks.db"
-TEMPLATES_DIR = BASE_DIR / "templates"
-STATIC_DIR = BASE_DIR / "static"
-
-# Live project discovery: symlinks under nerdocs/Projekte/
-PROJECTS_DIR = Path("/home/christian/nerdocs/Projekte")
+_PKG_ROOT = files("ntasker")
+TEMPLATES_DIR = _PKG_ROOT / "templates"
+STATIC_DIR = _PKG_ROOT / "static"
 
 
 # ---------------------------------------------------------------------------
-# Database
-# ---------------------------------------------------------------------------
-
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS tasks (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    project TEXT,
-    title TEXT NOT NULL,
-    description TEXT,
-    status TEXT NOT NULL DEFAULT 'open',
-    phase TEXT,
-    priority TEXT NOT NULL DEFAULT 'normal',
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    completed_at TEXT,
-    archived INTEGER NOT NULL DEFAULT 0
-);
-CREATE INDEX IF NOT EXISTS idx_tasks_archived ON tasks(archived);
-CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project);
-CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
-
-CREATE TABLE IF NOT EXISTS tags (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL UNIQUE COLLATE NOCASE
-);
-
-CREATE TABLE IF NOT EXISTS task_tags (
-    task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-    tag_id  INTEGER NOT NULL REFERENCES tags(id)  ON DELETE CASCADE,
-    PRIMARY KEY (task_id, tag_id)
-);
-CREATE INDEX IF NOT EXISTS idx_task_tags_tag ON task_tags(tag_id);
-"""
-
-
-def init_db() -> None:
-    """Create the schema if it does not exist. Idempotent.
-
-    Also performs a one-shot drop of the legacy ``source`` column on the
-    ``tasks`` table -- this is a no-op on fresh databases. SQLite >= 3.35
-    supports ``ALTER TABLE ... DROP COLUMN`` natively; older runtimes will
-    raise an ``OperationalError`` which we swallow (the column may already
-    be gone).
-    """
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.executescript(SCHEMA)
-        # Idempotent legacy-cleanup: drop the long-gone `source` column.
-        try:
-            cols = [row[1] for row in conn.execute("PRAGMA table_info(tasks)").fetchall()]
-            if "source" in cols:
-                conn.execute("ALTER TABLE tasks DROP COLUMN source")
-        except sqlite3.OperationalError:
-            # Old SQLite without DROP COLUMN -- not catastrophic, leave the
-            # legacy column in place; it's just unused dead weight then.
-            pass
-        # Idempotent migration: add the `priority` column. v0.4.0.
-        # SQLite raises OperationalError("duplicate column name: priority")
-        # on second boot -- swallow it.
-        try:
-            conn.execute(
-                "ALTER TABLE tasks ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal'"
-            )
-        except sqlite3.OperationalError:
-            pass
-        conn.commit()
-
-
-@contextmanager
-def get_conn() -> Iterator[sqlite3.Connection]:
-    """Open a SQLite connection with row factory and foreign keys on."""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    try:
-        yield conn
-        conn.commit()
-    finally:
-        conn.close()
-
-
-def row_to_task(row: sqlite3.Row, tags: list[str] | None = None) -> dict:
-    """Convert a sqlite3.Row to a JSON-serialisable dict.
-
-    `tags` is injected by the caller after a separate lookup to avoid
-    SQLite GROUP_CONCAT escaping headaches with comma-containing tag names.
-    """
-    return {
-        "id": row["id"],
-        "project": row["project"],
-        "title": row["title"],
-        "description": row["description"],
-        "status": row["status"],
-        "phase": row["phase"],
-        "priority": row["priority"],
-        "created_at": row["created_at"],
-        "completed_at": row["completed_at"],
-        "archived": bool(row["archived"]),
-        "tags": tags or [],
-    }
-
-
-# ---------------------------------------------------------------------------
-# Tag helpers
-# ---------------------------------------------------------------------------
-
-
-def _normalize_tag(raw: str) -> str:
-    """Lower-case + strip. Empty strings are filtered by callers."""
-    return raw.strip().lower()
-
-
-def _normalize_tags(raw_list: list[str]) -> list[str]:
-    """Apply normalize+dedupe (preserving first-seen order). Drops empties."""
-    seen: set[str] = set()
-    out: list[str] = []
-    for t in raw_list:
-        n = _normalize_tag(t)
-        if not n or n in seen:
-            continue
-        seen.add(n)
-        out.append(n)
-    return out
-
-
-def _ensure_tags(conn: sqlite3.Connection, names: list[str]) -> list[int]:
-    """Insert missing tags, return ID list aligned with `names`.
-
-    `names` must already be normalized (lower + strip + deduped).
-    """
-    ids: list[int] = []
-    for n in names:
-        cur = conn.execute("SELECT id FROM tags WHERE name = ?", (n,))
-        row = cur.fetchone()
-        if row is None:
-            cur = conn.execute("INSERT INTO tags (name) VALUES (?)", (n,))
-            ids.append(int(cur.lastrowid))
-        else:
-            ids.append(int(row["id"]))
-    return ids
-
-
-def _set_task_tags(conn: sqlite3.Connection, task_id: int, names: list[str]) -> None:
-    """Replace the full tag set of a task (delete + reinsert)."""
-    conn.execute("DELETE FROM task_tags WHERE task_id = ?", (task_id,))
-    if not names:
-        return
-    tag_ids = _ensure_tags(conn, names)
-    conn.executemany(
-        "INSERT OR IGNORE INTO task_tags (task_id, tag_id) VALUES (?, ?)",
-        [(task_id, tid) for tid in tag_ids],
-    )
-
-
-def _load_tags_for(conn: sqlite3.Connection, task_id: int) -> list[str]:
-    """Return tag names for a single task, alphabetically."""
-    rows = conn.execute(
-        """
-        SELECT t.name FROM tags t
-        JOIN task_tags tt ON tt.tag_id = t.id
-        WHERE tt.task_id = ?
-        ORDER BY t.name ASC
-        """,
-        (task_id,),
-    ).fetchall()
-    return [r["name"] for r in rows]
-
-
-def _load_tags_bulk(conn: sqlite3.Connection, task_ids: list[int]) -> dict[int, list[str]]:
-    """Bulk lookup: task_id -> list of tag names. Used by /api/tasks."""
-    if not task_ids:
-        return {}
-    placeholders = ", ".join("?" for _ in task_ids)
-    rows = conn.execute(
-        f"""
-        SELECT tt.task_id AS task_id, t.name AS name
-        FROM task_tags tt
-        JOIN tags t ON t.id = tt.tag_id
-        WHERE tt.task_id IN ({placeholders})
-        ORDER BY t.name ASC
-        """,
-        task_ids,
-    ).fetchall()
-    out: dict[int, list[str]] = {tid: [] for tid in task_ids}
-    for r in rows:
-        out[int(r["task_id"])].append(r["name"])
-    return out
-
-
-# ---------------------------------------------------------------------------
-# Project discovery
+# Project discovery (settings-backed)
 # ---------------------------------------------------------------------------
 
 
 def list_projects() -> list[str]:
-    """Return live list of project symlink names under nerdocs/Projekte/.
+    """Return live list of project symlink names under the configured ``projects_dir``.
 
-    Filters: must be a symlink, no leading dot, no '.lock' suffix.
-    Sorted alphabetically.
+    If ``projects_dir`` is unset the list is empty -- the ``/api/projects``
+    endpoint then signals this to the UI via the ``X-Settings-Missing``
+    response header so a banner can prompt for configuration.
     """
-    if not PROJECTS_DIR.exists():
+    projects_dir = get_projects_dir()
+    if projects_dir is None:
         return []
     return sorted(
         p.name
-        for p in PROJECTS_DIR.iterdir()
+        for p in projects_dir.iterdir()
         if p.is_symlink() and not p.name.startswith(".") and not p.name.endswith(".lock")
     )
 
@@ -294,8 +117,8 @@ class TaskCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=500)
     description: str | None = None
     phase: Phase | None = None
-    # `priority` is plain str so we can return HTTP 400 (not Pydantic's 422)
-    # for bad values via an explicit whitelist check in the endpoint.
+    # Plain ``str`` so the endpoint can return HTTP 400 (not 422) on bad
+    # values via the explicit whitelist check.
     priority: str = "normal"
     tags: list[str] = Field(default_factory=list)
 
@@ -306,10 +129,13 @@ class TaskUpdate(BaseModel):
     description: str | None = None
     status: Status | None = None
     phase: Phase | None = None
-    # See TaskCreate.priority -- whitelist enforced in the endpoint.
     priority: str | None = None
     archived: bool | None = None
     tags: list[str] | None = None  # None = unchanged; [] = clear all
+
+
+class SettingUpdate(BaseModel):
+    value: str
 
 
 # ---------------------------------------------------------------------------
@@ -317,7 +143,7 @@ class TaskUpdate(BaseModel):
 # ---------------------------------------------------------------------------
 
 app = FastAPI(
-    title="nerdocs Tracker",
+    title="ntasker",
     description="Local single-user task tracker.",
     version=VERSION,
     docs_url="/api/docs",
@@ -330,7 +156,17 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 @app.on_event("startup")
 def on_startup() -> None:
+    """Make sure the schema is in place. Idempotent.
+
+    The DB path itself is bound by the CLI before uvicorn starts (see
+    :func:`ntasker.cli.cmd_serve`). For test harnesses that import
+    :mod:`ntasker.app` directly, the smoke test rebinds it explicitly.
+    """
     init_db()
+    # Belt-and-braces: ensure settings table even on pre-1.0 DBs that
+    # have not been run through ``ntasker init`` yet.
+    with get_conn() as conn:
+        ensure_settings_table(conn)
 
 
 # ---------------------------------------------------------------------------
@@ -340,10 +176,9 @@ def on_startup() -> None:
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request) -> HTMLResponse:
-    # ``Cache-Control: no-store`` on the HTML shell guarantees the browser
-    # always fetches the current ``index.html``. The static assets it
-    # references carry a ``?v=<VERSION>`` query string (see template), so a
-    # version bump invalidates their cache atomically.
+    """Main UI page. ``Cache-Control: no-store`` invalidates the shell on
+    every request; static assets carry ``?v=<VERSION>`` cache-busters.
+    """
     response = templates.TemplateResponse(
         request, "index.html", context={"version": VERSION}
     )
@@ -351,8 +186,54 @@ def index(request: Request) -> HTMLResponse:
     return response
 
 
+@app.get("/settings", response_class=HTMLResponse)
+def settings_page(request: Request) -> HTMLResponse:
+    """Settings UI: list known + ad-hoc keys, edit/delete via JS fetch."""
+    response = templates.TemplateResponse(
+        request,
+        "settings.html",
+        context={"version": VERSION, "hints": HINTS, "known_keys": sorted(VALIDATORS.keys())},
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 # ---------------------------------------------------------------------------
-# Routes -- API: projects + tags (sidebar feed, with open-counts)
+# Routes -- API: settings
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/settings")
+def api_list_settings() -> JSONResponse:
+    """Return all settings rows."""
+    return JSONResponse(list_settings())
+
+
+@app.get("/api/settings/{key}")
+def api_get_setting(key: str) -> JSONResponse:
+    row = get_setting_raw(key)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Setting not found")
+    return JSONResponse(row)
+
+
+@app.put("/api/settings/{key}")
+def api_set_setting(key: str, payload: SettingUpdate) -> JSONResponse:
+    try:
+        row = set_setting(key, payload.value)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return JSONResponse(row)
+
+
+@app.delete("/api/settings/{key}", status_code=204)
+def api_delete_setting(key: str) -> None:
+    if not delete_setting(key):
+        raise HTTPException(status_code=404, detail="Setting not found")
+
+
+# ---------------------------------------------------------------------------
+# Routes -- API: projects + tags + phases + priorities
 # ---------------------------------------------------------------------------
 
 
@@ -360,9 +241,11 @@ def index(request: Request) -> HTMLResponse:
 def api_projects() -> JSONResponse:
     """Sidebar feed: ``__none__`` first, then live symlinks, each with open_count.
 
-    Counts are absolute (open + non-archived) and ignore the active filter
-    selection -- the sidebar must not flicker as the user toggles entries.
+    If ``projects_dir`` is not configured (neither ENV nor DB), responds
+    with an empty list and the ``X-Settings-Missing: projects_dir``
+    response header so the UI can render a configuration banner.
     """
+    projects_dir = get_projects_dir()
     projects = list_projects()
     with get_conn() as conn:
         rows = conn.execute(
@@ -380,7 +263,11 @@ def api_projects() -> JSONResponse:
     ]
     for name in projects:
         out.append({"name": name, "open_count": counts.get(name, 0)})
-    return JSONResponse(out)
+
+    response = JSONResponse(out)
+    if projects_dir is None:
+        response.headers["X-Settings-Missing"] = "projects_dir"
+    return response
 
 
 @app.get("/api/tags")
@@ -404,11 +291,7 @@ def api_tags() -> JSONResponse:
 
 @app.post("/api/tags/cleanup")
 def api_tags_cleanup() -> JSONResponse:
-    """Delete dangling tags (no row in ``task_tags``).
-
-    User-triggered, idempotent. Returns the number of removed tags plus their
-    names so the UI can render a precise toast.
-    """
+    """Delete dangling tags (no row in ``task_tags``). Idempotent."""
     with get_conn() as conn:
         rows = conn.execute(
             """
@@ -427,13 +310,7 @@ def api_tags_cleanup() -> JSONResponse:
 
 @app.get("/api/priorities")
 def api_priorities() -> JSONResponse:
-    """Sidebar feed for the priority filter.
-
-    Fixed order (highest first): critical -> high -> normal -> low.
-    Counts are absolute (open + non-archived) just like /api/projects so the
-    sidebar does not flicker when filters toggle. The column is NOT NULL --
-    no __none__ bucket, every task has a priority.
-    """
+    """Sidebar feed for the priority filter."""
     with get_conn() as conn:
         rows = conn.execute(
             """
@@ -448,23 +325,14 @@ def api_priorities() -> JSONResponse:
     out: list[dict] = []
     for value, label in PRIORITY_ORDER:
         out.append(
-            {
-                "value": value,
-                "label": label,
-                "open_count": counts.get(value, 0),
-            }
+            {"value": value, "label": label, "open_count": counts.get(value, 0)}
         )
     return JSONResponse(out)
 
 
 @app.get("/api/phases")
 def api_phases() -> JSONResponse:
-    """Sidebar feed for the phase filter.
-
-    Fixed order (workflow-natural): wip -> planned -> later -> __none__.
-    Counts are absolute (open + non-archived) just like /api/projects, so
-    the sidebar does not flicker when filters toggle.
-    """
+    """Sidebar feed for the phase filter."""
     with get_conn() as conn:
         rows = conn.execute(
             """
@@ -480,31 +348,18 @@ def api_phases() -> JSONResponse:
     for value, label in PHASE_ORDER:
         key: str | None = None if value == PHASE_NONE_SENTINEL else value
         out.append(
-            {
-                "value": value,
-                "label": label,
-                "open_count": counts.get(key, 0),
-            }
+            {"value": value, "label": label, "open_count": counts.get(key, 0)}
         )
     return JSONResponse(out)
 
 
 # ---------------------------------------------------------------------------
-# Routes -- API: tasks
+# Routes -- API: tasks (filter helpers + endpoints)
 # ---------------------------------------------------------------------------
 
 
 def _build_project_filter(project: list[str]) -> tuple[str, list[object]]:
-    """Translate a multi-value project filter to a SQL fragment + params.
-
-    Semantics:
-      - empty list  -> no filter (return ('', []))
-      - sentinel "__none__" in the list -> include rows with project IS NULL
-      - other values -> WHERE project IN (?, ?, ...)
-      - mixed (names + __none__) -> (project IN (...) OR project IS NULL)
-
-    All values are bound as ? placeholders; never f-string'd into SQL.
-    """
+    """Multi-value project filter -> SQL fragment + bind params."""
     if not project:
         return "", []
 
@@ -531,16 +386,7 @@ def _build_project_filter(project: list[str]) -> tuple[str, list[object]]:
 
 
 def _build_phase_filter(phase: list[str]) -> tuple[str, list[object]]:
-    """Translate a multi-value phase filter to a SQL fragment + params.
-
-    Semantics mirror :func:`_build_project_filter`:
-      - empty list -> no filter
-      - sentinel "__none__" -> include rows with phase IS NULL
-      - other values -> WHERE phase IN (?, ?, ...)
-      - mixed -> (phase IN (...) OR phase IS NULL)
-
-    Unknown phase values are silently dropped to keep the API permissive.
-    """
+    """Multi-value phase filter -> SQL fragment + bind params."""
     if not phase:
         return "", []
 
@@ -567,18 +413,9 @@ def _build_phase_filter(phase: list[str]) -> tuple[str, list[object]]:
 
 
 def _build_priority_filter(priority: list[str]) -> tuple[str, list[object]]:
-    """Translate a multi-value priority filter to a SQL fragment + params.
-
-    Semantics:
-      - empty list -> no filter
-      - other values -> WHERE priority IN (?, ?, ...)
-
-    The column is NOT NULL with DEFAULT 'normal' -- no __none__ sentinel.
-    Unknown priority values are silently dropped to keep the API permissive.
-    """
+    """Multi-value priority filter -> SQL fragment + bind params."""
     if not priority:
         return "", []
-
     names = [p for p in priority if p in PRIORITY_VALID]
     if not names:
         return "", []
@@ -587,13 +424,8 @@ def _build_priority_filter(priority: list[str]) -> tuple[str, list[object]]:
 
 
 def _build_tag_filter(tag: list[str]) -> tuple[str, list[object]]:
-    """Multi-value OR filter on tag names (case-insensitive).
-
-    Returns a fragment that joins task IDs against ``task_tags`` via a
-    sub-select (keeps the outer query DISTINCT-free and easy to compose with
-    project + status filters). Empty list -> no filter.
-    """
-    norm = _normalize_tags(tag)
+    """Multi-value OR filter on tag names (case-insensitive)."""
+    norm = normalize_tags(tag)
     if not norm:
         return "", []
     placeholders = ", ".join("?" for _ in norm)
@@ -614,7 +446,7 @@ def _query_tasks(
     archived: bool | None,
     search: str | None,
 ) -> list[sqlite3.Row]:
-    """Run the SELECT against the tasks table with filters applied. Pure SQL helper."""
+    """Run the SELECT against the tasks table with filters applied."""
     sql = "SELECT tasks.* FROM tasks WHERE 1=1"
     params: list[object] = []
 
@@ -668,7 +500,7 @@ def api_list_tasks(
     rows = _query_tasks(project, tag, phase, priority, status, archived, search)
     ids = [int(r["id"]) for r in rows]
     with get_conn() as conn:
-        tags_by_id = _load_tags_bulk(conn, ids)
+        tags_by_id = load_tags_bulk(conn, ids)
     return JSONResponse([row_to_task(r, tags_by_id.get(int(r["id"]), [])) for r in rows])
 
 
@@ -680,10 +512,7 @@ def api_stats(
     priority: list[str] = Query(default=[]),  # noqa: B008
     search: str | None = None,
 ) -> JSONResponse:
-    """Return tab counts (open/done/archive) honoring all sidebar filters + search.
-
-    Single roundtrip replacement for three /api/tasks calls in the frontend.
-    """
+    """Tab counts (open/done/archive) honoring all filters + search."""
     proj_clause, proj_params = _build_project_filter(project)
     tag_clause, tag_params = _build_tag_filter(tag)
     phase_clause, phase_params = _build_phase_filter(phase)
@@ -727,23 +556,20 @@ def api_stats(
 
 @app.get("/api/tasks/{task_id}")
 def api_get_task(task_id: int) -> JSONResponse:
-    """Single-task lookup. Used by FRIDAY for `#<id>` resolution."""
+    """Single-task lookup. Used by FRIDAY for ``#<id>`` resolution."""
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         if row is None:
             raise HTTPException(status_code=404, detail="Task not found")
-        tags = _load_tags_for(conn, task_id)
+        tags = load_tags_for(conn, task_id)
     return JSONResponse(row_to_task(row, tags))
 
 
 @app.post("/api/tasks", status_code=201)
 def api_create_task(payload: TaskCreate) -> JSONResponse:
-    # `priority` is whitelisted by the Pydantic Literal alias (HTTP 422 on
-    # bad value). The defence-in-depth check below mirrors PATCH semantics
-    # and protects against future model drift.
     if payload.priority not in PRIORITY_VALID:
         raise HTTPException(status_code=400, detail="Invalid priority")
-    norm_tags = _normalize_tags(payload.tags)
+    norm_tags = normalize_tags(payload.tags)
     with get_conn() as conn:
         cur = conn.execute(
             """
@@ -760,9 +586,9 @@ def api_create_task(payload: TaskCreate) -> JSONResponse:
         )
         new_id = int(cur.lastrowid)
         if norm_tags:
-            _set_task_tags(conn, new_id, norm_tags)
+            set_task_tags(conn, new_id, norm_tags)
         row = conn.execute("SELECT * FROM tasks WHERE id = ?", (new_id,)).fetchone()
-        tags = _load_tags_for(conn, new_id)
+        tags = load_tags_for(conn, new_id)
     return JSONResponse(row_to_task(row, tags), status_code=201)
 
 
@@ -772,16 +598,11 @@ def api_update_task(task_id: int, payload: TaskUpdate) -> JSONResponse:
     if not fields:
         raise HTTPException(status_code=400, detail="No fields to update")
 
-    # Tags are stored in a separate table -- pop before SQL UPDATE.
     tags_raw = fields.pop("tags", None)
 
-    # Defence-in-depth whitelist on priority. Pydantic's Literal alias also
-    # rejects bad values (with 422), but we re-check here so a future relaxed
-    # type can never let an unwhitelisted string slip into the SQL UPDATE.
     if "priority" in fields and fields["priority"] not in PRIORITY_VALID:
         raise HTTPException(status_code=400, detail="Invalid priority")
 
-    # Auto-set completed_at when status changes
     if "status" in fields:
         if fields["status"] == "done":
             fields["completed_at"] = datetime.now().isoformat(timespec="seconds")
@@ -799,16 +620,15 @@ def api_update_task(task_id: int, payload: TaskUpdate) -> JSONResponse:
             if cur.rowcount == 0:
                 raise HTTPException(status_code=404, detail="Task not found")
         else:
-            # Tags-only PATCH: still verify the task exists.
             exists = conn.execute("SELECT 1 FROM tasks WHERE id = ?", (task_id,)).fetchone()
             if exists is None:
                 raise HTTPException(status_code=404, detail="Task not found")
 
         if tags_raw is not None:
-            _set_task_tags(conn, task_id, _normalize_tags(tags_raw))
+            set_task_tags(conn, task_id, normalize_tags(tags_raw))
 
         row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
-        tags = _load_tags_for(conn, task_id)
+        tags = load_tags_for(conn, task_id)
     return JSONResponse(row_to_task(row, tags))
 
 

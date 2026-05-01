@@ -1,6 +1,6 @@
 [project]
-name = "nerdocs-tracker"
-version = "0.4.0"
+name = "ntasker"
+version = "1.0.0"
 description = "Lightweight local task tracker for the nerdocs HQ. Single-user, FastAPI + SQLite."
 requires-python = ">=3.12"
 dependencies = [
@@ -8,7 +8,17 @@ dependencies = [
     "uvicorn[standard]>=0.32",
     "jinja2>=3.1",
     "python-multipart>=0.0.20",
+    "pydantic>=2.0",
+    "platformdirs>=4.0",
 ]
+
+[project.scripts]
+ntasker = "ntasker.cli:main"
+
+[project.urls]
+Homepage = "https://gitlab.com/nerdocs/ntasker"
+Source = "https://gitlab.com/nerdocs/ntasker"
+Issues = "https://gitlab.com/nerdocs/ntasker/-/issues"
 
 [tool.ruff]
 line-length = 100
@@ -25,7 +35,8 @@ build-backend = "hatchling.build"
 [dependency-groups]
 dev = [
     "httpx>=0.28.1",
+    "mypy>=1.20"
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["app"]
+packages = ["src/ntasker"]

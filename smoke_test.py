@@ -1,27 +1,31 @@
 """Smoke test: starts the FastAPI app via httpx ASGI transport, runs a few requests.
 
 Does not bind a real port. Run via `make smoke` after `make install`.
+Also exercises a couple of CLI subcommands via subprocess to catch entry-point regressions.
 """
 
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 # Use a temporary DB to avoid touching the real one.
-tmp_db = Path(tempfile.mkdtemp()) / "tasks.db"
-os.environ["TRACKER_DB_OVERRIDE"] = str(tmp_db)
+_tmp_root = Path(tempfile.mkdtemp())
+tmp_db = _tmp_root / "tasks.db"
+os.environ["NTASKER_DB"] = str(tmp_db)
 
-import app as app_module  # noqa: E402
+from ntasker import db as db_module  # noqa: E402
+from ntasker.app import app  # noqa: E402
 
-app_module.DB_PATH = tmp_db
-app_module.init_db()
+db_module.set_db_path(tmp_db)
+db_module.init_db()
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-client = TestClient(app_module.app)
+client = TestClient(app)
 
 
 def assert_ok(resp, expected_status: int = 200) -> None:
@@ -35,8 +39,14 @@ def main() -> int:
     # 1. GET / returns HTML.
     r = client.get("/")
     assert_ok(r)
-    assert "nerdocs Tracker" in r.text, "index missing brand string"
+    assert "ntasker" in r.text, "index missing brand string"
     print("OK GET /")
+
+    # 1b. GET /settings returns HTML.
+    r = client.get("/settings")
+    assert_ok(r)
+    assert "Einstellungen" in r.text
+    print("OK GET /settings")
 
     # 2. GET /api/projects returns enriched list ({name, open_count}).
     r = client.get("/api/projects")
@@ -46,6 +56,10 @@ def main() -> int:
     assert data, "/api/projects must always include __none__ sentinel"
     assert data[0]["name"] == "__none__", f"first entry must be __none__, got {data[0]}"
     assert "open_count" in data[0]
+    # projects_dir not configured -> X-Settings-Missing header present.
+    assert "projects_dir" in r.headers.get("X-Settings-Missing", ""), (
+        "projects_dir nicht konfiguriert -> Header muss vorhanden sein"
+    )
     print(f"OK GET /api/projects ({len(data)} entries, [0]={data[0]})")
 
     # 3. GET /api/tags is a list (may be empty initially).
@@ -178,8 +192,6 @@ def main() -> int:
     print(f"OK GET /api/phases ({phases})")
 
     # 20. Multi-value phase filter (OR + IS NULL via __none__).
-    # Re-create some tasks to exercise the filter (the smoke task above is now
-    # archived and was DELETEd).
     ids: list[int] = []
     for phase, title in [
         ("wip", "p-wip"), ("planned", "p-planned"),
@@ -212,7 +224,6 @@ def main() -> int:
     print(f"OK GET /api/stats?phase=wip -> {r.json()}")
 
     # 23. /api/tags/cleanup removes dangling tags.
-    # Create a stray tag first by attaching+detaching via PATCH.
     rr = client.post("/api/tasks", json={"title": "tag-leak", "tags": ["dangling-zzz"]})
     leak_id = rr.json()["id"]
     client.patch(f"/api/tasks/{leak_id}", json={"tags": []})  # detach -> tag dangles
@@ -228,6 +239,145 @@ def main() -> int:
     assert_ok(r)
     assert r.json()["removed"] == 0
     print("OK POST /api/tags/cleanup idempotent")
+
+    # ------------------------------------------------------------------
+    # Settings module (new in v1.0.0)
+    # ------------------------------------------------------------------
+
+    # 25. Empty settings list.
+    r = client.get("/api/settings")
+    assert_ok(r)
+    assert r.json() == []
+    print("OK GET /api/settings (empty)")
+
+    # 26. Bad value rejected with 400 (and the validator's message).
+    r = client.put("/api/settings/projects_dir", json={"value": "/does/not/exist/xyz"})
+    assert_ok(r, 400)
+    assert "projects_dir" in r.json()["detail"]
+    print("OK PUT /api/settings/projects_dir bad -> 400")
+
+    # 27. Good value accepted.
+    good_dir = str(_tmp_root)  # the temp dir itself is a valid readable dir.
+    r = client.put("/api/settings/projects_dir", json={"value": good_dir})
+    assert_ok(r)
+    assert r.json()["value"] == good_dir
+    print("OK PUT /api/settings/projects_dir good")
+
+    # 28. /api/projects no longer flags the missing setting once it is set.
+    r = client.get("/api/projects")
+    assert_ok(r)
+    assert "X-Settings-Missing" not in r.headers
+    print("OK GET /api/projects (header gone after configure)")
+
+    # 29. GET single setting.
+    r = client.get("/api/settings/projects_dir")
+    assert_ok(r)
+    assert r.json()["value"] == good_dir
+    print("OK GET /api/settings/projects_dir")
+
+    # 30. DELETE setting.
+    r = client.delete("/api/settings/projects_dir")
+    assert_ok(r, 204)
+    r = client.get("/api/settings/projects_dir")
+    assert_ok(r, 404)
+    print("OK DELETE /api/settings/projects_dir + 404 on re-get")
+
+    # ------------------------------------------------------------------
+    # CLI smoke checks (subprocess) -- verifies the entry point and a
+    # round-trip through the same DB the in-process tests used.
+    # ------------------------------------------------------------------
+
+    env = {**os.environ, "NTASKER_DB": str(tmp_db)}
+
+    # 31. ntasker --version
+    proc = subprocess.run(["ntasker", "--version"], capture_output=True, text=True, env=env)
+    assert proc.returncode == 0, f"ntasker --version failed: {proc.stderr}"
+    assert "ntasker" in proc.stdout.lower()
+    print(f"OK ntasker --version -> {proc.stdout.strip()}")
+
+    # 32. ntasker list --json (must be valid JSON, even if empty-ish).
+    proc = subprocess.run(
+        ["ntasker", "list", "--json"], capture_output=True, text=True, env=env
+    )
+    assert proc.returncode == 0, f"ntasker list --json failed: {proc.stderr}"
+    import json as _json
+    parsed = _json.loads(proc.stdout)
+    assert isinstance(parsed, list), "ntasker list --json must return a JSON array"
+    print(f"OK ntasker list --json ({len(parsed)} tasks)")
+
+    # 33. ntasker config list --json against same DB.
+    proc = subprocess.run(
+        ["ntasker", "config", "list", "--json"],
+        capture_output=True, text=True, env=env,
+    )
+    assert proc.returncode == 0, f"ntasker config list --json failed: {proc.stderr}"
+    assert _json.loads(proc.stdout) == [], "config should be empty"
+    print("OK ntasker config list --json")
+
+    # ------------------------------------------------------------------
+    # Regression: AlpineJS x-show MUST NOT live on an element that also
+    # carries a Bootstrap display utility (`d-flex`, `d-block`, `d-grid`,
+    # `d-inline*`). Bootstrap sets those with `!important`, which beats
+    # the inline `style="display: none"` Alpine writes to hide the node
+    # -- the result is a banner that shows even though the bound state
+    # is `false`. This bit the projects_dir banner pre-1.0.0 and we keep
+    # it pinned so the trap cannot resurface in templates.
+    # ------------------------------------------------------------------
+    import re
+
+    # The banner wrapper must be `<div x-show="projectsDirMissing" x-cloak>`,
+    # i.e. no `class="..."` carrying a Bootstrap `d-*` utility.
+    r = client.get("/")
+    assert_ok(r)
+    html = r.text
+    # Locate the projectsDirMissing element and grab its full opening tag.
+    matches = re.findall(r"<[^>]*x-show=\"projectsDirMissing\"[^>]*>", html)
+    assert matches, "projectsDirMissing element not found in /"
+    bad = [tag for tag in matches if re.search(
+        r"\bclass=\"[^\"]*\b(d-flex|d-block|d-grid|d-inline[a-z-]*)\b", tag
+    )]
+    assert not bad, (
+        "AlpineJS x-show must NOT sit on an element with a Bootstrap display utility "
+        f"({{d-flex,d-block,d-grid,d-inline*}}); offending tag(s): {bad}"
+    )
+    print(f"OK banner template hygiene (x-show wrapper has no d-* utility) -> {matches[0]}")
+
+    # Same trap in /settings: any `x-show` on a `d-*` element is a bug.
+    r = client.get("/settings")
+    assert_ok(r)
+    settings_html = r.text
+    open_tags = re.findall(r"<[^>]*x-show=\"[^\"]+\"[^>]*>", settings_html)
+    bad = [tag for tag in open_tags if re.search(
+        r"\bclass=\"[^\"]*\b(d-flex|d-block|d-grid|d-inline[a-z-]*)\b", tag
+    )]
+    assert not bad, (
+        "AlpineJS x-show on a Bootstrap display utility in /settings; "
+        f"offending tag(s): {bad}"
+    )
+    print(f"OK settings template hygiene (no x-show on d-* utility, {len(open_tags)} x-show tags scanned)")
+
+    # Header-side regression: while projects_dir is set, /api/projects must
+    # NOT carry X-Settings-Missing (covers DB and ENV branches).
+    # 34. DB branch already covered by step 28 above; here we add ENV.
+    os.environ["NTASKER_PROJECTS_DIR"] = str(_tmp_root)
+    try:
+        r = client.get("/api/projects")
+        assert_ok(r)
+        assert "X-Settings-Missing" not in r.headers, (
+            "ENV-Override NTASKER_PROJECTS_DIR muss den Header unterdruecken"
+        )
+        print("OK GET /api/projects (no X-Settings-Missing when ENV is set)")
+    finally:
+        del os.environ["NTASKER_PROJECTS_DIR"]
+
+    # 35. With neither DB nor ENV set the header MUST come back. This is
+    # the inverse of 28+34 and pins the validator's "not configured" branch.
+    r = client.get("/api/projects")
+    assert_ok(r)
+    assert "projects_dir" in r.headers.get("X-Settings-Missing", ""), (
+        "Ohne DB- und ENV-Konfiguration MUSS X-Settings-Missing: projects_dir gesetzt sein"
+    )
+    print("OK GET /api/projects (header back when no DB + no ENV)")
 
     print("\nAll smoke checks passed.")
     return 0

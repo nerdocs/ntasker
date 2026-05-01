@@ -1,11 +1,33 @@
-/* nerdocs Tracker -- Alpine state. */
+/* ntasker -- Alpine state. */
 
-// localStorage keys (namespaced under 'nerdocs.tracker.*').
-const LS_KEY_PROJECT_FILTER = 'nerdocs.tracker.projectFilter';
-const LS_KEY_TAG_FILTER = 'nerdocs.tracker.tagFilter';
-const LS_KEY_PHASE_FILTER = 'nerdocs.tracker.phaseFilter';
-const LS_KEY_PRIORITY_FILTER = 'nerdocs.tracker.priorityFilter';
-const LS_KEY_THEME = 'tracker.theme';
+// localStorage keys (namespaced under 'ntasker.*').
+// NOTE: legacy 'nerdocs.tracker.*' keys are still read once on first boot
+// after the rename and silently migrated; see migrateLegacyLocalStorage().
+const LS_KEY_PROJECT_FILTER = 'ntasker.projectFilter';
+const LS_KEY_TAG_FILTER = 'ntasker.tagFilter';
+const LS_KEY_PHASE_FILTER = 'ntasker.phaseFilter';
+const LS_KEY_PRIORITY_FILTER = 'ntasker.priorityFilter';
+const LS_KEY_THEME = 'ntasker.theme';
+
+// Legacy keys used pre-1.0. Migrated to the ntasker.* namespace once.
+const LEGACY_KEYS = {
+    'nerdocs.tracker.projectFilter': LS_KEY_PROJECT_FILTER,
+    'nerdocs.tracker.tagFilter': LS_KEY_TAG_FILTER,
+    'nerdocs.tracker.phaseFilter': LS_KEY_PHASE_FILTER,
+    'nerdocs.tracker.priorityFilter': LS_KEY_PRIORITY_FILTER,
+    'tracker.theme': LS_KEY_THEME,
+};
+
+function migrateLegacyLocalStorage() {
+    for (const [old, current] of Object.entries(LEGACY_KEYS)) {
+        if (localStorage.getItem(current) === null) {
+            const v = localStorage.getItem(old);
+            if (v !== null) localStorage.setItem(current, v);
+        }
+        // Keep the legacy key in place for one release for safety; harmless dead weight.
+    }
+}
+migrateLegacyLocalStorage();
 
 // Sentinel for cross-project tasks (matches PROJECT_NONE_SENTINEL in app.py).
 const PROJECT_NONE = '__none__';
@@ -58,6 +80,10 @@ function tracker() {
         },
         editing: null,               // task object or null
         counts: { open: 0, done: 0, archive: 0 },
+
+        // True when the server reports `X-Settings-Missing: projects_dir`
+        // on /api/projects -- shows the configuration banner.
+        projectsDirMissing: false,
 
         async init() {
             this.applyTheme();
@@ -272,6 +298,11 @@ function tracker() {
         // ---- Sidebar data ----
         async loadProjects() {
             const r = await fetch('/api/projects');
+            // The server flags an unconfigured projects_dir via response header
+            // instead of changing the response shape -- the list always has at
+            // least the __none__ sentinel. UI shows a configuration banner.
+            this.projectsDirMissing = (r.headers.get('X-Settings-Missing') || '')
+                .split(',').map(s => s.trim()).includes('projects_dir');
             this.projects = await r.json();
         },
 

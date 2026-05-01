@@ -239,6 +239,7 @@ GitLab: <https://gitlab.com/nerdocs/ntasker>
 
 See [`CHANGELOG.md`](CHANGELOG.md). Highlights:
 
+- **1.2.0** -- Packaged Claude Code assets generalised (no user-specific routing/paths). AGPL-3.0-or-later license. README explains `projects_dir` semantics. `/task` accepts `#`-prefix. Task-ID click copies `/task #<id>` to clipboard. Existing installs need `ntasker install-claude-assets --force` after upgrade.
 - **1.1.0** -- `install-claude-assets` CLI for shipping the Claude Code skill + `/task` slash-command from the package; read-only `/api/claude-assets/status` endpoint and Settings UI card; boot drift warning.
 - **1.0.0** -- Renamed `nerdocs-tracker` -> `ntasker`; src-Layout; CLI with subcommands; settings module + UI; configurable `projects_dir`; DB moved to `platformdirs` default. **Breaking.**
 - **0.4.0** -- `priority` field with sidebar filter and badge.

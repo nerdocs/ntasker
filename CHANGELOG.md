@@ -4,6 +4,15 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [1.2.0] — 2026-05-01
+- Changed: generalised packaged Claude Code assets (skill + slash-command template) -- removed user-specific routing and paths.
+- Changed: documentation polished -- "nerdocs Tracker" -> "nTasker", path examples generic.
+- Added: AGPL-3.0-or-later license (LICENSE file + pyproject metadata).
+- Docs: README explains how `projects_dir` is interpreted (subdirs/symlinks become Projects, on-demand read).
+- Fixed: `/task` accepts both "187" and "#187" as argument.
+- Added: clicking a task ID copies "/task #<id>" to clipboard for direct paste into Claude Code.
+- Note: existing installs see drift in `task.md` after upgrade; run `ntasker install-claude-assets --force` to apply (backup is created automatically).
+
 ## [1.1.0] — 2026-05-01
 - Added: `install-claude-assets` CLI for installing Claude Code skill and slash-command (`--command-name`, `--force`, `--dry-run`, `--check`, `--claude-home`).
 - Added: `GET /api/claude-assets/status` endpoint and read-only Settings UI card.

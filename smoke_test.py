@@ -379,6 +379,193 @@ def main() -> int:
     )
     print("OK GET /api/projects (header back when no DB + no ENV)")
 
+    # ------------------------------------------------------------------
+    # Claude Code asset installer (new in v1.1.0)
+    # ------------------------------------------------------------------
+
+    from ntasker import claude_assets as _ca  # noqa: E402, PLC0415
+
+    # 36. Packaged assets exist + readable.
+    skill_md = _ca.read_skill_md()
+    assert "ntasker Skill" in skill_md, "SKILL.md must contain heading"
+    template = _ca.read_command_template()
+    assert "{COMMAND_NAME}" in template and "{HELPER_PATH}" in template, (
+        "task.md.template must keep both placeholders"
+    )
+    helper = _ca.read_helper_py()
+    assert "_ntasker_loader" in helper or "ntasker_loader" in helper
+    print(f"OK packaged assets readable (skill={len(skill_md)}, template={len(template)}, helper={len(helper)})")
+
+    # 37. render_command substitutes both placeholders for the default name.
+    rendered = _ca.render_command(template, "task", "~/.claude/commands/_ntasker_loader.py")
+    assert "{COMMAND_NAME}" not in rendered and "{HELPER_PATH}" not in rendered
+    assert "Task #$ARGUMENTS" in rendered
+    assert "/task" in rendered
+    assert "_ntasker_loader.py" in rendered
+    print("OK render_command substitutes both placeholders (default 'task')")
+
+    # 37b. Custom command name renders correctly into header + body.
+    rendered_foo = _ca.render_command(template, "foo", "~/.claude/commands/_ntasker_loader.py")
+    assert "/foo" in rendered_foo
+    print("OK render_command --command-name=foo writes /foo into header")
+
+    # 38. validate_command_name rejects path traversal / injection.
+    for bad in ["../etc", "with/slash", "dot.s", "spa ce", "", "name;rm"]:
+        try:
+            _ca.validate_command_name(bad)
+        except ValueError:
+            continue
+        raise AssertionError(f"validate_command_name should have rejected {bad!r}")
+    assert _ca.validate_command_name("task") == "task"
+    assert _ca.validate_command_name("my-cmd_2") == "my-cmd_2"
+    print("OK validate_command_name rejects path traversal + injection")
+
+    # 39. Install into a fresh test home: writes 3 files.
+    test_home = _tmp_root / "claude-home-fresh"
+    plan = _ca.expected_files(test_home, "task")
+    assert len(plan) == 3
+    assert {p.label for p in plan} == {"skill", "command", "helper"}
+    result = _ca.install_assets(test_home, "task")
+    assert result.success, f"install must succeed on fresh home: {result.actions}"
+    assert all(a.action == "write" for a in result.actions), [a.action for a in result.actions]
+    for af in plan:
+        assert af.path.exists(), f"missing file after install: {af.path}"
+    print(f"OK install_assets on fresh {test_home} -> 3 writes")
+
+    # 40. --check after install: status.installed=True, drift=False (CLI exit 0).
+    status = _ca.scan_status(test_home, command_name="task")
+    assert status.installed is True and status.drift is False
+    print("OK scan_status after install -> installed=True, drift=False")
+
+    # 41. CLI subprocess: install-claude-assets --check -> exit 0.
+    proc = subprocess.run(
+        ["ntasker", "install-claude-assets", "--check", "--claude-home", str(test_home)],
+        capture_output=True, text=True, env=env,
+    )
+    assert proc.returncode == 0, f"--check after install must exit 0, got {proc.returncode}: {proc.stderr}"
+    print("OK CLI install-claude-assets --check -> exit 0")
+
+    # 42. Drift detection: modify SKILL.md manually -> --check -> exit 1.
+    skill_path = test_home / "skills" / "ntasker" / "SKILL.md"
+    original = skill_path.read_text(encoding="utf-8")
+    skill_path.write_text(original + "\n# DRIFT MARKER\n", encoding="utf-8")
+    proc = subprocess.run(
+        ["ntasker", "install-claude-assets", "--check", "--claude-home", str(test_home)],
+        capture_output=True, text=True, env=env,
+    )
+    assert proc.returncode == 1, f"drift must -> exit 1, got {proc.returncode}"
+    print("OK CLI --check exits 1 on drift")
+
+    # 43. Without --force, install aborts (exit 3).
+    proc = subprocess.run(
+        ["ntasker", "install-claude-assets", "--claude-home", str(test_home)],
+        capture_output=True, text=True, env=env,
+    )
+    assert proc.returncode == 3, f"abort on drift without --force, got {proc.returncode}"
+    assert "BLOCKED" in (proc.stdout + proc.stderr)
+    print("OK install without --force on drift -> exit 3 (BLOCKED)")
+
+    # 44. With --force: drift gets backed up + overwritten.
+    pre_files = sorted(p.name for p in skill_path.parent.iterdir())
+    proc = subprocess.run(
+        ["ntasker", "install-claude-assets", "--force", "--claude-home", str(test_home)],
+        capture_output=True, text=True, env=env,
+    )
+    assert proc.returncode == 0, f"--force install must succeed, got {proc.returncode}: {proc.stderr}"
+    post_files = sorted(p.name for p in skill_path.parent.iterdir())
+    backups = [n for n in post_files if n.startswith("SKILL.md.bak.") and n not in pre_files]
+    assert backups, f"--force must create a timestamped backup; pre={pre_files}, post={post_files}"
+    # Restored content == packaged.
+    assert skill_path.read_text(encoding="utf-8") == _ca.read_skill_md()
+    print(f"OK --force creates timestamped backup ({backups[0]}) and restores file")
+
+    # 45. --check without install at all -> exit 2.
+    empty_home = _tmp_root / "claude-home-empty"
+    proc = subprocess.run(
+        ["ntasker", "install-claude-assets", "--check", "--claude-home", str(empty_home)],
+        capture_output=True, text=True, env=env,
+    )
+    assert proc.returncode == 2, f"missing install must -> exit 2, got {proc.returncode}"
+    assert "MISSING" in proc.stdout
+    print("OK CLI --check on empty home -> exit 2")
+
+    # 46. --dry-run does not touch the filesystem.
+    dry_home = _tmp_root / "claude-home-dry"
+    proc = subprocess.run(
+        ["ntasker", "install-claude-assets", "--dry-run", "--claude-home", str(dry_home)],
+        capture_output=True, text=True, env=env,
+    )
+    assert proc.returncode == 0
+    assert "[dry-run]" in proc.stdout, "dry-run output must be marked"
+    assert not (dry_home / "skills" / "ntasker" / "SKILL.md").exists(), (
+        "dry-run must not create files"
+    )
+    assert not (dry_home / "commands").exists(), "dry-run must not create dirs"
+    print("OK --dry-run prints actions without touching filesystem")
+
+    # 47. --command-name=foo writes foo.md (not task.md).
+    foo_home = _tmp_root / "claude-home-foo"
+    proc = subprocess.run(
+        [
+            "ntasker", "install-claude-assets",
+            "--command-name", "foo", "--claude-home", str(foo_home),
+        ],
+        capture_output=True, text=True, env=env,
+    )
+    assert proc.returncode == 0
+    assert (foo_home / "commands" / "foo.md").exists()
+    assert not (foo_home / "commands" / "task.md").exists()
+    # Helper file name stays the same regardless of slash command name.
+    assert (foo_home / "commands" / "_ntasker_loader.py").exists()
+    foo_md = (foo_home / "commands" / "foo.md").read_text(encoding="utf-8")
+    assert "/foo" in foo_md
+    print("OK --command-name=foo writes foo.md and keeps helper name")
+
+    # 48. Bad command name rejected with exit 2.
+    proc = subprocess.run(
+        [
+            "ntasker", "install-claude-assets",
+            "--command-name", "../escape", "--claude-home", str(_tmp_root / "x"),
+        ],
+        capture_output=True, text=True, env=env,
+    )
+    assert proc.returncode == 2, "path-traversal command name must be rejected"
+    print("OK path-traversal --command-name rejected with exit 2")
+
+    # 49. /api/claude-assets/status returns the expected JSON shape.
+    os.environ["NTASKER_CLAUDE_HOME"] = str(test_home)
+    try:
+        # Re-install so test_home is clean (no DRIFT MARKER) and we know exact state.
+        _ca.install_assets(test_home, "task", force=True)
+        r = client.get("/api/claude-assets/status")
+        assert_ok(r)
+        body = r.json()
+        assert set(body.keys()) >= {
+            "installed", "drift", "package_version", "claude_home", "files"
+        }
+        assert body["installed"] is True
+        assert body["drift"] is False
+        assert isinstance(body["files"], list) and len(body["files"]) == 3
+        assert all("expected_hash" in f and f["expected_hash"].startswith("sha256:")
+                   for f in body["files"])
+        print(f"OK GET /api/claude-assets/status -> installed=True drift=False ({len(body['files'])} files)")
+    finally:
+        del os.environ["NTASKER_CLAUDE_HOME"]
+
+    # 50. boot_drift_warning returns None on a clean install.
+    os.environ["NTASKER_CLAUDE_HOME"] = str(test_home)
+    try:
+        _ca.install_assets(test_home, "task", force=True)
+        assert _ca.boot_drift_warning() is None
+        # Now drift the file -> warning surfaces.
+        skill_path = test_home / "skills" / "ntasker" / "SKILL.md"
+        skill_path.write_text("DRIFT", encoding="utf-8")
+        warn = _ca.boot_drift_warning()
+        assert warn is not None and "out of date" in warn
+        print("OK boot_drift_warning fires only on installed+drift state")
+    finally:
+        del os.environ["NTASKER_CLAUDE_HOME"]
+
     print("\nAll smoke checks passed.")
     return 0
 

@@ -93,6 +93,80 @@
                     </div>
                 </div>
 
+                {# Claude Code integration: read-only status + copy-paste install command. #}
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="ti ti-robot me-1"></i>
+                            Claude Code Integration
+                        </h3>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small mb-2">
+                            ntasker liefert ein Skill (<code>SKILL.md</code>) und einen
+                            Slash-Command (<code>/task &lt;id&gt;</code>) fuer Claude Code aus.
+                            Diese Karte zeigt den Installationsstatus &mdash; geschrieben wird
+                            ausschliesslich ueber die CLI.
+                        </p>
+
+                        <div class="datagrid">
+                            <div class="datagrid-item">
+                                <div class="datagrid-title">Installiert</div>
+                                <div class="datagrid-content">
+                                    <span x-show="claudeAssets.installed === true"
+                                          class="badge bg-success-lt">ja</span>
+                                    <span x-show="claudeAssets.installed === false"
+                                          class="badge bg-secondary-lt">nein</span>
+                                </div>
+                            </div>
+                            <div class="datagrid-item">
+                                <div class="datagrid-title">Paketversion</div>
+                                <div class="datagrid-content">
+                                    <code x-text="claudeAssets.package_version || '-'"></code>
+                                </div>
+                            </div>
+                            <div class="datagrid-item">
+                                <div class="datagrid-title">Drift</div>
+                                <div class="datagrid-content">
+                                    <span x-show="claudeAssets.drift === true"
+                                          class="badge bg-warning-lt">ja</span>
+                                    <span x-show="claudeAssets.drift === false"
+                                          class="badge bg-success-lt">nein</span>
+                                </div>
+                            </div>
+                            <div class="datagrid-item">
+                                <div class="datagrid-title">Claude-Home</div>
+                                <div class="datagrid-content">
+                                    <code class="text-muted small"
+                                          x-text="claudeAssets.claude_home || '-'"></code>
+                                </div>
+                            </div>
+                        </div>
+
+                        {# Hinweisblock: bei nicht-installiert oder Drift Copy-Paste-Snippet. #}
+                        {# Kein Schreib-Button -- HTTP-Schreib-Endpunkt waere CSRF/Rebinding-Angriffsflaeche. #}
+                        <template x-if="claudeAssets.installed === false">
+                            <div class="alert alert-info mt-3 mb-0">
+                                <div class="mb-1">
+                                    <i class="ti ti-info-circle me-1"></i>
+                                    Skill + Slash-Command sind noch nicht installiert.
+                                </div>
+                                <pre class="mb-0"><code>ntasker install-claude-assets</code></pre>
+                            </div>
+                        </template>
+                        <template x-if="claudeAssets.installed === true && claudeAssets.drift === true">
+                            <div class="alert alert-warning mt-3 mb-0">
+                                <div class="mb-1">
+                                    <i class="ti ti-alert-triangle me-1"></i>
+                                    Installierte Dateien weichen von der Paketversion ab.
+                                    Update mit Backup:
+                                </div>
+                                <pre class="mb-0"><code>ntasker install-claude-assets --force</code></pre>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
                 {# All settings (read-only listing, includes ad-hoc keys). #}
                 <div class="card">
                     <div class="card-header">
@@ -157,9 +231,20 @@ function settingsPage() {
         rows: [],
         known: {},
         errors: {},
+        // Claude Code asset status -- populated on init() and after manual
+        // refreshes. Initialised to ``null`` so x-show guards on
+        // ``=== true`` / ``=== false`` stay quiet until the fetch lands.
+        claudeAssets: {
+            installed: null,
+            drift: null,
+            package_version: '',
+            claude_home: '',
+            files: [],
+        },
 
         async init() {
             await this.refresh();
+            await this.refreshClaudeAssets();
         },
 
         async refresh() {
@@ -172,6 +257,16 @@ function settingsPage() {
             // have a slot. Unset keys default to empty string.
             const knownKeys = {{ known_keys | tojson }};
             for (const k of knownKeys) this.known[k] = byKey[k] || '';
+        },
+
+        async refreshClaudeAssets() {
+            try {
+                const r = await fetch('/api/claude-assets/status');
+                if (!r.ok) return;
+                this.claudeAssets = await r.json();
+            } catch (e) {
+                // Best-effort -- the card stays in its initial neutral state.
+            }
         },
 
         async saveKnown(key) {

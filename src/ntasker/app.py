@@ -22,6 +22,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
 from ntasker import __version__ as VERSION
+from ntasker.claude_assets import resolve_claude_home, scan_status
 from ntasker.db import (
     get_conn,
     init_db,
@@ -230,6 +231,32 @@ def api_set_setting(key: str, payload: SettingUpdate) -> JSONResponse:
 def api_delete_setting(key: str) -> None:
     if not delete_setting(key):
         raise HTTPException(status_code=404, detail="Setting not found")
+
+
+# ---------------------------------------------------------------------------
+# Routes -- API: claude-assets (read-only status)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/claude-assets/status")
+def api_claude_assets_status() -> JSONResponse:
+    """Read-only: report whether the packaged Claude Code skill + slash
+    command are installed in ``~/.claude`` and match the package version.
+
+    Intentionally no write counterpart: installs are user-initiated via
+    the ``ntasker install-claude-assets`` CLI to avoid CSRF / DNS-rebind
+    write surface.
+    """
+    claude_home = resolve_claude_home(None)
+    status = scan_status(claude_home, command_name="task")
+    body = {
+        "installed": status.installed,
+        "drift": status.drift,
+        "package_version": VERSION,
+        "claude_home": str(claude_home),
+        "files": [f.to_dict() for f in status.files],
+    }
+    return JSONResponse(body)
 
 
 # ---------------------------------------------------------------------------

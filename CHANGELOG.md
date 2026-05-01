@@ -4,6 +4,11 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [1.1.0] — 2026-05-01
+- Added: `install-claude-assets` CLI for installing Claude Code skill and slash-command (`--command-name`, `--force`, `--dry-run`, `--check`, `--claude-home`).
+- Added: `GET /api/claude-assets/status` endpoint and read-only Settings UI card.
+- Added: drift warning at server boot when installed Claude assets are stale.
+
 ## [1.0.0] — 2026-05-01
 - BREAKING: Renamed package from nerdocs-tracker to ntasker.
 - BREAKING: DB path moved to platformdirs default — see migration note in README.

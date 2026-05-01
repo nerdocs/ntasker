@@ -68,6 +68,43 @@ Via ENV: `NTASKER_PROJECTS_DIR=/path/to/projects ntasker serve` (overrides the D
 
 The validator requires the path to be absolute, exist, be a directory, and be readable.
 
+## Claude Code Integration
+
+ntasker ships a Claude Code skill (`SKILL.md`) and slash-command loader (`/task <id>`)
+inside the package. The single source of truth lives under
+`src/ntasker/claude_assets/` and gets installed into `~/.claude/` via the CLI.
+
+```bash
+# Default install: writes SKILL.md, task.md, _ntasker_loader.py
+ntasker install-claude-assets
+
+# Status check (exit codes: 0=identical, 1=drift, 2=not installed)
+ntasker install-claude-assets --check
+
+# Update after a version bump (creates timestamped .bak.YYYYMMDD-HHMMSS backups)
+ntasker install-claude-assets --force
+
+# Use a different slash command name (e.g. /todo instead of /task)
+ntasker install-claude-assets --command-name todo
+
+# Dry run -- show planned actions without writing
+ntasker install-claude-assets --dry-run
+
+# Test/sandbox: redirect to a non-default Claude home
+ntasker install-claude-assets --claude-home /tmp/test-home
+# Or via env: NTASKER_CLAUDE_HOME=/tmp/test-home ntasker install-claude-assets
+```
+
+The `--command-name` flag accepts only `[A-Za-z0-9_-]+` (no slashes, no dots) to
+prevent path traversal. The helper file `_ntasker_loader.py` always keeps that
+exact name regardless of the slash command.
+
+`ntasker serve` prints a one-liner to stderr at boot if installed Claude assets
+are out of date relative to the running version. The `/settings` UI shows the
+same status as a read-only card; there is intentionally no HTTP write endpoint
+(installs are user-initiated via the CLI to avoid CSRF / DNS-rebinding write
+surface).
+
 ## CLI
 
 | Command                     | What it does                                                  |
@@ -86,6 +123,7 @@ The validator requires the path to be absolute, exist, be a directory, and be re
 | `ntasker config get <k>`    | Read a setting                                                |
 | `ntasker config set <k> <v>`| Write a setting (validated)                                   |
 | `ntasker config unset <k>`  | Remove a setting                                              |
+| `ntasker install-claude-assets` | Install / check the Claude Code skill + `/task` slash-command |
 
 Global flags:
 
@@ -124,6 +162,7 @@ couple of CLI subcommands via subprocess.
 | GET | `/api/settings/{key}` | Single setting or 404 |
 | PUT | `/api/settings/{key}` | `{value: "..."}` -- 200 on accept, 400 if a registered validator rejects |
 | DELETE | `/api/settings/{key}` | 204 on success, 404 if not present |
+| GET | `/api/claude-assets/status` | Read-only: `{installed, drift, package_version, claude_home, files[]}` |
 
 OpenAPI: <http://127.0.0.1:8766/api/docs>
 
@@ -186,6 +225,7 @@ GitLab: <https://gitlab.com/nerdocs/ntasker>
 
 See [`CHANGELOG.md`](CHANGELOG.md). Highlights:
 
+- **1.1.0** -- `install-claude-assets` CLI for shipping the Claude Code skill + `/task` slash-command from the package; read-only `/api/claude-assets/status` endpoint and Settings UI card; boot drift warning.
 - **1.0.0** -- Renamed `nerdocs-tracker` -> `ntasker`; src-Layout; CLI with subcommands; settings module + UI; configurable `projects_dir`; DB moved to `platformdirs` default. **Breaking.**
 - **0.4.0** -- `priority` field with sidebar filter and badge.
 - **0.3.x** -- Cache-buster, version badge, archive button polish.

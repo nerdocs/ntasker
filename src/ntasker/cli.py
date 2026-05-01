@@ -29,6 +29,12 @@ from pathlib import Path
 from typing import Any
 
 from ntasker import __version__
+from ntasker.claude_assets import (
+    install_assets,
+    resolve_claude_home,
+    scan_status,
+    validate_command_name,
+)
 from ntasker.db import (
     get_conn,
     init_db,
@@ -204,6 +210,13 @@ def cmd_serve(args: argparse.Namespace) -> int:
         return 2
     # Make sure schema exists -- avoid first-request 500s on a fresh DB.
     init_db()
+    # Best-effort drift hint for installed Claude Code assets. Only logs
+    # when assets are installed AND drifted; never blocks the boot.
+    from ntasker.claude_assets import boot_drift_warning  # noqa: PLC0415
+
+    warning = boot_drift_warning()
+    if warning:
+        print(warning, file=sys.stderr)
     uvicorn.run(
         "ntasker.app:app",
         host=args.host,
@@ -416,6 +429,94 @@ def cmd_config_unset(args: argparse.Namespace) -> int:
     return 0
 
 
+# Claude Code assets ---------------------------------------------------------
+
+
+def cmd_install_claude_assets(args: argparse.Namespace) -> int:
+    """Install / check the packaged Claude Code skill + slash command.
+
+    Modes:
+
+    * ``--check``    -- read-only inspection. Exit 0 = identical, 1 = drift,
+      2 = not installed.
+    * ``--dry-run``  -- print actions without touching the filesystem.
+    * default        -- write missing files; skip identical; abort on drift
+      unless ``--force`` is given (then backup + overwrite).
+    """
+    try:
+        command_name = validate_command_name(args.command_name)
+    except ValueError as exc:
+        print(f"ntasker: {exc}", file=sys.stderr)
+        return 2
+    try:
+        claude_home = resolve_claude_home(args.claude_home)
+    except Exception as exc:
+        print(f"ntasker: invalid --claude-home: {exc}", file=sys.stderr)
+        return 2
+
+    if args.check:
+        status = scan_status(claude_home, command_name=command_name)
+        for fs in status.files:
+            if not fs.installed:
+                marker = "MISSING"
+            elif fs.drift:
+                marker = "DRIFT"
+            else:
+                marker = "OK"
+            print(f"  {marker:<8} {fs.label:<8} {fs.path}")
+        if not status.installed:
+            print("ntasker: Claude assets not installed.")
+            return 2
+        if status.drift:
+            print(
+                "ntasker: Claude assets installed but out of date. "
+                "Run `ntasker install-claude-assets --force` to update."
+            )
+            return 1
+        print("ntasker: Claude assets up to date.")
+        return 0
+
+    result = install_assets(
+        claude_home,
+        command_name=command_name,
+        force=args.force,
+        dry_run=args.dry_run,
+    )
+
+    written = [a for a in result.actions if a.action == "write"]
+    backed = [a for a in result.actions if a.action == "backup-and-write"]
+    skipped = [a for a in result.actions if a.action == "skip"]
+    blocked = [a for a in result.actions if a.action == "blocked"]
+
+    prefix = "[dry-run] " if result.dry_run else ""
+    for a in written:
+        print(f"  {prefix}WRITE   {a.label:<8} {a.path}")
+    for a in backed:
+        print(
+            f"  {prefix}BACKUP  {a.label:<8} {a.path}  ->  {a.backup_path}"
+        )
+    for a in skipped:
+        print(f"  {prefix}SKIP    {a.label:<8} {a.path}  ({a.reason})")
+    for a in blocked:
+        print(
+            f"  {prefix}BLOCKED {a.label:<8} {a.path}  ({a.reason})",
+            file=sys.stderr,
+        )
+
+    if blocked:
+        print(
+            "ntasker: aborted -- one or more files differ. "
+            "Pass --force to overwrite (with timestamped backup).",
+            file=sys.stderr,
+        )
+        return 3
+    print(
+        f"ntasker: {'would install' if result.dry_run else 'installed'} "
+        f"to {claude_home}"
+    )
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # Argparse construction
 # ---------------------------------------------------------------------------
@@ -539,12 +640,48 @@ def build_parser() -> argparse.ArgumentParser:
     cfg_unset.add_argument("key")
     cfg_unset.set_defaults(func=cmd_config_unset)
 
+    # install-claude-assets ----------------------------------------------
+    sp_ica = sub.add_parser(
+        "install-claude-assets",
+        help="Claude Code skill + slash command installieren / pruefen",
+    )
+    sp_ica.add_argument(
+        "--command-name",
+        default="task",
+        help="Slash command file name (default: task -> /task <id>).",
+    )
+    sp_ica.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite divergent files (timestamped backup is created).",
+    )
+    sp_ica.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show planned actions without writing.",
+    )
+    sp_ica.add_argument(
+        "--check",
+        action="store_true",
+        help="Read-only status check. Exit 0=identical, 1=drift, 2=not installed.",
+    )
+    sp_ica.add_argument(
+        "--claude-home",
+        default=None,
+        help="Override ~/.claude (also via NTASKER_CLAUDE_HOME env var).",
+    )
+    sp_ica.set_defaults(func=cmd_install_claude_assets)
+
     return p
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    # ``install-claude-assets`` is filesystem-only -- no DB involvement.
+    if args.command == "install-claude-assets":
+        return args.func(args)
 
     db_path = resolve_db_path(args.db)
     set_db_path(db_path)

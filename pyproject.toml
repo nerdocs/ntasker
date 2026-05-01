@@ -1,6 +1,6 @@
 [project]
 name = "ntasker"
-version = "1.0.0"
+version = "1.1.0"
 description = "Lightweight local task tracker for the nerdocs HQ. Single-user, FastAPI + SQLite."
 requires-python = ">=3.12"
 dependencies = [
@@ -40,3 +40,10 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ntasker"]
+
+[tool.hatch.build.targets.wheel.force-include]
+# Ship the Claude Code skill + slash-command template inside the wheel so
+# ``importlib.resources`` can read them at runtime regardless of install mode
+# (sdist, wheel, editable). Hatchling already includes ``.py`` files of the
+# package; ``.md`` / ``.template`` need to be force-included.
+"src/ntasker/claude_assets" = "ntasker/claude_assets"

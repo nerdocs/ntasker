@@ -6,7 +6,7 @@ allowed-tools: Bash(python3 {HELPER_PATH}:*)
 
 # Task #$ARGUMENTS from nTasker (via /{COMMAND_NAME})
 
-!`python3 {HELPER_PATH} $ARGUMENTS`
+!`python3 {HELPER_PATH} "$ARGUMENTS"`
 
 ---
 
@@ -23,9 +23,9 @@ You have been handed task #$ARGUMENTS from nTasker.
    - **Never** mark `status: done` autonomously, even if the work looks complete -- the user decides what counts as finished.
    - Only on explicit user OK ("yes" / "set it done" / equivalent) run:
      ```bash
-     ntasker done $ARGUMENTS
+     ntasker done "$ARGUMENTS"
      # or:
-     curl -s -X PATCH http://127.0.0.1:8766/api/tasks/$ARGUMENTS \
+     curl -s -X PATCH "http://127.0.0.1:8766/api/tasks/$ARGUMENTS" \
        -H 'Content-Type: application/json' \
        -d '{"status":"done"}'
      ```

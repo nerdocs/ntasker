@@ -485,6 +485,68 @@ def main() -> int:
     )
     print("OK task.md asks before marking done (no autonomous status writes)")
 
+    # 37d3. Bash-comment trap: every `$ARGUMENTS` in a Bash context (the
+    # `!`-backtick line, the rendered `ntasker done ...` invocation, the
+    # `curl ... /api/tasks/...` URL) MUST be double-quoted. Otherwise bash
+    # interprets a `#`-prefixed task id as a comment start and the helper
+    # sees zero arguments. v1.2.2 fix.
+    # Forbidden: trailing-unquoted forms (i.e. $ARGUMENTS NOT followed by a
+    # closing double-quote). The curl URL puts $ARGUMENTS inside a quoted
+    # string, so `/api/tasks/$ARGUMENTS"` is fine; bare `$ARGUMENTS` at
+    # end-of-token is the trap.
+    bash_unquoted_traps = [
+        "_ntasker_loader.py $ARGUMENTS`",  # ends backtick line
+        "_ntasker_loader.py $ARGUMENTS\n",
+        "ntasker done $ARGUMENTS\n",
+        "/api/tasks/$ARGUMENTS \\",  # curl URL without closing quote
+        "/api/tasks/$ARGUMENTS\n",
+    ]
+    for needle in bash_unquoted_traps:
+        assert needle not in rendered, (
+            "task.md.template still has unquoted $ARGUMENTS in a Bash context "
+            f"(found {needle!r}); /task #<id> would be eaten by bash comment parsing"
+        )
+    # Positive check: the quoted forms are present.
+    assert '_ntasker_loader.py "$ARGUMENTS"' in rendered, (
+        "task.md.template missing quoted helper invocation"
+    )
+    assert 'ntasker done "$ARGUMENTS"' in rendered, (
+        "task.md.template missing quoted `ntasker done` invocation"
+    )
+    assert '"http://127.0.0.1:8766/api/tasks/$ARGUMENTS"' in rendered, (
+        "task.md.template missing quoted curl URL"
+    )
+    print("OK task.md quotes $ARGUMENTS in all Bash contexts (#<id> survives)")
+
+    # 37d4. End-to-end: simulate `bash -c` with a #-prefixed argument and
+    # ensure the id reaches the wrapped command. We strip the slash-command
+    # frontmatter and replace the helper invocation with a tiny echo so the
+    # test stays self-contained -- this checks the *quoting*, not the loader.
+    import shlex as _shlex  # noqa: PLC0415
+    # Pull the `!`-backtick line out of the template body and strip the leading "!".
+    backtick_line = next(
+        (ln for ln in rendered.splitlines() if ln.startswith("!`") and ln.endswith("`")),
+        None,
+    )
+    assert backtick_line is not None, "rendered template missing `!`-backtick bash line"
+    bash_cmd = backtick_line[2:-1]  # strip leading "!`" and trailing "`"
+    # Replace the helper path with a stub that echoes its $1 verbatim.
+    bash_cmd_stub = bash_cmd.replace(
+        'python3 ~/.claude/commands/_ntasker_loader.py',
+        'printf %s',
+    )
+    # Set ARGUMENTS to "#49" and run the stub through bash.
+    proc = subprocess.run(
+        ["bash", "-c", f'ARGUMENTS="#49"; {bash_cmd_stub}'],
+        capture_output=True, text=True,
+    )
+    assert proc.returncode == 0, f"bash stub failed: {proc.stderr}"
+    assert proc.stdout.strip() == "#49", (
+        f"#-prefix swallowed by bash comment parsing -- got {proc.stdout!r}, "
+        "expected '#49'. Quoting in task.md.template is broken."
+    )
+    print("OK bash-c simulation: '#49' survives the rendered backtick line")
+
     # 37e. Loader accepts both "187" and "#187" -- and rejects garbage.
     import importlib.util  # noqa: PLC0415
     import tempfile  # noqa: PLC0415

@@ -4,6 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [1.2.2] — 2026-05-02
+- Fixed: /task with #-prefix argument was eaten by bash comment parsing -- $ARGUMENTS now quoted in slash-command template.
+
 ## [1.2.1] — 2026-05-01
 - Changed: /task workflow now asks for explicit user confirmation before marking a task as done (no autonomous status writes).
 

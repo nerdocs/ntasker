@@ -347,10 +347,11 @@ wheels = [
 
 [[package]]
 name = "ntasker"
-version = "1.2.2"
+version = "1.2.3"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "jinja2" },
     { name = "platformdirs" },
     { name = "pydantic" },
@@ -360,13 +361,13 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "httpx" },
     { name = "mypy" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "httpx", specifier = ">=0.28" },
     { name = "jinja2", specifier = ">=3.1" },
     { name = "platformdirs", specifier = ">=4.0" },
     { name = "pydantic", specifier = ">=2.0" },
@@ -375,10 +376,7 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-dev = [
-    { name = "httpx", specifier = ">=0.28.1" },
-    { name = "mypy", specifier = ">=1.20" },
-]
+dev = [{ name = "mypy", specifier = ">=1.20" }]
 
 [[package]]
 name = "pathspec"

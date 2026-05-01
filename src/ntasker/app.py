@@ -22,6 +22,11 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
 from ntasker import __version__ as VERSION
+from ntasker.assets import (
+    assets_dir,
+    get_asset_url,
+    get_sri,
+)
 from ntasker.claude_assets import resolve_claude_home, scan_status
 from ntasker.db import (
     get_conn,
@@ -37,6 +42,7 @@ from ntasker.settings import (
     VALIDATORS,
     delete_setting,
     ensure_settings_table,
+    get_assets_mode_resolved,
     get_projects_dir,
     get_setting_raw,
     list_settings,
@@ -152,6 +158,41 @@ app = FastAPI(
 )
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+
+def _asset(name: str) -> str:
+    """Jinja global -- resolve a vendor-asset URL for the active mode."""
+    return get_asset_url(name, get_assets_mode_resolved(), version=VERSION)
+
+
+def _asset_sri(name: str) -> str:
+    """Jinja global -- SRI hash string for use in ``integrity="..."``."""
+    return get_sri(name, get_assets_mode_resolved())
+
+
+def _asset_mode() -> str:
+    """Jinja global -- expose the resolved mode so templates can decide
+    whether to add ``crossorigin="anonymous"`` (required for CDN/SRI)."""
+    return get_assets_mode_resolved()
+
+
+templates.env.globals["asset"] = _asset
+templates.env.globals["asset_sri"] = _asset_sri
+templates.env.globals["asset_mode"] = _asset_mode
+
+# Mount the user-data vendor cache at ``/static/vendor`` *before* the
+# broader ``/static`` mount. Starlette dispatches mounts in registration
+# order and the more specific prefix wins -- but only if it is mounted
+# first. Skip the mount entirely if no cache exists; templates use the
+# CDN URLs in that case (mode=auto resolves to ``cdn``).
+_vendor_cache = assets_dir()
+if _vendor_cache.is_dir():
+    app.mount(
+        "/static/vendor",
+        StaticFiles(directory=str(_vendor_cache)),
+        name="static-vendor",
+    )
+
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 

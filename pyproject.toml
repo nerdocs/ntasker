@@ -1,6 +1,6 @@
 [project]
 name = "ntasker"
-version = "1.2.2"
+version = "1.2.3"
 description = "Lightweight local task tracker. Single-user, FastAPI + SQLite, Tabler.io UI."
 requires-python = ">=3.12"
 license = "AGPL-3.0-or-later"
@@ -15,6 +15,10 @@ dependencies = [
     "python-multipart>=0.0.20",
     "pydantic>=2.0",
     "platformdirs>=4.0",
+    # ``httpx`` is used by ``ntasker assets fetch`` to download vendor
+    # assets into the user-data dir. Runtime dep (not dev-only) since
+    # the CLI ships in every install.
+    "httpx>=0.28",
 ]
 
 [project.scripts]
@@ -39,16 +43,8 @@ build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
-    "httpx>=0.28.1",
     "mypy>=1.20"
 ]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ntasker"]
-
-[tool.hatch.build.targets.wheel.force-include]
-# Ship the Claude Code skill + slash-command template inside the wheel so
-# ``importlib.resources`` can read them at runtime regardless of install mode
-# (sdist, wheel, editable). Hatchling already includes ``.py`` files of the
-# package; ``.md`` / ``.template`` need to be force-included.
-"src/ntasker/claude_assets" = "ntasker/claude_assets"

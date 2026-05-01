@@ -7,8 +7,12 @@ Lightweight local task tracker. Single-user, no auth, bound to `127.0.0.1:8766`.
 ## Stack
 
 - **Backend:** FastAPI + Python stdlib `sqlite3` (no ORM, no Alembic).
-- **Frontend:** AlpineJS + Tabler.io, vendored to `src/ntasker/static/vendor/`. No build step, no CDN at runtime.
-- **Templating:** Jinja2.
+- **Frontend:** AlpineJS + Tabler.io. **Default = jsDelivr CDN with SRI hashes** (manifest in `src/ntasker/assets.py`).
+  Opt-in local cache via `ntasker assets fetch` -- downloads into the user-data dir
+  (`platformdirs.user_data_dir("nTasker")/vendor`) and verifies every file against the
+  manifest's SRI hash. Setting `assets_mode` (`cdn` | `local` | `auto`, default `auto`)
+  picks the resolved mode at request time. No build step.
+- **Templating:** Jinja2; templates use `{{ asset('<name>') }}` + `{{ asset_sri('<name>') }}` helpers (registered as Jinja globals in `app.py`).
 - **Layout:** PyPA src-layout; package = `src/ntasker/`. CLI entry `ntasker = ntasker.cli:main`.
 - **Bind:** `127.0.0.1:8766` (default; overridable via `ntasker serve --host --port`).
 

@@ -5,13 +5,13 @@ Lightweight local task tracker. Single-user, FastAPI + SQLite, Tabler.io UI.
 ## Stack
 
 - Backend: FastAPI + uvicorn, Python stdlib `sqlite3`
-- Frontend: HTML + AlpineJS + Tabler.io, all assets vendored under
-  `src/ntasker/static/vendor/` -- offline-capable, no build step, no CDN at runtime
+- Frontend: HTML + AlpineJS + Tabler.io. **Default = jsDelivr CDN at runtime, with
+  SRI hashes pinned in `src/ntasker/assets.py`**. Optional fully-offline mode
+  via `ntasker assets fetch` (writes into the user-data dir, never into the
+  Python wheel). No build step.
 - Storage: SQLite at `platformdirs.user_data_dir("nTasker")/tasks.db` by default
   (Linux: `~/.local/share/nTasker/tasks.db`)
 - Layout: PyPA src-layout, package `src/ntasker/`, entry point `ntasker = ntasker.cli:main`
-
-Vendored assets and licences: see `src/ntasker/static/vendor/LICENSES.md`.
 
 ## Bind
 
@@ -82,6 +82,34 @@ there is no scan job and no DB-cached project list. Add or remove a
 folder/symlink in `projects_dir` and it shows up (or disappears) on the
 next reload.
 
+## Vendor assets (CDN default, opt-in offline)
+
+Tabler core CSS, Tabler-Icons webfont, and Alpine.js are loaded from
+[jsDelivr](https://www.jsdelivr.com/) by default with [SRI](https://developer.mozilla.org/en-US/docs/Web/Security/Subresource_Integrity)
+hashes pinned in `src/ntasker/assets.py`. The wheel ships **no** vendor
+binaries -- it stays under 100 KB.
+
+For offline use, populate the user-data cache once:
+
+```bash
+ntasker assets fetch    # downloads + verifies SRI for each manifest entry
+ntasker assets status   # shows mode + per-asset state
+ntasker assets remove --yes  # wipes the cache
+```
+
+The cache lives at `platformdirs.user_data_dir("nTasker") / "vendor"`
+(Linux: `~/.local/share/nTasker/vendor`). Mode selection is via the
+`assets_mode` setting:
+
+| Value   | Behaviour                                                        |
+|---------|------------------------------------------------------------------|
+| `cdn`   | always load from jsDelivr (with SRI)                             |
+| `local` | always load from the user-data cache (must run `assets fetch`)   |
+| `auto`  | local if cache is complete, else CDN. **Default.**               |
+
+ENV override: `NTASKER_ASSETS_MODE=cdn ntasker serve`. SRI is emitted in
+both modes (catches on-disk tampering for `local` too).
+
 ## Claude Code Integration
 
 ntasker ships a Claude Code skill (`SKILL.md`) and slash-command loader (`/task <id>`)
@@ -138,6 +166,7 @@ surface).
 | `ntasker config set <k> <v>`| Write a setting (validated)                                   |
 | `ntasker config unset <k>`  | Remove a setting                                              |
 | `ntasker install-claude-assets` | Install / check the Claude Code skill + `/task` slash-command |
+| `ntasker assets fetch / status / remove` | Manage the optional local vendor-asset cache |
 
 Global flags:
 

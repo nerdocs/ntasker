@@ -4,11 +4,15 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>ntasker</title>
-    {# Tabler CSS + Icons (vendored, offline-faehig — siehe static/vendor/LICENSES.md) #}
-    {# `?v=` query string is a cache-buster: a version bump in app.py forces #}
-    {# clients to refetch instead of replaying stale CSS/JS from disk cache. #}
-    <link rel="stylesheet" href="/static/vendor/tabler/tabler.min.css?v={{ version }}">
-    <link rel="stylesheet" href="/static/vendor/tabler-icons/tabler-icons.min.css?v={{ version }}">
+    {# Vendor-Assets via asset()-Helper. Default-Mode = CDN (jsDelivr) mit SRI; #}
+    {# wenn `ntasker assets fetch` lief und `assets_mode=local|auto`, kommen sie #}
+    {# stattdessen aus dem User-Data-Dir unter /static/vendor. SRI wird in beiden #}
+    {# Modi mitgesendet (auch lokal als Tamper-Detection). `crossorigin` ist nur #}
+    {# bei CDN-Loading nötig (Same-Origin braucht's nicht), schadet aber nicht. #}
+    <link rel="stylesheet" href="{{ asset('tabler-css') }}"
+          integrity="{{ asset_sri('tabler-css') }}" crossorigin="anonymous">
+    <link rel="stylesheet" href="{{ asset('tabler-icons-css') }}"
+          integrity="{{ asset_sri('tabler-icons-css') }}" crossorigin="anonymous">
     <link rel="stylesheet" href="/static/style.css?v={{ version }}">
 </head>
 <body>
@@ -678,7 +682,8 @@
      style="z-index: 1100"
      aria-live="polite" aria-atomic="true"></div>
 
-<script src="/static/vendor/alpine/alpine.min.js?v={{ version }}" defer></script>
+<script src="{{ asset('alpine-js') }}"
+        integrity="{{ asset_sri('alpine-js') }}" crossorigin="anonymous" defer></script>
 <script src="/static/app.js?v={{ version }}"></script>
 </body>
 </html>

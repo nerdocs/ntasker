@@ -4,9 +4,11 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>ntasker — Einstellungen</title>
-    {# Same vendored Tabler/Tabler-Icons as the main UI; ?v={version} cache-buster. #}
-    <link rel="stylesheet" href="/static/vendor/tabler/tabler.min.css?v={{ version }}">
-    <link rel="stylesheet" href="/static/vendor/tabler-icons/tabler-icons.min.css?v={{ version }}">
+    {# Vendor-Assets über asset()-Helper -- siehe index.html für Details. #}
+    <link rel="stylesheet" href="{{ asset('tabler-css') }}"
+          integrity="{{ asset_sri('tabler-css') }}" crossorigin="anonymous">
+    <link rel="stylesheet" href="{{ asset('tabler-icons-css') }}"
+          integrity="{{ asset_sri('tabler-icons-css') }}" crossorigin="anonymous">
     <link rel="stylesheet" href="/static/style.css?v={{ version }}">
 </head>
 <body>
@@ -224,7 +226,8 @@
 
 </div>
 
-<script src="/static/vendor/alpine/alpine.min.js?v={{ version }}" defer></script>
+<script src="{{ asset('alpine-js') }}"
+        integrity="{{ asset_sri('alpine-js') }}" crossorigin="anonymous" defer></script>
 <script>
 function settingsPage() {
     return {

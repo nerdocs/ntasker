@@ -15,6 +15,7 @@ Subcommands:
 | ``tag-rm  <id> <t>`` | Remove a tag                                       |
 | ``stats``            | Tab counts honoring filters                        |
 | ``config``           | KV-store: list / get / set / unset                 |
+| ``assets``           | Vendor-asset cache: fetch / remove / status        |
 
 Global flags: ``--db <path>`` (highest precedence) and ``--version``.
 """
@@ -29,6 +30,13 @@ from pathlib import Path
 from typing import Any
 
 from ntasker import __version__
+from ntasker.assets import (
+    MANIFEST,
+    assets_dir,
+    local_assets_complete,
+    local_path_for,
+    resolve_mode,
+)
 from ntasker.claude_assets import (
     install_assets,
     resolve_claude_home,
@@ -517,6 +525,187 @@ def cmd_install_claude_assets(args: argparse.Namespace) -> int:
     return 0
 
 
+# Vendor assets (CDN/local) -------------------------------------------------
+
+
+def _verify_sri(data: bytes, expected_sri: str) -> bool:
+    """Verify ``data`` against an SRI string of the form ``sha384-<base64>``.
+
+    Used by ``ntasker assets fetch`` -- after every download, before we
+    persist the file. A mismatch means either the CDN was tampered with
+    or the manifest is stale; either way: drop the bytes, do not write.
+    """
+    import base64  # noqa: PLC0415  -- lazy import on purpose
+    import hashlib  # noqa: PLC0415
+
+    algo, _, b64 = expected_sri.partition("-")
+    if algo != "sha384" or not b64:
+        return False
+    actual = base64.b64encode(hashlib.sha384(data).digest()).decode("ascii")
+    return actual == b64
+
+
+def cmd_assets_fetch(args: argparse.Namespace) -> int:
+    """Download every manifest entry into the user-data vendor cache.
+
+    SRI is verified before the file is written. On hash mismatch the
+    bytes are discarded and the command exits non-zero -- never trust
+    the CDN, always verify.
+    """
+    try:
+        import httpx  # noqa: PLC0415  -- lazy import on purpose
+    except ImportError:
+        print(
+            "ntasker: httpx fehlt. Installiere ntasker neu (httpx ist Runtime-Dep).",
+            file=sys.stderr,
+        )
+        return 2
+
+    target_root = assets_dir()
+    target_root.mkdir(parents=True, exist_ok=True)
+
+    failures: list[str] = []
+    written: list[str] = []
+    skipped: list[str] = []
+
+    with httpx.Client(timeout=30.0, follow_redirects=True) as client:
+        for spec in MANIFEST:
+            target = local_path_for(spec)
+            if target.is_file() and not args.force:
+                # Check existing file's SRI before skipping.
+                existing = target.read_bytes()
+                if _verify_sri(existing, spec.sri):
+                    skipped.append(spec.name)
+                    print(f"  SKIP   {spec.name:<22} {target} (SRI ok)")
+                    continue
+                print(
+                    f"  STALE  {spec.name:<22} {target} (SRI mismatch -- re-fetching)",
+                    file=sys.stderr,
+                )
+
+            print(f"  FETCH  {spec.name:<22} {spec.cdn_url}")
+            try:
+                resp = client.get(spec.cdn_url)
+                resp.raise_for_status()
+            except httpx.HTTPError as exc:
+                print(f"  ERROR  {spec.name:<22} HTTP-Fehler: {exc}", file=sys.stderr)
+                failures.append(spec.name)
+                continue
+
+            data = resp.content
+            if not _verify_sri(data, spec.sri):
+                print(
+                    f"  HASH   {spec.name:<22} SRI-Mismatch -- Datei verworfen!",
+                    file=sys.stderr,
+                )
+                failures.append(spec.name)
+                continue
+
+            target.parent.mkdir(parents=True, exist_ok=True)
+            # Write atomically via tempfile + rename so a crash mid-write
+            # never leaves a half-file that future SRI-checks would
+            # misclassify as "valid file with wrong hash".
+            tmp = target.with_suffix(target.suffix + ".part")
+            tmp.write_bytes(data)
+            tmp.replace(target)
+            written.append(spec.name)
+            print(f"  WRITE  {spec.name:<22} {target} ({len(data)} bytes)")
+
+    print(
+        f"\nntasker: assets fetch -- {len(written)} geschrieben, "
+        f"{len(skipped)} übersprungen, {len(failures)} Fehler. "
+        f"Cache: {target_root}"
+    )
+    return 1 if failures else 0
+
+
+def cmd_assets_remove(args: argparse.Namespace) -> int:
+    """Wipe the user-data vendor cache.
+
+    Default: prompt for confirmation. ``--yes`` skips the prompt for
+    scripts. Removes only files the manifest declares plus their parent
+    directories if they end up empty -- never touches anything else.
+    """
+    import shutil  # noqa: PLC0415
+
+    root = assets_dir()
+    if not root.exists():
+        print(f"ntasker: kein Asset-Cache vorhanden bei {root}.")
+        return 0
+
+    if not args.yes:
+        try:
+            answer = input(f"ntasker: Cache {root} wirklich löschen? [j/N] ").strip().lower()
+        except EOFError:
+            answer = ""
+        if answer not in {"j", "ja", "y", "yes"}:
+            print("ntasker: abgebrochen.")
+            return 1
+
+    # Whole-tree removal: we own the dir layout entirely (only files we
+    # write live there) -- a recursive rmtree is correct and matches the
+    # ``platformdirs`` user-data convention.
+    shutil.rmtree(root)
+    print(f"ntasker: Cache {root} entfernt.")
+    return 0
+
+
+def cmd_assets_status(args: argparse.Namespace) -> int:
+    """Print per-asset status (present / SRI-ok / mode)."""
+    from ntasker.settings import get_setting  # noqa: PLC0415
+
+    raw_mode = get_setting("assets_mode", env_var="NTASKER_ASSETS_MODE")
+    resolved = resolve_mode(raw_mode)
+
+    rows: list[dict] = []
+    for spec in MANIFEST:
+        target = local_path_for(spec)
+        present = target.is_file()
+        sri_ok: bool | None
+        if present:
+            sri_ok = _verify_sri(target.read_bytes(), spec.sri)
+        else:
+            sri_ok = None
+        rows.append(
+            {
+                "name": spec.name,
+                "local_path": str(target),
+                "present": present,
+                "sri_ok": sri_ok,
+                "cdn_url": spec.cdn_url,
+                "sri": spec.sri,
+            }
+        )
+
+    if args.json:
+        _print_json(
+            {
+                "mode_setting": raw_mode or "(unset, default=auto)",
+                "mode_resolved": resolved,
+                "assets_dir": str(assets_dir()),
+                "complete": local_assets_complete(),
+                "assets": rows,
+            }
+        )
+        return 0
+
+    print(f"ntasker: assets_mode = {raw_mode or '(unset, default=auto)'} -> {resolved}")
+    print(f"         assets_dir  = {assets_dir()}")
+    print(f"         complete    = {local_assets_complete()}")
+    print()
+    print(f"  {'STATUS':<10} {'NAME':<24} {'PATH'}")
+    print("  " + "-" * 78)
+    for r in rows:
+        if not r["present"]:
+            status = "MISSING"
+        elif r["sri_ok"] is False:
+            status = "BAD-SRI"
+        else:
+            status = "OK"
+        print(f"  {status:<10} {r['name']:<24} {r['local_path']}")
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # Argparse construction
 # ---------------------------------------------------------------------------
@@ -672,6 +861,36 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sp_ica.set_defaults(func=cmd_install_claude_assets)
 
+    # assets --------------------------------------------------------------
+    sp_assets = sub.add_parser(
+        "assets",
+        help="Vendor-Assets verwalten (CDN-Default, Opt-in lokal).",
+    )
+    assets_sub = sp_assets.add_subparsers(dest="assets_cmd", required=True)
+
+    sp_af = assets_sub.add_parser(
+        "fetch",
+        help="Vendor-Assets via HTTP in den User-Data-Cache laden (mit SRI-Verify).",
+    )
+    sp_af.add_argument(
+        "--force",
+        action="store_true",
+        help="Vorhandene Files neu laden, auch wenn SRI bereits passt.",
+    )
+    sp_af.set_defaults(func=cmd_assets_fetch)
+
+    sp_ar = assets_sub.add_parser("remove", help="User-Data-Asset-Cache loeschen.")
+    sp_ar.add_argument(
+        "--yes",
+        action="store_true",
+        help="Bestätigungs-Prompt überspringen.",
+    )
+    sp_ar.set_defaults(func=cmd_assets_remove)
+
+    sp_as = assets_sub.add_parser("status", help="Cache-Zustand + Modus anzeigen.")
+    sp_as.add_argument("--json", action="store_true")
+    sp_as.set_defaults(func=cmd_assets_status)
+
     return p
 
 
@@ -679,8 +898,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    # ``install-claude-assets`` is filesystem-only -- no DB involvement.
+    # ``install-claude-assets`` and ``assets fetch|remove`` are
+    # filesystem-only -- no DB involvement. ``assets status`` *does*
+    # read the ``assets_mode`` setting and therefore goes through the
+    # standard DB-init path below.
     if args.command == "install-claude-assets":
+        return args.func(args)
+    if args.command == "assets" and getattr(args, "assets_cmd", None) in {"fetch", "remove"}:
         return args.func(args)
 
     db_path = resolve_db_path(args.db)

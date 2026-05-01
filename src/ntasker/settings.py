@@ -23,6 +23,7 @@ from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
+from ntasker.assets import validate_assets_mode
 from ntasker.db import get_conn
 
 Validator = Callable[[str], str]
@@ -54,6 +55,7 @@ def validate_projects_dir(value: str) -> str:
 
 VALIDATORS: dict[str, Validator] = {
     "projects_dir": validate_projects_dir,
+    "assets_mode": validate_assets_mode,
 }
 """Registry of known settings keys with their validators.
 
@@ -69,6 +71,11 @@ HINTS: dict[str, str] = {
     "projects_dir": (
         "Verzeichnis mit Projekt-Symlinks "
         "(z.B. /home/<user>/Projects). Wird für /api/projects gelesen."
+    ),
+    "assets_mode": (
+        "Vendor-Assets (Tabler/Alpine): cdn (default, jsDelivr + SRI), "
+        "local (aus User-Data-Dir, vorher mit `ntasker assets fetch` laden), "
+        "auto (local wenn Cache vollständig, sonst cdn)."
     ),
 }
 
@@ -143,6 +150,22 @@ def delete_setting(key: str) -> bool:
 # ---------------------------------------------------------------------------
 # Convenience: projects_dir helpers
 # ---------------------------------------------------------------------------
+
+
+def get_assets_mode_resolved() -> str:
+    """Return the *resolved* asset-loading mode (``cdn`` or ``local``).
+
+    Reads the ``assets_mode`` setting (ENV ``NTASKER_ASSETS_MODE`` first),
+    defaults to ``auto``, then resolves ``auto`` to a concrete mode based
+    on whether the user-data vendor cache is complete.
+    """
+    # Local import: avoid an import cycle at module load (assets.py
+    # imports from ntasker.paths, which is fine; but importing assets
+    # at top-level in settings is fine too -- see top of file).
+    from ntasker.assets import resolve_mode
+
+    raw = get_setting("assets_mode", env_var="NTASKER_ASSETS_MODE")
+    return resolve_mode(raw)
 
 
 def get_projects_dir() -> Path | None:

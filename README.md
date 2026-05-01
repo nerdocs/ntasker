@@ -232,3 +232,12 @@ See [`CHANGELOG.md`](CHANGELOG.md). Highlights:
 - **1.0.0** -- Renamed `nerdocs-tracker` -> `ntasker`; src-Layout; CLI with subcommands; settings module + UI; configurable `projects_dir`; DB moved to `platformdirs` default. **Breaking.**
 - **0.4.0** -- `priority` field with sidebar filter and badge.
 - **0.3.x** -- Cache-buster, version badge, archive button polish.
+
+## License
+
+Licensed under the GNU Affero General Public License, version 3 or later
+(AGPL-3.0-or-later). See [`LICENSE`](LICENSE) for the full text.
+
+The Affero clause means: if you run a modified version of nTasker as a
+network service, you must offer the modified source code to its users.
+For local single-user use this has no practical impact.

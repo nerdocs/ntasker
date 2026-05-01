@@ -1,4 +1,4 @@
-"""ntasker — lightweight local task tracker for the nerdocs HQ.
+"""ntasker — lightweight local task tracker.
 
 Single-user FastAPI + SQLite app, bound to 127.0.0.1. Distributed as a
 PyPA-standard src-layout package; CLI entry point ``ntasker`` is wired

@@ -409,6 +409,54 @@ def main() -> int:
     assert "/foo" in rendered_foo
     print("OK render_command --command-name=foo writes /foo into header")
 
+    # 37c. Skill asset is generic -- no user-specific routing or paths.
+    skill_lower = skill_md.lower()
+    forbidden_skill = [
+        "nerdocs tracker",
+        "nerdocs/projekte",
+        "/home/christian",
+        "feedback_tracker_",
+        "feedback_no_git_commits",
+        "feedback_doc_writing_style",
+        "friday",
+        "hermine",
+        "kader",
+    ]
+    for needle in forbidden_skill:
+        assert needle not in skill_lower, (
+            f"SKILL.md must be generic -- found user-specific token {needle!r}"
+        )
+    # Legacy alias deliberately kept in description as a trigger word.
+    assert "nerdocs-tracker" in skill_md, (
+        "SKILL.md should keep `nerdocs-tracker` as legacy trigger alias"
+    )
+    print("OK SKILL.md is generic (no user-specific routing) + keeps legacy alias")
+
+    # 37d. Rendered command template is generic -- no persona names.
+    rendered_lower = rendered.lower()
+    forbidden_template = [
+        "friday",
+        "hermine",
+        "percy",
+        "alastor",
+        "bill",
+        "fudge",
+        "dolores",
+        "arthur",
+        "albus",
+        "neville",
+        "kader",
+        "christians inbox",
+        "/home/christian",
+        "coding_regeln",
+        "zero_trust",
+    ]
+    for needle in forbidden_template:
+        assert needle not in rendered_lower, (
+            f"task.md.template must be generic -- found user-specific token {needle!r}"
+        )
+    print("OK rendered task.md is generic (no persona names, no user paths)")
+
     # 38. validate_command_name rejects path traversal / injection.
     for bad in ["../etc", "with/slash", "dot.s", "spa ce", "", "name;rm"]:
         try:

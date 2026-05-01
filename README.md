@@ -1,6 +1,6 @@
 # ntasker
 
-Lightweight local task tracker for the nerdocs HQ. Single-user, FastAPI + SQLite, Tabler.io UI.
+Lightweight local task tracker. Single-user, FastAPI + SQLite, Tabler.io UI.
 
 ## Stack
 
@@ -40,8 +40,11 @@ Only the Linux path is regularly tested; the others are derived via `platformdir
 ## Setup
 
 ```bash
-# As a tool (recommended):
-uv tool install ~/nerdocs/ntasker
+# As a tool (recommended), from a local checkout:
+uv tool install /path/to/ntasker
+# ...or once published to PyPI:
+uv tool install ntasker
+
 ntasker init           # create DB at the default platformdirs path
 ntasker serve          # start server on http://127.0.0.1:8766
 ```
@@ -51,7 +54,7 @@ Open <http://127.0.0.1:8766> in a browser.
 For repo-local development:
 
 ```bash
-cd ~/nerdocs/ntasker
+cd /path/to/ntasker
 make install   # uv sync
 make init      # uv run ntasker init
 make run       # uv run ntasker serve --reload

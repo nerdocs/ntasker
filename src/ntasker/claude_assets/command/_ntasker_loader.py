@@ -84,12 +84,12 @@ def main(argv: list[str]) -> int:
     data = load_via_server(tid) or load_via_cli(tid)
     if data is None:
         print(
-            f"Task #{tid} nicht gefunden.\n"
-            "  - Server unter http://127.0.0.1:8766 nicht erreichbar?\n"
-            "    -> `ntasker serve` starten.\n"
-            "  - Falls ntasker noch nicht installiert ist:\n"
-            "    -> `uv tool install ~/nerdocs/ntasker`\n"
-            "  - Fuer einen alternativen DB-Pfad: `NTASKER_DB=/pfad/tasks.db ntasker show "
+            f"Task #{tid} not found.\n"
+            "  - Is the server reachable at http://127.0.0.1:8766?\n"
+            "    -> start it with `ntasker serve`.\n"
+            "  - If ntasker is not installed yet:\n"
+            "    -> `uv tool install ntasker` (or `pip install --user ntasker`)\n"
+            "  - For a non-default DB path: `NTASKER_DB=/path/to/tasks.db ntasker show "
             f"{tid} --json`",
             file=sys.stderr,
         )

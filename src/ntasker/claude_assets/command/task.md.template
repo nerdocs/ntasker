@@ -1,43 +1,34 @@
 ---
-description: Laedt einen Tracker-Task in die Session und uebergibt ihn an FRIDAY
+description: Load an nTasker task into the session for processing
 argument-hint: <task-id>
 allowed-tools: Bash(python3 {HELPER_PATH}:*)
 ---
 
-# Task #$ARGUMENTS aus ntasker (via /{COMMAND_NAME})
+# Task #$ARGUMENTS from nTasker (via /{COMMAND_NAME})
 
 !`python3 {HELPER_PATH} $ARGUMENTS`
 
 ---
 
-## Anweisung an FRIDAY
+## Instructions
 
-Du bist FRIDAY. Christian hat dir Task #$ARGUMENTS aus ntasker zur Bearbeitung uebergeben.
+You have been handed task #$ARGUMENTS from nTasker.
 
-**Pflicht-Reihenfolge:**
+1. **Read the task data above** (title, description, project, tags, phase, priority).
+2. **If a `Project` is assigned** and you know where its code lives on this machine, switch to that working directory before making changes.
+3. **On unclear requirements:** ask, do not assume.
+4. **On completion:** mark the task as done.
+   ```bash
+   ntasker done $ARGUMENTS
+   # or:
+   curl -s -X PATCH http://127.0.0.1:8766/api/tasks/$ARGUMENTS \
+     -H 'Content-Type: application/json' \
+     -d '{"status":"done"}'
+   ```
 
-1. **Lies die obigen Task-Daten** (Titel, Beschreibung, Projekt, Tags, Phase, Prioritaet).
-2. **Falls `Projekt` zugewiesen:** der Code liegt unter `/home/christian/nerdocs/Projekte/<project>/` (Symlink). Liegt der Task im cross-project-Bereich, pruefe, ob er ntasker selbst (`/home/christian/nerdocs/ntasker/`) oder uebergreifende Infrastruktur betrifft.
-3. **Bei Coding-Aufgaben:** vor jeder Delegation `/home/christian/nerdocs/CODING_REGELN.md` lesen.
-4. **Persona-Wahl** aus `/home/christian/nerdocs/Team/KADER.md` anhand von Tags und Beschreibung. Faustregeln:
-   - `mcp`, `infrastructure`, `deployment`, `server` -> ARTHUR (Ops) oder HERMINE (Python-Code im Repo)
-   - `security`, `pentest`, `audit` -> BILL
-   - `frontend`, `svelte`, `tabler`, `ui` -> PERCY
-   - `nextcloud`, `php`, `vue` -> NEVILLE
-   - Django/Python-Backend, Plugins, Models, Views -> HERMINE
-   - Datenschutz, DSGVO, AVV, Compliance -> FUDGE
-   - Patente, Prior Art -> DOLORES (zwingend `model="sonnet"`)
-   - Research/Wissensaufbau zuerst -> ALASTOR
-5. **Zero-Trust-Maxime** an die Delegation anhaengen (`/home/christian/nerdocs/Team/ZERO_TRUST.md`).
-6. **Pre-Deploy-Gate:** falls der Task ein Deployment ausloest -> vorher BILL (Security) UND FUDGE (DSGVO) Review (Memory `feedback_deploy_gate_bill_fudge`).
-7. **Nach Abschluss:**
-   - Ergebnis-Dossier in `/home/christian/nerdocs/Christians Inbox/<YYYY>-<MM>-<DD>-<TITEL>.md`.
-   - Status-Update via `curl -s -X PATCH http://127.0.0.1:8766/api/tasks/$ARGUMENTS -H 'Content-Type: application/json' -d '{"status":"done"}'` oder `ntasker done $ARGUMENTS` -- nur wenn der Task wirklich `done` ist; Archivierung bleibt Christians Entscheidung.
+**Hard rules:**
 
-**Hard Rules:**
-- Bei Unklarheiten **zurueckfragen** -- keine Annahmen treffen (Memory `feedback_always_ask`).
-- **Niemals** `git commit` / `git push` (Memory `feedback_no_git_commits`) -- Ausnahme: ntasker-Repo selbst nach Christians OK pro Feature (Memory `feedback_tracker_repo_commits`).
-- **Keine autonomen Tracker-Writes** ausser `status: done` am Ende dieses Tasks.
-- Bei MedUX-Oekosystem: kein `uv run` (Memory `feedback_always_uv`).
+- No autonomous tracker writes -- the only write allowed at the end of this task is `status: done` for #$ARGUMENTS.
+- Archiving stays a manual decision -- never set `archived: true` on someone else's behalf.
 
-Beginne mit Schritt 1.
+Start with step 1.

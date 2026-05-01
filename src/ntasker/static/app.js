@@ -1,8 +1,10 @@
 /* ntasker -- Alpine state. */
 
 // localStorage keys (namespaced under 'ntasker.*').
-// NOTE: legacy 'nerdocs.tracker.*' keys are still read once on first boot
-// after the rename and silently migrated; see migrateLegacyLocalStorage().
+// NOTE: legacy keys from the pre-1.0.0 'nerdocs-tracker' package name are
+// still read once on first boot and silently migrated; see
+// migrateLegacyLocalStorage(). Kept in place so existing installs keep
+// their filter selections across the rename.
 const LS_KEY_PROJECT_FILTER = 'ntasker.projectFilter';
 const LS_KEY_TAG_FILTER = 'ntasker.tagFilter';
 const LS_KEY_PHASE_FILTER = 'ntasker.phaseFilter';

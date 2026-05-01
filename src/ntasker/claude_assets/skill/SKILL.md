@@ -3,11 +3,13 @@ name: ntasker
 description: >
   ntasker -- lightweight local task tracker (FastAPI + SQLite).
   Load when any message contains: #<digits>, Task #N, TODO #N, Tracker #N,
-  "tasks.db", "ntasker", "nerdocs-tracker", "Tracker", "Aufgaben-Liste", or
-  an explicit Christian write-command ("leg einen Task an", "trag das ein",
-  "neuer Task"). Aliase `nerdocs-tracker` und `Tracker` bleiben Trigger-
-  Words (alte Memory-Eintraege).
-  Hard rule: NO agent writes tasks autonomously -- only on Christian's explicit instruction.
+  "tasks.db", "ntasker", "nerdocs-tracker", "Tracker", "Aufgaben-Liste",
+  or an explicit user write-command ("create a task", "add a todo",
+  "leg einen Task an", "trag das ein", "neuer Task").
+  Note: `nerdocs-tracker` and `Tracker` remain trigger words as legacy
+  aliases for installs that migrated from the pre-1.0.0 package name.
+  Hard rule: NO agent writes tasks autonomously -- only on the user's
+  explicit instruction.
 ---
 
 # ntasker Skill
@@ -17,17 +19,15 @@ description: >
 | Item | Value |
 |---|---|
 | Package | `ntasker` (PyPI) |
-| Repo | `/home/christian/nerdocs/ntasker/` (GitLab: `nerdocs/ntasker`) |
 | DB (default) | `~/.local/share/nTasker/tasks.db` (`platformdirs.user_data_dir`) |
 | DB precedence | `--db <path>` > `NTASKER_DB` env > platformdirs default |
 | API | `http://127.0.0.1:8766` (when server is running) |
-| Version | see `src/ntasker/__init__.py:__version__` (currently `1.0.0`) |
 | Bind | `127.0.0.1` only -- never expose externally |
 | Layout | PyPA src-layout, package `src/ntasker/`; CLI = `ntasker` |
 
-Legacy package name `nerdocs-tracker` is gone (renamed in v1.0.0). Old Memory
-references to `nerdocs-tracker` / `Tracker` still resolve via this skill's
-trigger words.
+Legacy package name `nerdocs-tracker` was renamed to `ntasker` in v1.0.0.
+Old memory entries that still say `nerdocs-tracker` / `Tracker` resolve
+to this skill via the legacy trigger words above.
 
 ## 2. #ID Resolution (read -- always allowed)
 
@@ -62,7 +62,7 @@ param, AND across params):
 
 Equivalent CLI:
 ```bash
-ntasker list --project medux --phase wip --priority high
+ntasker list --project myproject --phase wip --priority high
 ntasker list --json   # raw
 ntasker stats         # tab-counts
 ```
@@ -75,15 +75,15 @@ Additional endpoints:
 - `GET /api/priorities` -> 4 fixed entries (`critical` / `high` / `normal` / `low`)
 - `GET /api/tags` -> `[{name, open_count}, ...]`
 
-## 4. Settings (new in v1.0.0)
+## 4. Settings
 
 KV-store with validators. UI: `/settings`.
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/api/settings` | Liste aller Settings |
-| GET | `/api/settings/{key}` | Einzelner Eintrag oder 404 |
-| PUT | `/api/settings/{key}` | Body `{"value": "..."}` -> 200 / 400 bei Validation-Fail |
+| GET | `/api/settings` | List of all settings |
+| GET | `/api/settings/{key}` | Single entry, or 404 |
+| PUT | `/api/settings/{key}` | Body `{"value": "..."}` -> 200 / 400 on validation fail |
 | DELETE | `/api/settings/{key}` | 204 / 404 |
 
 CLI:
@@ -94,25 +94,22 @@ ntasker config set <key> <value>
 ntasker config unset <key>
 ```
 
-Bekannte Schluessel:
-- `projects_dir` -- Pfad zu den nerdocs-Projekt-Symlinks (z.B.
-  `/home/christian/nerdocs/Projekte`). Wird von `/api/projects` gelesen.
-  ENV-Override: `NTASKER_PROJECTS_DIR`. Validator: absolut + existiert + lesbar.
+Known keys:
+- `projects_dir` -- path to a directory whose entries (or symlinks) name your
+  projects. Read by `/api/projects`. ENV override: `NTASKER_PROJECTS_DIR`.
+  Validator: absolute path, exists, is a directory, readable.
 
 ## 5. Write Rules -- HARD LIMIT
 
-**NO agent may write tasks to the tracker autonomously** -- not from
-followups, reports, or self-identified action items. Only an explicit
-Christian instruction triggers a write.
+**No agent may write tasks to the tracker autonomously** -- not from
+follow-ups, reports, or self-identified action items. Only an explicit
+user instruction triggers a write.
 
-Open items from agent reports belong in the report / Christians Inbox,
-NOT in the tracker.
-
-Memory cross-link: `feedback_tracker_explicit_only`.
+Open items from agent reports belong in the report itself, not in the tracker.
 
 ## 6. Status Update on Task Completion
 
-When Christian assigns `#<id>` to an agent and the task is done:
+When the user assigns `#<id>` and the task is done:
 
 ```bash
 curl -s -X PATCH http://127.0.0.1:8766/api/tasks/43 \
@@ -124,17 +121,17 @@ Or:
 ntasker done 43
 ```
 
-`completed_at` is set automatically. Archiving (`{"archived": true}`) is
-Christian's decision.
+`completed_at` is set automatically. Archiving (`{"archived": true}`) stays
+a manual decision -- never archive on the user's behalf.
 
-## 7. Creating Tasks (only on Christian's explicit instruction)
+## 7. Creating Tasks (only on the user's explicit instruction)
 
 ```bash
 curl -s -X POST http://127.0.0.1:8766/api/tasks \
   -H 'Content-Type: application/json' \
   -d '{
-    "project": "medux-cashbook",
-    "title": "VAT-Rate constants extraction",
+    "project": "myproject",
+    "title": "Short title",
     "description": "...",
     "phase": "planned",
     "priority": "high",
@@ -143,20 +140,21 @@ curl -s -X POST http://127.0.0.1:8766/api/tasks \
 ```
 Or:
 ```bash
-ntasker add --project medux-cashbook --title "VAT-Rate constants extraction" \
+ntasker add --project myproject --title "Short title" \
   --phase planned --priority high --tag refactoring
 ```
 
-Field rules: `project` = symlink name from the configured `projects_dir`,
-or `null` (cross-project); `title` required; `phase` in `{wip, planned, later, null}`;
-`priority` in `{critical, high, normal, low}` (default `normal`); `tags` = List[str].
+Field rules: `project` = entry name from the configured `projects_dir`,
+or `null` (cross-project); `title` required; `phase` in
+`{wip, planned, later, null}`; `priority` in
+`{critical, high, normal, low}` (default `normal`); `tags` = List[str].
 
 ## 8. Schema
 
 | Field | Type | Notes |
 |---|---|---|
 | `id` | INT PK | #<id> reference |
-| `project` | TEXT NULL | symlink name or NULL |
+| `project` | TEXT NULL | entry name or NULL |
 | `title` | TEXT | required |
 | `description` | TEXT | Markdown OK |
 | `status` | TEXT | `open` / `done` |
@@ -168,33 +166,11 @@ or `null` (cross-project); `title` required; `phase` in `{wip, planned, later, n
 | tags | n:m | via `tags` + `task_tags` tables |
 | settings | KV | `key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT` |
 
-Phase symbols for Inbox reports:
-`Wip` wip · `Planned` planned · `Later` later · `Done` done · `?` null/no phase
+Phase symbols for inbox-style reports:
+`Wip` wip, `Planned` planned, `Later` later, `Done` done, `?` null/no phase
 
 ## 9. Inter-Agent Report Conventions
 
-Always cite tasks as `#<id> <Title>` or `Task #<id>` in every inbox note,
-followup, or status report so Christian has a direct anchor into the tracker.
-
-## 10. ntasker Code Maintenance (HERMINE only)
-
-Stack constraints (see `/home/christian/nerdocs/ntasker/src/ntasker/`):
-- FastAPI + stdlib `sqlite3` (no ORM), AlpineJS + Tabler.io vendored -- no build step.
-- `__version__` in `src/ntasker/__init__.py` is single source of truth;
-  assets load with `?v=<__version__>` cache-buster. `pyproject.toml` keeps it in sync.
-- Schema migrations: run at boot, idempotent (`try/except` on "no such column").
-- Bind: `127.0.0.1:8766` default in `ntasker serve`; CLI flags `--host` / `--port` exist.
-- DB path: NEVER hardcode `/home/christian/nerdocs/...` -- always go through
-  `ntasker.paths.resolve_db_path()` or `NTASKER_DB`.
-- Settings reads: `from ntasker.settings import get_setting` (or
-  `get_projects_dir()` for that specific helper).
-- Tracker-Repo darf committen + taggen nach Christians OK pro Feature
-  (Memory `feedback_tracker_repo_commits`).
-
-## 11. Memory Cross-links
-
-- `feedback_tracker_explicit_only` -- no autonomous writes
-- `feedback_no_git_commits` -- never commit other repos
-- `feedback_tracker_repo_commits` -- ntasker-Repo darf nach OK committen
-- `feedback_tracker_id_reference` -- Christian referenziert Tasks per `#<id>`
-- `feedback_doc_writing_style` -- keep docs concise, crosslink over repeat
+Always cite tasks as `#<id> <Title>` or `Task #<id>` in any inter-agent
+note, follow-up, or status report so the user has a direct anchor back
+into the tracker.

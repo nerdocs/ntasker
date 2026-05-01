@@ -525,7 +525,7 @@ def cmd_install_claude_assets(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="ntasker",
-        description="Lightweight local task tracker for the nerdocs HQ.",
+        description="Lightweight local task tracker. Single-user, FastAPI + SQLite.",
     )
     p.add_argument("--version", action="version", version=f"ntasker {__version__}")
     p.add_argument(

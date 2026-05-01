@@ -4,6 +4,7 @@
 const LS_KEY_PROJECT_FILTER = 'nerdocs.tracker.projectFilter';
 const LS_KEY_TAG_FILTER = 'nerdocs.tracker.tagFilter';
 const LS_KEY_PHASE_FILTER = 'nerdocs.tracker.phaseFilter';
+const LS_KEY_PRIORITY_FILTER = 'nerdocs.tracker.priorityFilter';
 const LS_KEY_THEME = 'tracker.theme';
 
 // Sentinel for cross-project tasks (matches PROJECT_NONE_SENTINEL in app.py).
@@ -13,13 +14,17 @@ const PROJECT_NONE = '__none__';
 // Used to silently drop stale entries from localStorage.
 const PHASE_VALUES = ['wip', 'planned', 'later', '__none__'];
 
+// Valid priority values (matches PRIORITY_ORDER / PRIORITY_VALID in app.py).
+const PRIORITY_VALUES = ['critical', 'high', 'normal', 'low'];
+
 function tracker() {
     return {
         // Sidebar feeds.
-        // projects/tags: [{name, open_count}]; phases: [{value, label, open_count}].
+        // projects/tags: [{name, open_count}]; phases/priorities: [{value, label, open_count}].
         projects: [],
         tags: [],
         phases: [],
+        priorities: [],
         tasks: [],
         tab: 'open',                 // 'open' | 'done' | 'archive'
         theme: localStorage.getItem(LS_KEY_THEME) || 'light',
@@ -35,6 +40,10 @@ function tracker() {
         // Special value '__none__' = include tasks with phase IS NULL.
         phaseFilter: [],
 
+        // Multi-value priority filter (OR-combined). Empty list = no filter.
+        // priority is NOT NULL in the schema -- no __none__ sentinel.
+        priorityFilter: [],
+
         filter: {
             search: '',
         },
@@ -43,6 +52,7 @@ function tracker() {
             title: '',
             description: '',
             phase: '',
+            priority: 'normal',
             tags: [],          // committed tag list (lowercase strings)
             tagInput: '',      // current text in the tag-input
         },
@@ -54,11 +64,17 @@ function tracker() {
             this.restoreProjectFilter();
             this.restoreTagFilter();
             this.restorePhaseFilter();
-            await Promise.all([this.loadProjects(), this.loadTags(), this.loadPhases()]);
+            this.restorePriorityFilter();
+            await Promise.all([
+                this.loadProjects(),
+                this.loadTags(),
+                this.loadPhases(),
+                this.loadPriorities(),
+            ]);
             // After loading projects/tags, drop stale entries silently.
             this.pruneStaleProjectFilter();
             this.pruneStaleTagFilter();
-            // Phase filter is validated against the fixed PHASE_VALUES list at restore time.
+            // Phase / priority filters are validated against fixed value lists at restore time.
             await this.loadTasks();
         },
 
@@ -212,6 +228,41 @@ function tracker() {
             this.loadCounts();
         },
 
+        // ---- Priority filter ----
+        restorePriorityFilter() {
+            try {
+                const raw = localStorage.getItem(LS_KEY_PRIORITY_FILTER);
+                if (!raw) return;
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed)) {
+                    // Drop any value not in the fixed PRIORITY_VALUES set.
+                    this.priorityFilter = parsed.filter(v => PRIORITY_VALUES.includes(v));
+                }
+            } catch {
+                this.priorityFilter = [];
+            }
+        },
+
+        persistPriorityFilter() {
+            localStorage.setItem(LS_KEY_PRIORITY_FILTER, JSON.stringify(this.priorityFilter));
+        },
+
+        togglePriority(value) {
+            const idx = this.priorityFilter.indexOf(value);
+            if (idx >= 0) this.priorityFilter.splice(idx, 1);
+            else this.priorityFilter.push(value);
+            this.persistPriorityFilter();
+            this.loadTasks();
+            this.loadCounts();
+        },
+
+        clearPriorityFilter() {
+            this.priorityFilter = [];
+            this.persistPriorityFilter();
+            this.loadTasks();
+            this.loadCounts();
+        },
+
         // ---- Tabs ----
         setTab(tab) {
             this.tab = tab;
@@ -234,14 +285,20 @@ function tracker() {
             this.phases = await r.json();
         },
 
+        async loadPriorities() {
+            const r = await fetch('/api/priorities');
+            this.priorities = await r.json();
+        },
+
         // ---- Tasks ----
         // Build URLSearchParams shared by /api/tasks and /api/stats.
-        // Repeats the `project`, `tag`, `phase` keys for FastAPI list[str] semantics.
+        // Repeats the `project`, `tag`, `phase`, `priority` keys for FastAPI list[str].
         _buildFilterParams() {
             const params = new URLSearchParams();
             for (const v of this.projectFilter) params.append('project', v);
             for (const v of this.tagFilter) params.append('tag', v);
             for (const v of this.phaseFilter) params.append('phase', v);
+            for (const v of this.priorityFilter) params.append('priority', v);
             if (this.filter.search) params.set('search', this.filter.search);
             return params;
         },
@@ -281,6 +338,7 @@ function tracker() {
                 title: this.form.title.trim(),
                 description: this.form.description.trim() || null,
                 phase: this.form.phase || null,
+                priority: this.form.priority || 'normal',
                 tags: this.form.tags,
             };
             const r = await fetch('/api/tasks', {
@@ -295,6 +353,7 @@ function tracker() {
             this.form.title = '';
             this.form.description = '';
             this.form.phase = '';
+            this.form.priority = 'normal';
             this.form.tags = [];
             this.form.tagInput = '';
             // Keep project selection for rapid same-project entry.
@@ -353,6 +412,7 @@ function tracker() {
                 description: t.description,
                 project: t.project || null,
                 phase: t.phase || null,
+                priority: t.priority || 'normal',
                 tags: t.tags,
             };
             const r = await fetch(`/api/tasks/${t.id}`, {
@@ -380,9 +440,14 @@ function tracker() {
             return r;
         },
 
-        // After any write, refresh tasks + sidebar counts (projects, tags, phases).
+        // After any write, refresh tasks + sidebar counts (projects, tags, phases, priorities).
         async refreshAll() {
-            await Promise.all([this.loadProjects(), this.loadTags(), this.loadPhases()]);
+            await Promise.all([
+                this.loadProjects(),
+                this.loadTags(),
+                this.loadPhases(),
+                this.loadPriorities(),
+            ]);
             this.pruneStaleProjectFilter();
             this.pruneStaleTagFilter();
             await this.loadTasks();
@@ -537,7 +602,8 @@ function tracker() {
             if (this.filter.search ||
                 this.projectFilter.length > 0 ||
                 this.tagFilter.length > 0 ||
-                this.phaseFilter.length > 0) {
+                this.phaseFilter.length > 0 ||
+                this.priorityFilter.length > 0) {
                 return 'Keine Treffer für die aktiven Filter.';
             }
             if (this.tab === 'open') return 'Alles erledigt. Oder noch nichts angelegt.';

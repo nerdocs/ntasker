@@ -4,6 +4,9 @@ All notable changes to the nerdocs Tracker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [0.4.0] — 2026-05-01
+- Neues Feld `priority` (low/normal/high/critical) mit Sidebar-Filter und Badge.
+
 ## [0.3.4] — 2026-05-01
 - Version badge moved from page-title to navbar-brand (top bar, next to "nerdocs Tracker").
 

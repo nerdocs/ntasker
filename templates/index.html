@@ -103,6 +103,42 @@
         </template>
 
         {# ------------------------------------------------------------- #}
+        {# Priorities section -- always visible, fixed order (highest first) #}
+        {# ------------------------------------------------------------- #}
+        <hr class="my-3">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+            <span class="text-secondary text-uppercase small fw-bold">
+                <i class="ti ti-flame me-1"></i>
+                Priorität
+            </span>
+            <button type="button" class="btn btn-sm btn-ghost-secondary px-2 py-0"
+                    x-show="priorityFilter.length > 0"
+                    @click="clearPriorityFilter()"
+                    title="Prioritäts-Filter leeren">
+                <i class="ti ti-x fs-3"></i>
+            </button>
+        </div>
+
+        <template x-for="pr in priorities" :key="pr.value">
+            <label class="form-check d-flex align-items-center w-100 mb-1" :title="pr.label">
+                <input type="checkbox" class="form-check-input"
+                       :checked="priorityFilter.includes(pr.value)"
+                       @change="togglePriority(pr.value)">
+                <span class="form-check-label ms-2 d-flex align-items-center flex-fill">
+                    <i class="ti me-1"
+                       :class="{
+                           'ti-alert-triangle-filled text-danger': pr.value === 'critical',
+                           'ti-arrow-up text-orange': pr.value === 'high',
+                           'ti-minus text-secondary': pr.value === 'normal',
+                           'ti-arrow-down text-azure': pr.value === 'low',
+                       }"></i>
+                    <span x-text="pr.label"></span>
+                </span>
+                <span class="badge bg-secondary-lt ms-2" x-text="pr.open_count"></span>
+            </label>
+        </template>
+
+        {# ------------------------------------------------------------- #}
         {# Tags section -- only visible if any tag exists                #}
         {# ------------------------------------------------------------- #}
         <template x-if="tags.length > 0">
@@ -215,7 +251,16 @@
                                         <option value="later">Später</option>
                                     </select>
                                 </div>
-                                <div class="col-md-7">
+                                <div class="col-md-2">
+                                    <label class="form-label">Priorität</label>
+                                    <select class="form-select" x-model="form.priority">
+                                        <option value="critical">Kritisch</option>
+                                        <option value="high">Hoch</option>
+                                        <option value="normal">Normal</option>
+                                        <option value="low">Niedrig</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-5">
                                     <label class="form-label">Titel <span class="text-danger">*</span></label>
                                     <input type="text" class="form-control" x-model="form.title" required maxlength="500" placeholder="Was ist zu tun?">
                                 </div>
@@ -383,6 +428,37 @@
                                                 </span>
                                             </template>
 
+                                            {# Priority badges -- click to toggle priority filter. #}
+                                            {# `normal` is intentionally not rendered: it is the default #}
+                                            {# and a badge per task would create visual noise. #}
+                                            <template x-if="task.priority === 'critical'">
+                                                <span class="badge bg-danger text-white"
+                                                      role="button"
+                                                      style="cursor: pointer"
+                                                      title="Filter: Priorität Kritisch"
+                                                      @click.stop="togglePriority('critical')">
+                                                    <i class="ti ti-alert-triangle-filled me-1"></i>Kritisch
+                                                </span>
+                                            </template>
+                                            <template x-if="task.priority === 'high'">
+                                                <span class="badge bg-orange-lt"
+                                                      role="button"
+                                                      style="cursor: pointer"
+                                                      title="Filter: Priorität Hoch"
+                                                      @click.stop="togglePriority('high')">
+                                                    <i class="ti ti-arrow-up me-1"></i>Hoch
+                                                </span>
+                                            </template>
+                                            <template x-if="task.priority === 'low'">
+                                                <span class="badge bg-azure-lt"
+                                                      role="button"
+                                                      style="cursor: pointer"
+                                                      title="Filter: Priorität Niedrig"
+                                                      @click.stop="togglePriority('low')">
+                                                    <i class="ti ti-arrow-down me-1"></i>Niedrig
+                                                </span>
+                                            </template>
+
                                             {# Tag badges -- click to toggle tag filter #}
                                             <template x-for="tag in task.tags" :key="tag">
                                                 <span class="badge bg-purple-lt"
@@ -494,6 +570,15 @@
                             <option value="wip">In Arbeit</option>
                             <option value="planned">Geplant</option>
                             <option value="later">Später</option>
+                        </select>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Priorität</label>
+                        <select class="form-select" x-model="editing.priority">
+                            <option value="critical">Kritisch</option>
+                            <option value="high">Hoch</option>
+                            <option value="normal">Normal</option>
+                            <option value="low">Niedrig</option>
                         </select>
                     </div>
                     <div class="mb-2">

@@ -25,7 +25,7 @@ from pydantic import BaseModel, Field
 # new CSS/JS instead of replaying a stale ``index.html`` -> stale
 # ``app.js`` from disk cache (the cause of "phantom button" reports
 # after the v0.3.1 fix shipped: clients still saw the old DOM).
-VERSION = "0.3.4"
+VERSION = "0.4.0"
 
 # Sentinel for "tasks without a project" (cross-project tasks). Used in
 # multi-value project filters: ?project=__none__ -> include rows with project IS NULL.
@@ -45,6 +45,18 @@ PHASE_ORDER: list[tuple[str, str]] = [
     (PHASE_NONE_SENTINEL, "ohne Phase"),
 ]
 PHASE_VALID = {value for value, _ in PHASE_ORDER}
+
+# Fixed priority order for the sidebar feed. Workflow-natural (highest first),
+# not alphabetical. The column is NOT NULL with DEFAULT 'normal' -- no
+# __none__ sentinel needed here.
+PRIORITY_ORDER: list[tuple[str, str]] = [
+    ("critical", "kritisch"),
+    ("high", "hoch"),
+    ("normal", "normal"),
+    ("low", "niedrig"),
+]
+PRIORITY_VALID = {value for value, _ in PRIORITY_ORDER}
+PRIORITY_DEFAULT = "normal"
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -71,6 +83,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     description TEXT,
     status TEXT NOT NULL DEFAULT 'open',
     phase TEXT,
+    priority TEXT NOT NULL DEFAULT 'normal',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     completed_at TEXT,
     archived INTEGER NOT NULL DEFAULT 0
@@ -113,6 +126,15 @@ def init_db() -> None:
             # Old SQLite without DROP COLUMN -- not catastrophic, leave the
             # legacy column in place; it's just unused dead weight then.
             pass
+        # Idempotent migration: add the `priority` column. v0.4.0.
+        # SQLite raises OperationalError("duplicate column name: priority")
+        # on second boot -- swallow it.
+        try:
+            conn.execute(
+                "ALTER TABLE tasks ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal'"
+            )
+        except sqlite3.OperationalError:
+            pass
         conn.commit()
 
 
@@ -142,6 +164,7 @@ def row_to_task(row: sqlite3.Row, tags: list[str] | None = None) -> dict:
         "description": row["description"],
         "status": row["status"],
         "phase": row["phase"],
+        "priority": row["priority"],
         "created_at": row["created_at"],
         "completed_at": row["completed_at"],
         "archived": bool(row["archived"]),
@@ -263,6 +286,7 @@ def list_projects() -> list[str]:
 
 Status = Literal["open", "done"]
 Phase = Literal["wip", "planned", "later"]
+Priority = Literal["low", "normal", "high", "critical"]
 
 
 class TaskCreate(BaseModel):
@@ -270,6 +294,9 @@ class TaskCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=500)
     description: str | None = None
     phase: Phase | None = None
+    # `priority` is plain str so we can return HTTP 400 (not Pydantic's 422)
+    # for bad values via an explicit whitelist check in the endpoint.
+    priority: str = "normal"
     tags: list[str] = Field(default_factory=list)
 
 
@@ -279,6 +306,8 @@ class TaskUpdate(BaseModel):
     description: str | None = None
     status: Status | None = None
     phase: Phase | None = None
+    # See TaskCreate.priority -- whitelist enforced in the endpoint.
+    priority: str | None = None
     archived: bool | None = None
     tags: list[str] | None = None  # None = unchanged; [] = clear all
 
@@ -396,6 +425,38 @@ def api_tags_cleanup() -> JSONResponse:
     return JSONResponse({"removed": len(names), "removed_names": names})
 
 
+@app.get("/api/priorities")
+def api_priorities() -> JSONResponse:
+    """Sidebar feed for the priority filter.
+
+    Fixed order (highest first): critical -> high -> normal -> low.
+    Counts are absolute (open + non-archived) just like /api/projects so the
+    sidebar does not flicker when filters toggle. The column is NOT NULL --
+    no __none__ bucket, every task has a priority.
+    """
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT priority, COUNT(*) AS c
+            FROM tasks
+            WHERE status = 'open' AND archived = 0
+            GROUP BY priority
+            """
+        ).fetchall()
+    counts: dict[str, int] = {row["priority"]: int(row["c"]) for row in rows}
+
+    out: list[dict] = []
+    for value, label in PRIORITY_ORDER:
+        out.append(
+            {
+                "value": value,
+                "label": label,
+                "open_count": counts.get(value, 0),
+            }
+        )
+    return JSONResponse(out)
+
+
 @app.get("/api/phases")
 def api_phases() -> JSONResponse:
     """Sidebar feed for the phase filter.
@@ -505,6 +566,26 @@ def _build_phase_filter(phase: list[str]) -> tuple[str, list[object]]:
     return " AND (" + " OR ".join(clauses) + ")", params
 
 
+def _build_priority_filter(priority: list[str]) -> tuple[str, list[object]]:
+    """Translate a multi-value priority filter to a SQL fragment + params.
+
+    Semantics:
+      - empty list -> no filter
+      - other values -> WHERE priority IN (?, ?, ...)
+
+    The column is NOT NULL with DEFAULT 'normal' -- no __none__ sentinel.
+    Unknown priority values are silently dropped to keep the API permissive.
+    """
+    if not priority:
+        return "", []
+
+    names = [p for p in priority if p in PRIORITY_VALID]
+    if not names:
+        return "", []
+    placeholders = ", ".join("?" for _ in names)
+    return f" AND priority IN ({placeholders})", list(names)
+
+
 def _build_tag_filter(tag: list[str]) -> tuple[str, list[object]]:
     """Multi-value OR filter on tag names (case-insensitive).
 
@@ -528,6 +609,7 @@ def _query_tasks(
     project: list[str],
     tag: list[str],
     phase: list[str],
+    priority: list[str],
     status: Status | None,
     archived: bool | None,
     search: str | None,
@@ -551,6 +633,11 @@ def _query_tasks(
         sql += phase_clause
         params.extend(phase_params)
 
+    prio_clause, prio_params = _build_priority_filter(priority)
+    if prio_clause:
+        sql += prio_clause
+        params.extend(prio_params)
+
     if status is not None:
         sql += " AND status = ?"
         params.append(status)
@@ -573,11 +660,12 @@ def api_list_tasks(
     project: list[str] = Query(default=[]),  # noqa: B008
     tag: list[str] = Query(default=[]),  # noqa: B008
     phase: list[str] = Query(default=[]),  # noqa: B008
+    priority: list[str] = Query(default=[]),  # noqa: B008
     status: Status | None = None,
     archived: bool | None = None,
     search: str | None = None,
 ) -> JSONResponse:
-    rows = _query_tasks(project, tag, phase, status, archived, search)
+    rows = _query_tasks(project, tag, phase, priority, status, archived, search)
     ids = [int(r["id"]) for r in rows]
     with get_conn() as conn:
         tags_by_id = _load_tags_bulk(conn, ids)
@@ -589,15 +677,17 @@ def api_stats(
     project: list[str] = Query(default=[]),  # noqa: B008
     tag: list[str] = Query(default=[]),  # noqa: B008
     phase: list[str] = Query(default=[]),  # noqa: B008
+    priority: list[str] = Query(default=[]),  # noqa: B008
     search: str | None = None,
 ) -> JSONResponse:
-    """Return tab counts (open/done/archive) honoring project + tag + phase + search filter.
+    """Return tab counts (open/done/archive) honoring all sidebar filters + search.
 
     Single roundtrip replacement for three /api/tasks calls in the frontend.
     """
     proj_clause, proj_params = _build_project_filter(project)
     tag_clause, tag_params = _build_tag_filter(tag)
     phase_clause, phase_params = _build_phase_filter(phase)
+    prio_clause, prio_params = _build_priority_filter(priority)
 
     base_params: list[object] = []
     base_where = " WHERE 1=1"
@@ -610,6 +700,9 @@ def api_stats(
     if phase_clause:
         base_where += phase_clause
         base_params.extend(phase_params)
+    if prio_clause:
+        base_where += prio_clause
+        base_params.extend(prio_params)
     if search:
         base_where += " AND (title LIKE ? OR COALESCE(description, '') LIKE ?)"
         like = f"%{search}%"
@@ -645,14 +738,25 @@ def api_get_task(task_id: int) -> JSONResponse:
 
 @app.post("/api/tasks", status_code=201)
 def api_create_task(payload: TaskCreate) -> JSONResponse:
+    # `priority` is whitelisted by the Pydantic Literal alias (HTTP 422 on
+    # bad value). The defence-in-depth check below mirrors PATCH semantics
+    # and protects against future model drift.
+    if payload.priority not in PRIORITY_VALID:
+        raise HTTPException(status_code=400, detail="Invalid priority")
     norm_tags = _normalize_tags(payload.tags)
     with get_conn() as conn:
         cur = conn.execute(
             """
-            INSERT INTO tasks (project, title, description, phase)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO tasks (project, title, description, phase, priority)
+            VALUES (?, ?, ?, ?, ?)
             """,
-            (payload.project, payload.title, payload.description, payload.phase),
+            (
+                payload.project,
+                payload.title,
+                payload.description,
+                payload.phase,
+                payload.priority,
+            ),
         )
         new_id = int(cur.lastrowid)
         if norm_tags:
@@ -670,6 +774,12 @@ def api_update_task(task_id: int, payload: TaskUpdate) -> JSONResponse:
 
     # Tags are stored in a separate table -- pop before SQL UPDATE.
     tags_raw = fields.pop("tags", None)
+
+    # Defence-in-depth whitelist on priority. Pydantic's Literal alias also
+    # rejects bad values (with 422), but we re-check here so a future relaxed
+    # type can never let an unwhitelisted string slip into the SQL UPDATE.
+    if "priority" in fields and fields["priority"] not in PRIORITY_VALID:
+        raise HTTPException(status_code=400, detail="Invalid priority")
 
     # Auto-set completed_at when status changes
     if "status" in fields:

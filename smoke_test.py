@@ -42,11 +42,48 @@ def main() -> int:
     assert "ntasker" in r.text, "index missing brand string"
     print("OK GET /")
 
-    # 1b. GET /settings returns HTML.
+    # 1b. GET /settings returns HTML. Default language = en (no Accept-Language
+    # set on the TestClient). The page MUST carry the English page-title.
     r = client.get("/settings")
     assert_ok(r)
-    assert "Einstellungen" in r.text
-    print("OK GET /settings")
+    assert "Settings" in r.text, "default settings page must be English"
+    assert r.headers.get("Content-Language") == "en", (
+        f"expected Content-Language=en, got {r.headers.get('Content-Language')!r}"
+    )
+    print("OK GET /settings (en default)")
+
+    # 1c. With Accept-Language: de the same page must render the German title.
+    r = client.get("/settings", headers={"Accept-Language": "de"})
+    assert_ok(r)
+    assert "Einstellungen" in r.text, "Accept-Language: de did not switch language"
+    assert r.headers.get("Content-Language") == "de"
+    print("OK GET /settings (Accept-Language: de)")
+
+    # 1d. Quality-weighted Accept-Language picks the highest available.
+    r = client.get("/", headers={"Accept-Language": "fr;q=0.9, de;q=0.8, en;q=0.5"})
+    assert_ok(r)
+    assert r.headers.get("Content-Language") == "de"
+    print("OK GET / (Accept-Language q-weighting)")
+
+    # 1e. Pinned setting overrides Accept-Language.
+    pin = client.put("/api/settings/language", json={"value": "de"})
+    assert_ok(pin)
+    r = client.get("/", headers={"Accept-Language": "en"})
+    assert_ok(r)
+    assert r.headers.get("Content-Language") == "de", (
+        "pinned language=de must override Accept-Language: en"
+    )
+    assert "Aufgaben" in r.text  # German page title in index.html
+    print("OK GET / (pinned language=de overrides header)")
+
+    # 1f. Unset pin to keep the rest of the suite hitting the auto path.
+    rdel = client.delete("/api/settings/language")
+    assert rdel.status_code == 204
+
+    # 1g. Validator rejects an unknown language with HTTP 400.
+    bad = client.put("/api/settings/language", json={"value": "fr"})
+    assert bad.status_code == 400, f"expected 400 for invalid language, got {bad.status_code}"
+    print("OK PUT /api/settings/language fr -> 400 (validator)")
 
     # 2. GET /api/projects returns enriched list ({name, open_count}).
     r = client.get("/api/projects")

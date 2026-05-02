@@ -37,6 +37,14 @@ from ntasker.db import (
     row_to_task,
     set_task_tags,
 )
+from ntasker.i18n import (
+    N_,
+    _,
+    get_active_language,
+    gettext_for_jinja,
+    ngettext_for_jinja,
+)
+from ntasker.middleware import LanguageMiddleware
 from ntasker.settings import (
     HINTS,
     VALIDATORS,
@@ -58,23 +66,26 @@ PROJECT_NULL_LEGACY = "__null__"
 # Sentinel for "tasks without a phase" (analogous to PROJECT_NONE_SENTINEL).
 PHASE_NONE_SENTINEL = "__none__"
 
-# Fixed phase order + labels for the sidebar feed.
+# Fixed phase order + English source labels for the sidebar feed.
+# Labels go through ``_()`` at response time -- ``N_`` is a no-op marker
+# so pybabel-extract picks up the strings; translations live in
+# ``locale/<lang>/LC_MESSAGES/``.
 PHASE_ORDER: list[tuple[str, str]] = [
-    ("wip", "in Arbeit"),
-    ("planned", "geplant"),
-    ("later", "später"),
-    (PHASE_NONE_SENTINEL, "ohne Phase"),
+    ("wip", N_("In Progress")),
+    ("planned", N_("Planned")),
+    ("later", N_("Later")),
+    (PHASE_NONE_SENTINEL, N_("No phase")),
 ]
-PHASE_VALID = {value for value, _ in PHASE_ORDER}
+PHASE_VALID = {value for value, _label in PHASE_ORDER}
 
-# Fixed priority order for the sidebar feed.
+# Fixed priority order for the sidebar feed (highest first).
 PRIORITY_ORDER: list[tuple[str, str]] = [
-    ("critical", "kritisch"),
-    ("high", "hoch"),
-    ("normal", "normal"),
-    ("low", "niedrig"),
+    ("critical", N_("Critical")),
+    ("high", N_("High")),
+    ("normal", N_("Normal")),
+    ("low", N_("Low")),
 ]
-PRIORITY_VALID = {value for value, _ in PRIORITY_ORDER}
+PRIORITY_VALID = {value for value, _label in PRIORITY_ORDER}
 PRIORITY_DEFAULT = "normal"
 
 
@@ -159,6 +170,16 @@ app = FastAPI(
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
+# Wire the Jinja i18n extension. ``newstyle=True`` enables {trans foo=...}
+# placeholders. We deliberately bind callables (not pre-resolved strings)
+# so each call goes through the active-language context-var.
+templates.env.add_extension("jinja2.ext.i18n")
+templates.env.install_gettext_callables(
+    gettext=gettext_for_jinja,
+    ngettext=ngettext_for_jinja,
+    newstyle=True,
+)
+
 
 def _asset(name: str) -> str:
     """Jinja global -- resolve a vendor-asset URL for the active mode."""
@@ -176,9 +197,167 @@ def _asset_mode() -> str:
     return get_assets_mode_resolved()
 
 
+def _t(key: str) -> str:
+    """Short Jinja alias for :func:`_` -- ``{{ t('Save') }}`` reads cleaner
+    than ``{{ _('Save') }}`` in dense markup, and avoids confusion with
+    Jinja's loop-variable convention.
+    """
+    return _(key)
+
+
 templates.env.globals["asset"] = _asset
 templates.env.globals["asset_sri"] = _asset_sri
 templates.env.globals["asset_mode"] = _asset_mode
+templates.env.globals["t"] = _t
+
+
+# ---------------------------------------------------------------------------
+# Frontend i18n -- the JS/Alpine layer reads `window.__i18n` populated
+# from this dict. Every string consumed by AlpineJS expressions, confirm
+# dialogs, dynamic placeholders, or toast messages MUST live here so
+# Babel's pybabel-extract picks it up via the surrounding _() call.
+# ---------------------------------------------------------------------------
+
+
+def build_js_strings() -> dict[str, str]:
+    """Translate every JS-side string against the active language.
+
+    Centralised here (not split across templates) so:
+
+    * pybabel-extract sees a single Python source for all JS msgids;
+    * the Jinja templates only need ``window.__i18n = {{ js_strings | tojson }}``;
+    * adding a new key is one line in one place.
+    """
+    return {
+        # Sidebar -- projects
+        "projects": _("Projects"),
+        "select_all": _("Select all"),
+        "deselect_all": _("Deselect all"),
+        "no_filter_active": _("No filter active -- all tasks visible."),
+        "cross_project": _("Cross-project"),
+        "no_project_symlinks": _("No project symlinks found."),
+        # Sidebar -- phases
+        "phases": _("Phases"),
+        "clear_phase_filter": _("Clear phase filter"),
+        "tasks_without_project": _("Tasks without a project"),
+        # Sidebar -- priorities
+        "priority": _("Priority"),
+        "clear_priority_filter": _("Clear priority filter"),
+        # Sidebar -- tags
+        "tags": _("Tags"),
+        "clear_tag_filter": _("Clear tag filter"),
+        "cleanup_tags": _("Clean up tags"),
+        "cleanup_tags_title": _("Remove unused tags"),
+        # Top bar
+        "settings": _("Settings"),
+        "light_mode": _("Light mode"),
+        "dark_mode": _("Dark mode"),
+        # Page header
+        "tasks_title": _("Tasks"),
+        # Banners
+        "configure_projects_dir": _(
+            "Please configure the projects directory -- otherwise the project list stays empty."
+        ),
+        "go_to_settings": _("Go to settings"),
+        # New-task form
+        "new_task": _("New task"),
+        "project": _("Project"),
+        "cross_project_option": _("-- cross-project --"),
+        "phase": _("Phase"),
+        "phase_none": _("--"),
+        "phase_wip": _("In Progress"),
+        "phase_planned": _("Planned"),
+        "phase_later": _("Later"),
+        "priority_critical": _("Critical"),
+        "priority_high": _("High"),
+        "priority_normal": _("Normal"),
+        "priority_low": _("Low"),
+        "title": _("Title"),
+        "title_placeholder": _("What needs to be done?"),
+        "description": _("Description"),
+        "description_placeholder": _("Optional"),
+        "tag_input_placeholder": _("Type a tag, Enter to add"),
+        "remove_tag": _("Remove tag"),
+        "create": _("Create"),
+        # Search
+        "search_placeholder": _("Search in title and description..."),
+        # Tabs
+        "tab_open": _("Open"),
+        "tab_done": _("Done"),
+        "tab_archive": _("Archive"),
+        # Task row
+        "click_to_copy_id": _("Click to copy: #{id}"),
+        "filter_project": _("Filter: project {name}"),
+        "filter_cross_project": _("Filter: cross-project"),
+        "filter_phase_wip": _("Filter: phase In Progress"),
+        "filter_phase_planned": _("Filter: phase Planned"),
+        "filter_phase_later": _("Filter: phase Later"),
+        "filter_priority_critical": _("Filter: priority Critical"),
+        "filter_priority_high": _("Filter: priority High"),
+        "filter_priority_low": _("Filter: priority Low"),
+        "filter_tag": _("Filter: tag {name}"),
+        "edit": _("Edit"),
+        "archive": _("Archive"),
+        "unarchive": _("Restore"),
+        "delete_permanently": _("Delete permanently"),
+        "delete": _("Delete"),
+        # Empty state
+        "no_tasks": _("No tasks"),
+        "empty_filtered": _("No matches for the active filters."),
+        "empty_open": _("All done. Or nothing created yet."),
+        "empty_done": _("Nothing finished yet."),
+        "empty_archive": _("Archive is empty."),
+        # Edit modal
+        "edit_task": _("Edit task"),
+        "task_n": _("Task"),
+        "close": _("Close"),
+        "cancel": _("Cancel"),
+        "save": _("Save"),
+        # Toasts
+        "create_failed": _("Create failed."),
+        "delete_failed": _("Delete failed."),
+        "save_failed": _("Save failed."),
+        "update_failed": _("Update failed."),
+        "delete_only_archived": _("Only archived tasks can be deleted."),
+        "confirm_delete": _('"{title}" -- delete permanently?'),
+        "copied": _("Copied: {text}"),
+        "copy_failed": _("Copy failed"),
+        "cleanup_failed": _("Cleanup failed."),
+        "cleanup_none": _("No unused tags."),
+        "cleanup_removed": _("{n} unused tags removed: {head}{tail}"),
+        "cleanup_more": _(", +{n} more"),
+        # Settings page
+        "settings_title": _("Settings"),
+        "back_to_tasks": _("back to tasks"),
+        "known_keys": _("Known keys"),
+        "unset_placeholder": _("(not set yet)"),
+        "saved": _("{key} saved."),
+        "removed": _("{key} removed."),
+        "claude_integration": _("Claude Code Integration"),
+        "claude_intro": _(
+            "ntasker ships a skill (SKILL.md) and a slash command (/task <id>) "
+            "for Claude Code. This card shows the install status -- writes go "
+            "exclusively through the CLI."
+        ),
+        "installed": _("Installed"),
+        "package_version": _("Package version"),
+        "drift": _("Drift"),
+        "claude_home": _("Claude home"),
+        "yes": _("yes"),
+        "no": _("no"),
+        "claude_not_installed": _("Skill + slash command are not installed yet."),
+        "claude_drift": _(
+            "Installed files differ from the package version. Update with backup:"
+        ),
+        "all_settings": _("All settings (DB content)"),
+        "key": _("Key"),
+        "value": _("Value"),
+        "updated": _("updated"),
+        "no_settings": _("No settings configured."),
+        "no_settings_hint_prefix": _(
+            "Configure a known key above, or set one via CLI:"
+        ),
+    }
 
 # Mount the user-data vendor cache at ``/static/vendor`` *before* the
 # broader ``/static`` mount. Starlette dispatches mounts in registration
@@ -194,6 +373,12 @@ if _vendor_cache.is_dir():
     )
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+# Language middleware -- set the active i18n language for each request.
+# Must be added after the FastAPI() construction; runs *outermost* in the
+# Starlette stack, which is exactly what we want (template rendering and
+# every endpoint sees the resolved language).
+app.add_middleware(LanguageMiddleware)
 
 
 @app.on_event("startup")
@@ -222,7 +407,13 @@ def index(request: Request) -> HTMLResponse:
     every request; static assets carry ``?v=<VERSION>`` cache-busters.
     """
     response = templates.TemplateResponse(
-        request, "index.html", context={"version": VERSION}
+        request,
+        "index.html",
+        context={
+            "version": VERSION,
+            "language": get_active_language(),
+            "js_strings": build_js_strings(),
+        },
     )
     response.headers["Cache-Control"] = "no-store"
     return response
@@ -231,10 +422,20 @@ def index(request: Request) -> HTMLResponse:
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request) -> HTMLResponse:
     """Settings UI: list known + ad-hoc keys, edit/delete via JS fetch."""
+    # Hints are stored as ``LazyString`` -- coerce to ``str`` here so the
+    # template gets a plain mapping with already-translated values for
+    # the active language.
+    hints_text = {key: str(val) for key, val in HINTS.items()}
     response = templates.TemplateResponse(
         request,
         "settings.html",
-        context={"version": VERSION, "hints": HINTS, "known_keys": sorted(VALIDATORS.keys())},
+        context={
+            "version": VERSION,
+            "hints": hints_text,
+            "known_keys": sorted(VALIDATORS.keys()),
+            "language": get_active_language(),
+            "js_strings": build_js_strings(),
+        },
     )
     response.headers["Cache-Control"] = "no-store"
     return response
@@ -255,7 +456,7 @@ def api_list_settings() -> JSONResponse:
 def api_get_setting(key: str) -> JSONResponse:
     row = get_setting_raw(key)
     if row is None:
-        raise HTTPException(status_code=404, detail="Setting not found")
+        raise HTTPException(status_code=404, detail=_("Setting not found"))
     return JSONResponse(row)
 
 
@@ -271,7 +472,7 @@ def api_set_setting(key: str, payload: SettingUpdate) -> JSONResponse:
 @app.delete("/api/settings/{key}", status_code=204)
 def api_delete_setting(key: str) -> None:
     if not delete_setting(key):
-        raise HTTPException(status_code=404, detail="Setting not found")
+        raise HTTPException(status_code=404, detail=_("Setting not found"))
 
 
 # ---------------------------------------------------------------------------
@@ -392,8 +593,10 @@ def api_priorities() -> JSONResponse:
 
     out: list[dict] = []
     for value, label in PRIORITY_ORDER:
+        # Translate the label per request -- the label is the gettext
+        # msgid, the active language drives the actual string.
         out.append(
-            {"value": value, "label": label, "open_count": counts.get(value, 0)}
+            {"value": value, "label": _(label), "open_count": counts.get(value, 0)}
         )
     return JSONResponse(out)
 
@@ -416,7 +619,7 @@ def api_phases() -> JSONResponse:
     for value, label in PHASE_ORDER:
         key: str | None = None if value == PHASE_NONE_SENTINEL else value
         out.append(
-            {"value": value, "label": label, "open_count": counts.get(key, 0)}
+            {"value": value, "label": _(label), "open_count": counts.get(key, 0)}
         )
     return JSONResponse(out)
 
@@ -628,7 +831,7 @@ def api_get_task(task_id: int) -> JSONResponse:
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         if row is None:
-            raise HTTPException(status_code=404, detail="Task not found")
+            raise HTTPException(status_code=404, detail=_("Task not found"))
         tags = load_tags_for(conn, task_id)
     return JSONResponse(row_to_task(row, tags))
 
@@ -636,7 +839,7 @@ def api_get_task(task_id: int) -> JSONResponse:
 @app.post("/api/tasks", status_code=201)
 def api_create_task(payload: TaskCreate) -> JSONResponse:
     if payload.priority not in PRIORITY_VALID:
-        raise HTTPException(status_code=400, detail="Invalid priority")
+        raise HTTPException(status_code=400, detail=_("Invalid priority"))
     norm_tags = normalize_tags(payload.tags)
     with get_conn() as conn:
         cur = conn.execute(
@@ -664,12 +867,12 @@ def api_create_task(payload: TaskCreate) -> JSONResponse:
 def api_update_task(task_id: int, payload: TaskUpdate) -> JSONResponse:
     fields = payload.model_dump(exclude_unset=True)
     if not fields:
-        raise HTTPException(status_code=400, detail="No fields to update")
+        raise HTTPException(status_code=400, detail=_("No fields to update"))
 
     tags_raw = fields.pop("tags", None)
 
     if "priority" in fields and fields["priority"] not in PRIORITY_VALID:
-        raise HTTPException(status_code=400, detail="Invalid priority")
+        raise HTTPException(status_code=400, detail=_("Invalid priority"))
 
     if "status" in fields:
         if fields["status"] == "done":
@@ -686,11 +889,11 @@ def api_update_task(task_id: int, payload: TaskUpdate) -> JSONResponse:
             params = [*fields.values(), task_id]
             cur = conn.execute(f"UPDATE tasks SET {set_clause} WHERE id = ?", params)
             if cur.rowcount == 0:
-                raise HTTPException(status_code=404, detail="Task not found")
+                raise HTTPException(status_code=404, detail=_("Task not found"))
         else:
             exists = conn.execute("SELECT 1 FROM tasks WHERE id = ?", (task_id,)).fetchone()
             if exists is None:
-                raise HTTPException(status_code=404, detail="Task not found")
+                raise HTTPException(status_code=404, detail=_("Task not found"))
 
         if tags_raw is not None:
             set_task_tags(conn, task_id, normalize_tags(tags_raw))
@@ -705,4 +908,4 @@ def api_delete_task(task_id: int) -> None:
     with get_conn() as conn:
         cur = conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
         if cur.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Task not found")
+            raise HTTPException(status_code=404, detail=_("Task not found"))

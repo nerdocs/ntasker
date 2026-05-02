@@ -1,4 +1,4 @@
-"""Settings module — KV-store + validators for ntasker.
+"""Settings module - KV-store + validators for ntasker.
 
 Schema lives in :mod:`ntasker.db` (table ``settings``). The store is
 intentionally generic (``key TEXT PRIMARY KEY``, ``value TEXT NOT NULL``)
@@ -25,6 +25,7 @@ from pathlib import Path
 
 from ntasker.assets import validate_assets_mode
 from ntasker.db import get_conn
+from ntasker.i18n import AVAILABLE_LANGUAGES, _, _lazy
 
 Validator = Callable[[str], str]
 """A validator takes the raw value, returns a normalized value, or raises ValueError."""
@@ -42,20 +43,41 @@ def validate_projects_dir(value: str) -> str:
     Returns the absolute, expanded path.
     """
     if not value:
-        raise ValueError("projects_dir darf nicht leer sein.")
+        raise ValueError(_("projects_dir must not be empty."))
     expanded = os.path.expanduser(value)
     if not os.path.isabs(expanded):
-        raise ValueError(f"projects_dir muss absolut sein: {value!r}")
+        raise ValueError(_("projects_dir must be absolute: {value!r}").format(value=value))
     if not os.path.isdir(expanded):
-        raise ValueError(f"projects_dir existiert nicht oder ist kein Verzeichnis: {expanded}")
+        raise ValueError(
+            _("projects_dir does not exist or is not a directory: {path}").format(path=expanded)
+        )
     if not os.access(expanded, os.R_OK):
-        raise ValueError(f"projects_dir ist nicht lesbar: {expanded}")
+        raise ValueError(_("projects_dir is not readable: {path}").format(path=expanded))
     return expanded
+
+
+def validate_language(value: str) -> str:
+    """Validator for the ``language`` setting.
+
+    Whitelist-only (Zero Trust): accepts ``auto``, ``en``, ``de``. Any
+    other value is rejected with a translated error message - never
+    silently coerced.
+    """
+    allowed = ("auto", *AVAILABLE_LANGUAGES)
+    norm = (value or "").strip().lower()
+    if norm not in allowed:
+        raise ValueError(
+            _("Invalid language: {value!r}. Allowed: {allowed}").format(
+                value=value, allowed=", ".join(allowed)
+            )
+        )
+    return norm
 
 
 VALIDATORS: dict[str, Validator] = {
     "projects_dir": validate_projects_dir,
     "assets_mode": validate_assets_mode,
+    "language": validate_language,
 }
 """Registry of known settings keys with their validators.
 
@@ -65,17 +87,21 @@ it before any DB write.
 """
 
 
-# Hint texts shown next to known keys in the /settings UI. Free-form text;
-# keep short and German-language for Christian.
-HINTS: dict[str, str] = {
-    "projects_dir": (
-        "Verzeichnis mit Projekt-Symlinks "
-        "(z.B. /home/<user>/Projects). Wird für /api/projects gelesen."
+# Hint texts shown next to known keys in the /settings UI. Wrapped in
+# :class:`LazyString` so they translate per-request - the dict itself is
+# evaluated at import time, but each entry stays bound to its msgid.
+HINTS: dict[str, object] = {
+    "projects_dir": _lazy(
+        "Directory containing project symlinks (e.g. /home/<user>/Projects). "
+        "Read for /api/projects."
     ),
-    "assets_mode": (
-        "Vendor-Assets (Tabler/Alpine): cdn (default, jsDelivr + SRI), "
-        "local (aus User-Data-Dir, vorher mit `ntasker assets fetch` laden), "
-        "auto (local wenn Cache vollständig, sonst cdn)."
+    "assets_mode": _lazy(
+        "Vendor assets (Tabler/Alpine): cdn (default, jsDelivr + SRI), "
+        "local (from user-data dir, populate via `ntasker assets fetch`), "
+        "auto (local if cache complete, else cdn)."
+    ),
+    "language": _lazy(
+        "UI language: 'auto' (Accept-Language header, fallback English), 'en', or 'de'."
     ),
 }
 
@@ -148,7 +174,7 @@ def delete_setting(key: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Convenience: projects_dir helpers
+# Convenience: typed accessors
 # ---------------------------------------------------------------------------
 
 
@@ -182,6 +208,24 @@ def get_projects_dir() -> Path | None:
     if not path.is_dir():
         return None
     return path
+
+
+def get_language_setting() -> str:
+    """Return the raw ``language`` setting value (default ``auto``).
+
+    Honours the ``NTASKER_LANGUAGE`` ENV override. Used by the i18n
+    middleware (HTTP) and the CLI bootstrap; both interpret ``auto`` in
+    their own way.
+
+    Wrapped in a try/except so this is safe to call before the DB exists
+    (e.g. during module import in test harnesses) - falls back to
+    ``auto`` rather than crashing.
+    """
+    try:
+        raw = get_setting("language", env_var="NTASKER_LANGUAGE")
+    except Exception:
+        return "auto"
+    return raw or "auto"
 
 
 # ---------------------------------------------------------------------------

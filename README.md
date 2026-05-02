@@ -82,6 +82,39 @@ there is no scan job and no DB-cached project list. Add or remove a
 folder/symlink in `projects_dir` and it shows up (or disappears) on the
 next reload.
 
+## Localization
+
+ntasker ships with English (default) and German UI strings. Translation
+uses the Python stdlib `gettext` module; catalogs live at
+`src/ntasker/locale/<lang>/LC_MESSAGES/ntasker.{po,mo}`.
+
+Pick the UI language via the `language` setting:
+
+| Value  | Behaviour                                                            |
+|--------|----------------------------------------------------------------------|
+| `auto` | Parse the `Accept-Language` HTTP header; fallback English. **Default.** |
+| `en`   | Always English.                                                      |
+| `de`   | Always German.                                                       |
+
+```bash
+ntasker config set language de       # pin to German
+ntasker config unset language        # back to auto
+NTASKER_LANGUAGE=en ntasker serve    # one-shot ENV override
+```
+
+CLI follows: setting > `LANG`/`LC_MESSAGES` env > English.
+
+For development, regenerate catalogs after touching strings:
+
+```bash
+make i18n          # extract + update + compile
+make i18n-init-de  # bootstrap a fresh language (idempotent)
+```
+
+Extraction uses [Babel](https://babel.pocoo.org/) (dev-only dep; runtime
+needs only the stdlib). Catalog keywords: `_`, `_lazy`, `t` (Jinja
+shorthand), `N_` (no-op marker for module-level constants).
+
 ## Vendor assets (CDN default, opt-in offline)
 
 Tabler core CSS, Tabler-Icons webfont, and Alpine.js are loaded from

@@ -31,6 +31,26 @@ function migrateLegacyLocalStorage() {
 }
 migrateLegacyLocalStorage();
 
+// i18n helper -- mirrors the Alpine $i18n magic property registered in
+// the template. Falls back to the key itself when no translation exists,
+// so ad-hoc usage during development stays visible (and obvious).
+function _i(key, params) {
+    let s = (window.__i18n && window.__i18n[key]) || key;
+    if (params) {
+        for (const [k, v] of Object.entries(params)) {
+            s = s.replace(new RegExp('\\{' + k + '\\}', 'g'), v);
+        }
+    }
+    return s;
+}
+
+// BCP-47 locale picked up from <html lang="..."> for Intl.* APIs (date
+// formatting). Defaults to 'en' if the attribute is missing.
+function _locale() {
+    const html = document.documentElement;
+    return (html && html.getAttribute('lang')) || 'en';
+}
+
 // Sentinel for cross-project tasks (matches PROJECT_NONE_SENTINEL in app.py).
 const PROJECT_NONE = '__none__';
 
@@ -380,7 +400,7 @@ function tracker() {
                 body: JSON.stringify(body),
             });
             if (!r.ok) {
-                this.showToast('Anlegen fehlgeschlagen.', 'danger');
+                this.showToast(_i('create_failed'), 'danger');
                 return;
             }
             this.form.title = '';
@@ -415,13 +435,13 @@ function tracker() {
             // we re-check here in case a recycled DOM node ever fires the
             // handler from a non-archived row.
             if (!task.archived) {
-                this.showToast('Nur archivierte Aufgaben können gelöscht werden.', 'danger');
+                this.showToast(_i('delete_only_archived'), 'danger');
                 return;
             }
-            if (!confirm(`"${task.title}" endgültig löschen?`)) return;
+            if (!confirm(_i('confirm_delete', {title: task.title}))) return;
             const r = await fetch(`/api/tasks/${task.id}`, { method: 'DELETE' });
             if (!r.ok) {
-                this.showToast('Löschen fehlgeschlagen.', 'danger');
+                this.showToast(_i('delete_failed'), 'danger');
                 return;
             }
             await this.refreshAll();
@@ -454,7 +474,7 @@ function tracker() {
                 body: JSON.stringify(body),
             });
             if (!r.ok) {
-                this.showToast('Speichern fehlgeschlagen.', 'danger');
+                this.showToast(_i('save_failed'), 'danger');
                 return;
             }
             this.editing = null;
@@ -468,7 +488,7 @@ function tracker() {
                 body: JSON.stringify(body),
             });
             if (!r.ok) {
-                this.showToast('Update fehlgeschlagen.', 'danger');
+                this.showToast(_i('update_failed'), 'danger');
             }
             return r;
         },
@@ -564,7 +584,7 @@ function tracker() {
             const text = `/task #${id}`;
             try {
                 await navigator.clipboard.writeText(text);
-                this.showToast(`Kopiert: ${text}`, 'success');
+                this.showToast(_i('copied', {text: text}), 'success');
             } catch {
                 // Fallback for non-secure contexts (Clipboard API unavailable).
                 const ta = document.createElement('textarea');
@@ -575,9 +595,9 @@ function tracker() {
                 ta.select();
                 try {
                     document.execCommand('copy');
-                    this.showToast(`Kopiert: ${text}`, 'success');
+                    this.showToast(_i('copied', {text: text}), 'success');
                 } catch {
-                    this.showToast('Kopieren fehlgeschlagen', 'danger');
+                    this.showToast(_i('copy_failed'), 'danger');
                 }
                 document.body.removeChild(ta);
             }
@@ -597,7 +617,7 @@ function tracker() {
             div.innerHTML = `
                 <div class="d-flex">
                     <div class="toast-body">${message}</div>
-                    <button type="button" class="btn-close btn-close-white me-2 m-auto" aria-label="Schließen"></button>
+                    <button type="button" class="btn-close btn-close-white me-2 m-auto" aria-label="${_i('close')}"></button>
                 </div>`;
             div.querySelector('.btn-close').addEventListener('click', () => div.remove());
             container.appendChild(div);
@@ -617,7 +637,8 @@ function tracker() {
         formatRelative(s) {
             const d = this._toDate(s);
             if (!d) return '';
-            const rtf = new Intl.RelativeTimeFormat('de-DE', { numeric: 'auto' });
+            // BCP-47 derived from <html lang="..."> -- locale-aware "vor 2 Stunden" / "2 hours ago".
+            const rtf = new Intl.RelativeTimeFormat(_locale(), { numeric: 'auto' });
             const diffMs = d - new Date();
             const diffSec = Math.round(diffMs / 1000);
             const abs = Math.abs(diffSec);
@@ -632,7 +653,7 @@ function tracker() {
         formatAbsolute(s) {
             const d = this._toDate(s);
             if (!d) return '';
-            return d.toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' });
+            return d.toLocaleString(_locale(), { dateStyle: 'medium', timeStyle: 'short' });
         },
 
         emptyHint() {
@@ -641,11 +662,11 @@ function tracker() {
                 this.tagFilter.length > 0 ||
                 this.phaseFilter.length > 0 ||
                 this.priorityFilter.length > 0) {
-                return 'Keine Treffer für die aktiven Filter.';
+                return _i('empty_filtered');
             }
-            if (this.tab === 'open') return 'Alles erledigt. Oder noch nichts angelegt.';
-            if (this.tab === 'done') return 'Noch nichts erledigt.';
-            return 'Archiv ist leer.';
+            if (this.tab === 'open') return _i('empty_open');
+            if (this.tab === 'done') return _i('empty_done');
+            return _i('empty_archive');
         },
 
         // ---- Tag cleanup (header action) ----
@@ -654,20 +675,22 @@ function tracker() {
         async cleanupTags() {
             const r = await fetch('/api/tags/cleanup', { method: 'POST' });
             if (!r.ok) {
-                this.showToast('Aufräumen fehlgeschlagen.', 'danger');
+                this.showToast(_i('cleanup_failed'), 'danger');
                 return;
             }
             const data = await r.json();
             const removed = data.removed || 0;
             const names = Array.isArray(data.removed_names) ? data.removed_names : [];
             if (removed === 0) {
-                this.showToast('Keine ungenutzten Tags.', 'info');
+                this.showToast(_i('cleanup_none'), 'info');
             } else {
-                // Render at most 5 names, append "+N weitere" tail.
+                // Render at most 5 names, append ", +N more" tail.
                 const head = names.slice(0, 5).join(', ');
-                const tail = names.length > 5 ? `, +${names.length - 5} weitere` : '';
+                const tail = names.length > 5
+                    ? _i('cleanup_more', {n: names.length - 5})
+                    : '';
                 this.showToast(
-                    `${removed} ungenutzte Tags entfernt: ${head}${tail}`,
+                    _i('cleanup_removed', {n: removed, head: head, tail: tail}),
                     'success'
                 );
             }

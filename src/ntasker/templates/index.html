@@ -1,53 +1,67 @@
 <!doctype html>
-<html lang="de" data-bs-theme="light">
+<html lang="{{ language }}" data-bs-theme="light">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>ntasker</title>
-    {# Vendor-Assets via asset()-Helper. Default-Mode = CDN (jsDelivr) mit SRI; #}
-    {# wenn `ntasker assets fetch` lief und `assets_mode=local|auto`, kommen sie #}
-    {# stattdessen aus dem User-Data-Dir unter /static/vendor. SRI wird in beiden #}
-    {# Modi mitgesendet (auch lokal als Tamper-Detection). `crossorigin` ist nur #}
-    {# bei CDN-Loading nötig (Same-Origin braucht's nicht), schadet aber nicht. #}
+    {# Vendor assets via asset() helper. Default mode = CDN (jsDelivr) with SRI; #}
+    {# when `ntasker assets fetch` ran and `assets_mode=local|auto`, they come from #}
+    {# the user-data dir under /static/vendor instead. SRI is emitted in both modes #}
+    {# (local mode: tamper detection). `crossorigin` is only required for CDN loading. #}
     <link rel="stylesheet" href="{{ asset('tabler-css') }}"
           integrity="{{ asset_sri('tabler-css') }}" crossorigin="anonymous">
     <link rel="stylesheet" href="{{ asset('tabler-icons-css') }}"
           integrity="{{ asset_sri('tabler-icons-css') }}" crossorigin="anonymous">
     <link rel="stylesheet" href="/static/style.css?v={{ version }}">
+
+    {# Frontend i18n bridge: js_strings is built server-side per request. #}
+    {# Alpine magic property `$i18n('key')` is registered just below. #}
+    <script>
+        window.__i18n = {{ js_strings | tojson }};
+        document.addEventListener('alpine:init', () => {
+            Alpine.magic('i18n', () => (key, params) => {
+                let s = (window.__i18n && window.__i18n[key]) || key;
+                if (params) {
+                    for (const [k, v] of Object.entries(params)) {
+                        s = s.replace(new RegExp('\\{' + k + '\\}', 'g'), v);
+                    }
+                }
+                return s;
+            });
+        });
+    </script>
 </head>
 <body>
 <div class="d-flex" style="min-height: 100vh;" x-data="tracker()" x-init="init()">
 
     {# Sidebar: project + tag filter (full-width checkboxes). Hidden on mobile (<768px). #}
-    {# Sticky-positioned aside outside the .page wrapper. Tabler/Bootstrap surface #}
-    {# variables drive the bg so dark-mode behaves correctly. Sidebar lives in its #}
-    {# own scroll context; main page-wrapper scrolls independently. #}
+    {# Sticky-positioned aside outside the .page wrapper. Tabler/Bootstrap surface vars #}
+    {# drive the bg so dark-mode behaves. Sidebar has its own scroll context; the main #}
+    {# page-wrapper scrolls independently. #}
     <aside class="tracker-sidebar d-none d-md-flex flex-column border-end p-3"
            style="width: 280px; flex-shrink: 0; position: sticky; top: 0; align-self: flex-start; max-height: 100vh; overflow-y: auto; background-color: var(--tblr-bg-surface-secondary, var(--tblr-bg-surface));">
 
-        {# ------------------------------------------------------------- #}
-        {# Projects section                                              #}
-        {# ------------------------------------------------------------- #}
+        {# Projects section #}
         <div class="d-flex align-items-center justify-content-between mb-2">
             <span class="text-secondary text-uppercase small fw-bold">
                 <i class="ti ti-folders me-1"></i>
-                Projekte
+                {{ t('Projects') }}
             </span>
             <button type="button" class="btn btn-sm btn-ghost-secondary px-2 py-0"
                     @click="toggleAllProjects()"
-                    :title="allProjectsActive ? 'Alle demarkieren' : 'Alle markieren'">
+                    :title="allProjectsActive ? $i18n('deselect_all') : $i18n('select_all')">
                 <i class="ti fs-3" :class="allProjectsActive ? 'ti-square-off' : 'ti-square-check'"></i>
             </button>
         </div>
 
         <div class="text-muted small mb-2" x-show="projectFilter.length === 0 && tagFilter.length === 0">
-            Kein Filter aktiv — alle Aufgaben sichtbar.
+            {{ t('No filter active -- all tasks visible.') }}
         </div>
 
         {# Cross-project sentinel #}
         <template x-for="proj in projects" :key="proj.name">
             <label class="form-check d-flex align-items-center w-100 mb-1"
-                   :title="proj.name === '__none__' ? 'Aufgaben ohne Projekt' : proj.name">
+                   :title="proj.name === '__none__' ? $i18n('tasks_without_project') : proj.name">
                 <input type="checkbox" class="form-check-input"
                        :checked="projectFilter.includes(proj.name)"
                        @change="toggleProject(proj.name)">
@@ -55,7 +69,7 @@
                     <template x-if="proj.name === '__none__'">
                         <span>
                             <i class="ti ti-asterisk me-1 text-secondary"></i>
-                            Projektübergreifend
+                            <span x-text="$i18n('cross_project')"></span>
                         </span>
                     </template>
                     <template x-if="proj.name !== '__none__'">
@@ -67,22 +81,20 @@
         </template>
 
         <div class="text-muted small mt-3" x-show="projects.length <= 1">
-            Keine Projekt-Symlinks gefunden.
+            {{ t('No project symlinks found.') }}
         </div>
 
-        {# ------------------------------------------------------------- #}
-        {# Phases section -- always visible, fixed order (workflow)      #}
-        {# ------------------------------------------------------------- #}
+        {# Phases section -- always visible, fixed order (workflow) #}
         <hr class="my-3">
         <div class="d-flex align-items-center justify-content-between mb-2">
             <span class="text-secondary text-uppercase small fw-bold">
                 <i class="ti ti-flag me-1"></i>
-                Phasen
+                {{ t('Phases') }}
             </span>
             <button type="button" class="btn btn-sm btn-ghost-secondary px-2 py-0"
                     x-show="phaseFilter.length > 0"
                     @click="clearPhaseFilter()"
-                    title="Phasen-Filter leeren">
+                    :title="$i18n('clear_phase_filter')">
                 <i class="ti ti-x fs-3"></i>
             </button>
         </div>
@@ -106,19 +118,17 @@
             </label>
         </template>
 
-        {# ------------------------------------------------------------- #}
         {# Priorities section -- always visible, fixed order (highest first) #}
-        {# ------------------------------------------------------------- #}
         <hr class="my-3">
         <div class="d-flex align-items-center justify-content-between mb-2">
             <span class="text-secondary text-uppercase small fw-bold">
                 <i class="ti ti-flame me-1"></i>
-                Priorität
+                {{ t('Priority') }}
             </span>
             <button type="button" class="btn btn-sm btn-ghost-secondary px-2 py-0"
                     x-show="priorityFilter.length > 0"
                     @click="clearPriorityFilter()"
-                    title="Prioritäts-Filter leeren">
+                    :title="$i18n('clear_priority_filter')">
                 <i class="ti ti-x fs-3"></i>
             </button>
         </div>
@@ -142,21 +152,19 @@
             </label>
         </template>
 
-        {# ------------------------------------------------------------- #}
-        {# Tags section -- only visible if any tag exists                #}
-        {# ------------------------------------------------------------- #}
+        {# Tags section -- only visible if any tag exists #}
         <template x-if="tags.length > 0">
             <div>
                 <hr class="my-3">
                 <div class="d-flex align-items-center justify-content-between mb-2">
                     <span class="text-secondary text-uppercase small fw-bold">
                         <i class="ti ti-tags me-1"></i>
-                        Tags
+                        {{ t('Tags') }}
                     </span>
                     <button type="button" class="btn btn-sm btn-ghost-secondary px-2 py-0"
                             x-show="tagFilter.length > 0"
                             @click="clearTagFilter()"
-                            title="Tag-Filter leeren">
+                            :title="$i18n('clear_tag_filter')">
                         <i class="ti ti-x fs-3"></i>
                     </button>
                 </div>
@@ -167,12 +175,12 @@
                             <button type="button"
                                     class="btn btn-ghost-secondary btn-sm"
                                     @click="cleanupTags()"
-                                    title="Ungenutzte Tags löschen">
-                                {# `ti-broom` is not part of the vendored tabler-icons webfont (v3.19.0). #}
+                                    :title="$i18n('cleanup_tags_title')">
+                                {# `ti-broom` is not in the vendored tabler-icons webfont (v3.19.0). #}
                                 {# The webfont ships a limited subset of the full SVG icon set; #}
                                 {# `ti-sparkles` is the closest available "cleanup" glyph. #}
                                 <i class="ti ti-sparkles me-1 fs-3"></i>
-                                Tags aufräumen
+                                {{ t('Clean up tags') }}
                             </button>
                         </div>
                     </div>
@@ -204,11 +212,12 @@
                 <span class="badge bg-secondary-lt ms-2 font-monospace small align-middle">v{{ version }}</span>
             </h1>
             <div class="navbar-nav flex-row order-md-last ms-auto">
-                <a href="/settings" class="btn btn-sm btn-ghost-secondary me-1" title="Einstellungen">
+                <a href="/settings" class="btn btn-sm btn-ghost-secondary me-1" :title="$i18n('settings')">
                     <i class="ti ti-settings me-1 fs-3"></i>
-                    Einstellungen
+                    {{ t('Settings') }}
                 </a>
-                <button class="btn btn-sm btn-ghost-secondary" @click="toggleTheme()" :aria-label="theme === 'dark' ? 'Hellmodus' : 'Dunkelmodus'">
+                <button class="btn btn-sm btn-ghost-secondary" @click="toggleTheme()"
+                        :aria-label="theme === 'dark' ? $i18n('light_mode') : $i18n('dark_mode')">
                     <i class="ti me-1 fs-3" :class="theme === 'dark' ? 'ti-sun' : 'ti-moon'"></i>
                 </button>
             </div>
@@ -223,7 +232,7 @@
                     <div class="col">
                         <h2 class="page-title">
                             <i class="ti ti-list-check me-2 fs-2"></i>
-                            Aufgaben
+                            {{ t('Tasks') }}
                         </h2>
                     </div>
                 </div>
@@ -233,22 +242,22 @@
         <div class="page-body">
             <div class="container-xl">
 
-                {# Banner: projects_dir nicht konfiguriert. Auto-versteckt sobald gesetzt. #}
-                {# CAVE: x-show MUSS auf einem Wrapper-Element ohne Bootstrap-Display-Utility #}
-                {# (`d-flex`, `d-block`, ...) sitzen. AlpineJS setzt `style="display: none"` #}
-                {# ohne `!important`; Tabler/Bootstrap setzt `.d-flex { display: flex !important }`. #}
-                {# Direkt auf demselben Element gewinnt das Utility und der Banner bleibt sichtbar, #}
-                {# obwohl projectsDirMissing === false. Loesung: Wrapper traegt x-show + x-cloak, #}
-                {# Inner-Div traegt das d-flex. #}
+                {# Banner: projects_dir not configured. Auto-hidden once set. #}
+                {# CAVE: x-show MUST sit on a wrapper without Bootstrap display utility #}
+                {# (`d-flex`, `d-block`, ...). AlpineJS sets `style="display: none"` without #}
+                {# `!important`; Tabler/Bootstrap sets `.d-flex { display: flex !important }`. #}
+                {# On the same element the utility wins and the banner stays visible even #}
+                {# though projectsDirMissing === false. Fix: wrapper carries x-show + x-cloak, #}
+                {# inner div carries the d-flex. #}
                 <div x-show="projectsDirMissing" x-cloak>
                     <div class="alert alert-warning d-flex align-items-center">
                         <i class="ti ti-alert-triangle me-2 fs-2"></i>
                         <div class="flex-fill">
-                            Bitte Projekte-Verzeichnis konfigurieren — sonst bleibt die Projekt-Liste leer.
+                            {{ t('Please configure the projects directory -- otherwise the project list stays empty.') }}
                         </div>
                         <a href="/settings" class="btn btn-sm btn-warning ms-2">
                             <i class="ti ti-settings me-1 fs-3"></i>
-                            zu den Einstellungen
+                            {{ t('Go to settings') }}
                         </a>
                     </div>
                 </div>
@@ -258,49 +267,51 @@
                     <div class="card-header">
                         <h3 class="card-title">
                             <i class="ti ti-plus me-1"></i>
-                            Neue Aufgabe
+                            {{ t('New task') }}
                         </h3>
                     </div>
                     <div class="card-body">
                         <form @submit.prevent="createTask()">
                             <div class="row g-2">
                                 <div class="col-md-3">
-                                    <label class="form-label">Projekt</label>
+                                    <label class="form-label">{{ t('Project') }}</label>
                                     <select class="form-select" x-model="form.project">
-                                        <option value="">— projektübergreifend —</option>
+                                        <option value="">{{ t('-- cross-project --') }}</option>
                                         <template x-for="p in projectNames" :key="p">
                                             <option :value="p" x-text="p"></option>
                                         </template>
                                     </select>
                                 </div>
                                 <div class="col-md-2">
-                                    <label class="form-label">Phase</label>
+                                    <label class="form-label">{{ t('Phase') }}</label>
                                     <select class="form-select" x-model="form.phase">
-                                        <option value="">—</option>
-                                        <option value="wip">In Arbeit</option>
-                                        <option value="planned">Geplant</option>
-                                        <option value="later">Später</option>
+                                        <option value="">{{ t('--') }}</option>
+                                        <option value="wip">{{ t('In Progress') }}</option>
+                                        <option value="planned">{{ t('Planned') }}</option>
+                                        <option value="later">{{ t('Later') }}</option>
                                     </select>
                                 </div>
                                 <div class="col-md-2">
-                                    <label class="form-label">Priorität</label>
+                                    <label class="form-label">{{ t('Priority') }}</label>
                                     <select class="form-select" x-model="form.priority">
-                                        <option value="critical">Kritisch</option>
-                                        <option value="high">Hoch</option>
-                                        <option value="normal">Normal</option>
-                                        <option value="low">Niedrig</option>
+                                        <option value="critical">{{ t('Critical') }}</option>
+                                        <option value="high">{{ t('High') }}</option>
+                                        <option value="normal">{{ t('Normal') }}</option>
+                                        <option value="low">{{ t('Low') }}</option>
                                     </select>
                                 </div>
                                 <div class="col-md-5">
-                                    <label class="form-label">Titel <span class="text-danger">*</span></label>
-                                    <input type="text" class="form-control" x-model="form.title" required maxlength="500" placeholder="Was ist zu tun?">
+                                    <label class="form-label">{{ t('Title') }} <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control" x-model="form.title" required maxlength="500"
+                                           :placeholder="$i18n('title_placeholder')">
                                 </div>
                                 <div class="col-12">
-                                    <label class="form-label">Beschreibung</label>
-                                    <textarea class="form-control" rows="2" x-model="form.description" placeholder="Optional"></textarea>
+                                    <label class="form-label">{{ t('Description') }}</label>
+                                    <textarea class="form-control" rows="2" x-model="form.description"
+                                              :placeholder="$i18n('description_placeholder')"></textarea>
                                 </div>
                                 <div class="col-12">
-                                    <label class="form-label">Tags</label>
+                                    <label class="form-label">{{ t('Tags') }}</label>
                                     {# Tag-Input: AlpineJS-driven combobox. Tags as badges, free-text input, autocomplete dropdown. #}
                                     <div class="position-relative" x-data="{ focused: false }">
                                         <div class="form-control d-flex flex-wrap align-items-center gap-1"
@@ -311,7 +322,7 @@
                                                     #<span x-text="tg" class="ms-1"></span>
                                                     <button type="button" class="btn-close btn-close-sm ms-1"
                                                             style="font-size: 0.6rem;"
-                                                            aria-label="Tag entfernen"
+                                                            :aria-label="$i18n('remove_tag')"
                                                             @click.stop="removeTagFromForm(idx)"></button>
                                                 </span>
                                             </template>
@@ -323,7 +334,7 @@
                                                    @blur="setTimeout(() => focused = false, 150)"
                                                    @keydown.enter.prevent="commitTagInput('form')"
                                                    @keydown="onTagKeydown($event, 'form')"
-                                                   placeholder="Tag eingeben, Enter zum Hinzufügen">
+                                                   :placeholder="$i18n('tag_input_placeholder')">
                                         </div>
                                         <div class="dropdown-menu show w-100 mt-1"
                                              x-show="focused && tagSuggestions('form').length > 0"
@@ -341,7 +352,7 @@
                                 <div class="col-12 text-end">
                                     <button type="submit" class="btn btn-sm btn-primary" :disabled="!form.title">
                                         <i class="ti ti-plus me-1 fs-3"></i>
-                                        Anlegen
+                                        {{ t('Create') }}
                                     </button>
                                 </div>
                             </div>
@@ -349,12 +360,13 @@
                     </div>
                 </div>
 
-                {# Filter bar: search only — project, tag, phase filters live in the sidebar. #}
+                {# Filter bar: search only -- project, tag, phase filters live in the sidebar. #}
                 <div class="card mb-3">
                     <div class="card-body py-2">
                         <div class="input-icon">
                             <span class="input-icon-addon"><i class="ti ti-search"></i></span>
-                            <input type="text" class="form-control form-control-sm" x-model="filter.search" @input.debounce.300ms="loadTasks()" placeholder="Suchen in Titel und Beschreibung…">
+                            <input type="text" class="form-control form-control-sm" x-model="filter.search"
+                                   @input.debounce.300ms="loadTasks()" :placeholder="$i18n('search_placeholder')">
                         </div>
                     </div>
                 </div>
@@ -364,21 +376,21 @@
                     <li class="nav-item" role="presentation">
                         <button class="nav-link" :class="tab === 'open' ? 'active' : ''" @click="setTab('open')">
                             <i class="ti ti-list me-1"></i>
-                            Offen
+                            {{ t('Open') }}
                             <span class="badge bg-blue-lt ms-1" x-text="counts.open"></span>
                         </button>
                     </li>
                     <li class="nav-item" role="presentation">
                         <button class="nav-link" :class="tab === 'done' ? 'active' : ''" @click="setTab('done')">
                             <i class="ti ti-check me-1"></i>
-                            Erledigt
+                            {{ t('Done') }}
                             <span class="badge bg-green-lt ms-1" x-text="counts.done"></span>
                         </button>
                     </li>
                     <li class="nav-item" role="presentation">
                         <button class="nav-link" :class="tab === 'archive' ? 'active' : ''" @click="setTab('archive')">
                             <i class="ti ti-archive me-1"></i>
-                            Archiv
+                            {{ t('Archive') }}
                             <span class="badge bg-secondary-lt ms-1" x-text="counts.archive"></span>
                         </button>
                     </li>
@@ -400,7 +412,7 @@
                                             {# ID badge: monospace, click-to-copy. @click.stop prevents row toggle. #}
                                             <span class="task-id badge bg-secondary-lt text-secondary font-monospace"
                                                   role="button"
-                                                  :title="`Klicken zum Kopieren: #${task.id}`"
+                                                  :title="$i18n('click_to_copy_id', {id: task.id})"
                                                   @click.stop="copyId(task.id)"
                                                   x-text="`#${task.id}`"></span>
 
@@ -415,7 +427,7 @@
                                                 <span class="badge bg-blue-lt"
                                                       role="button"
                                                       style="cursor: pointer"
-                                                      :title="'Filter: Projekt ' + task.project"
+                                                      :title="$i18n('filter_project', {name: task.project})"
                                                       @click.stop="toggleProject(task.project)"
                                                       x-text="task.project"></span>
                                             </template>
@@ -424,7 +436,7 @@
                                                 <span class="badge bg-secondary-lt"
                                                       role="button"
                                                       style="cursor: pointer"
-                                                      title="Filter: Projektübergreifend"
+                                                      :title="$i18n('filter_cross_project')"
                                                       @click.stop="toggleProject('__none__')">
                                                     <i class="ti ti-asterisk me-1"></i>—
                                                 </span>
@@ -435,58 +447,57 @@
                                                 <span class="badge bg-yellow-lt"
                                                       role="button"
                                                       style="cursor: pointer"
-                                                      title="Filter: Phase In Arbeit"
+                                                      :title="$i18n('filter_phase_wip')"
                                                       @click.stop="togglePhase('wip')">
-                                                    <i class="ti ti-progress me-1"></i>WIP
+                                                    <i class="ti ti-progress me-1"></i><span x-text="$i18n('phase_wip')"></span>
                                                 </span>
                                             </template>
                                             <template x-if="task.phase === 'planned'">
                                                 <span class="badge bg-azure-lt"
                                                       role="button"
                                                       style="cursor: pointer"
-                                                      title="Filter: Phase Geplant"
+                                                      :title="$i18n('filter_phase_planned')"
                                                       @click.stop="togglePhase('planned')">
-                                                    <i class="ti ti-clock me-1"></i>Geplant
+                                                    <i class="ti ti-clock me-1"></i><span x-text="$i18n('phase_planned')"></span>
                                                 </span>
                                             </template>
                                             <template x-if="task.phase === 'later'">
                                                 <span class="badge bg-purple-lt"
                                                       role="button"
                                                       style="cursor: pointer"
-                                                      title="Filter: Phase Später"
+                                                      :title="$i18n('filter_phase_later')"
                                                       @click.stop="togglePhase('later')">
-                                                    <i class="ti ti-crystal-ball me-1"></i>Später
+                                                    <i class="ti ti-crystal-ball me-1"></i><span x-text="$i18n('phase_later')"></span>
                                                 </span>
                                             </template>
 
                                             {# Priority badges -- click to toggle priority filter. #}
-                                            {# `normal` is intentionally not rendered: it is the default #}
-                                            {# and a badge per task would create visual noise. #}
+                                            {# `normal` is intentionally not rendered: it is the default. #}
                                             <template x-if="task.priority === 'critical'">
                                                 <span class="badge bg-danger text-white"
                                                       role="button"
                                                       style="cursor: pointer"
-                                                      title="Filter: Priorität Kritisch"
+                                                      :title="$i18n('filter_priority_critical')"
                                                       @click.stop="togglePriority('critical')">
-                                                    <i class="ti ti-alert-triangle-filled me-1"></i>Kritisch
+                                                    <i class="ti ti-alert-triangle-filled me-1"></i><span x-text="$i18n('priority_critical')"></span>
                                                 </span>
                                             </template>
                                             <template x-if="task.priority === 'high'">
                                                 <span class="badge bg-orange-lt"
                                                       role="button"
                                                       style="cursor: pointer"
-                                                      title="Filter: Priorität Hoch"
+                                                      :title="$i18n('filter_priority_high')"
                                                       @click.stop="togglePriority('high')">
-                                                    <i class="ti ti-arrow-up me-1"></i>Hoch
+                                                    <i class="ti ti-arrow-up me-1"></i><span x-text="$i18n('priority_high')"></span>
                                                 </span>
                                             </template>
                                             <template x-if="task.priority === 'low'">
                                                 <span class="badge bg-azure-lt"
                                                       role="button"
                                                       style="cursor: pointer"
-                                                      title="Filter: Priorität Niedrig"
+                                                      :title="$i18n('filter_priority_low')"
                                                       @click.stop="togglePriority('low')">
-                                                    <i class="ti ti-arrow-down me-1"></i>Niedrig
+                                                    <i class="ti ti-arrow-down me-1"></i><span x-text="$i18n('priority_low')"></span>
                                                 </span>
                                             </template>
 
@@ -495,7 +506,7 @@
                                                 <span class="badge bg-purple-lt"
                                                       role="button"
                                                       style="cursor: pointer"
-                                                      :title="'Filter: Tag ' + tag"
+                                                      :title="$i18n('filter_tag', {name: tag})"
                                                       @click.stop="toggleTag(tag)">#<span x-text="tag"></span></span>
                                             </template>
                                         </div>
@@ -520,30 +531,29 @@
                                     </div>
                                     <div class="col-auto">
                                         <div class="btn-list">
-                                            <button class="btn btn-sm btn-ghost-secondary" @click="startEdit(task)" aria-label="Bearbeiten" title="Bearbeiten">
+                                            <button class="btn btn-sm btn-ghost-secondary" @click="startEdit(task)"
+                                                    :aria-label="$i18n('edit')" :title="$i18n('edit')">
                                                 <i class="ti ti-pencil fs-3"></i>
                                             </button>
                                             <template x-if="!task.archived">
-                                                {# Use `ti-archive` (not `ti-archive-arrow-down`): the latter is not #}
-                                                {# present in the vendored tabler-icons webfont (v3.19.0). The font #}
-                                                {# ships only a subset of the full SVG icon set; using a missing #}
-                                                {# class produces an invisible-but-clickable phantom button. #}
-                                                <button class="btn btn-sm btn-ghost-secondary" @click="archiveTask(task)" aria-label="Archivieren" title="Archivieren">
+                                                {# Use `ti-archive` (not `ti-archive-arrow-down`): the latter is #}
+                                                {# missing from the vendored tabler-icons webfont (v3.19.0). Using #}
+                                                {# a missing class produces an invisible-but-clickable phantom button. #}
+                                                <button class="btn btn-sm btn-ghost-secondary" @click="archiveTask(task)"
+                                                        :aria-label="$i18n('archive')" :title="$i18n('archive')">
                                                     <i class="ti ti-archive fs-3"></i>
                                                 </button>
                                             </template>
                                             <template x-if="task.archived">
-                                                <button class="btn btn-sm btn-ghost-secondary" @click="unarchiveTask(task)" aria-label="Wiederherstellen" title="Wiederherstellen">
+                                                <button class="btn btn-sm btn-ghost-secondary" @click="unarchiveTask(task)"
+                                                        :aria-label="$i18n('unarchive')" :title="$i18n('unarchive')">
                                                     <i class="ti ti-archive-off fs-3"></i>
                                                 </button>
                                             </template>
-                                            {# Delete is only valid for archived tasks. Bind directly to #}
-                                            {# task.archived (data truth) instead of `tab === 'archive'` #}
-                                            {# (UI state) — keeps the button out of the DOM in any tab where #}
-                                            {# the task is not archived, even if Alpine recycles a DOM node #}
-                                            {# across tab switches. #}
+                                            {# Delete is only valid for archived tasks. #}
                                             <template x-if="task.archived">
-                                                <button class="btn btn-sm btn-ghost-danger" @click="deleteTask(task)" aria-label="Löschen" title="Endgültig löschen">
+                                                <button class="btn btn-sm btn-ghost-danger" @click="deleteTask(task)"
+                                                        :aria-label="$i18n('delete')" :title="$i18n('delete_permanently')">
                                                     <i class="ti ti-trash fs-3"></i>
                                                 </button>
                                             </template>
@@ -558,7 +568,7 @@
                         <div class="empty-icon">
                             <i class="ti ti-inbox fs-1"></i>
                         </div>
-                        <p class="empty-title">Keine Aufgaben</p>
+                        <p class="empty-title">{{ t('No tasks') }}</p>
                         <p class="empty-subtitle text-muted" x-text="emptyHint()"></p>
                     </div>
                 </div>
@@ -578,50 +588,50 @@
                     <h5 class="modal-title">
                         <i class="ti ti-pencil me-1"></i>
                         <template x-if="editing">
-                            <span>Task <span class="font-monospace" x-text="`#${editing.id}`"></span> bearbeiten</span>
+                            <span><span x-text="$i18n('task_n')"></span> <span class="font-monospace" x-text="`#${editing.id}`"></span> <span x-text="$i18n('edit')"></span></span>
                         </template>
                     </h5>
-                    <button type="button" class="btn-close" @click="editing = null" aria-label="Schließen"></button>
+                    <button type="button" class="btn-close" @click="editing = null" :aria-label="$i18n('close')"></button>
                 </div>
                 <template x-if="editing">
                 <div class="modal-body">
                     <div class="mb-2">
-                        <label class="form-label">Projekt</label>
+                        <label class="form-label">{{ t('Project') }}</label>
                         <select class="form-select" x-model="editing.project">
-                            <option :value="null">— projektübergreifend —</option>
+                            <option :value="null">{{ t('-- cross-project --') }}</option>
                             <template x-for="p in projectNames" :key="p">
                                 <option :value="p" x-text="p"></option>
                             </template>
                         </select>
                     </div>
                     <div class="mb-2">
-                        <label class="form-label">Phase</label>
+                        <label class="form-label">{{ t('Phase') }}</label>
                         <select class="form-select" x-model="editing.phase">
-                            <option :value="null">—</option>
-                            <option value="wip">In Arbeit</option>
-                            <option value="planned">Geplant</option>
-                            <option value="later">Später</option>
+                            <option :value="null">{{ t('--') }}</option>
+                            <option value="wip">{{ t('In Progress') }}</option>
+                            <option value="planned">{{ t('Planned') }}</option>
+                            <option value="later">{{ t('Later') }}</option>
                         </select>
                     </div>
                     <div class="mb-2">
-                        <label class="form-label">Priorität</label>
+                        <label class="form-label">{{ t('Priority') }}</label>
                         <select class="form-select" x-model="editing.priority">
-                            <option value="critical">Kritisch</option>
-                            <option value="high">Hoch</option>
-                            <option value="normal">Normal</option>
-                            <option value="low">Niedrig</option>
+                            <option value="critical">{{ t('Critical') }}</option>
+                            <option value="high">{{ t('High') }}</option>
+                            <option value="normal">{{ t('Normal') }}</option>
+                            <option value="low">{{ t('Low') }}</option>
                         </select>
                     </div>
                     <div class="mb-2">
-                        <label class="form-label">Titel</label>
+                        <label class="form-label">{{ t('Title') }}</label>
                         <input type="text" class="form-control" x-model="editing.title" maxlength="500">
                     </div>
                     <div class="mb-2">
-                        <label class="form-label">Beschreibung</label>
+                        <label class="form-label">{{ t('Description') }}</label>
                         <textarea class="form-control" rows="6" x-model="editing.description"></textarea>
                     </div>
                     <div class="mb-2">
-                        <label class="form-label">Tags</label>
+                        <label class="form-label">{{ t('Tags') }}</label>
                         {# Edit-modal tag input: same pattern as new-task form, bound to editing.tags. #}
                         <div class="position-relative" x-data="{ focused: false }">
                             <div class="form-control d-flex flex-wrap align-items-center gap-1"
@@ -632,7 +642,7 @@
                                         #<span x-text="tg" class="ms-1"></span>
                                         <button type="button" class="btn-close btn-close-sm ms-1"
                                                 style="font-size: 0.6rem;"
-                                                aria-label="Tag entfernen"
+                                                :aria-label="$i18n('remove_tag')"
                                                 @click.stop="removeTagFromEditing(idx)"></button>
                                     </span>
                                 </template>
@@ -644,7 +654,7 @@
                                        @blur="setTimeout(() => focused = false, 150)"
                                        @keydown.enter.prevent="commitTagInput('edit')"
                                        @keydown="onTagKeydown($event, 'edit')"
-                                       placeholder="Tag eingeben, Enter zum Hinzufügen">
+                                       :placeholder="$i18n('tag_input_placeholder')">
                             </div>
                             <div class="dropdown-menu show w-100 mt-1"
                                  x-show="focused && tagSuggestions('edit').length > 0"
@@ -663,11 +673,11 @@
                 </template>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-sm btn-ghost-secondary" @click="editing = null">
-                        Abbrechen
+                        {{ t('Cancel') }}
                     </button>
                     <button type="button" class="btn btn-sm btn-primary" @click="saveEdit()">
                         <i class="ti ti-device-floppy me-1 fs-3"></i>
-                        Speichern
+                        {{ t('Save') }}
                     </button>
                 </div>
             </div>

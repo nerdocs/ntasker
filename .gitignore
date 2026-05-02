@@ -6,3 +6,6 @@ tasks.db-journal
 tasks.db-shm
 tasks.db-wal
 .ruff_cache/
+# One-shot translation seeder; not part of the wheel.
+_fill_de.py
+dist/

@@ -4,6 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [1.3.0] — 2026-05-02
+- feat: full i18n (en/de) for templates, CLI, and Alpine frontend; setting `language = auto|en|de` (default `auto`) reads `Accept-Language` when `auto`. `gettext` + Babel; catalogs under `src/ntasker/locale/`. Make targets `i18n-extract / i18n-update / i18n-compile / i18n`.
+
 ## [1.2.3] — 2026-05-02
 - feat: serve vendor assets via CDN by default with SRI; opt-in local cache via `ntasker assets fetch`.
 

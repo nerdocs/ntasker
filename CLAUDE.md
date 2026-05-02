@@ -15,6 +15,7 @@ Lightweight local task tracker. Single-user, no auth, bound to `127.0.0.1:8766`.
 - **Templating:** Jinja2; templates use `{{ asset('<name>') }}` + `{{ asset_sri('<name>') }}` helpers (registered as Jinja globals in `app.py`).
 - **Layout:** PyPA src-layout; package = `src/ntasker/`. CLI entry `ntasker = ntasker.cli:main`.
 - **Bind:** `127.0.0.1:8766` (default; overridable via `ntasker serve --host --port`).
+- **i18n:** stdlib `gettext` + Babel for extract/compile. Catalogs at `src/ntasker/locale/<lang>/LC_MESSAGES/ntasker.{po,mo}`. Setting `language = auto|en|de` (default `auto` -> `Accept-Language` parse, fallback `en`). Frontend reads `window.__i18n` populated server-side; Alpine `$i18n('key')` magic property. CLI honours setting > `LANG`/`LC_MESSAGES` env > `en`. `N_()` is the no-op marker for module-level constants (see `PHASE_ORDER` / `PRIORITY_ORDER` in `app.py`).
 
 ## DB path -- precedence
 
@@ -53,6 +54,19 @@ in `VALIDATORS` dict; unknown keys are still writable but bypass validation.
 UI: `/settings` (Tabler page, AlpineJS).
 API: `GET/PUT/DELETE /api/settings[/<key>]`.
 CLI: `ntasker config (list|get|set|unset)`.
+
+## i18n workflow
+
+After touching any translatable string in Python or Jinja templates:
+
+```
+make i18n          # extract -> update -> compile (.pot, .po, .mo)
+make i18n-init-de  # one-time bootstrap of de.po (idempotent)
+```
+
+Extraction keywords: `_`, `_lazy`, `t` (template alias), `N_` (no-op marker).
+The compiled `.mo` MUST exist before `uv build`, otherwise the wheel ships
+without binary catalogs. `make i18n-compile` is the safe pre-build step.
 
 ## Workflow for changes
 

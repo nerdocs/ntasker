@@ -52,6 +52,7 @@ from ntasker.db import (
     set_db_path,
     set_task_tags,
 )
+from ntasker.i18n import _, resolve_for_cli, set_active_language
 from ntasker.paths import resolve_db_path, warn_if_missing
 from ntasker.settings import (
     delete_setting,
@@ -80,35 +81,41 @@ def _truncate(s: str | None, n: int = 60) -> str:
 def _print_tasks_table(tasks: list[dict]) -> None:
     """Compact human-readable listing."""
     if not tasks:
-        print("(keine Tasks)")
+        print(_("(no tasks)"))
         return
-    # Headers
-    print(f"{'ID':>5} {'STAT':<6} {'PR':<3} {'PH':<8} {'PROJEKT':<22} TITEL")
+    # Headers -- column titles go through _() so they translate per locale.
+    h_id = _("ID")
+    h_stat = _("STAT")
+    h_pr = _("PR")
+    h_ph = _("PH")
+    h_proj = _("PROJECT")
+    h_title = _("TITLE")
+    print(f"{h_id:>5} {h_stat:<6} {h_pr:<3} {h_ph:<8} {h_proj:<22} {h_title}")
     print("-" * 80)
     for t in tasks:
         prio_short = {"critical": "!!!", "high": "!!", "normal": "·", "low": ".."}.get(
             t.get("priority") or "normal", "·"
         )
         ph = (t.get("phase") or "-")[:8]
-        proj = (t.get("project") or "(cross)")[:22]
+        proj = (t.get("project") or _("(cross)"))[:22]
         title = _truncate(t.get("title") or "", 60)
         print(f"{t['id']:>5} {t['status']:<6} {prio_short:<3} {ph:<8} {proj:<22} {title}")
 
 
 def _print_task_detail(t: dict) -> None:
     print(f"#{t['id']} {t['title']}")
-    print(f"  Projekt:      {t.get('project') or '(cross-project)'}")
-    print(f"  Status:       {t['status']}")
-    print(f"  Phase:        {t.get('phase') or '-'}")
-    print(f"  Prioritaet:   {t.get('priority') or 'normal'}")
-    print(f"  Tags:         {', '.join(t.get('tags') or []) or '-'}")
-    print(f"  Archiviert:   {bool(t.get('archived'))}")
-    print(f"  Erstellt:     {t.get('created_at') or '-'}")
+    print(f"  {_('Project'):<14}{t.get('project') or _('(cross-project)')}")
+    print(f"  {_('Status'):<14}{t['status']}")
+    print(f"  {_('Phase'):<14}{t.get('phase') or '-'}")
+    print(f"  {_('Priority'):<14}{t.get('priority') or 'normal'}")
+    print(f"  {_('Tags'):<14}{', '.join(t.get('tags') or []) or '-'}")
+    print(f"  {_('Archived'):<14}{bool(t.get('archived'))}")
+    print(f"  {_('Created'):<14}{t.get('created_at') or '-'}")
     if t.get("completed_at"):
-        print(f"  Abgeschlossen:{t['completed_at']}")
+        print(f"  {_('Completed'):<14}{t['completed_at']}")
     if t.get("description"):
         print()
-        print("  --- Beschreibung ---")
+        print(f"  --- {_('Description')} ---")
         for line in (t["description"]).splitlines():
             print(f"  {line}")
 
@@ -201,7 +208,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     from ntasker import db as _db  # noqa: PLC0415  -- read module-level DB_PATH
 
     init_db()
-    print(f"ntasker: DB initialisiert bei {_db.DB_PATH}")
+    print(_("ntasker: DB initialised at {path}").format(path=_db.DB_PATH))
     return 0
 
 
@@ -214,7 +221,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
     try:
         import uvicorn  # noqa: PLC0415  -- lazy import on purpose
     except ImportError:
-        print("ntasker: uvicorn nicht installiert. `pip install ntasker[serve]`", file=sys.stderr)
+        print(_("ntasker: uvicorn not installed. `pip install ntasker[serve]`"), file=sys.stderr)
         return 2
     # Make sure schema exists -- avoid first-request 500s on a fresh DB.
     init_db()
@@ -249,7 +256,7 @@ def cmd_show(args: argparse.Namespace) -> int:
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM tasks WHERE id = ?", (args.task_id,)).fetchone()
         if row is None:
-            print(f"ntasker: Task #{args.task_id} nicht gefunden", file=sys.stderr)
+            print(_("ntasker: task #{id} not found").format(id=args.task_id), file=sys.stderr)
             return 1
         tags = load_tags_for(conn, args.task_id)
     task = row_to_task(row, tags)
@@ -262,10 +269,16 @@ def cmd_show(args: argparse.Namespace) -> int:
 
 def cmd_add(args: argparse.Namespace) -> int:
     if args.priority not in {"critical", "high", "normal", "low"}:
-        print(f"ntasker: Ungueltige Prioritaet: {args.priority!r}", file=sys.stderr)
+        print(
+            _("ntasker: invalid priority: {value!r}").format(value=args.priority),
+            file=sys.stderr,
+        )
         return 2
     if args.phase is not None and args.phase not in {"wip", "planned", "later"}:
-        print(f"ntasker: Ungueltige Phase: {args.phase!r}", file=sys.stderr)
+        print(
+            _("ntasker: invalid phase: {value!r}").format(value=args.phase),
+            file=sys.stderr,
+        )
         return 2
     norm_tags = normalize_tags(args.tag or [])
     with get_conn() as conn:
@@ -277,7 +290,7 @@ def cmd_add(args: argparse.Namespace) -> int:
         new_id = int(cur.lastrowid)
         if norm_tags:
             set_task_tags(conn, new_id, norm_tags)
-    print(f"#{new_id} angelegt: {args.title}")
+    print(_("#{id} created: {title}").format(id=new_id, title=args.title))
     return 0
 
 
@@ -289,9 +302,9 @@ def cmd_done(args: argparse.Namespace) -> int:
             (now, args.task_id),
         )
         if cur.rowcount == 0:
-            print(f"ntasker: Task #{args.task_id} nicht gefunden", file=sys.stderr)
+            print(_("ntasker: task #{id} not found").format(id=args.task_id), file=sys.stderr)
             return 1
-    print(f"#{args.task_id} -> done")
+    print(_("#{id} -> done").format(id=args.task_id))
     return 0
 
 
@@ -307,14 +320,20 @@ def cmd_patch(args: argparse.Namespace) -> int:
         fields["phase"] = None if args.phase == "" else args.phase
     if args.priority is not None:
         if args.priority not in {"critical", "high", "normal", "low"}:
-            print(f"ntasker: Ungueltige Prioritaet: {args.priority!r}", file=sys.stderr)
+            print(
+                _("ntasker: invalid priority: {value!r}").format(value=args.priority),
+                file=sys.stderr,
+            )
             return 2
         fields["priority"] = args.priority
     if args.archived is not None:
         fields["archived"] = 1 if args.archived else 0
     if args.status is not None:
         if args.status not in {"open", "done"}:
-            print(f"ntasker: Ungueltiger Status: {args.status!r}", file=sys.stderr)
+            print(
+                _("ntasker: invalid status: {value!r}").format(value=args.status),
+                file=sys.stderr,
+            )
             return 2
         fields["status"] = args.status
         fields["completed_at"] = (
@@ -322,7 +341,7 @@ def cmd_patch(args: argparse.Namespace) -> int:
         )
 
     if not fields:
-        print("ntasker: nichts zu aendern (mindestens ein Feld angeben)", file=sys.stderr)
+        print(_("ntasker: nothing to change (specify at least one field)"), file=sys.stderr)
         return 2
 
     set_clause = ", ".join(f"{k} = ?" for k in fields)
@@ -330,26 +349,30 @@ def cmd_patch(args: argparse.Namespace) -> int:
     with get_conn() as conn:
         cur = conn.execute(f"UPDATE tasks SET {set_clause} WHERE id = ?", params)
         if cur.rowcount == 0:
-            print(f"ntasker: Task #{args.task_id} nicht gefunden", file=sys.stderr)
+            print(_("ntasker: task #{id} not found").format(id=args.task_id), file=sys.stderr)
             return 1
-    print(f"#{args.task_id} aktualisiert ({', '.join(fields.keys())})")
+    print(
+        _("#{id} updated ({fields})").format(
+            id=args.task_id, fields=", ".join(fields.keys())
+        )
+    )
     return 0
 
 
 def cmd_tag_add(args: argparse.Namespace) -> int:
     norm = normalize_tags([args.tag])
     if not norm:
-        print(f"ntasker: leerer Tag-Name: {args.tag!r}", file=sys.stderr)
+        print(_("ntasker: empty tag name: {value!r}").format(value=args.tag), file=sys.stderr)
         return 2
     with get_conn() as conn:
         exists = conn.execute("SELECT 1 FROM tasks WHERE id = ?", (args.task_id,)).fetchone()
         if exists is None:
-            print(f"ntasker: Task #{args.task_id} nicht gefunden", file=sys.stderr)
+            print(_("ntasker: task #{id} not found").format(id=args.task_id), file=sys.stderr)
             return 1
         current = load_tags_for(conn, args.task_id)
         merged = list(dict.fromkeys([*current, *norm]))
         set_task_tags(conn, args.task_id, merged)
-    print(f"#{args.task_id} Tag +{norm[0]}")
+    print(_("#{id} tag +{tag}").format(id=args.task_id, tag=norm[0]))
     return 0
 
 
@@ -358,15 +381,20 @@ def cmd_tag_rm(args: argparse.Namespace) -> int:
     with get_conn() as conn:
         exists = conn.execute("SELECT 1 FROM tasks WHERE id = ?", (args.task_id,)).fetchone()
         if exists is None:
-            print(f"ntasker: Task #{args.task_id} nicht gefunden", file=sys.stderr)
+            print(_("ntasker: task #{id} not found").format(id=args.task_id), file=sys.stderr)
             return 1
         current = load_tags_for(conn, args.task_id)
         if target not in current:
-            print(f"ntasker: Tag {target!r} nicht vorhanden auf #{args.task_id}", file=sys.stderr)
+            print(
+                _("ntasker: tag {tag!r} not present on #{id}").format(
+                    tag=target, id=args.task_id
+                ),
+                file=sys.stderr,
+            )
             return 1
         new_tags = [t for t in current if t != target]
         set_task_tags(conn, args.task_id, new_tags)
-    print(f"#{args.task_id} Tag -{target}")
+    print(_("#{id} tag -{tag}").format(id=args.task_id, tag=target))
     return 0
 
 
@@ -400,7 +428,7 @@ def cmd_config_list(args: argparse.Namespace) -> int:
         _print_json(rows)
         return 0
     if not rows:
-        print("(keine Settings gesetzt)")
+        print(_("(no settings configured)"))
         return 0
     for r in rows:
         print(f"  {r['key']:<24} {r['value']}    ({r['updated_at']})")
@@ -410,7 +438,7 @@ def cmd_config_list(args: argparse.Namespace) -> int:
 def cmd_config_get(args: argparse.Namespace) -> int:
     row = get_setting_raw(args.key)
     if row is None:
-        print(f"ntasker: setting {args.key!r} nicht gesetzt", file=sys.stderr)
+        print(_("ntasker: setting {key!r} not set").format(key=args.key), file=sys.stderr)
         return 1
     if args.json:
         _print_json(row)
@@ -431,9 +459,9 @@ def cmd_config_set(args: argparse.Namespace) -> int:
 
 def cmd_config_unset(args: argparse.Namespace) -> int:
     if not delete_setting(args.key):
-        print(f"ntasker: setting {args.key!r} war nicht gesetzt", file=sys.stderr)
+        print(_("ntasker: setting {key!r} was not set").format(key=args.key), file=sys.stderr)
         return 1
-    print(f"{args.key} entfernt")
+    print(_("{key} removed").format(key=args.key))
     return 0
 
 
@@ -473,15 +501,17 @@ def cmd_install_claude_assets(args: argparse.Namespace) -> int:
                 marker = "OK"
             print(f"  {marker:<8} {fs.label:<8} {fs.path}")
         if not status.installed:
-            print("ntasker: Claude assets not installed.")
+            print(_("ntasker: Claude assets not installed."))
             return 2
         if status.drift:
             print(
-                "ntasker: Claude assets installed but out of date. "
-                "Run `ntasker install-claude-assets --force` to update."
+                _(
+                    "ntasker: Claude assets installed but out of date. "
+                    "Run `ntasker install-claude-assets --force` to update."
+                )
             )
             return 1
-        print("ntasker: Claude assets up to date.")
+        print(_("ntasker: Claude assets up to date."))
         return 0
 
     result = install_assets(
@@ -513,15 +543,17 @@ def cmd_install_claude_assets(args: argparse.Namespace) -> int:
 
     if blocked:
         print(
-            "ntasker: aborted -- one or more files differ. "
-            "Pass --force to overwrite (with timestamped backup).",
+            _(
+                "ntasker: aborted -- one or more files differ. "
+                "Pass --force to overwrite (with timestamped backup)."
+            ),
             file=sys.stderr,
         )
         return 3
-    print(
-        f"ntasker: {'would install' if result.dry_run else 'installed'} "
-        f"to {claude_home}"
-    )
+    if result.dry_run:
+        print(_("ntasker: would install to {path}").format(path=claude_home))
+    else:
+        print(_("ntasker: installed to {path}").format(path=claude_home))
     return 0
 
 
@@ -556,7 +588,7 @@ def cmd_assets_fetch(args: argparse.Namespace) -> int:
         import httpx  # noqa: PLC0415  -- lazy import on purpose
     except ImportError:
         print(
-            "ntasker: httpx fehlt. Installiere ntasker neu (httpx ist Runtime-Dep).",
+            _("ntasker: httpx missing. Reinstall ntasker (httpx is a runtime dep)."),
             file=sys.stderr,
         )
         return 2
@@ -588,14 +620,21 @@ def cmd_assets_fetch(args: argparse.Namespace) -> int:
                 resp = client.get(spec.cdn_url)
                 resp.raise_for_status()
             except httpx.HTTPError as exc:
-                print(f"  ERROR  {spec.name:<22} HTTP-Fehler: {exc}", file=sys.stderr)
+                print(
+                    _("  ERROR  {name:<22} HTTP error: {exc}").format(
+                        name=spec.name, exc=exc
+                    ),
+                    file=sys.stderr,
+                )
                 failures.append(spec.name)
                 continue
 
             data = resp.content
             if not _verify_sri(data, spec.sri):
                 print(
-                    f"  HASH   {spec.name:<22} SRI-Mismatch -- Datei verworfen!",
+                    _("  HASH   {name:<22} SRI mismatch -- file discarded!").format(
+                        name=spec.name
+                    ),
                     file=sys.stderr,
                 )
                 failures.append(spec.name)
@@ -612,9 +651,16 @@ def cmd_assets_fetch(args: argparse.Namespace) -> int:
             print(f"  WRITE  {spec.name:<22} {target} ({len(data)} bytes)")
 
     print(
-        f"\nntasker: assets fetch -- {len(written)} geschrieben, "
-        f"{len(skipped)} übersprungen, {len(failures)} Fehler. "
-        f"Cache: {target_root}"
+        "\n"
+        + _(
+            "ntasker: assets fetch -- {written} written, {skipped} skipped, "
+            "{failures} errors. Cache: {cache}"
+        ).format(
+            written=len(written),
+            skipped=len(skipped),
+            failures=len(failures),
+            cache=target_root,
+        )
     )
     return 1 if failures else 0
 
@@ -630,23 +676,27 @@ def cmd_assets_remove(args: argparse.Namespace) -> int:
 
     root = assets_dir()
     if not root.exists():
-        print(f"ntasker: kein Asset-Cache vorhanden bei {root}.")
+        print(_("ntasker: no asset cache at {path}.").format(path=root))
         return 0
 
     if not args.yes:
         try:
-            answer = input(f"ntasker: Cache {root} wirklich löschen? [j/N] ").strip().lower()
+            answer = (
+                input(_("ntasker: really delete cache {path}? [y/N] ").format(path=root))
+                .strip()
+                .lower()
+            )
         except EOFError:
             answer = ""
         if answer not in {"j", "ja", "y", "yes"}:
-            print("ntasker: abgebrochen.")
+            print(_("ntasker: aborted."))
             return 1
 
     # Whole-tree removal: we own the dir layout entirely (only files we
     # write live there) -- a recursive rmtree is correct and matches the
     # ``platformdirs`` user-data convention.
     shutil.rmtree(root)
-    print(f"ntasker: Cache {root} entfernt.")
+    print(_("ntasker: cache {path} removed.").format(path=root))
     return 0
 
 
@@ -714,27 +764,27 @@ def cmd_assets_status(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="ntasker",
-        description="Lightweight local task tracker. Single-user, FastAPI + SQLite.",
+        description=_("Lightweight local task tracker. Single-user, FastAPI + SQLite."),
     )
     p.add_argument("--version", action="version", version=f"ntasker {__version__}")
     p.add_argument(
         "--db",
         metavar="PATH",
-        help="DB-Pfad (ueberschreibt NTASKER_DB und Default).",
+        help=_("DB path (overrides NTASKER_DB and the default)."),
     )
 
     sub = p.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("init", help="Schema anlegen / migrieren").set_defaults(func=cmd_init)
+    sub.add_parser("init", help=_("Create / migrate the schema")).set_defaults(func=cmd_init)
 
-    sp_serve = sub.add_parser("serve", help="FastAPI-Server starten")
+    sp_serve = sub.add_parser("serve", help=_("Run the FastAPI server"))
     sp_serve.add_argument("--host", default="127.0.0.1")
     sp_serve.add_argument("--port", type=int, default=8766)
     sp_serve.add_argument("--reload", action="store_true")
     sp_serve.set_defaults(func=cmd_serve)
 
     # list ----------------------------------------------------------------
-    sp_list = sub.add_parser("list", help="Tasks listen")
+    sp_list = sub.add_parser("list", help=_("List tasks"))
     sp_list.add_argument("--project", action="append", default=[])
     sp_list.add_argument("--tag", action="append", default=[])
     sp_list.add_argument("--phase", action="append", default=[])
@@ -750,13 +800,13 @@ def build_parser() -> argparse.ArgumentParser:
     sp_list.set_defaults(func=cmd_list)
 
     # show ----------------------------------------------------------------
-    sp_show = sub.add_parser("show", help="Task-Detail anzeigen")
+    sp_show = sub.add_parser("show", help=_("Show task detail"))
     sp_show.add_argument("task_id", type=int)
     sp_show.add_argument("--json", action="store_true")
     sp_show.set_defaults(func=cmd_show)
 
     # add -----------------------------------------------------------------
-    sp_add = sub.add_parser("add", help="Task anlegen")
+    sp_add = sub.add_parser("add", help=_("Create a task"))
     sp_add.add_argument("--title", required=True)
     sp_add.add_argument("--project")
     sp_add.add_argument("--description")
@@ -766,12 +816,12 @@ def build_parser() -> argparse.ArgumentParser:
     sp_add.set_defaults(func=cmd_add)
 
     # done ----------------------------------------------------------------
-    sp_done = sub.add_parser("done", help="Task auf done setzen")
+    sp_done = sub.add_parser("done", help=_("Mark a task as done"))
     sp_done.add_argument("task_id", type=int)
     sp_done.set_defaults(func=cmd_done)
 
     # patch ---------------------------------------------------------------
-    sp_patch = sub.add_parser("patch", help="Task-Felder aendern")
+    sp_patch = sub.add_parser("patch", help=_("Edit task fields"))
     sp_patch.add_argument("task_id", type=int)
     sp_patch.add_argument("--title")
     sp_patch.add_argument("--description")
@@ -787,18 +837,18 @@ def build_parser() -> argparse.ArgumentParser:
     sp_patch.set_defaults(func=cmd_patch)
 
     # tag-add / tag-rm ----------------------------------------------------
-    sp_ta = sub.add_parser("tag-add", help="Tag hinzufuegen")
+    sp_ta = sub.add_parser("tag-add", help=_("Add a tag"))
     sp_ta.add_argument("task_id", type=int)
     sp_ta.add_argument("tag")
     sp_ta.set_defaults(func=cmd_tag_add)
 
-    sp_tr = sub.add_parser("tag-rm", help="Tag entfernen")
+    sp_tr = sub.add_parser("tag-rm", help=_("Remove a tag"))
     sp_tr.add_argument("task_id", type=int)
     sp_tr.add_argument("tag")
     sp_tr.set_defaults(func=cmd_tag_rm)
 
     # stats ---------------------------------------------------------------
-    sp_stats = sub.add_parser("stats", help="Counts (open/done/archive)")
+    sp_stats = sub.add_parser("stats", help=_("Counts (open/done/archive)"))
     sp_stats.add_argument("--project", action="append", default=[])
     sp_stats.add_argument("--tag", action="append", default=[])
     sp_stats.add_argument("--phase", action="append", default=[])
@@ -808,86 +858,86 @@ def build_parser() -> argparse.ArgumentParser:
     sp_stats.set_defaults(func=cmd_stats)
 
     # config --------------------------------------------------------------
-    sp_cfg = sub.add_parser("config", help="Settings (KV-Store)")
+    sp_cfg = sub.add_parser("config", help=_("Settings (KV store)"))
     cfg_sub = sp_cfg.add_subparsers(dest="config_cmd", required=True)
 
-    cfg_list = cfg_sub.add_parser("list", help="Alle Settings")
+    cfg_list = cfg_sub.add_parser("list", help=_("List all settings"))
     cfg_list.add_argument("--json", action="store_true")
     cfg_list.set_defaults(func=cmd_config_list)
 
-    cfg_get = cfg_sub.add_parser("get", help="Einen Key lesen")
+    cfg_get = cfg_sub.add_parser("get", help=_("Read one key"))
     cfg_get.add_argument("key")
     cfg_get.add_argument("--json", action="store_true")
     cfg_get.set_defaults(func=cmd_config_get)
 
-    cfg_set = cfg_sub.add_parser("set", help="Einen Key setzen (mit Validator)")
+    cfg_set = cfg_sub.add_parser("set", help=_("Write one key (validated)"))
     cfg_set.add_argument("key")
     cfg_set.add_argument("value")
     cfg_set.set_defaults(func=cmd_config_set)
 
-    cfg_unset = cfg_sub.add_parser("unset", help="Einen Key entfernen")
+    cfg_unset = cfg_sub.add_parser("unset", help=_("Remove one key"))
     cfg_unset.add_argument("key")
     cfg_unset.set_defaults(func=cmd_config_unset)
 
     # install-claude-assets ----------------------------------------------
     sp_ica = sub.add_parser(
         "install-claude-assets",
-        help="Claude Code skill + slash command installieren / pruefen",
+        help=_("Install / check the Claude Code skill + slash command"),
     )
     sp_ica.add_argument(
         "--command-name",
         default="task",
-        help="Slash command file name (default: task -> /task <id>).",
+        help=_("Slash command file name (default: task -> /task <id>)."),
     )
     sp_ica.add_argument(
         "--force",
         action="store_true",
-        help="Overwrite divergent files (timestamped backup is created).",
+        help=_("Overwrite divergent files (timestamped backup is created)."),
     )
     sp_ica.add_argument(
         "--dry-run",
         action="store_true",
-        help="Show planned actions without writing.",
+        help=_("Show planned actions without writing."),
     )
     sp_ica.add_argument(
         "--check",
         action="store_true",
-        help="Read-only status check. Exit 0=identical, 1=drift, 2=not installed.",
+        help=_("Read-only status check. Exit 0=identical, 1=drift, 2=not installed."),
     )
     sp_ica.add_argument(
         "--claude-home",
         default=None,
-        help="Override ~/.claude (also via NTASKER_CLAUDE_HOME env var).",
+        help=_("Override ~/.claude (also via NTASKER_CLAUDE_HOME env var)."),
     )
     sp_ica.set_defaults(func=cmd_install_claude_assets)
 
     # assets --------------------------------------------------------------
     sp_assets = sub.add_parser(
         "assets",
-        help="Vendor-Assets verwalten (CDN-Default, Opt-in lokal).",
+        help=_("Manage vendor assets (CDN by default, opt-in local cache)."),
     )
     assets_sub = sp_assets.add_subparsers(dest="assets_cmd", required=True)
 
     sp_af = assets_sub.add_parser(
         "fetch",
-        help="Vendor-Assets via HTTP in den User-Data-Cache laden (mit SRI-Verify).",
+        help=_("Fetch vendor assets via HTTP into the user-data cache (SRI-verified)."),
     )
     sp_af.add_argument(
         "--force",
         action="store_true",
-        help="Vorhandene Files neu laden, auch wenn SRI bereits passt.",
+        help=_("Re-fetch existing files even when their SRI already matches."),
     )
     sp_af.set_defaults(func=cmd_assets_fetch)
 
-    sp_ar = assets_sub.add_parser("remove", help="User-Data-Asset-Cache loeschen.")
+    sp_ar = assets_sub.add_parser("remove", help=_("Delete the user-data asset cache."))
     sp_ar.add_argument(
         "--yes",
         action="store_true",
-        help="Bestätigungs-Prompt überspringen.",
+        help=_("Skip the confirmation prompt."),
     )
     sp_ar.set_defaults(func=cmd_assets_remove)
 
-    sp_as = assets_sub.add_parser("status", help="Cache-Zustand + Modus anzeigen.")
+    sp_as = assets_sub.add_parser("status", help=_("Show cache state + active mode."))
     sp_as.add_argument("--json", action="store_true")
     sp_as.set_defaults(func=cmd_assets_status)
 
@@ -895,6 +945,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Pin the active language BEFORE constructing the argparse tree --
+    # help strings are translated at ``add_argument`` time. The DB is
+    # not bound here yet, so the resolver falls through to LANG/env
+    # (which is what --help / --version users want anyway).
+    set_active_language(resolve_for_cli())
+
     parser = build_parser()
     args = parser.parse_args(argv)
 
@@ -903,12 +959,22 @@ def main(argv: list[str] | None = None) -> int:
     # read the ``assets_mode`` setting and therefore goes through the
     # standard DB-init path below.
     if args.command == "install-claude-assets":
+        # Pin the active language for this run before any string is
+        # printed -- ``resolve_for_cli`` falls back to env vars when no
+        # DB is reachable yet (and these subcommands intentionally avoid
+        # opening one).
+        set_active_language(resolve_for_cli())
         return args.func(args)
     if args.command == "assets" and getattr(args, "assets_cmd", None) in {"fetch", "remove"}:
+        set_active_language(resolve_for_cli())
         return args.func(args)
 
     db_path = resolve_db_path(args.db)
     set_db_path(db_path)
+
+    # Now that the DB path is bound, the language setting can be read.
+    # Pin it once for the entire process (CLI is sync and short-lived).
+    set_active_language(resolve_for_cli())
 
     # Read-only commands get a friendly hint (no auto-init), the rest run
     # ``init_db()`` themselves so e.g. ``ntasker add`` against a fresh path
@@ -919,7 +985,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         # init / serve / write -- ensure schema exists. Idempotent.
         if not db_path.exists():
-            print(f"ntasker: erstelle DB bei {db_path}", file=sys.stderr)
+            print(_("ntasker: creating DB at {path}").format(path=db_path), file=sys.stderr)
         init_db()
 
     return args.func(args)

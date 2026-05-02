@@ -19,6 +19,7 @@ run:
 
 smoke:
 	uv run python smoke_test.py
+	uv run python lifespan_test.py
 
 # Removes ONLY the local repo-root tasks.db (legacy / dev artefacts).
 # The default user-data DB at ``platformdirs.user_data_dir('nTasker')/tasks.db``

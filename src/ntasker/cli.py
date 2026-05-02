@@ -217,7 +217,21 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
     Importing uvicorn lazily keeps ``ntasker --version`` fast and lets the
     CLI work in environments where uvicorn is missing (read-only ops).
+
+    With ``--reload`` uvicorn spawns a worker subprocess that imports
+    ``ntasker.app:app`` directly -- ``main()`` does not run there, so the
+    module-level ``DB_PATH`` would be unbound. We propagate the resolved
+    path via ``NTASKER_DB`` so the worker re-resolves to the same file.
+    The app's startup hook re-resolves on its own (lifespan-safe), but
+    we still pin the ENV here so an explicit ``--db`` actually reaches
+    the reload worker.
     """
+    import os  # noqa: PLC0415
+
+    from ntasker import db as _db  # noqa: PLC0415  -- read module-level DB_PATH
+
+    if _db.DB_PATH is not None:
+        os.environ["NTASKER_DB"] = str(_db.DB_PATH)
     try:
         import uvicorn  # noqa: PLC0415  -- lazy import on purpose
     except ImportError:

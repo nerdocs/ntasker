@@ -28,6 +28,7 @@ from ntasker.assets import (
     get_sri,
 )
 from ntasker.claude_assets import resolve_claude_home, scan_status
+from ntasker import db as _db_module
 from ntasker.db import (
     get_conn,
     init_db,
@@ -35,6 +36,7 @@ from ntasker.db import (
     load_tags_for,
     normalize_tags,
     row_to_task,
+    set_db_path,
     set_task_tags,
 )
 from ntasker.i18n import (
@@ -383,12 +385,26 @@ app.add_middleware(LanguageMiddleware)
 
 @app.on_event("startup")
 def on_startup() -> None:
-    """Make sure the schema is in place. Idempotent.
+    """Make sure the DB path is bound and the schema is in place. Idempotent.
 
-    The DB path itself is bound by the CLI before uvicorn starts (see
-    :func:`ntasker.cli.cmd_serve`). For test harnesses that import
-    :mod:`ntasker.app` directly, the smoke test rebinds it explicitly.
+    Lifespan-safe: when uvicorn runs with ``--reload``, the worker is a
+    fresh subprocess that imports ``ntasker.app:app`` directly without
+    re-entering :func:`ntasker.cli.cmd_serve` -- so the module-level
+    ``DB_PATH`` is unbound. We re-resolve here using the same precedence
+    as the CLI (ENV ``NTASKER_DB`` > platformdirs default). The CLI sets
+    ``NTASKER_DB`` from ``--db`` before invoking uvicorn so the worker
+    inherits the right path even with ``--reload``.
+
+    If ``DB_PATH`` is already bound (in-process import / test harness /
+    non-reload CLI path), we keep it -- never overwrite an explicit bind.
     """
+    if _db_module.DB_PATH is None:
+        # Avoid importing paths at module load time -- keeps ``ntasker
+        # --version`` snappy and lets the test harness rebind DB_PATH
+        # before any code runs.
+        from ntasker.paths import resolve_db_path  # noqa: PLC0415
+
+        set_db_path(resolve_db_path())
     init_db()
     # Belt-and-braces: ensure settings table even on pre-1.0 DBs that
     # have not been run through ``ntasker init`` yet.

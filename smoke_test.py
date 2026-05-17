@@ -780,6 +780,121 @@ def main() -> int:
     finally:
         del os.environ["NTASKER_CLAUDE_HOME"]
 
+    # 49b. /healthz: DB-free liveness probe used by `serve --detach` and external
+    # supervisors. Must return 200 with {"ok": True, "version": <pkg>} -- no DB
+    # access, so a half-broken install still answers quickly.
+    r = client.get("/healthz")
+    assert_ok(r)
+    body = r.json()
+    assert body.get("ok") is True, f"/healthz must return ok=true, got {body}"
+    assert body.get("version"), f"/healthz must include version, got {body}"
+    from ntasker import __version__ as _pkg_version  # noqa: PLC0415
+    assert body["version"] == _pkg_version, (
+        f"/healthz version drift: app={body['version']!r} != pkg={_pkg_version!r}"
+    )
+    print(f"OK GET /healthz -> {body}")
+
+    # 49c. `ntasker serve --detach` end-to-end: pick a free port, spawn a
+    # detached child, probe /healthz, then shut it down. Verifies the
+    # cross-platform spawn path AND idempotency (second --detach exits 0
+    # without spawning a second server).
+    import signal as _signal  # noqa: PLC0415
+    import socket as _socket  # noqa: PLC0415
+    import time as _time  # noqa: PLC0415
+    import urllib.request as _urlreq  # noqa: PLC0415
+    import json as _json2  # noqa: PLC0415
+
+    def _free_port() -> int:
+        with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as s:
+            s.bind(("127.0.0.1", 0))
+            return s.getsockname()[1]
+
+    def _healthz_get(port: int, timeout: float = 0.5) -> dict | None:
+        try:
+            with _urlreq.urlopen(f"http://127.0.0.1:{port}/healthz", timeout=timeout) as resp:
+                if resp.status != 200:
+                    return None
+                return _json2.loads(resp.read().decode("utf-8"))
+        except Exception:
+            return None
+
+    detach_port = _free_port()
+    detach_db = _tmp_root / "detach.db"
+    # Pin the CLI to English so the test assertions stay locale-stable
+    # regardless of the host's LANG (the i18n resolver honours LANG when
+    # the DB has no language setting, which is the case for a fresh DB).
+    detach_env = {
+        **os.environ,
+        "NTASKER_DB": str(detach_db),
+        "LANG": "C",
+        "LC_ALL": "C",
+    }
+
+    # First call: must spawn the server and wait for /healthz.
+    proc = subprocess.run(
+        ["ntasker", "serve", "--detach", "--port", str(detach_port)],
+        capture_output=True, text=True, env=detach_env, timeout=10,
+    )
+    assert proc.returncode == 0, (
+        f"first --detach must succeed, got rc={proc.returncode}\n"
+        f"stdout={proc.stdout}\nstderr={proc.stderr}"
+    )
+    assert "started detached" in proc.stdout, (
+        f"first --detach output should mention 'started detached', got {proc.stdout!r}"
+    )
+
+    # Extract the PID from the success line for clean teardown later.
+    import re as _re_pid  # noqa: PLC0415
+    m = _re_pid.search(r"pid (\d+)", proc.stdout)
+    assert m, f"could not parse pid from --detach output: {proc.stdout!r}"
+    detached_pid = int(m.group(1))
+
+    try:
+        # /healthz must answer (the CLI waited for this, so 1 retry is enough).
+        body = _healthz_get(detach_port, timeout=2.0)
+        assert body and body.get("ok") is True, (
+            f"detached server not answering /healthz on port {detach_port}, got {body!r}"
+        )
+        print(f"OK ntasker serve --detach (port={detach_port}, pid={detached_pid}) -> /healthz ok")
+
+        # Second call: must be idempotent (no second spawn, exits 0).
+        proc2 = subprocess.run(
+            ["ntasker", "serve", "--detach", "--port", str(detach_port)],
+            capture_output=True, text=True, env=detach_env, timeout=5,
+        )
+        assert proc2.returncode == 0, (
+            f"idempotent --detach must succeed, got rc={proc2.returncode}\n"
+            f"stdout={proc2.stdout}\nstderr={proc2.stderr}"
+        )
+        assert "already running" in proc2.stdout, (
+            f"idempotent --detach should say 'already running', got {proc2.stdout!r}"
+        )
+        print("OK ntasker serve --detach (second call) -> idempotent 'already running'")
+
+        # --detach + --reload must be rejected with exit 2 (no spawn).
+        proc3 = subprocess.run(
+            ["ntasker", "serve", "--detach", "--reload", "--port", str(_free_port())],
+            capture_output=True, text=True, env=detach_env, timeout=5,
+        )
+        assert proc3.returncode == 2, (
+            f"--detach + --reload must be rejected, got rc={proc3.returncode}"
+        )
+        assert "mutually exclusive" in (proc3.stdout + proc3.stderr)
+        print("OK ntasker serve --detach --reload -> rejected (exit 2)")
+
+    finally:
+        # Clean teardown: signal the detached child and wait briefly.
+        try:
+            os.kill(detached_pid, _signal.SIGTERM)
+            for _ in range(20):
+                try:
+                    os.kill(detached_pid, 0)  # probe
+                except ProcessLookupError:
+                    break
+                _time.sleep(0.05)
+        except ProcessLookupError:
+            pass  # already gone
+
     # 50. boot_drift_warning returns None on a clean install.
     os.environ["NTASKER_CLAUDE_HOME"] = str(test_home)
     try:

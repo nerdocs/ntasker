@@ -413,6 +413,22 @@ def on_startup() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Routes -- liveness probe
+# ---------------------------------------------------------------------------
+
+
+@app.get("/healthz")
+def healthz() -> dict:
+    """Liveness probe for `ntasker serve --detach` and external supervisors.
+
+    Intentionally DB-free so a half-broken install still reports `ok`
+    quickly. Returns the package version so callers can detect a stale
+    background server after an upgrade.
+    """
+    return {"ok": True, "version": VERSION}
+
+
+# ---------------------------------------------------------------------------
 # Routes -- HTML
 # ---------------------------------------------------------------------------
 

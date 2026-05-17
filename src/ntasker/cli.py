@@ -212,6 +212,66 @@ def cmd_init(args: argparse.Namespace) -> int:
     return 0
 
 
+def _healthz_ok(host: str, port: int, timeout: float = 0.5) -> bool:
+    """Best-effort liveness probe against ``GET /healthz``.
+
+    Uses stdlib ``urllib`` so it stays dependency-free (httpx is a runtime
+    dep but importing it costs ~20ms on cold start -- the detach path
+    runs this in a tight loop). Any error (connection refused, timeout,
+    non-200, unparseable JSON) counts as "not up yet".
+    """
+    import json as _json  # noqa: PLC0415
+    import urllib.error  # noqa: PLC0415
+    import urllib.request  # noqa: PLC0415
+
+    url = f"http://{host}:{port}/healthz"
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:  # noqa: S310
+            if resp.status != 200:
+                return False
+            body = _json.loads(resp.read().decode("utf-8"))
+            return bool(body.get("ok"))
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+        return False
+
+
+def _spawn_detached_server(host: str, port: int, db_path: str | None) -> int:
+    """Start ``ntasker serve`` as a detached background child, cross-platform.
+
+    POSIX: ``start_new_session=True`` -- the child becomes its own session
+    leader so a closing terminal does not SIGHUP it.
+
+    Windows: ``DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP`` -- the child
+    is decoupled from the console and Ctrl-C in the parent does not reach
+    it.
+
+    Returns the child PID.
+    """
+    import os  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+
+    cmd = [sys.executable, "-m", "ntasker"]
+    if db_path is not None:
+        cmd.extend(["--db", db_path])
+    cmd.extend(["serve", "--host", host, "--port", str(port)])
+
+    kwargs: dict[str, Any] = {
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+        "close_fds": True,
+    }
+    if os.name == "nt":
+        # Windows: combine flags to fully detach from the parent console.
+        creation_flags = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+        kwargs["creationflags"] = creation_flags
+    else:
+        kwargs["start_new_session"] = True
+
+    proc = subprocess.Popen(cmd, **kwargs)  # noqa: S603 -- args list is internal
+    return proc.pid
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     """Run the FastAPI app via uvicorn. Bind hardcoded to 127.0.0.1.
 
@@ -225,13 +285,56 @@ def cmd_serve(args: argparse.Namespace) -> int:
     The app's startup hook re-resolves on its own (lifespan-safe), but
     we still pin the ENV here so an explicit ``--db`` actually reaches
     the reload worker.
+
+    With ``--detach``: probe ``/healthz`` first; if a server is already
+    answering on the same host/port, exit 0 (idempotent). Otherwise spawn
+    a detached child (OS-specific) and poll ``/healthz`` until it answers
+    or the deadline elapses.
     """
     import os  # noqa: PLC0415
+    import time  # noqa: PLC0415
 
     from ntasker import db as _db  # noqa: PLC0415  -- read module-level DB_PATH
 
     if _db.DB_PATH is not None:
         os.environ["NTASKER_DB"] = str(_db.DB_PATH)
+
+    if getattr(args, "detach", False):
+        if args.reload:
+            print(
+                _("ntasker: --detach and --reload are mutually exclusive."),
+                file=sys.stderr,
+            )
+            return 2
+        if _healthz_ok(args.host, args.port):
+            print(
+                _("ntasker: server already running on {host}:{port}").format(
+                    host=args.host, port=args.port
+                )
+            )
+            return 0
+        db_path = str(_db.DB_PATH) if _db.DB_PATH is not None else None
+        pid = _spawn_detached_server(args.host, args.port, db_path)
+        # Poll up to ~3s; first-boot init_db on a fresh DB can take a moment.
+        deadline = time.monotonic() + 3.0
+        while time.monotonic() < deadline:
+            if _healthz_ok(args.host, args.port):
+                print(
+                    _("ntasker: started detached on {host}:{port} (pid {pid})").format(
+                        host=args.host, port=args.port, pid=pid
+                    )
+                )
+                return 0
+            time.sleep(0.1)
+        print(
+            _(
+                "ntasker: detached child (pid {pid}) did not answer /healthz "
+                "within 3s on {host}:{port}"
+            ).format(pid=pid, host=args.host, port=args.port),
+            file=sys.stderr,
+        )
+        return 1
+
     try:
         import uvicorn  # noqa: PLC0415  -- lazy import on purpose
     except ImportError:
@@ -795,6 +898,14 @@ def build_parser() -> argparse.ArgumentParser:
     sp_serve.add_argument("--host", default="127.0.0.1")
     sp_serve.add_argument("--port", type=int, default=8766)
     sp_serve.add_argument("--reload", action="store_true")
+    sp_serve.add_argument(
+        "--detach",
+        action="store_true",
+        help=_(
+            "Start the server as a detached background process. "
+            "Idempotent: returns 0 if a server is already answering /healthz."
+        ),
+    )
     sp_serve.set_defaults(func=cmd_serve)
 
     # list ----------------------------------------------------------------

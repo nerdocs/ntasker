@@ -4,6 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [1.4.0] — 2026-05-17
+- feat: `ntasker serve --detach` + `GET /healthz` enable lazy auto-start from the Claude Code skill (cross-platform: POSIX `start_new_session`, Windows `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP`); idempotent -- probes `/healthz` before spawning. New `python -m ntasker` entry.
+
 ## [1.3.0] — 2026-05-02
 - feat: full i18n (en/de) for templates, CLI, and Alpine frontend; setting `language = auto|en|de` (default `auto`) reads `Accept-Language` when `auto`. `gettext` + Babel; catalogs under `src/ntasker/locale/`. Make targets `i18n-extract / i18n-update / i18n-compile / i18n`.
 - fix: `ntasker serve --reload` (and direct `uvicorn ntasker.app:app` imports) crashed at startup with `init_db called without DB_PATH set` -- lifespan now re-resolves the DB path itself; CLI propagates `--db` via `NTASKER_DB` so the reload-worker subprocess inherits it.

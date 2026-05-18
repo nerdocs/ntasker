@@ -48,6 +48,28 @@ def load_via_cli(tid: str) -> dict | None:
         return None
 
 
+def try_autostart() -> bool:
+    """Attempt to start the ntasker server in the background.
+
+    Returns True if the server answers /healthz after the spawn (also
+    True if a server was already running -- ``serve --detach`` is
+    idempotent). Returns False if the CLI is missing or the spawn never
+    produced a live server within the CLI's own deadline.
+    """
+    if shutil.which("ntasker") is None:
+        return False
+    try:
+        proc = subprocess.run(
+            ["ntasker", "serve", "--detach"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except Exception:
+        return False
+    return proc.returncode == 0
+
+
 def render(data: dict) -> str:
     lines = [
         f'## #{data["id"]} {data["title"]}',
@@ -84,7 +106,16 @@ def main(argv: list[str]) -> int:
         print(f"Invalid task id: {raw!r}", file=sys.stderr)
         return 2
     tid = raw.lstrip("#")
-    data = load_via_server(tid) or load_via_cli(tid)
+    data = load_via_server(tid)
+    if data is None:
+        # Server not reachable: try to spawn it in the background so this
+        # AND future calls in the same session are fast, plus the web UI
+        # at http://127.0.0.1:8766 becomes available. Idempotent: a no-op
+        # if a server was already up by the time we got here.
+        if try_autostart():
+            data = load_via_server(tid)
+        if data is None:
+            data = load_via_cli(tid)
     if data is None:
         print(
             f"Task #{tid} not found.\n"

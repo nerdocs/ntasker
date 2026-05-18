@@ -29,6 +29,27 @@ Legacy package name `nerdocs-tracker` was renamed to `ntasker` in v1.0.0.
 Old memory entries that still say `nerdocs-tracker` / `Tracker` resolve
 to this skill via the legacy trigger words above.
 
+### 1.1 Server availability (lazy auto-start, since v1.4.0)
+
+Every HTTP call in this skill assumes the server answers on
+`http://127.0.0.1:8766`. If a call fails with connection-refused, start
+the server in the background once -- idempotent, no harm if it is
+already up:
+
+```bash
+curl -sf http://127.0.0.1:8766/healthz >/dev/null \
+  || ntasker serve --detach
+```
+
+`/healthz` is a DB-free liveness probe (`{"ok": true, "version": "..."}`).
+`ntasker serve --detach` spawns a detached background server cross-platform
+and exits 0 once `/healthz` answers (or immediately if a server is
+already running). If `ntasker` is not on PATH yet, install it first:
+`uv tool install ntasker` (or `pip install --user ntasker`).
+
+The `/task <id>` slash command handles this transparently via its loader
+-- only direct `curl` calls in this skill need the pre-probe.
+
 ## 2. #ID Resolution (read -- always allowed)
 
 Server first; CLI fallback if it is not running. **No direct SQLite access**

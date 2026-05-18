@@ -608,10 +608,15 @@ def main() -> int:
     # End-to-end: feed an unreachable id through main() with both prefixes;
     # main() should validate and proceed to "not found" (exit 1), not bail
     # on validation (exit 2). Guarantees both forms hit load_via_*.
+    # ``try_autostart`` is also mocked so the test never actually spawns a
+    # background server -- v1.4.0 added a lazy-spawn step between server
+    # and CLI fallback.
     _orig_load_server = _loader.load_via_server
     _orig_load_cli = _loader.load_via_cli
+    _orig_autostart = _loader.try_autostart
     _loader.load_via_server = lambda tid: None  # type: ignore[assignment]
     _loader.load_via_cli = lambda tid: None  # type: ignore[assignment]
+    _loader.try_autostart = lambda: False  # type: ignore[assignment]
     try:
         rc_plain = _loader.main(["_ntasker_loader.py", "999999999"])
         rc_hash = _loader.main(["_ntasker_loader.py", "#999999999"])
@@ -619,10 +624,46 @@ def main() -> int:
     finally:
         _loader.load_via_server = _orig_load_server
         _loader.load_via_cli = _orig_load_cli
+        _loader.try_autostart = _orig_autostart
     assert rc_plain == 1, f"plain id should reach not-found path, got rc={rc_plain}"
     assert rc_hash == 1, f"#-prefixed id should reach not-found path, got rc={rc_hash}"
     assert rc_bad == 2, f"double-# id should fail validation (rc=2), got rc={rc_bad}"
     print("OK loader accepts both '187' and '#187' (rejects '##187')")
+
+    # 37e2. New v1.4.0 lazy-spawn path: when load_via_server initially fails
+    # AND try_autostart returns True, main() must re-probe the server. We
+    # verify the call sequence: first server miss -> autostart success ->
+    # second server hit returns the task -> main() prints + exits 0.
+    _calls: list[str] = []
+
+    def _server_seq(tid: str) -> dict | None:
+        _calls.append(f"server({tid})")
+        # First call: miss. Second call (after autostart): hit.
+        return None if _calls.count(f"server({tid})") == 1 else {
+            "id": int(tid), "title": "autostart-test", "status": "open",
+            "phase": None, "priority": "normal", "tags": [],
+            "archived": False, "created_at": "2026-01-01T00:00:00",
+            "description": "",
+        }
+
+    def _autostart_ok() -> bool:
+        _calls.append("autostart")
+        return True
+
+    _loader.load_via_server = _server_seq  # type: ignore[assignment]
+    _loader.try_autostart = _autostart_ok  # type: ignore[assignment]
+    _loader.load_via_cli = lambda tid: None  # type: ignore[assignment]
+    try:
+        rc_spawn = _loader.main(["_ntasker_loader.py", "77"])
+    finally:
+        _loader.load_via_server = _orig_load_server
+        _loader.load_via_cli = _orig_load_cli
+        _loader.try_autostart = _orig_autostart
+    assert rc_spawn == 0, f"lazy-spawn path should return 0, got rc={rc_spawn}"
+    assert _calls == ["server(77)", "autostart", "server(77)"], (
+        f"unexpected call sequence: {_calls}"
+    )
+    print("OK loader lazy-autostart: server-miss -> spawn -> server-hit")
 
     # 37f. Click-to-copy puts "/task #<id>" on the clipboard, not just "#<id>".
     _app_js_path = _Path(__file__).parent / "src" / "ntasker" / "static" / "app.js"

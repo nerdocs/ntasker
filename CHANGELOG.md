@@ -4,6 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [1.4.1] — 2026-05-18
+- feat: `/task` loader auto-starts the server via `ntasker serve --detach` when the API call fails; web UI becomes available as a side-effect. SKILL.md documents the same pre-probe pattern for direct curl calls.
+
 ## [1.4.0] — 2026-05-17
 - feat: `ntasker serve --detach` + `GET /healthz` enable lazy auto-start from the Claude Code skill (cross-platform: POSIX `start_new_session`, Windows `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP`); idempotent -- probes `/healthz` before spawning. New `python -m ntasker` entry.
 

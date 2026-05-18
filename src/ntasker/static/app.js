@@ -129,10 +129,6 @@ function tracker(serverDefaultView) {
         editing: null,               // task object or null
         counts: { open: 0, done: 0, archive: 0 },
 
-        // True when the server reports `X-Settings-Missing: projects_dir`
-        // on /api/projects -- shows the configuration banner.
-        projectsDirMissing: false,
-
         async init() {
             this.applyTheme();
             this.restoreProjectFilter();
@@ -440,12 +436,10 @@ function tracker(serverDefaultView) {
 
         // ---- Sidebar data ----
         async loadProjects() {
+            // Projects are derived from tasks since v2.0: the response is a
+            // plain list with __none__ first, then every name currently
+            // referenced by at least one task.
             const r = await fetch('/api/projects');
-            // The server flags an unconfigured projects_dir via response header
-            // instead of changing the response shape -- the list always has at
-            // least the __none__ sentinel. UI shows a configuration banner.
-            this.projectsDirMissing = (r.headers.get('X-Settings-Missing') || '')
-                .split(',').map(s => s.trim()).includes('projects_dir');
             this.projects = await r.json();
         },
 
@@ -569,6 +563,23 @@ function tracker(serverDefaultView) {
                 this.showToast(_i('delete_failed'), 'danger');
                 return;
             }
+            await this.refreshAll();
+        },
+
+        // Modal-side delete: archived-or-not, always confirms with the title.
+        // The list-view delete button stays archived-only (safety against
+        // accidental clicks). The modal is a deliberate user action, so we
+        // let the user delete from any state.
+        async deleteFromEdit() {
+            if (!this.editing) return;
+            const t = this.editing;
+            if (!confirm(_i('confirm_delete', {title: t.title}))) return;
+            const r = await fetch(`/api/tasks/${t.id}`, { method: 'DELETE' });
+            if (!r.ok) {
+                this.showToast(_i('delete_failed'), 'danger');
+                return;
+            }
+            this.editing = null;
             await this.refreshAll();
         },
 

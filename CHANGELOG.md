@@ -4,6 +4,19 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [2.0.0] — 2026-05-18
+**Breaking:** Projekte sind keine Filesystem-Symlinks mehr, sondern werden aus den Tasks abgeleitet.
+- breaking: Setting `projects_dir` + ENV `NTASKER_PROJECTS_DIR` + die Filesystem-Scan-Logik in `list_projects()` ersatzlos entfernt. `validate_projects_dir`-Validator weg; `init_db()` löscht bestehende `projects_dir`-DB-Rows idempotent beim Boot, damit keine Karteileiche im Settings-UI verbleibt.
+- breaking: Response-Header `X-Settings-Missing: projects_dir` ist weg. Frontend-Banner „Bitte Projekte-Verzeichnis konfigurieren..." entfernt.
+- feat: `/api/projects` baut die Projektliste jetzt aus `SELECT DISTINCT project FROM tasks`. Projekte entstehen implizit beim Anlegen eines Tasks mit beliebigem `project`-Namen und werden automatisch entfernt, sobald der letzte Task das Projekt nicht mehr referenziert. Keine Projekt-Leichen.
+- feat: Server normalisiert `project`-Werte (trim; leerer String → NULL) bei POST und PATCH, damit kein Phantom-Eintrag in der Sidebar entsteht.
+- feat: Frontend: `<select>` für Projekte → freie Texteingabe mit `<datalist>`-Autocomplete (alle bisherigen Projektnamen). Anlegen eines neuen Projekts ist ein Side-Effect des Task-Speicherns.
+- feat: Task-Löschung direkt aus dem Edit-Modal (btn-ghost-danger im Footer, Confirm-Dialog). Backend hatte die Restriktion nie -- jetzt auch in der UI verfügbar. Der Listen-Delete-Button bleibt aus Sicherheit archived-only.
+- feat: Neuer CLI-Befehl `ntasker delete <id>` mit `--yes` für Skripte. Funktioniert unabhängig vom archived-State.
+- feat: Cache-Buster für `/static/`-Dateien jetzt `<__version__>-<mtime>` statt nur `<__version__>` -- Browser laden geänderte `app.js`/`style.css` zuverlässig neu, auch innerhalb derselben Release-Periode.
+- feat: page-wrapper auf `container-fluid` umgestellt; Inhalt nutzt jetzt die volle Browser-Breite, statt bei `container-xl` (≈1320 px) abzuschneiden.
+- feat: SKILL.md instruiert Claude, beim autonomen Task-Anlegen (auf User-Aufforderung) einen sinnvollen Projektnamen aus dem Working-Directory-Kontext zu wählen und vorhandene Namen wiederzuverwenden.
+
 ## [1.5.0] — 2026-05-18
 - feat: Kanban-View neben der klassischen Aufgabenliste. View-Toggle im Page-Header (Aufgabenliste / Kanban). 4 Spalten Geplant -> In Arbeit -> Zu prüfen + kollabierbare Erledigt-Spalte (HTML5-Drag&Drop, PATCH bei Drop). Klick auf Card-Titel toggelt die Beschreibung (analog zur Liste).
 - feat: neues Setting `default_view` (`list` | `kanban`, Default `list`; ENV `NTASKER_DEFAULT_VIEW`) bestimmt die Start-Ansicht bei einem frischen Browser; `localStorage` überlebt danach die User-Wahl.

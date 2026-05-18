@@ -9,7 +9,7 @@
           integrity="{{ asset_sri('tabler-css') }}" crossorigin="anonymous">
     <link rel="stylesheet" href="{{ asset('tabler-icons-css') }}"
           integrity="{{ asset_sri('tabler-icons-css') }}" crossorigin="anonymous">
-    <link rel="stylesheet" href="/static/style.css?v={{ version }}">
+    <link rel="stylesheet" href="/static/style.css?v={{ static_bust('style.css') }}">
 
     {# Frontend i18n bridge -- same pattern as index.html. #}
     <script>

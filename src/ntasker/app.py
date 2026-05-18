@@ -54,7 +54,6 @@ from ntasker.settings import (
     ensure_settings_table,
     get_assets_mode_resolved,
     get_default_view,
-    get_projects_dir,
     get_setting_raw,
     list_settings,
     set_setting,
@@ -101,25 +100,18 @@ STATIC_DIR = _PKG_ROOT / "static"
 
 
 # ---------------------------------------------------------------------------
-# Project discovery (settings-backed)
+# Projects: live, derived from tasks
 # ---------------------------------------------------------------------------
-
-
-def list_projects() -> list[str]:
-    """Return live list of project symlink names under the configured ``projects_dir``.
-
-    If ``projects_dir`` is unset the list is empty -- the ``/api/projects``
-    endpoint then signals this to the UI via the ``X-Settings-Missing``
-    response header so a banner can prompt for configuration.
-    """
-    projects_dir = get_projects_dir()
-    if projects_dir is None:
-        return []
-    return sorted(
-        p.name
-        for p in projects_dir.iterdir()
-        if p.is_symlink() and not p.name.startswith(".") and not p.name.endswith(".lock")
-    )
+#
+# Since v2.0 projects are not a filesystem concept anymore. A "project" is
+# simply a non-NULL ``tasks.project`` value -- the sidebar feed runs a
+# ``SELECT DISTINCT project FROM tasks`` over the live data. That gives
+# us automatic garbage collection: when the last task carrying a given
+# project name is deleted (or moved to a different project), the
+# project silently disappears from the sidebar and from autocomplete.
+# There is no separate "projects" table, no FS scan, no projects_dir
+# setting -- ``project`` is just a free-form string the user (or Claude)
+# writes into a task.
 
 
 # ---------------------------------------------------------------------------
@@ -209,10 +201,32 @@ def _t(key: str) -> str:
     return _(key)
 
 
+def _static_bust(name: str) -> str:
+    """Return a cache-buster query-string for a local /static/ asset.
+
+    Uses ``<VERSION>-<mtime>`` so two distinct edits within the same
+    release window still invalidate the browser cache. Templates use
+    ``<link href="/static/style.css?v={{ static_bust('style.css') }}">``
+    instead of the bare ``?v={{ version }}`` we relied on before, which
+    failed to bust the cache during development when many code changes
+    sit under the same ``__version__``.
+    """
+    try:
+        path = STATIC_DIR / name
+        mtime = int(path.stat().st_mtime)
+    except (OSError, AttributeError):
+        # ``files()`` over a zipped wheel returns a Traversable that may
+        # not support ``.stat()``. Fall back to just the version -- the
+        # zip is immutable so the cache is fine.
+        return VERSION
+    return f"{VERSION}-{mtime}"
+
+
 templates.env.globals["asset"] = _asset
 templates.env.globals["asset_sri"] = _asset_sri
 templates.env.globals["asset_mode"] = _asset_mode
 templates.env.globals["t"] = _t
+templates.env.globals["static_bust"] = _static_bust
 
 
 # ---------------------------------------------------------------------------
@@ -273,7 +287,7 @@ def build_js_strings() -> dict[str, str]:
         # New-task form
         "new_task": _("New task"),
         "project": _("Project"),
-        "cross_project_option": _("-- cross-project --"),
+        "project_placeholder": _("Project name (leave empty for cross-project)"),
         "phase": _("Phase"),
         "phase_none": _("--"),
         "phase_wip": _("In Progress"),
@@ -582,16 +596,25 @@ def api_claude_assets_status() -> JSONResponse:
 
 @app.get("/api/projects")
 def api_projects() -> JSONResponse:
-    """Sidebar feed: ``__none__`` first, then live symlinks, each with open_count.
+    """Sidebar feed: ``__none__`` first, then every project name that has at
+    least one task (open or otherwise), each with its open-task count.
 
-    If ``projects_dir`` is not configured (neither ENV nor DB), responds
-    with an empty list and the ``X-Settings-Missing: projects_dir``
-    response header so the UI can render a configuration banner.
+    Projects are *derived* from the tasks table (since v2.0): a project
+    exists exactly as long as at least one task references it. There is
+    no separate projects table and no filesystem source -- delete the
+    last task carrying a name and that project vanishes from the feed.
     """
-    projects_dir = get_projects_dir()
-    projects = list_projects()
     with get_conn() as conn:
-        rows = conn.execute(
+        # All distinct project names currently referenced by any task
+        # (archived included so a project with only archived tasks still
+        # appears -- the user can decide to unarchive or delete).
+        names_rows = conn.execute(
+            "SELECT DISTINCT project FROM tasks "
+            "WHERE project IS NOT NULL "
+            "ORDER BY project COLLATE NOCASE ASC"
+        ).fetchall()
+        # Open-counts: archived/done excluded, same semantics as in v1.x.
+        count_rows = conn.execute(
             """
             SELECT project, COUNT(*) AS c
             FROM tasks
@@ -599,18 +622,16 @@ def api_projects() -> JSONResponse:
             GROUP BY project
             """
         ).fetchall()
-    counts: dict[str | None, int] = {row["project"]: int(row["c"]) for row in rows}
+    counts: dict[str | None, int] = {row["project"]: int(row["c"]) for row in count_rows}
 
     out: list[dict] = [
         {"name": PROJECT_NONE_SENTINEL, "open_count": counts.get(None, 0)},
     ]
-    for name in projects:
+    for row in names_rows:
+        name = row["project"]
         out.append({"name": name, "open_count": counts.get(name, 0)})
 
-    response = JSONResponse(out)
-    if projects_dir is None:
-        response.headers["X-Settings-Missing"] = "projects_dir"
-    return response
+    return JSONResponse(out)
 
 
 @app.get("/api/tags")
@@ -910,12 +931,27 @@ def api_get_task(task_id: int) -> JSONResponse:
     return JSONResponse(row_to_task(row, tags))
 
 
+def _normalize_project(value: str | None) -> str | None:
+    """Trim whitespace; convert empty / whitespace-only to NULL.
+
+    Since v2.0 there is no projects whitelist -- any non-empty trimmed
+    string is accepted and implicitly defines a project. NULL means
+    "cross-project" (no project assigned), shown as ``__none__`` in the
+    sidebar feed.
+    """
+    if value is None:
+        return None
+    trimmed = value.strip()
+    return trimmed or None
+
+
 @app.post("/api/tasks", status_code=201)
 def api_create_task(payload: TaskCreate) -> JSONResponse:
     if payload.priority not in PRIORITY_VALID:
         raise HTTPException(status_code=400, detail=_("Invalid priority"))
     norm_tags = normalize_tags(payload.tags)
     phase_value = payload.phase or PHASE_DEFAULT
+    project_value = _normalize_project(payload.project)
     with get_conn() as conn:
         cur = conn.execute(
             """
@@ -923,7 +959,7 @@ def api_create_task(payload: TaskCreate) -> JSONResponse:
             VALUES (?, ?, ?, ?, ?)
             """,
             (
-                payload.project,
+                project_value,
                 payload.title,
                 payload.description,
                 phase_value,
@@ -958,6 +994,11 @@ def api_update_task(task_id: int, payload: TaskUpdate) -> JSONResponse:
             fields["phase"] = PHASE_DEFAULT
         elif fields["phase"] not in PHASE_VALID:
             raise HTTPException(status_code=400, detail=_("Invalid phase"))
+
+    # Normalize project here too -- empty strings collapse to NULL so the
+    # sidebar feed (DISTINCT-based) doesn't surface a phantom "" project.
+    if "project" in fields:
+        fields["project"] = _normalize_project(fields["project"])
 
     if "status" in fields:
         if fields["status"] == "done":

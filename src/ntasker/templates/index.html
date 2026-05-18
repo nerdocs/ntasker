@@ -12,7 +12,7 @@
           integrity="{{ asset_sri('tabler-css') }}" crossorigin="anonymous">
     <link rel="stylesheet" href="{{ asset('tabler-icons-css') }}"
           integrity="{{ asset_sri('tabler-icons-css') }}" crossorigin="anonymous">
-    <link rel="stylesheet" href="/static/style.css?v={{ version }}">
+    <link rel="stylesheet" href="/static/style.css?v={{ static_bust('style.css') }}">
 
     {# Frontend i18n bridge: js_strings is built server-side per request. #}
     {# Alpine magic property `$i18n('key')` is registered just below. #}
@@ -210,7 +210,7 @@
     <div class="page flex-fill" style="min-width: 0;">
 
     <header class="navbar navbar-expand-md d-print-none">
-        <div class="container-xl">
+        <div class="container-fluid">
             <h1 class="navbar-brand navbar-brand-autodark d-flex align-items-center mb-0">
                 <i class="ti ti-checkbox me-2 fs-2"></i>
                 ntasker
@@ -235,7 +235,7 @@
         {# they are NOT bootstrap nav-tabs because the page wrappers below #}
         {# swap their entire layout, not just a tab-pane. #}
         <div class="page-header d-print-none">
-            <div class="container-xl">
+            <div class="container-fluid">
                 <div class="row g-2 align-items-center">
                     <div class="col-auto">
                         <h2 class="page-title mb-0">
@@ -262,27 +262,10 @@
         </div>
 
         <div class="page-body">
-            <div class="container-xl">
+            <div class="container-fluid">
 
-                {# Banner: projects_dir not configured. Auto-hidden once set. #}
-                {# CAVE: x-show MUST sit on a wrapper without Bootstrap display utility #}
-                {# (`d-flex`, `d-block`, ...). AlpineJS sets `style="display: none"` without #}
-                {# `!important`; Tabler/Bootstrap sets `.d-flex { display: flex !important }`. #}
-                {# On the same element the utility wins and the banner stays visible even #}
-                {# though projectsDirMissing === false. Fix: wrapper carries x-show + x-cloak, #}
-                {# inner div carries the d-flex. #}
-                <div x-show="projectsDirMissing" x-cloak>
-                    <div class="alert alert-warning d-flex align-items-center">
-                        <i class="ti ti-alert-triangle me-2 fs-2"></i>
-                        <div class="flex-fill">
-                            {{ t('Please configure the projects directory -- otherwise the project list stays empty.') }}
-                        </div>
-                        <a href="/settings" class="btn btn-sm btn-warning ms-2">
-                            <i class="ti ti-settings me-1 fs-3"></i>
-                            {{ t('Go to settings') }}
-                        </a>
-                    </div>
-                </div>
+                {# v2.0: projects_dir-Banner is gone -- projects emerge #}
+                {# implicitly from tasks; no filesystem setup required. #}
 
                 {# New-task form #}
                 <div class="card mb-3">
@@ -297,12 +280,14 @@
                             <div class="row g-2">
                                 <div class="col-md-3">
                                     <label class="form-label">{{ t('Project') }}</label>
-                                    <select class="form-select" x-model="form.project">
-                                        <option value="">{{ t('-- cross-project --') }}</option>
-                                        <template x-for="p in projectNames" :key="p">
-                                            <option :value="p" x-text="p"></option>
-                                        </template>
-                                    </select>
+                                    {# Free-form text + datalist autocomplete: pick an existing #}
+                                    {# project or type a new name -- the project is created #}
+                                    {# implicitly when the task is saved. Empty = cross-project. #}
+                                    <input type="text" class="form-control"
+                                           x-model="form.project"
+                                           list="ntasker-project-suggestions"
+                                           maxlength="100"
+                                           :placeholder="$i18n('project_placeholder')">
                                 </div>
                                 <div class="col-md-2">
                                     <label class="form-label">{{ t('Phase') }}</label>
@@ -736,12 +721,11 @@
                 <div class="modal-body">
                     <div class="mb-2">
                         <label class="form-label">{{ t('Project') }}</label>
-                        <select class="form-select" x-model="editing.project">
-                            <option :value="null">{{ t('-- cross-project --') }}</option>
-                            <template x-for="p in projectNames" :key="p">
-                                <option :value="p" x-text="p"></option>
-                            </template>
-                        </select>
+                        <input type="text" class="form-control"
+                               x-model="editing.project"
+                               list="ntasker-project-suggestions"
+                               maxlength="100"
+                               :placeholder="$i18n('project_placeholder')">
                     </div>
                     <div class="mb-2">
                         <label class="form-label">{{ t('Phase') }}</label>
@@ -810,6 +794,15 @@
                 </div>
                 </template>
                 <div class="modal-footer">
+                    {# Delete on the left (mr-auto) so it sits visually apart #}
+                    {# from Cancel/Save -- destructive action, deserves its #}
+                    {# own anchor. Confirm + toast handled in deleteFromEdit. #}
+                    <button type="button" class="btn btn-sm btn-ghost-danger me-auto"
+                            @click="deleteFromEdit()"
+                            :title="$i18n('delete_permanently')">
+                        <i class="ti ti-trash me-1 fs-3"></i>
+                        {{ t('Delete') }}
+                    </button>
                     <button type="button" class="btn btn-sm btn-ghost-secondary" @click="editing = null">
                         {{ t('Cancel') }}
                     </button>
@@ -830,8 +823,16 @@
      style="z-index: 1100"
      aria-live="polite" aria-atomic="true"></div>
 
+{# Shared autocomplete for every project text-input on the page. Populated #}
+{# from the same projectNames list the sidebar uses; reactive via Alpine. #}
+<datalist id="ntasker-project-suggestions">
+    <template x-for="p in projectNames" :key="p">
+        <option :value="p"></option>
+    </template>
+</datalist>
+
 <script src="{{ asset('alpine-js') }}"
         integrity="{{ asset_sri('alpine-js') }}" crossorigin="anonymous" defer></script>
-<script src="/static/app.js?v={{ version }}"></script>
+<script src="/static/app.js?v={{ static_bust('app.js') }}"></script>
 </body>
 </html>

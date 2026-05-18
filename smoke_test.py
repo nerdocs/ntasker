@@ -86,6 +86,8 @@ def main() -> int:
     print("OK PUT /api/settings/language fr -> 400 (validator)")
 
     # 2. GET /api/projects returns enriched list ({name, open_count}).
+    # Since v2.0 the list is derived from tasks; with an empty DB the
+    # only entry is the __none__ sentinel.
     r = client.get("/api/projects")
     assert_ok(r)
     data = r.json()
@@ -93,9 +95,9 @@ def main() -> int:
     assert data, "/api/projects must always include __none__ sentinel"
     assert data[0]["name"] == "__none__", f"first entry must be __none__, got {data[0]}"
     assert "open_count" in data[0]
-    # projects_dir not configured -> X-Settings-Missing header present.
-    assert "projects_dir" in r.headers.get("X-Settings-Missing", ""), (
-        "projects_dir nicht konfiguriert -> Header muss vorhanden sein"
+    # v2.0: no X-Settings-Missing header anymore -- the setting is gone.
+    assert "X-Settings-Missing" not in r.headers, (
+        "X-Settings-Missing was removed with projects_dir in v2.0"
     )
     print(f"OK GET /api/projects ({len(data)} entries, [0]={data[0]})")
 
@@ -367,37 +369,100 @@ def main() -> int:
     assert r.json() == []
     print("OK GET /api/settings (empty)")
 
-    # 26. Bad value rejected with 400 (and the validator's message).
-    r = client.put("/api/settings/projects_dir", json={"value": "/does/not/exist/xyz"})
-    assert_ok(r, 400)
-    assert "projects_dir" in r.json()["detail"]
-    print("OK PUT /api/settings/projects_dir bad -> 400")
-
-    # 27. Good value accepted.
-    good_dir = str(_tmp_root)  # the temp dir itself is a valid readable dir.
-    r = client.put("/api/settings/projects_dir", json={"value": good_dir})
+    # 26. v2.0 removed projects_dir entirely. v2.0.1 added an init_db
+    # eviction step: writing the key still succeeds (it has no validator),
+    # but the next init_db() boot removes the row -- there's no use in
+    # keeping it around. Test both halves.
+    r = client.put("/api/settings/projects_dir", json={"value": "/whatever"})
     assert_ok(r)
-    assert r.json()["value"] == good_dir
-    print("OK PUT /api/settings/projects_dir good")
+    assert client.get("/api/settings/projects_dir").status_code == 200
+    db_module.init_db()
+    assert client.get("/api/settings/projects_dir").status_code == 404, (
+        "init_db() must evict the stale projects_dir setting row"
+    )
+    print("OK init_db evicts stale projects_dir setting (v2.0.1 cleanup)")
 
-    # 28. /api/projects no longer flags the missing setting once it is set.
-    r = client.get("/api/projects")
-    assert_ok(r)
-    assert "X-Settings-Missing" not in r.headers
-    print("OK GET /api/projects (header gone after configure)")
-
-    # 29. GET single setting.
-    r = client.get("/api/settings/projects_dir")
-    assert_ok(r)
-    assert r.json()["value"] == good_dir
-    print("OK GET /api/settings/projects_dir")
-
-    # 30. DELETE setting.
-    r = client.delete("/api/settings/projects_dir")
+    # 26c. DELETE /api/tasks/<id> has no archived-only gate at the API
+    # level: the modal-delete and `ntasker delete` paths rely on this.
+    # List-view delete keeps the archived-only check in JS (UX choice).
+    rr = client.post("/api/tasks", json={"title": "api-delete-open"})
+    open_id = rr.json()["id"]
+    r = client.delete(f"/api/tasks/{open_id}")
     assert_ok(r, 204)
-    r = client.get("/api/settings/projects_dir")
-    assert_ok(r, 404)
-    print("OK DELETE /api/settings/projects_dir + 404 on re-get")
+    r = client.get(f"/api/tasks/{open_id}")
+    assert r.status_code == 404, "open task must be hard-deletable via API"
+    rr = client.post("/api/tasks", json={"title": "api-delete-archived"})
+    arch_id = rr.json()["id"]
+    client.patch(f"/api/tasks/{arch_id}", json={"archived": True})
+    r = client.delete(f"/api/tasks/{arch_id}")
+    assert_ok(r, 204)
+    print("OK DELETE /api/tasks/<id> works on open + archived states")
+
+    # 27-30. Projects are now derived from tasks (v2.0). Test the implicit
+    # creation + garbage-collection contract:
+    #   a) creating a task with project="foo" surfaces "foo" in /api/projects
+    #   b) deleting the last task carrying "foo" makes it disappear
+    #   c) PATCH that empties the project also triggers the GC
+    # The list is ordered case-insensitively after the __none__ sentinel.
+
+    # a) implicit creation
+    rr = client.post(
+        "/api/tasks", json={"title": "gc-foo-1", "project": "gc-foo", "archived": False}
+    )
+    assert_ok(rr, 201)
+    foo_id = rr.json()["id"]
+    rr = client.post(
+        "/api/tasks", json={"title": "gc-foo-2", "project": "gc-foo"}
+    )
+    assert_ok(rr, 201)
+    foo2_id = rr.json()["id"]
+
+    r = client.get("/api/projects")
+    names = [p["name"] for p in r.json()]
+    assert "gc-foo" in names, f"new project must appear: {names}"
+    foo_entry = next(p for p in r.json() if p["name"] == "gc-foo")
+    assert foo_entry["open_count"] == 2, foo_entry
+    print(f"OK POST /api/tasks project=gc-foo -> project auto-created ({foo_entry})")
+
+    # b) delete one task -- project still present (one left)
+    r = client.delete(f"/api/tasks/{foo_id}")
+    # delete only works on archived; archive first then delete.
+    if r.status_code != 204:
+        client.patch(f"/api/tasks/{foo_id}", json={"archived": True})
+        r = client.delete(f"/api/tasks/{foo_id}")
+    assert_ok(r, 204)
+    names = [p["name"] for p in client.get("/api/projects").json()]
+    assert "gc-foo" in names, "project must still be there with one remaining task"
+    print("OK GET /api/projects (project sticks while >=1 task references it)")
+
+    # c) delete the last task -- project vanishes from the sidebar feed
+    client.patch(f"/api/tasks/{foo2_id}", json={"archived": True})
+    r = client.delete(f"/api/tasks/{foo2_id}")
+    assert_ok(r, 204)
+    names = [p["name"] for p in client.get("/api/projects").json()]
+    assert "gc-foo" not in names, f"empty project must be GC'd: {names}"
+    print("OK GET /api/projects (empty project auto-removed)")
+
+    # d) PATCH that empties project also triggers GC. Create -> PATCH to
+    # different project -> first project drops out if no other tasks reference it.
+    rr = client.post("/api/tasks", json={"title": "gc-bar", "project": "gc-bar"})
+    bar_id = rr.json()["id"]
+    assert "gc-bar" in [p["name"] for p in client.get("/api/projects").json()]
+    client.patch(f"/api/tasks/{bar_id}", json={"project": "gc-baz"})
+    names = [p["name"] for p in client.get("/api/projects").json()]
+    assert "gc-bar" not in names and "gc-baz" in names, (
+        f"PATCH must move project membership and GC the empty one: {names}"
+    )
+    print("OK PATCH project=gc-baz GCs the now-empty gc-bar")
+
+    # e) Empty / whitespace-only project string collapses to null server-side
+    # (no phantom "" entry in the sidebar feed).
+    rr = client.post("/api/tasks", json={"title": "gc-empty", "project": "   "})
+    assert_ok(rr, 201)
+    assert rr.json()["project"] is None, f"empty trimmed project must be NULL, got {rr.json()['project']!r}"
+    names = [p["name"] for p in client.get("/api/projects").json()]
+    assert "" not in names and "   " not in names, names
+    print("OK POST /api/tasks project='   ' -> NULL (no phantom entry)")
 
     # 30b. default_view setting (v2.0): validator whitelist + template injection.
     # The server renders `window.__defaultView = "..."` in a <script> block;
@@ -451,6 +516,40 @@ def main() -> int:
     assert isinstance(parsed, list), "ntasker list --json must return a JSON array"
     print(f"OK ntasker list --json ({len(parsed)} tasks)")
 
+    # 32b. ntasker delete: deliberate hard-delete from the CLI. The
+    # confirmation prompt is bypassed with --yes; deletion works regardless
+    # of archived state (the keyboard input itself is the safety net).
+    rr_create = subprocess.run(
+        ["ntasker", "add", "--title", "cli-delete-target"],
+        capture_output=True, text=True, env=env,
+    )
+    assert rr_create.returncode == 0, rr_create.stderr
+    # Pull the id back via list.
+    rr_list = subprocess.run(
+        ["ntasker", "list", "--json"], capture_output=True, text=True, env=env,
+    )
+    target_id = next(
+        t["id"] for t in _json.loads(rr_list.stdout) if t["title"] == "cli-delete-target"
+    )
+    rr_del = subprocess.run(
+        ["ntasker", "delete", str(target_id), "--yes"],
+        capture_output=True, text=True, env=env,
+    )
+    assert rr_del.returncode == 0, rr_del.stderr
+    rr_list2 = subprocess.run(
+        ["ntasker", "list", "--json"], capture_output=True, text=True, env=env,
+    )
+    assert not any(t["id"] == target_id for t in _json.loads(rr_list2.stdout)), (
+        f"task #{target_id} must be gone after `ntasker delete --yes`"
+    )
+    # Non-existent id -> exit 1 with the "not found" message.
+    rr_miss = subprocess.run(
+        ["ntasker", "delete", "999999", "--yes"],
+        capture_output=True, text=True, env=env,
+    )
+    assert rr_miss.returncode == 1, rr_miss
+    print("OK ntasker delete <id> --yes (round-trip + not-found path)")
+
     # 33. ntasker config list --json against same DB.
     proc = subprocess.run(
         ["ntasker", "config", "list", "--json"],
@@ -503,32 +602,37 @@ def main() -> int:
     db_module.set_db_path(tmp_db)
 
     # ------------------------------------------------------------------
-    # Regression: AlpineJS x-show MUST NOT live on an element that also
-    # carries a Bootstrap display utility (`d-flex`, `d-block`, `d-grid`,
-    # `d-inline*`). Bootstrap sets those with `!important`, which beats
-    # the inline `style="display: none"` Alpine writes to hide the node
-    # -- the result is a banner that shows even though the bound state
-    # is `false`. This bit the projects_dir banner pre-1.0.0 and we keep
-    # it pinned so the trap cannot resurface in templates.
+    # Regression: AlpineJS x-show MUST NOT live on an element whose
+    # *static* class attribute carries a Bootstrap display utility
+    # (`d-flex`, `d-block`, `d-grid`, `d-inline*`). Bootstrap sets those
+    # with `!important`, which beats Alpine's inline `style="display:
+    # none"`. The Bootstrap modal pattern intentionally uses `:class` to
+    # *toggle* d-block when shown -- that's fine and explicitly excluded.
+    # v2.0 removed the projects_dir banner that originally motivated this
+    # check; we keep it generic so a future banner can't regress.
     # ------------------------------------------------------------------
     import re
 
-    # The banner wrapper must be `<div x-show="projectsDirMissing" x-cloak>`,
-    # i.e. no `class="..."` carrying a Bootstrap `d-*` utility.
     r = client.get("/")
     assert_ok(r)
     html = r.text
-    # Locate the projectsDirMissing element and grab its full opening tag.
-    matches = re.findall(r"<[^>]*x-show=\"projectsDirMissing\"[^>]*>", html)
-    assert matches, "projectsDirMissing element not found in /"
-    bad = [tag for tag in matches if re.search(
-        r"\bclass=\"[^\"]*\b(d-flex|d-block|d-grid|d-inline[a-z-]*)\b", tag
-    )]
+    matches = re.findall(r"<[^>]*x-show=\"[^\"]+\"[^>]*>", html)
+    assert matches, "no x-show elements found in /; template structure changed"
+    # Only static `class="..."` counts; Alpine's `:class="..."` (a
+    # reactive bind) does NOT trigger Bootstrap's !important since the
+    # binding is evaluated per state.
+    static_class_re = re.compile(r"(?<![:\w])class=\"([^\"]*)\"")
+    bad = []
+    for tag in matches:
+        for static_classes in static_class_re.findall(tag):
+            if re.search(r"\b(d-flex|d-block|d-grid|d-inline[a-z-]*)\b", static_classes):
+                bad.append(tag)
+                break
     assert not bad, (
         "AlpineJS x-show must NOT sit on an element with a Bootstrap display utility "
-        f"({{d-flex,d-block,d-grid,d-inline*}}); offending tag(s): {bad}"
+        f"({{d-flex,d-block,d-grid,d-inline*}}) in its static class; offending tag(s): {bad}"
     )
-    print(f"OK banner template hygiene (x-show wrapper has no d-* utility) -> {matches[0]}")
+    print(f"OK index template hygiene ({len(matches)} x-show wrappers, none on static d-*)")
 
     # Same trap in /settings: any `x-show` on a `d-*` element is a bug.
     r = client.get("/settings")
@@ -544,28 +648,24 @@ def main() -> int:
     )
     print(f"OK settings template hygiene (no x-show on d-* utility, {len(open_tags)} x-show tags scanned)")
 
-    # Header-side regression: while projects_dir is set, /api/projects must
-    # NOT carry X-Settings-Missing (covers DB and ENV branches).
-    # 34. DB branch already covered by step 28 above; here we add ENV.
-    os.environ["NTASKER_PROJECTS_DIR"] = str(_tmp_root)
+    # v2.0: the X-Settings-Missing: projects_dir header path is gone for good.
+    # The header must not appear under any circumstance, with or without
+    # the legacy ENV var set. We test both branches here.
+    r = client.get("/api/projects")
+    assert_ok(r)
+    assert "X-Settings-Missing" not in r.headers, (
+        "X-Settings-Missing must not be set anywhere since v2.0"
+    )
+    os.environ["NTASKER_PROJECTS_DIR"] = "/anything-or-nothing"
     try:
         r = client.get("/api/projects")
         assert_ok(r)
         assert "X-Settings-Missing" not in r.headers, (
-            "ENV-Override NTASKER_PROJECTS_DIR muss den Header unterdruecken"
+            "stale NTASKER_PROJECTS_DIR ENV must be silently ignored in v2.0+"
         )
-        print("OK GET /api/projects (no X-Settings-Missing when ENV is set)")
+        print("OK GET /api/projects has no X-Settings-Missing (with or without ENV)")
     finally:
         del os.environ["NTASKER_PROJECTS_DIR"]
-
-    # 35. With neither DB nor ENV set the header MUST come back. This is
-    # the inverse of 28+34 and pins the validator's "not configured" branch.
-    r = client.get("/api/projects")
-    assert_ok(r)
-    assert "projects_dir" in r.headers.get("X-Settings-Missing", ""), (
-        "Ohne DB- und ENV-Konfiguration MUSS X-Settings-Missing: projects_dir gesetzt sein"
-    )
-    print("OK GET /api/projects (header back when no DB + no ENV)")
 
     # ------------------------------------------------------------------
     # Claude Code asset installer (new in v1.1.0)

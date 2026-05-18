@@ -21,7 +21,6 @@ import os
 import sqlite3
 from collections.abc import Callable
 from datetime import datetime
-from pathlib import Path
 
 from ntasker.assets import validate_assets_mode
 from ntasker.db import get_conn
@@ -34,26 +33,12 @@ Validator = Callable[[str], str]
 # ---------------------------------------------------------------------------
 # Validators
 # ---------------------------------------------------------------------------
-
-
-def validate_projects_dir(value: str) -> str:
-    """Validator for ``projects_dir``.
-
-    Requirements: absolute path, exists, is a directory, readable.
-    Returns the absolute, expanded path.
-    """
-    if not value:
-        raise ValueError(_("projects_dir must not be empty."))
-    expanded = os.path.expanduser(value)
-    if not os.path.isabs(expanded):
-        raise ValueError(_("projects_dir must be absolute: {value!r}").format(value=value))
-    if not os.path.isdir(expanded):
-        raise ValueError(
-            _("projects_dir does not exist or is not a directory: {path}").format(path=expanded)
-        )
-    if not os.access(expanded, os.R_OK):
-        raise ValueError(_("projects_dir is not readable: {path}").format(path=expanded))
-    return expanded
+#
+# v2.0 removed the ``projects_dir`` setting + its filesystem-scan
+# validator: projects now emerge implicitly from ``tasks.project``.
+# A stale ``projects_dir`` row left over from v1.x is harmless -- it
+# just sits unread under "All settings (DB content)" in the UI and can
+# be deleted via the trash icon.
 
 
 def validate_language(value: str) -> str:
@@ -98,7 +83,6 @@ def validate_default_view(value: str) -> str:
 
 
 VALIDATORS: dict[str, Validator] = {
-    "projects_dir": validate_projects_dir,
     "assets_mode": validate_assets_mode,
     "language": validate_language,
     "default_view": validate_default_view,
@@ -115,10 +99,6 @@ it before any DB write.
 # :class:`LazyString` so they translate per-request - the dict itself is
 # evaluated at import time, but each entry stays bound to its msgid.
 HINTS: dict[str, object] = {
-    "projects_dir": _lazy(
-        "Directory containing project symlinks (e.g. /home/<user>/Projects). "
-        "Read for /api/projects."
-    ),
     "assets_mode": _lazy(
         "Vendor assets (Tabler/Alpine): cdn (default, jsDelivr + SRI), "
         "local (from user-data dir, populate via `ntasker assets fetch`), "
@@ -221,22 +201,6 @@ def get_assets_mode_resolved() -> str:
 
     raw = get_setting("assets_mode", env_var="NTASKER_ASSETS_MODE")
     return resolve_mode(raw)
-
-
-def get_projects_dir() -> Path | None:
-    """Return the configured projects directory or ``None``.
-
-    Honours the ``NTASKER_PROJECTS_DIR`` ENV override. Validates the path
-    on read so a stale DB row pointing at a deleted directory degrades to
-    ``None`` (the UI then shows the "configure projects_dir" banner).
-    """
-    raw = get_setting("projects_dir", env_var="NTASKER_PROJECTS_DIR")
-    if not raw:
-        return None
-    path = Path(raw).expanduser()
-    if not path.is_dir():
-        return None
-    return path
 
 
 def get_default_view() -> str:

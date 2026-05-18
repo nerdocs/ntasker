@@ -102,6 +102,14 @@ def init_db(path: Path | None = None) -> None:
             "UPDATE tasks SET phase = 'planned' "
             "WHERE phase IS NULL OR phase = 'later'"
         )
+        # v2.0 settings cleanup: the projects_dir key is obsolete (projects
+        # are now derived from tasks). Drop any stale row so it stops
+        # showing up under "All settings (DB content)" in /settings.
+        # Wrapped in try/except for pre-1.0 DBs that never had the table.
+        try:
+            conn.execute("DELETE FROM settings WHERE key = 'projects_dir'")
+        except sqlite3.OperationalError:
+            pass
         conn.commit()
 
 

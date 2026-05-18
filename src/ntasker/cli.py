@@ -511,6 +511,46 @@ def cmd_add(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_delete(args: argparse.Namespace) -> int:
+    """Hard-delete a task. Asks for confirmation unless ``--yes`` is given.
+
+    There is no archived-only gate at the CLI level: hitting ``ntasker
+    delete <id>`` is already a deliberate, typed-out action. The
+    confirmation prompt is the safety net.
+    """
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT title, archived FROM tasks WHERE id = ?", (args.task_id,)
+        ).fetchone()
+        if row is None:
+            print(_("ntasker: task #{id} not found").format(id=args.task_id), file=sys.stderr)
+            return 1
+    title = row["title"]
+    archived = bool(row["archived"])
+
+    if not args.yes:
+        prompt = _("ntasker: delete #{id} {title!r} (archived={archived})? [y/N] ").format(
+            id=args.task_id, title=title, archived=archived
+        )
+        try:
+            answer = input(prompt).strip().lower()
+        except EOFError:
+            answer = ""
+        if answer not in {"j", "ja", "y", "yes"}:
+            print(_("ntasker: aborted."))
+            return 1
+
+    with get_conn() as conn:
+        cur = conn.execute("DELETE FROM tasks WHERE id = ?", (args.task_id,))
+        if cur.rowcount == 0:
+            # Race: task disappeared between the existence check and the
+            # delete. Treat as success-no-op rather than a hard error.
+            print(_("ntasker: task #{id} already gone").format(id=args.task_id))
+            return 0
+    print(_("#{id} deleted").format(id=args.task_id))
+    return 0
+
+
 def cmd_done(args: argparse.Namespace) -> int:
     now = datetime.now().isoformat(timespec="seconds")
     with get_conn() as conn:
@@ -1065,6 +1105,22 @@ def build_parser() -> argparse.ArgumentParser:
     sp_done = sub.add_parser("done", help=_("Mark a task as done"))
     sp_done.add_argument("task_id", type=int)
     sp_done.set_defaults(func=cmd_done)
+
+    # delete --------------------------------------------------------------
+    # Hard delete from the CLI. Confirms unless --yes is passed; works
+    # regardless of archived state -- the deliberate `ntasker delete <id>`
+    # command itself is the safety mechanism, the prompt is the second.
+    sp_del = sub.add_parser(
+        "delete",
+        help=_("Delete a task permanently (use with care)."),
+    )
+    sp_del.add_argument("task_id", type=int)
+    sp_del.add_argument(
+        "--yes",
+        action="store_true",
+        help=_("Skip the confirmation prompt (for scripts)."),
+    )
+    sp_del.set_defaults(func=cmd_delete)
 
     # patch ---------------------------------------------------------------
     sp_patch = sub.add_parser("patch", help=_("Edit task fields"))

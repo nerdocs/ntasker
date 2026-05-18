@@ -78,7 +78,7 @@ param, AND across params):
 
 | Param | Values | Notes |
 |---|---|---|
-| `project` | symlink-name or `__none__` | `__none__` = project IS NULL |
+| `project` | any string or `__none__` | `__none__` = project IS NULL. Projects are *derived* from tasks; no whitelist. |
 | `phase` | `planned`, `wip`, `review` | NOT NULL since v2.0, default `planned` |
 | `tag` | any tag name | task has >=1 matching tag |
 | `search` | free text | over title + description; if value is purely digits (with optional leading `#`), also matches `tasks.id` exactly |
@@ -95,8 +95,9 @@ ntasker stats         # tab-counts
 
 Additional endpoints:
 - `GET /api/stats?<same filters>` -> `{open, done, archive}`
-- `GET /api/projects` -> `[{name, open_count}, ...]` -- `__none__` first; sets
-  `X-Settings-Missing: projects_dir` header if unconfigured
+- `GET /api/projects` -> `[{name, open_count}, ...]` -- `__none__` first;
+  the list is derived from `SELECT DISTINCT project FROM tasks`. A project
+  disappears automatically once its last task is gone.
 - `GET /api/phases` -> 3 fixed entries (`planned` / `wip` / `review`)
 - `GET /api/priorities` -> 4 fixed entries (`critical` / `high` / `normal` / `low`)
 - `GET /api/tags` -> `[{name, open_count}, ...]`
@@ -121,14 +122,14 @@ ntasker config unset <key>
 ```
 
 Known keys:
-- `projects_dir` -- path to a directory whose entries (or symlinks) name your
-  projects. Read by `/api/projects`. ENV override: `NTASKER_PROJECTS_DIR`.
-  Validator: absolute path, exists, is a directory, readable.
 - `default_view` -- initial view on a fresh browser: `list` or `kanban`.
   ENV override: `NTASKER_DEFAULT_VIEW`. The frontend remembers the last
   user choice in localStorage; this setting only kicks in on first load.
 - `language` -- UI language: `auto` | `en` | `de` (default `auto`).
 - `assets_mode` -- vendor asset loading: `cdn` | `local` | `auto`.
+
+(The pre-v2.0 `projects_dir` setting has been removed -- projects now
+live in the DB, derived from the tasks themselves.)
 
 ## 5. Write Rules -- HARD LIMIT
 
@@ -197,17 +198,27 @@ ntasker add --project myproject --title "Short title" \
   --phase planned --priority high --tag refactoring
 ```
 
-Field rules: `project` = entry name from the configured `projects_dir`,
-or `null` (cross-project); `title` required; `phase` in
-`{planned, wip, review}` (default `planned`); `priority` in
+Field rules: `project` = any non-empty trimmed string OR `null`
+(cross-project). Projects are not pre-registered -- a new project name
+is created implicitly when the task is saved, and disappears
+automatically when its last task is deleted. `title` required; `phase`
+in `{planned, wip, review}` (default `planned`); `priority` in
 `{critical, high, normal, low}` (default `normal`); `tags` = List[str].
+
+**Picking a project name (autonomous behaviour, since v2.0):** when the
+user asks you to create a task and didn't specify a project, infer one
+from the working directory context: the basename of the active project
+folder, the repo name, or `null` if you're operating cross-project.
+Reuse an existing name (see `GET /api/projects`) before inventing a new
+one. Empty/whitespace names collapse to `null` server-side, so passing
+either `""` or `null` for "no project" both work.
 
 ## 8. Schema
 
 | Field | Type | Notes |
 |---|---|---|
 | `id` | INT PK | #<id> reference |
-| `project` | TEXT NULL | entry name or NULL |
+| `project` | TEXT NULL | free-form string or NULL; defines a project implicitly |
 | `title` | TEXT | required |
 | `description` | TEXT | Markdown OK |
 | `status` | TEXT | `open` / `done` |
@@ -228,10 +239,17 @@ Phase symbols for inbox-style reports:
 
 ## 10. Migration from pre-v2.0
 
-v2.0 collapses the legacy phases ``later`` + NULL into ``planned`` and adds
-``review``. ``init_db`` runs the migration idempotently on first boot, so
-existing DBs upgrade in place. The skill no longer mentions the
-``__none__`` phase sentinel -- it is gone from the API.
+v2.0 brings two breaking changes:
+
+1. **Phases:** legacy ``later`` + NULL collapse into ``planned``; new
+   value ``review`` added. ``init_db`` migrates idempotently on first
+   boot. The ``__none__`` phase sentinel is gone from the API.
+2. **Projects:** the ``projects_dir`` setting and the filesystem scan
+   are gone. Projects are now derived from ``SELECT DISTINCT project
+   FROM tasks`` -- a project exists only as long as at least one task
+   references it. Existing ``tasks.project`` values are kept as-is;
+   no data migration runs. A stale ``projects_dir`` row in ``settings``
+   is harmless and can be deleted via the UI.
 
 ## 9. Inter-Agent Report Conventions
 

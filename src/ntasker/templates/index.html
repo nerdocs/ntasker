@@ -18,6 +18,10 @@
     {# Alpine magic property `$i18n('key')` is registered just below. #}
     <script>
         window.__i18n = {{ js_strings | tojson }};
+        // Server-side default for the kanban-vs-list pick on a fresh browser.
+        // Read by tracker() in app.js; localStorage still wins once the user
+        // has actively switched views.
+        window.__defaultView = {{ default_view | tojson }};
         document.addEventListener('alpine:init', () => {
             Alpine.magic('i18n', () => (key, params) => {
                 let s = (window.__i18n && window.__i18n[key]) || key;
@@ -32,7 +36,9 @@
     </script>
 </head>
 <body>
-<div class="d-flex" style="min-height: 100vh;" x-data="tracker()" x-init="init()">
+<div class="d-flex" style="min-height: 100vh;"
+     x-data="tracker(window.__defaultView)"
+     x-init="init()">
 
     {# Sidebar: project + tag filter (full-width checkboxes). Hidden on mobile (<768px). #}
     {# Sticky-positioned aside outside the .page wrapper. Tabler/Bootstrap surface vars #}
@@ -107,10 +113,9 @@
                 <span class="form-check-label ms-2 d-flex align-items-center flex-fill">
                     <i class="ti me-1"
                        :class="{
-                           'ti-progress': ph.value === 'wip',
                            'ti-clock': ph.value === 'planned',
-                           'ti-crystal-ball': ph.value === 'later',
-                           'ti-help': ph.value === '__none__',
+                           'ti-progress': ph.value === 'wip',
+                           'ti-eye': ph.value === 'review',
                        }"></i>
                     <span x-text="ph.label"></span>
                 </span>
@@ -225,14 +230,31 @@
     </header>
 
     <div class="page-wrapper">
-        {# Tabler page-header: title left, actions (tag cleanup) right #}
+        {# Tabler page-header: title left, view-mode switcher right. #}
+        {# The two pseudo-tabs (Task list / Kanban) drive ``viewMode`` -- #}
+        {# they are NOT bootstrap nav-tabs because the page wrappers below #}
+        {# swap their entire layout, not just a tab-pane. #}
         <div class="page-header d-print-none">
             <div class="container-xl">
                 <div class="row g-2 align-items-center">
-                    <div class="col">
-                        <h2 class="page-title">
-                            <i class="ti ti-list-check me-2 fs-2"></i>
-                            {{ t('Tasks') }}
+                    <div class="col-auto">
+                        <h2 class="page-title mb-0">
+                            <button type="button"
+                                    class="btn btn-ghost-secondary"
+                                    :class="viewMode === 'list' ? 'active' : ''"
+                                    @click="setViewMode('list')">
+                                <i class="ti ti-list-check me-1 fs-2"></i>
+                                <span x-text="$i18n('view_list')"></span>
+                            </button>
+                            <button type="button"
+                                    class="btn btn-ghost-secondary ms-1"
+                                    :class="viewMode === 'kanban' ? 'active' : ''"
+                                    @click="setViewMode('kanban')">
+                                {# `ti-columns` is in the vendored Tabler-Icons #}
+                                {# webfont subset; `ti-layout-kanban` is not. #}
+                                <i class="ti ti-columns me-1 fs-2"></i>
+                                <span x-text="$i18n('view_kanban')"></span>
+                            </button>
                         </h2>
                     </div>
                 </div>
@@ -285,10 +307,9 @@
                                 <div class="col-md-2">
                                     <label class="form-label">{{ t('Phase') }}</label>
                                     <select class="form-select" x-model="form.phase">
-                                        <option value="">{{ t('--') }}</option>
-                                        <option value="wip">{{ t('In Progress') }}</option>
                                         <option value="planned">{{ t('Planned') }}</option>
-                                        <option value="later">{{ t('Later') }}</option>
+                                        <option value="wip">{{ t('In Progress') }}</option>
+                                        <option value="review">{{ t('Review') }}</option>
                                     </select>
                                 </div>
                                 <div class="col-md-2">
@@ -371,8 +392,8 @@
                     </div>
                 </div>
 
-                {# Tabs #}
-                <ul class="nav nav-tabs mb-3" role="tablist">
+                {# Tabs -- list view only. Kanban renders its own column layout below. #}
+                <ul class="nav nav-tabs mb-3" role="tablist" x-show="viewMode === 'list'" x-cloak>
                     <li class="nav-item" role="presentation">
                         <button class="nav-link" :class="tab === 'open' ? 'active' : ''" @click="setTab('open')">
                             <i class="ti ti-list me-1"></i>
@@ -397,7 +418,7 @@
                 </ul>
 
                 {# Task list #}
-                <div class="card">
+                <div class="card" x-show="viewMode === 'list'" x-cloak>
                     <div class="list-group list-group-flush" x-show="tasks.length > 0">
                         <template x-for="task in tasks" :key="task.id">
                             <div class="list-group-item">
@@ -461,13 +482,13 @@
                                                     <i class="ti ti-clock me-1"></i><span x-text="$i18n('phase_planned')"></span>
                                                 </span>
                                             </template>
-                                            <template x-if="task.phase === 'later'">
+                                            <template x-if="task.phase === 'review'">
                                                 <span class="badge bg-purple-lt"
                                                       role="button"
                                                       style="cursor: pointer"
-                                                      :title="$i18n('filter_phase_later')"
-                                                      @click.stop="togglePhase('later')">
-                                                    <i class="ti ti-crystal-ball me-1"></i><span x-text="$i18n('phase_later')"></span>
+                                                      :title="$i18n('filter_phase_review')"
+                                                      @click.stop="togglePhase('review')">
+                                                    <i class="ti ti-eye me-1"></i><span x-text="$i18n('phase_review')"></span>
                                                 </span>
                                             </template>
 
@@ -573,6 +594,124 @@
                     </div>
                 </div>
 
+                {# ===== Kanban board view ===== #}
+                {# 4 columns: 3 phase columns (planned/wip/review) + 1 collapsible #}
+                {# Done column derived from status='done'. Drag a card between #}
+                {# columns -> PATCH phase (or status when crossing into Done). #}
+                {# Same filters (search / sidebar) feed the same task list; #}
+                {# the kanban view just groups it by phase. #}
+                <div x-show="viewMode === 'kanban'" x-cloak>
+                    <div class="kanban-board"
+                         :class="doneCollapsed ? 'kanban-done-collapsed' : ''">
+                        <template x-for="col in kanbanColumns" :key="col.key">
+                            <div class="kanban-column"
+                                 :class="{
+                                     'kanban-column-done': col.key === 'done',
+                                     'kanban-column-collapsed': col.key === 'done' && doneCollapsed,
+                                     'kanban-column-drop': dragOverColumn === col.key,
+                                 }"
+                                 @dragover.prevent="onColumnDragOver($event, col.key)"
+                                 @dragleave="onColumnDragLeave($event, col.key)"
+                                 @drop.prevent="onColumnDrop($event, col.key)">
+
+                                <div class="kanban-column-header d-flex align-items-center">
+                                    <i class="ti me-2 fs-2" :class="col.icon"></i>
+                                    <span class="fw-bold flex-fill text-truncate" x-text="col.label"></span>
+                                    <span class="badge bg-secondary-lt ms-2"
+                                          x-text="kanbanTasksFor(col.key).length"></span>
+                                    <template x-if="col.key === 'done'">
+                                        <button type="button"
+                                                class="btn btn-sm btn-ghost-secondary ms-1 px-1 py-0"
+                                                @click="toggleDoneCollapsed()"
+                                                :title="doneCollapsed ? $i18n('expand_done') : $i18n('collapse_done')">
+                                            <i class="ti fs-3"
+                                               :class="doneCollapsed ? 'ti-chevron-left' : 'ti-chevron-right'"></i>
+                                        </button>
+                                    </template>
+                                </div>
+
+                                <div class="kanban-column-body"
+                                     x-show="!(col.key === 'done' && doneCollapsed)">
+                                    <template x-for="task in kanbanTasksFor(col.key)" :key="task.id">
+                                        <div class="kanban-card"
+                                             :class="{'kanban-card-dragging': draggedTaskId === task.id}"
+                                             draggable="true"
+                                             @dragstart="onCardDragStart($event, task)"
+                                             @dragend="onCardDragEnd($event)">
+
+                                            <div class="d-flex align-items-start gap-1 mb-1">
+                                                <span class="task-id badge bg-secondary-lt text-secondary font-monospace"
+                                                      role="button"
+                                                      :title="$i18n('click_to_copy_id', {id: task.id})"
+                                                      @click.stop="copyId(task.id)"
+                                                      x-text="`#${task.id}`"></span>
+                                                {# Title is click-to-toggle (description expand/collapse), #}
+                                                {# same affordance as the list view. ``@click.stop`` so the #}
+                                                {# click doesn't bubble into a parent drag-start handler. #}
+                                                <strong class="flex-fill"
+                                                        :class="task.status === 'done' ? 'text-muted text-decoration-line-through' : ''"
+                                                        style="cursor: pointer"
+                                                        @click.stop="task._expanded = !task._expanded"
+                                                        x-text="task.title"></strong>
+                                                <button class="btn btn-sm btn-ghost-secondary px-1 py-0"
+                                                        @click.stop="startEdit(task)"
+                                                        :aria-label="$i18n('edit')" :title="$i18n('edit')">
+                                                    <i class="ti ti-pencil fs-3"></i>
+                                                </button>
+                                            </div>
+
+                                            {# Description toggle: hidden by default, shown when the user #}
+                                            {# clicked the title. Same pattern as in the list view. #}
+                                            <div x-show="task._expanded && task.description"
+                                                 class="mb-1 text-muted small"
+                                                 style="white-space: pre-wrap"
+                                                 x-text="task.description"
+                                                 x-cloak></div>
+
+                                            <div class="d-flex flex-wrap gap-1 small">
+                                                <template x-if="task.project">
+                                                    <span class="badge bg-blue-lt" x-text="task.project"></span>
+                                                </template>
+                                                <template x-if="!task.project">
+                                                    <span class="badge bg-secondary-lt">
+                                                        <i class="ti ti-asterisk"></i>
+                                                    </span>
+                                                </template>
+
+                                                <template x-if="task.priority === 'critical'">
+                                                    <span class="badge bg-danger text-white">
+                                                        <i class="ti ti-alert-triangle-filled me-1"></i><span x-text="$i18n('priority_critical')"></span>
+                                                    </span>
+                                                </template>
+                                                <template x-if="task.priority === 'high'">
+                                                    <span class="badge bg-orange-lt">
+                                                        <i class="ti ti-arrow-up me-1"></i><span x-text="$i18n('priority_high')"></span>
+                                                    </span>
+                                                </template>
+                                                <template x-if="task.priority === 'low'">
+                                                    <span class="badge bg-azure-lt">
+                                                        <i class="ti ti-arrow-down me-1"></i><span x-text="$i18n('priority_low')"></span>
+                                                    </span>
+                                                </template>
+
+                                                <template x-for="tag in task.tags" :key="tag">
+                                                    <span class="badge bg-purple-lt">#<span x-text="tag"></span></span>
+                                                </template>
+                                            </div>
+                                        </div>
+                                    </template>
+
+                                    <div class="kanban-column-empty text-muted small text-center py-2"
+                                         x-show="kanbanTasksFor(col.key).length === 0">
+                                        <i class="ti ti-inbox me-1"></i>
+                                        <span x-text="$i18n('kanban_empty_column')"></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
             </div>
         </div>
     </div>
@@ -607,10 +746,9 @@
                     <div class="mb-2">
                         <label class="form-label">{{ t('Phase') }}</label>
                         <select class="form-select" x-model="editing.phase">
-                            <option :value="null">{{ t('--') }}</option>
-                            <option value="wip">{{ t('In Progress') }}</option>
                             <option value="planned">{{ t('Planned') }}</option>
-                            <option value="later">{{ t('Later') }}</option>
+                            <option value="wip">{{ t('In Progress') }}</option>
+                            <option value="review">{{ t('Review') }}</option>
                         </select>
                     </div>
                     <div class="mb-2">

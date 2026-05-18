@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     title TEXT NOT NULL,
     description TEXT,
     status TEXT NOT NULL DEFAULT 'open',
-    phase TEXT,
+    phase TEXT NOT NULL DEFAULT 'planned',
     priority TEXT NOT NULL DEFAULT 'normal',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     completed_at TEXT,
@@ -93,6 +93,15 @@ def init_db(path: Path | None = None) -> None:
             )
         except sqlite3.OperationalError:
             pass
+        # v2.0 phase migration: legacy values `later` and NULL collapse into
+        # `planned`. The new vocabulary is {planned, wip, review}; the column
+        # also becomes NOT NULL. We update existing rows in-place; SQLite
+        # CREATE TABLE's NOT NULL constraint only applies to *new* rows, so
+        # this is enough -- no table rewrite needed.
+        conn.execute(
+            "UPDATE tasks SET phase = 'planned' "
+            "WHERE phase IS NULL OR phase = 'later'"
+        )
         conn.commit()
 
 

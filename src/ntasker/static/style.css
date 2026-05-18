@@ -25,3 +25,93 @@
 [data-bs-theme="dark"] .task-id:hover {
     filter: brightness(1.2);
 }
+
+/* ---------------- Kanban board ----------------
+ * 4 columns side-by-side; Done column collapses to a narrow rail.
+ * Each column is its own drop target (see onColumnDrop in app.js).
+ * On <768px we let the board scroll horizontally so the 4-column
+ * layout still works on mobile without cramming columns into 90px each.
+ */
+.kanban-board {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+    gap: 0.75rem;
+    align-items: start;
+}
+.kanban-board.kanban-done-collapsed {
+    grid-template-columns: 1fr 1fr 1fr auto;
+}
+@media (max-width: 767.98px) {
+    .kanban-board,
+    .kanban-board.kanban-done-collapsed {
+        grid-template-columns: repeat(4, minmax(240px, 1fr));
+        overflow-x: auto;
+        padding-bottom: 0.5rem;
+    }
+}
+
+.kanban-column {
+    background-color: var(--tblr-bg-surface-secondary, var(--tblr-bg-surface));
+    border: 1px solid var(--tblr-border-color);
+    border-radius: var(--tblr-border-radius);
+    padding: 0.5rem;
+    min-height: 12rem;
+    display: flex;
+    flex-direction: column;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.kanban-column.kanban-column-drop {
+    border-color: var(--tblr-primary);
+    background-color: var(--tblr-primary-lt);
+}
+.kanban-column-header {
+    padding: 0.25rem 0.5rem 0.5rem;
+    border-bottom: 1px solid var(--tblr-border-color);
+    margin-bottom: 0.5rem;
+}
+.kanban-column-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    flex: 1;
+}
+.kanban-column-empty {
+    border: 1px dashed var(--tblr-border-color);
+    border-radius: var(--tblr-border-radius);
+}
+
+/* Collapsed Done column: hide body, show just the header rotated. */
+.kanban-column.kanban-column-collapsed {
+    min-width: 2.5rem;
+    padding: 0.5rem 0.25rem;
+}
+.kanban-column.kanban-column-collapsed .kanban-column-header {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding: 0;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+.kanban-column.kanban-column-collapsed .kanban-column-header > span:first-of-type {
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    text-align: center;
+}
+
+.kanban-card {
+    background-color: var(--tblr-bg-surface);
+    border: 1px solid var(--tblr-border-color);
+    border-radius: var(--tblr-border-radius);
+    padding: 0.5rem 0.625rem;
+    cursor: grab;
+    transition: box-shadow 0.1s ease, transform 0.1s ease;
+}
+.kanban-card:hover {
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+.kanban-card:active {
+    cursor: grabbing;
+}
+.kanban-card.kanban-card-dragging {
+    opacity: 0.4;
+}

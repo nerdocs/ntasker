@@ -219,40 +219,68 @@ def main() -> int:
     assert "source" not in cols, f"source column must be gone from tasks, got {cols}"
     print(f"OK tasks columns ({cols})")
 
-    # 19. /api/phases returns the fixed 4-entry list in the workflow order.
+    # 19. /api/phases returns the fixed 3-entry list in the workflow order.
+    # v2.0: ``later`` and the ``__none__`` sentinel are gone; ``review`` is new.
     r = client.get("/api/phases")
     assert_ok(r)
     phases = r.json()
-    assert isinstance(phases, list) and len(phases) == 4
-    assert [p["value"] for p in phases] == ["wip", "planned", "later", "__none__"]
+    assert isinstance(phases, list) and len(phases) == 3, f"expected 3 phases, got {phases}"
+    assert [p["value"] for p in phases] == ["planned", "wip", "review"], (
+        f"phase order wrong: {[p['value'] for p in phases]}"
+    )
     assert all("label" in p and "open_count" in p for p in phases)
     print(f"OK GET /api/phases ({phases})")
 
-    # 20. Multi-value phase filter (OR + IS NULL via __none__).
+    # 20. Multi-value phase filter (OR). phase=null now defaults server-side
+    # to 'planned' (NOT NULL since v2.0); no __none__ sentinel anymore.
     ids: list[int] = []
     for phase, title in [
-        ("wip", "p-wip"), ("planned", "p-planned"),
-        ("later", "p-later"), (None, "p-nophase"),
+        ("planned", "p-planned"), ("wip", "p-wip"),
+        ("review", "p-review"), (None, "p-default"),
     ]:
         rr = client.post("/api/tasks", json={"title": title, "phase": phase})
         assert_ok(rr, 201)
-        ids.append(rr.json()["id"])
+        body = rr.json()
+        # phase=None must round-trip to the canonical default.
+        if phase is None:
+            assert body["phase"] == "planned", f"expected planned default, got {body['phase']}"
+        ids.append(body["id"])
 
-    r = client.get("/api/tasks?phase=wip&phase=__none__&status=open&archived=false")
+    r = client.get("/api/tasks?phase=planned&phase=review&status=open&archived=false")
     assert_ok(r)
     titles = sorted(t["title"] for t in r.json())
-    assert "p-wip" in titles and "p-nophase" in titles
-    assert "p-planned" not in titles and "p-later" not in titles
-    print(f"OK GET /api/tasks?phase=wip&phase=__none__ -> {titles}")
+    assert "p-planned" in titles and "p-review" in titles and "p-default" in titles, (
+        f"OR filter wrong: {titles}"
+    )
+    assert "p-wip" not in titles
+    print(f"OK GET /api/tasks?phase=planned&phase=review -> {titles}")
 
     # 21. Phase + tag combine with AND.
-    client.patch(f"/api/tasks/{ids[0]}", json={"tags": ["frontend"]})  # p-wip + frontend
-    client.patch(f"/api/tasks/{ids[1]}", json={"tags": ["frontend"]})  # p-planned + frontend
-    r = client.get("/api/tasks?phase=wip&tag=frontend&status=open&archived=false")
+    client.patch(f"/api/tasks/{ids[0]}", json={"tags": ["frontend"]})  # p-planned + frontend
+    client.patch(f"/api/tasks/{ids[1]}", json={"tags": ["frontend"]})  # p-wip + frontend
+    r = client.get("/api/tasks?phase=planned&tag=frontend&status=open&archived=false")
     assert_ok(r)
     titles = sorted(t["title"] for t in r.json())
-    assert titles == ["p-wip"], f"AND-combination wrong: {titles}"
-    print("OK GET /api/tasks?phase=wip&tag=frontend (AND)")
+    assert titles == ["p-planned"], f"AND-combination wrong: {titles}"
+    print("OK GET /api/tasks?phase=planned&tag=frontend (AND)")
+
+    # 21b. Legacy phase 'later' must be rejected with 422 (Pydantic Literal).
+    bad_phase = client.post("/api/tasks", json={"title": "p-legacy-later", "phase": "later"})
+    assert bad_phase.status_code == 422, (
+        f"expected 422 for legacy phase=later, got {bad_phase.status_code}"
+    )
+    print("OK POST /api/tasks {phase: later} -> 422 (rejected)")
+
+    # 21c. Invalid phase on PATCH returns 400, not 500.
+    bad_patch = client.patch(f"/api/tasks/{ids[0]}", json={"phase": "bogus"})
+    assert bad_patch.status_code in (400, 422), (
+        f"expected 400/422 for bogus phase, got {bad_patch.status_code}"
+    )
+    # PATCH phase=null must coerce to the default (not crash on NOT NULL).
+    coerce_null = client.patch(f"/api/tasks/{ids[1]}", json={"phase": None})
+    assert_ok(coerce_null)
+    assert coerce_null.json()["phase"] == "planned"
+    print("OK PATCH phase=null -> planned (NOT NULL coercion)")
 
     # 22. /api/stats honors phase filter.
     r = client.get("/api/stats?phase=wip")
@@ -276,6 +304,58 @@ def main() -> int:
     assert_ok(r)
     assert r.json()["removed"] == 0
     print("OK POST /api/tags/cleanup idempotent")
+
+    # 24b. v1.5.0: search by numeric string also matches task id (exact).
+    # Create a needle whose id we'll later look up via `?search=<id>`. The
+    # title is deliberately non-numeric so the LIKE branch cannot match
+    # the id-as-substring -- the only path to a hit is the new id clause.
+    rr = client.post("/api/tasks", json={"title": "needle-for-id-search"})
+    assert_ok(rr, 201)
+    needle_id = rr.json()["id"]
+
+    # Plain numeric search -> hit by id.
+    r = client.get(f"/api/tasks?search={needle_id}")
+    assert_ok(r)
+    hit_ids = [t["id"] for t in r.json()]
+    assert needle_id in hit_ids, (
+        f"numeric search {needle_id!r} must surface task #{needle_id}, got {hit_ids}"
+    )
+    print(f"OK GET /api/tasks?search={needle_id} (numeric -> id match)")
+
+    # `#<id>` form: leading hash must be stripped before the id match.
+    r = client.get(f"/api/tasks?search=%23{needle_id}")  # %23 == '#'
+    assert_ok(r)
+    assert any(t["id"] == needle_id for t in r.json()), (
+        f"search '#{needle_id}' must also surface task #{needle_id}"
+    )
+    print(f"OK GET /api/tasks?search=%23{needle_id} (#-prefixed -> id match)")
+
+    # Non-numeric search must NOT trigger the id clause -- a search for
+    # the needle's title still works via LIKE, but a fake textual id like
+    # "needle-for-id-search" must not collide with id=<needle_id>.
+    r = client.get("/api/tasks?search=needle-for-id-search")
+    assert_ok(r)
+    assert any(t["id"] == needle_id for t in r.json()), "title LIKE must still work"
+    print("OK GET /api/tasks?search=<title> (LIKE branch still works)")
+
+    # Non-existent numeric id returns an empty list (no traceback / 500).
+    r = client.get("/api/tasks?search=999999999")
+    assert_ok(r)
+    assert not any(t["id"] == 999999999 for t in r.json())
+    print("OK GET /api/tasks?search=<unknown-id> -> no match, no error")
+
+    # CLI mirror: ntasker list --search <id> must surface the same task.
+    proc = subprocess.run(
+        ["ntasker", "list", "--search", str(needle_id), "--json"],
+        capture_output=True, text=True, env={**os.environ, "NTASKER_DB": str(tmp_db)},
+    )
+    assert proc.returncode == 0, f"ntasker list --search failed: {proc.stderr}"
+    import json as _json_id  # noqa: PLC0415
+    cli_hits = [t["id"] for t in _json_id.loads(proc.stdout)]
+    assert needle_id in cli_hits, (
+        f"CLI search {needle_id!r} must surface task #{needle_id}, got {cli_hits}"
+    )
+    print(f"OK ntasker list --search {needle_id} --json (CLI id match)")
 
     # ------------------------------------------------------------------
     # Settings module (new in v1.0.0)
@@ -319,6 +399,35 @@ def main() -> int:
     assert_ok(r, 404)
     print("OK DELETE /api/settings/projects_dir + 404 on re-get")
 
+    # 30b. default_view setting (v2.0): validator whitelist + template injection.
+    # The server renders `window.__defaultView = "..."` in a <script> block;
+    # tracker() in app.js reads it for the fresh-browser fallback.
+    r = client.get("/")
+    assert_ok(r)
+    assert 'window.__defaultView = "list"' in r.text, (
+        "default_view 'list' must be injected when unset"
+    )
+    print("OK GET / -> window.__defaultView = 'list' default")
+
+    # Invalid value rejected with 400.
+    bad = client.put("/api/settings/default_view", json={"value": "table"})
+    assert bad.status_code == 400, f"expected 400 for invalid default_view, got {bad.status_code}"
+    print("OK PUT /api/settings/default_view table -> 400 (validator)")
+
+    # Valid value 'kanban' rounds through to the HTML.
+    r = client.put("/api/settings/default_view", json={"value": "kanban"})
+    assert_ok(r)
+    assert r.json()["value"] == "kanban"
+    r = client.get("/")
+    assert_ok(r)
+    assert 'window.__defaultView = "kanban"' in r.text, (
+        "default_view 'kanban' must reach the rendered template"
+    )
+    print("OK PUT /api/settings/default_view kanban + reflected in /")
+
+    # Clean up so the rest of the suite stays on the default.
+    client.delete("/api/settings/default_view")
+
     # ------------------------------------------------------------------
     # CLI smoke checks (subprocess) -- verifies the entry point and a
     # round-trip through the same DB the in-process tests used.
@@ -350,6 +459,48 @@ def main() -> int:
     assert proc.returncode == 0, f"ntasker config list --json failed: {proc.stderr}"
     assert _json.loads(proc.stdout) == [], "config should be empty"
     print("OK ntasker config list --json")
+
+    # 34. v2.0 phase migration: a pre-v2.0 DB with phase='later' / NULL is
+    # collapsed into 'planned' on init_db. We can't simulate that on the
+    # current tmp_db (NOT NULL is already enforced) -- build a separate
+    # pre-v2.0 shaped DB, seed legacy rows, then point init_db at it.
+    import sqlite3 as _sqlite  # noqa: PLC0415
+    legacy_db = _tmp_root / "legacy.db"
+    with _sqlite.connect(legacy_db) as _conn:
+        # Replicate the v1.x schema exactly: phase is nullable, no default.
+        _conn.executescript(
+            """
+            CREATE TABLE tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project TEXT,
+                title TEXT NOT NULL,
+                description TEXT,
+                status TEXT NOT NULL DEFAULT 'open',
+                phase TEXT,
+                priority TEXT NOT NULL DEFAULT 'normal',
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                completed_at TEXT,
+                archived INTEGER NOT NULL DEFAULT 0
+            );
+            INSERT INTO tasks (title, phase) VALUES ('legacy-later', 'later');
+            INSERT INTO tasks (title, phase) VALUES ('legacy-null', NULL);
+            INSERT INTO tasks (title, phase) VALUES ('legacy-wip', 'wip');
+            """
+        )
+    # Run the migration against the legacy file. Idempotent.
+    db_module.set_db_path(legacy_db)
+    db_module.init_db()
+    with _sqlite.connect(legacy_db) as _conn:
+        rows = _conn.execute("SELECT title, phase FROM tasks ORDER BY id").fetchall()
+    migrated = {title: phase for title, phase in rows}
+    assert migrated == {
+        "legacy-later": "planned",
+        "legacy-null": "planned",
+        "legacy-wip": "wip",
+    }, migrated
+    print(f"OK init_db phase migration -> {migrated}")
+    # Restore the main tmp_db binding so any later test still talks to it.
+    db_module.set_db_path(tmp_db)
 
     # ------------------------------------------------------------------
     # Regression: AlpineJS x-show MUST NOT live on an element that also
@@ -494,13 +645,9 @@ def main() -> int:
         )
     print("OK rendered task.md is generic (no persona names, no user paths)")
 
-    # 37d2. Rendered command template enforces ask-before-done (v1.2.1).
-    # The /task workflow must NOT instruct the agent to autonomously mark the
-    # task as done -- it must ask the user first and only proceed on explicit OK.
-    assert ("Ask" in rendered) or ("ask" in rendered), (
-        "task.md.template must contain an ask-before-done step ('Ask' / 'ask')"
-    )
-    # Explicit prohibition wording must be present.
+    # 37d2. Rendered command template enforces the v1.5.0 review-handoff
+    # contract: the agent never sets status=done. It may move the task to
+    # phase=review on completion; status=done stays user-only.
     import re as _re_check  # noqa: PLC0415
     assert _re_check.search(r"[Nn]ever mark `?status:\s*done`?", rendered), (
         "task.md.template must explicitly forbid marking status: done autonomously"
@@ -508,19 +655,23 @@ def main() -> int:
     assert "autonomously" in rendered, (
         "task.md.template must use the word 'autonomously' in the prohibition"
     )
-    # If a `ntasker done` line is rendered, it must sit in a section that also
-    # talks about asking / explicit user OK -- not as a bare "do it" instruction.
-    if "ntasker done" in rendered:
-        assert ("Ask the user" in rendered) or ("explicit user OK" in rendered), (
-            "task.md.template renders `ntasker done` but is missing the "
-            "ask-first wording ('Ask the user' / 'explicit user OK')"
-        )
+    # The agent's autonomous write is `phase: review` -- must be the
+    # explicit completion action, not status=done.
+    assert "phase" in rendered and "review" in rendered, (
+        "task.md.template must instruct the agent to move to phase=review on completion"
+    )
+    # Bare `ntasker done` instructions for the agent are gone -- closing
+    # the task is the user's job now.
+    assert "ntasker done" not in rendered, (
+        "task.md.template must not tell the agent to call `ntasker done` -- "
+        "since v1.5.0 status=done is user-only and never appears in agent steps"
+    )
     # The old bare "On completion: mark the task as done." wording must be gone.
     assert "On completion:** mark the task as done" not in rendered, (
         "task.md.template still carries the pre-1.2.1 'mark the task as done' "
-        "wording without an ask-first gate"
+        "wording"
     )
-    print("OK task.md asks before marking done (no autonomous status writes)")
+    print("OK task.md enforces review-handoff (no autonomous done writes)")
 
     # 37d3. Bash-comment trap: every `$ARGUMENTS` in a Bash context (the
     # `!`-backtick line, the rendered `ntasker done ...` invocation, the
@@ -534,7 +685,7 @@ def main() -> int:
     bash_unquoted_traps = [
         "_ntasker_loader.py $ARGUMENTS`",  # ends backtick line
         "_ntasker_loader.py $ARGUMENTS\n",
-        "ntasker done $ARGUMENTS\n",
+        "ntasker patch $ARGUMENTS\n",
         "/api/tasks/$ARGUMENTS \\",  # curl URL without closing quote
         "/api/tasks/$ARGUMENTS\n",
     ]
@@ -547,8 +698,9 @@ def main() -> int:
     assert '_ntasker_loader.py "$ARGUMENTS"' in rendered, (
         "task.md.template missing quoted helper invocation"
     )
-    assert 'ntasker done "$ARGUMENTS"' in rendered, (
-        "task.md.template missing quoted `ntasker done` invocation"
+    assert 'ntasker patch "$ARGUMENTS"' in rendered, (
+        "task.md.template missing quoted `ntasker patch` invocation for the "
+        "review-handoff step"
     )
     assert '"http://127.0.0.1:8766/api/tasks/$ARGUMENTS"' in rendered, (
         "task.md.template missing quoted curl URL"
@@ -923,18 +1075,97 @@ def main() -> int:
         assert "mutually exclusive" in (proc3.stdout + proc3.stderr)
         print("OK ntasker serve --detach --reload -> rejected (exit 2)")
 
+        # 49d. `ntasker stop`: ask the running detached server to die via
+        # POST /shutdown. After the call, /healthz must stop answering.
+        # Then run `ntasker stop` again -- idempotent on an already-stopped
+        # server, must exit 0 with a friendly "not running" message.
+        proc_stop = subprocess.run(
+            ["ntasker", "stop", "--port", str(detach_port)],
+            capture_output=True, text=True, env=detach_env, timeout=10,
+        )
+        assert proc_stop.returncode == 0, (
+            f"ntasker stop must succeed, got rc={proc_stop.returncode}\n"
+            f"stdout={proc_stop.stdout}\nstderr={proc_stop.stderr}"
+        )
+        assert "stopped" in proc_stop.stdout, (
+            f"ntasker stop output should mention 'stopped', got {proc_stop.stdout!r}"
+        )
+        # The server is gone -- /healthz must refuse the connection. Give
+        # the OS a few moments to release the port.
+        for _ in range(20):
+            if _healthz_get(detach_port, timeout=0.2) is None:
+                break
+            _time.sleep(0.05)
+        else:
+            raise AssertionError(
+                f"/healthz still answering on port {detach_port} after ntasker stop"
+            )
+        print(f"OK ntasker stop (port={detach_port}) -> server gone, /healthz dead")
+
+        # Idempotent: stop on an already-stopped server is exit 0 + note.
+        proc_stop2 = subprocess.run(
+            ["ntasker", "stop", "--port", str(detach_port)],
+            capture_output=True, text=True, env=detach_env, timeout=5,
+        )
+        assert proc_stop2.returncode == 0, (
+            f"idempotent stop must succeed, got rc={proc_stop2.returncode}"
+        )
+        assert "no server running" in proc_stop2.stdout, (
+            f"idempotent stop should say 'no server running', got {proc_stop2.stdout!r}"
+        )
+        print("OK ntasker stop (already stopped) -> idempotent 'no server running'")
+
+        # 49e. Diagnostic: a foreign listener (anything bound to the port
+        # that does NOT speak /healthz) must trigger the "something is
+        # listening but does not answer /healthz" path and exit 1 -- NOT
+        # the misleading "no server running" branch.
+        foreign_port = _free_port()
+        foreign_sock = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+        foreign_sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+        foreign_sock.bind(("127.0.0.1", foreign_port))
+        foreign_sock.listen(1)
+        try:
+            proc_stop3 = subprocess.run(
+                ["ntasker", "stop", "--port", str(foreign_port)],
+                capture_output=True, text=True, env=detach_env, timeout=5,
+            )
+            assert proc_stop3.returncode == 1, (
+                f"foreign listener should exit 1, got rc={proc_stop3.returncode}\n"
+                f"stdout={proc_stop3.stdout}\nstderr={proc_stop3.stderr}"
+            )
+            assert "does not" in proc_stop3.stderr, (
+                f"foreign listener stop should explain the situation, "
+                f"got stderr={proc_stop3.stderr!r}"
+            )
+            assert "no server running" not in proc_stop3.stdout, (
+                "must NOT report 'no server running' when the port is bound"
+            )
+            print(
+                f"OK ntasker stop (foreign listener on :{foreign_port}) "
+                "-> diagnostic exit 1"
+            )
+        finally:
+            foreign_sock.close()
+
+        # Mark the detached child as already-gone so the teardown skips
+        # the SIGTERM (it would just race with our successful stop).
+        detached_pid = -1
+
     finally:
         # Clean teardown: signal the detached child and wait briefly.
-        try:
-            os.kill(detached_pid, _signal.SIGTERM)
-            for _ in range(20):
-                try:
-                    os.kill(detached_pid, 0)  # probe
-                except ProcessLookupError:
-                    break
-                _time.sleep(0.05)
-        except ProcessLookupError:
-            pass  # already gone
+        # If the stop test above already killed the process, detached_pid
+        # was set to -1 -- skip the signal in that case.
+        if detached_pid > 0:
+            try:
+                os.kill(detached_pid, _signal.SIGTERM)
+                for _ in range(20):
+                    try:
+                        os.kill(detached_pid, 0)  # probe
+                    except ProcessLookupError:
+                        break
+                    _time.sleep(0.05)
+            except ProcessLookupError:
+                pass  # already gone
 
     # 50. boot_drift_warning returns None on a clean install.
     os.environ["NTASKER_CLAUDE_HOME"] = str(test_home)

@@ -8,8 +8,9 @@ description: >
   "leg einen Task an", "trag das ein", "neuer Task").
   Note: `nerdocs-tracker` and `Tracker` remain trigger words as legacy
   aliases for installs that migrated from the pre-1.0.0 package name.
-  Hard rule: NO agent writes tasks autonomously -- only on the user's
-  explicit instruction.
+  Hard rule: NO agent creates or deletes tasks autonomously. The only
+  autonomous write is moving an assigned task to phase=review on
+  completion (since v1.5.0); status=done and archival stay user-only.
 ---
 
 # ntasker Skill
@@ -47,6 +48,10 @@ and exits 0 once `/healthz` answers (or immediately if a server is
 already running). If `ntasker` is not on PATH yet, install it first:
 `uv tool install ntasker` (or `pip install --user ntasker`).
 
+To stop a running server (e.g. after a version upgrade): `ntasker stop`
+posts to `/shutdown`, polls `/healthz` until the server is gone, and
+exits 0. Idempotent -- stopping an already-stopped server is a no-op.
+
 The `/task <id>` slash command handles this transparently via its loader
 -- only direct `curl` calls in this skill need the pre-probe.
 
@@ -74,9 +79,9 @@ param, AND across params):
 | Param | Values | Notes |
 |---|---|---|
 | `project` | symlink-name or `__none__` | `__none__` = project IS NULL |
-| `phase` | `wip`, `planned`, `later`, `__none__` | `__none__` = phase IS NULL |
+| `phase` | `planned`, `wip`, `review` | NOT NULL since v2.0, default `planned` |
 | `tag` | any tag name | task has >=1 matching tag |
-| `search` | free text | over title + description |
+| `search` | free text | over title + description; if value is purely digits (with optional leading `#`), also matches `tasks.id` exactly |
 | `status` | `open` / `done` | |
 | `archived` | `true` / `false` | |
 | `priority` | `critical` / `high` / `normal` / `low` | NOT NULL, no `__none__` |
@@ -92,7 +97,7 @@ Additional endpoints:
 - `GET /api/stats?<same filters>` -> `{open, done, archive}`
 - `GET /api/projects` -> `[{name, open_count}, ...]` -- `__none__` first; sets
   `X-Settings-Missing: projects_dir` header if unconfigured
-- `GET /api/phases` -> 4 fixed entries (`wip` / `planned` / `later` / `__none__`)
+- `GET /api/phases` -> 3 fixed entries (`planned` / `wip` / `review`)
 - `GET /api/priorities` -> 4 fixed entries (`critical` / `high` / `normal` / `low`)
 - `GET /api/tags` -> `[{name, open_count}, ...]`
 
@@ -119,31 +124,58 @@ Known keys:
 - `projects_dir` -- path to a directory whose entries (or symlinks) name your
   projects. Read by `/api/projects`. ENV override: `NTASKER_PROJECTS_DIR`.
   Validator: absolute path, exists, is a directory, readable.
+- `default_view` -- initial view on a fresh browser: `list` or `kanban`.
+  ENV override: `NTASKER_DEFAULT_VIEW`. The frontend remembers the last
+  user choice in localStorage; this setting only kicks in on first load.
+- `language` -- UI language: `auto` | `en` | `de` (default `auto`).
+- `assets_mode` -- vendor asset loading: `cdn` | `local` | `auto`.
 
 ## 5. Write Rules -- HARD LIMIT
 
-**No agent may write tasks to the tracker autonomously** -- not from
-follow-ups, reports, or self-identified action items. Only an explicit
-user instruction triggers a write.
+**Creation, deletion and archival are user-only.** No agent may
+- create a new task (POST /api/tasks),
+- delete a task (DELETE /api/tasks/<id>),
+- archive a task ({"archived": true}),
+- set a task to `status=done`,
 
-Open items from agent reports belong in the report itself, not in the tracker.
+without an explicit user instruction. Action items the agent identifies
+itself belong in the agent's report, not in the tracker.
 
-## 6. Status Update on Task Completion
+**The single autonomous write is the review-handoff** (see section 6):
+when the user assigned `#<id>` to the agent and the agent has finished
+its part of the work, the agent moves the task to `phase=review` so the
+user can validate the result and close it themselves. This is not
+"marking the task done" -- it is "ready for your review".
 
-When the user assigns `#<id>` and the task is done:
+## 6. Review-Handoff on Agent-Side Completion (since v1.5.0)
+
+When the user assigned `#<id>` and the agent considers its work done:
 
 ```bash
 curl -s -X PATCH http://127.0.0.1:8766/api/tasks/43 \
   -H 'Content-Type: application/json' \
-  -d '{"status": "done"}'
+  -d '{"phase": "review"}'
 ```
 Or:
+```bash
+ntasker patch 43 --phase review
+```
+
+The card then shows up in the kanban "Review" column (UI: "Zu prüfen")
+for the user to verify. The user, not the agent, ultimately flips the
+task to `status=done` -- via the kanban Done column, the list-view
+checkbox, or:
+
 ```bash
 ntasker done 43
 ```
 
-`completed_at` is set automatically. Archiving (`{"archived": true}`) stays
-a manual decision -- never archive on the user's behalf.
+`completed_at` is set on the user's `done`. Archiving stays a manual
+decision -- never archive on the user's behalf.
+
+**When NOT to move to review:** if the agent could not finish (blocker,
+missing info, failed verification), leave the phase as-is and report the
+blocker. Review is a *handoff*, not a *give-up* signal.
 
 ## 7. Creating Tasks (only on the user's explicit instruction)
 
@@ -167,7 +199,7 @@ ntasker add --project myproject --title "Short title" \
 
 Field rules: `project` = entry name from the configured `projects_dir`,
 or `null` (cross-project); `title` required; `phase` in
-`{wip, planned, later, null}`; `priority` in
+`{planned, wip, review}` (default `planned`); `priority` in
 `{critical, high, normal, low}` (default `normal`); `tags` = List[str].
 
 ## 8. Schema
@@ -179,7 +211,7 @@ or `null` (cross-project); `title` required; `phase` in
 | `title` | TEXT | required |
 | `description` | TEXT | Markdown OK |
 | `status` | TEXT | `open` / `done` |
-| `phase` | TEXT NULL | `wip` / `planned` / `later` / NULL |
+| `phase` | TEXT NOT NULL | `planned` (default) / `wip` / `review` |
 | `priority` | TEXT NOT NULL | `critical` / `high` / `normal` / `low` (default `normal`) |
 | `created_at` | TEXT | UTC ISO |
 | `completed_at` | TEXT NULL | UTC ISO, auto-set on done |
@@ -187,8 +219,19 @@ or `null` (cross-project); `title` required; `phase` in
 | tags | n:m | via `tags` + `task_tags` tables |
 | settings | KV | `key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT` |
 
+Workflow phases read left-to-right in the kanban view:
+`planned` -> `wip` -> `review`. ``done`` is not a phase value but a
+``status`` (and a fourth kanban column derived from it).
+
 Phase symbols for inbox-style reports:
-`Wip` wip, `Planned` planned, `Later` later, `Done` done, `?` null/no phase
+`Planned` planned, `Wip` wip, `Review` review, `Done` done
+
+## 10. Migration from pre-v2.0
+
+v2.0 collapses the legacy phases ``later`` + NULL into ``planned`` and adds
+``review``. ``init_db`` runs the migration idempotently on first boot, so
+existing DBs upgrade in place. The skill no longer mentions the
+``__none__`` phase sentinel -- it is gone from the API.
 
 ## 9. Inter-Agent Report Conventions
 

@@ -74,10 +74,34 @@ def validate_language(value: str) -> str:
     return norm
 
 
+# Allowed values for the ``default_view`` setting. Kept in sync with the
+# Alpine state in ``static/app.js`` (VIEW_MODES). Adding a third view
+# requires touching both ends.
+DEFAULT_VIEW_ALLOWED = ("list", "kanban")
+DEFAULT_VIEW_FALLBACK = "list"
+
+
+def validate_default_view(value: str) -> str:
+    """Validator for the ``default_view`` setting.
+
+    Whitelist: ``list`` or ``kanban``. Any other value is rejected so a
+    typo in the UI / CLI doesn't silently land in the DB.
+    """
+    norm = (value or "").strip().lower()
+    if norm not in DEFAULT_VIEW_ALLOWED:
+        raise ValueError(
+            _("Invalid default_view: {value!r}. Allowed: {allowed}").format(
+                value=value, allowed=", ".join(DEFAULT_VIEW_ALLOWED)
+            )
+        )
+    return norm
+
+
 VALIDATORS: dict[str, Validator] = {
     "projects_dir": validate_projects_dir,
     "assets_mode": validate_assets_mode,
     "language": validate_language,
+    "default_view": validate_default_view,
 }
 """Registry of known settings keys with their validators.
 
@@ -102,6 +126,11 @@ HINTS: dict[str, object] = {
     ),
     "language": _lazy(
         "UI language: 'auto' (Accept-Language header, fallback English), 'en', or 'de'."
+    ),
+    "default_view": _lazy(
+        "Default view on startup: 'list' (classic task list) or 'kanban' "
+        "(4-column board). The frontend remembers the last user choice in "
+        "localStorage; this setting drives the initial pick on a fresh browser."
     ),
 }
 
@@ -208,6 +237,24 @@ def get_projects_dir() -> Path | None:
     if not path.is_dir():
         return None
     return path
+
+
+def get_default_view() -> str:
+    """Return the configured default view (``list`` or ``kanban``).
+
+    Honours the ``NTASKER_DEFAULT_VIEW`` ENV override. Falls back to
+    ``list`` when unset or invalid -- the value is also re-validated here
+    so a stale row with an unsupported value (e.g. after a downgrade)
+    degrades gracefully instead of pushing the frontend into an unknown
+    mode.
+    """
+    raw = get_setting("default_view", env_var="NTASKER_DEFAULT_VIEW")
+    if not raw:
+        return DEFAULT_VIEW_FALLBACK
+    norm = raw.strip().lower()
+    if norm not in DEFAULT_VIEW_ALLOWED:
+        return DEFAULT_VIEW_FALLBACK
+    return norm
 
 
 def get_language_setting() -> str:

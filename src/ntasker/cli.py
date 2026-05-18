@@ -155,18 +155,12 @@ def _query_tasks(args: argparse.Namespace) -> list[dict]:
             params.extend(norm)
 
     if args.phase:
-        valid = {"wip", "planned", "later"}
+        valid = {"planned", "wip", "review"}
         names = [p for p in args.phase if p in valid]
-        include_null = "__none__" in args.phase
-        clauses = []
         if names:
             placeholders = ", ".join("?" for _ in names)
-            clauses.append(f"phase IN ({placeholders})")
+            sql += f" AND phase IN ({placeholders})"
             params.extend(names)
-        if include_null:
-            clauses.append("phase IS NULL")
-        if clauses:
-            sql += " AND (" + " OR ".join(clauses) + ")"
 
     if args.priority:
         valid = {"critical", "high", "normal", "low"}
@@ -183,9 +177,18 @@ def _query_tasks(args: argparse.Namespace) -> list[dict]:
         sql += " AND archived = ?"
         params.append(1 if args.archived else 0)
     if args.search:
-        sql += " AND (title LIKE ? OR COALESCE(description, '') LIKE ?)"
+        # Mirror the API: substring match on title / description, plus an
+        # exact id match when the search string (with optional leading
+        # `#`) is purely digits. So `ntasker list --search 240` and
+        # `--search '#240'` both surface task #240.
+        clauses = ["title LIKE ?", "COALESCE(description, '') LIKE ?"]
         like = f"%{args.search}%"
         params.extend([like, like])
+        candidate = args.search.lstrip("#").strip()
+        if candidate.isdigit():
+            clauses.append("tasks.id = ?")
+            params.append(int(candidate))
+        sql += " AND (" + " OR ".join(clauses) + ")"
 
     sql += " ORDER BY archived ASC, status ASC, created_at DESC"
 
@@ -210,6 +213,26 @@ def cmd_init(args: argparse.Namespace) -> int:
     init_db()
     print(_("ntasker: DB initialised at {path}").format(path=_db.DB_PATH))
     return 0
+
+
+def _port_in_use(host: str, port: int, timeout: float = 0.2) -> bool:
+    """Return True iff *something* is listening on ``host:port``.
+
+    Used by ``ntasker stop`` to distinguish "no server at all" from
+    "server is there but doesn't speak our /healthz/shutdown protocol"
+    (e.g. a pre-v1.4.0 ntasker, or a third-party process squatting the
+    port). Uses a connect-probe rather than a bind-probe so a non-root
+    user on a privileged port still gets a meaningful answer.
+    """
+    import socket  # noqa: PLC0415
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(timeout)
+        try:
+            s.connect((host, port))
+        except (OSError, TimeoutError):
+            return False
+        return True
 
 
 def _healthz_ok(host: str, port: int, timeout: float = 0.5) -> bool:
@@ -358,6 +381,80 @@ def cmd_serve(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_stop(args: argparse.Namespace) -> int:
+    """Ask a running ``ntasker serve`` to shut itself down via ``POST /shutdown``.
+
+    Idempotent: if no server is reachable, exit 0 with a friendly note --
+    "stop" on something that is already stopped is not a failure. Once the
+    request is sent, poll ``/healthz`` briefly and only return success
+    when the server has actually disappeared (max ~3s).
+    """
+    import time  # noqa: PLC0415
+    import urllib.error  # noqa: PLC0415
+    import urllib.request  # noqa: PLC0415
+
+    base = f"http://{args.host}:{args.port}"
+
+    if not _healthz_ok(args.host, args.port):
+        # /healthz silent: either the port is truly empty (nothing to
+        # stop, exit 0) -- or something *is* there but does not speak
+        # our protocol (pre-v1.4.0 ntasker, or a foreign process). In
+        # the latter case we cannot POST /shutdown, so we tell the user
+        # exactly that instead of a misleading "no server running".
+        if _port_in_use(args.host, args.port):
+            print(
+                _(
+                    "ntasker: something is listening on {host}:{port} but does not "
+                    "answer /healthz -- probably a pre-v1.4.0 ntasker or a foreign "
+                    "process. Kill it manually (POSIX: `pkill -f 'ntasker serve'`)."
+                ).format(host=args.host, port=args.port),
+                file=sys.stderr,
+            )
+            return 1
+        print(
+            _("ntasker: no server running on {host}:{port}").format(
+                host=args.host, port=args.port
+            )
+        )
+        return 0
+
+    try:
+        req = urllib.request.Request(f"{base}/shutdown", method="POST")
+        urllib.request.urlopen(req, timeout=2.0)  # noqa: S310
+    except urllib.error.URLError as exc:
+        # Connection may legitimately drop *during* the response -- the
+        # server is killing itself, after all. Treat connection-reset as
+        # "shutdown initiated"; anything else as a real error.
+        msg = str(exc).lower()
+        if "connection" not in msg and "reset" not in msg:
+            print(
+                _("ntasker: shutdown request failed: {exc}").format(exc=exc),
+                file=sys.stderr,
+            )
+            return 1
+
+    # Wait for the server to actually go away. Avoids races where the
+    # caller immediately starts a new instance and trips a port collision.
+    deadline = time.monotonic() + 3.0
+    while time.monotonic() < deadline:
+        if not _healthz_ok(args.host, args.port, timeout=0.2):
+            print(
+                _("ntasker: server on {host}:{port} stopped.").format(
+                    host=args.host, port=args.port
+                )
+            )
+            return 0
+        time.sleep(0.1)
+
+    print(
+        _("ntasker: server on {host}:{port} still answering after 3s -- giving up.").format(
+            host=args.host, port=args.port
+        ),
+        file=sys.stderr,
+    )
+    return 1
+
+
 def cmd_list(args: argparse.Namespace) -> int:
     """Read-only listing."""
     tasks = _query_tasks(args)
@@ -391,18 +488,21 @@ def cmd_add(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
-    if args.phase is not None and args.phase not in {"wip", "planned", "later"}:
+    if args.phase is not None and args.phase not in {"planned", "wip", "review"}:
         print(
             _("ntasker: invalid phase: {value!r}").format(value=args.phase),
             file=sys.stderr,
         )
         return 2
+    # phase column is NOT NULL since v2.0 -- default to ``planned`` when the
+    # caller omits ``--phase`` so ``ntasker add --title X`` keeps working.
+    phase_value = args.phase or "planned"
     norm_tags = normalize_tags(args.tag or [])
     with get_conn() as conn:
         cur = conn.execute(
             "INSERT INTO tasks (project, title, description, phase, priority) "
             "VALUES (?, ?, ?, ?, ?)",
-            (args.project, args.title, args.description, args.phase, args.priority),
+            (args.project, args.title, args.description, phase_value, args.priority),
         )
         new_id = int(cur.lastrowid)
         if norm_tags:
@@ -434,7 +534,19 @@ def cmd_patch(args: argparse.Namespace) -> int:
     if args.project is not None:
         fields["project"] = None if args.project == "" else args.project
     if args.phase is not None:
-        fields["phase"] = None if args.phase == "" else args.phase
+        candidate = args.phase.strip()
+        if candidate == "":
+            # Empty string used to mean "clear phase"; with phase NOT NULL
+            # we route it to the canonical default instead.
+            fields["phase"] = "planned"
+        elif candidate not in {"planned", "wip", "review"}:
+            print(
+                _("ntasker: invalid phase: {value!r}").format(value=args.phase),
+                file=sys.stderr,
+            )
+            return 2
+        else:
+            fields["phase"] = candidate
     if args.priority is not None:
         if args.priority not in {"critical", "high", "normal", "low"}:
             print(
@@ -908,6 +1020,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sp_serve.set_defaults(func=cmd_serve)
 
+    # stop ----------------------------------------------------------------
+    sp_stop = sub.add_parser(
+        "stop",
+        help=_("Ask a running ntasker server to shut down (POST /shutdown)."),
+    )
+    sp_stop.add_argument("--host", default="127.0.0.1")
+    sp_stop.add_argument("--port", type=int, default=8766)
+    sp_stop.set_defaults(func=cmd_stop)
+
     # list ----------------------------------------------------------------
     sp_list = sub.add_parser("list", help=_("List tasks"))
     sp_list.add_argument("--project", action="append", default=[])
@@ -935,7 +1056,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp_add.add_argument("--title", required=True)
     sp_add.add_argument("--project")
     sp_add.add_argument("--description")
-    sp_add.add_argument("--phase", choices=["wip", "planned", "later"])
+    sp_add.add_argument("--phase", choices=["planned", "wip", "review"])
     sp_add.add_argument("--priority", default="normal")
     sp_add.add_argument("--tag", action="append", default=[])
     sp_add.set_defaults(func=cmd_add)
@@ -1091,6 +1212,11 @@ def main(argv: list[str] | None = None) -> int:
         set_active_language(resolve_for_cli())
         return args.func(args)
     if args.command == "assets" and getattr(args, "assets_cmd", None) in {"fetch", "remove"}:
+        set_active_language(resolve_for_cli())
+        return args.func(args)
+    # `stop` is a pure HTTP request to a running server -- never create
+    # a DB just to send a shutdown.
+    if args.command == "stop":
         set_active_language(resolve_for_cli())
         return args.func(args)
 

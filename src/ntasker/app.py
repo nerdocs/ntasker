@@ -15,7 +15,7 @@ from datetime import datetime
 from importlib.resources import files
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -53,6 +53,7 @@ from ntasker.settings import (
     delete_setting,
     ensure_settings_table,
     get_assets_mode_resolved,
+    get_default_view,
     get_projects_dir,
     get_setting_raw,
     list_settings,
@@ -65,20 +66,19 @@ PROJECT_NONE_SENTINEL = "__none__"
 # Legacy single-value sentinel kept for backwards compatibility with old bookmarks.
 PROJECT_NULL_LEGACY = "__null__"
 
-# Sentinel for "tasks without a phase" (analogous to PROJECT_NONE_SENTINEL).
-PHASE_NONE_SENTINEL = "__none__"
-
-# Fixed phase order + English source labels for the sidebar feed.
+# Fixed phase order + English source labels. The workflow reads left-to-right:
+# planned -> wip -> review. ``done`` is not a phase value but a status; the
+# kanban view renders it as a fourth column derived from ``status='done'``.
 # Labels go through ``_()`` at response time -- ``N_`` is a no-op marker
 # so pybabel-extract picks up the strings; translations live in
 # ``locale/<lang>/LC_MESSAGES/``.
 PHASE_ORDER: list[tuple[str, str]] = [
-    ("wip", N_("In Progress")),
     ("planned", N_("Planned")),
-    ("later", N_("Later")),
-    (PHASE_NONE_SENTINEL, N_("No phase")),
+    ("wip", N_("In Progress")),
+    ("review", N_("Review")),
 ]
 PHASE_VALID = {value for value, _label in PHASE_ORDER}
+PHASE_DEFAULT = "planned"
 
 # Fixed priority order for the sidebar feed (highest first).
 PRIORITY_ORDER: list[tuple[str, str]] = [
@@ -128,7 +128,7 @@ def list_projects() -> list[str]:
 
 
 Status = Literal["open", "done"]
-Phase = Literal["wip", "planned", "later"]
+Phase = Literal["planned", "wip", "review"]
 Priority = Literal["low", "normal", "high", "critical"]
 
 
@@ -136,6 +136,8 @@ class TaskCreate(BaseModel):
     project: str | None = None
     title: str = Field(..., min_length=1, max_length=500)
     description: str | None = None
+    # Tolerated as None for legacy clients (and for forms that emit an
+    # empty <select>); the endpoint substitutes ``PHASE_DEFAULT`` on insert.
     phase: Phase | None = None
     # Plain ``str`` so the endpoint can return HTTP 400 (not 422) on bad
     # values via the explicit whitelist check.
@@ -254,8 +256,15 @@ def build_js_strings() -> dict[str, str]:
         "settings": _("Settings"),
         "light_mode": _("Light mode"),
         "dark_mode": _("Dark mode"),
-        # Page header
-        "tasks_title": _("Tasks"),
+        # Page header / view switcher
+        "tasks_title": _("Task list"),
+        "view_list": _("Task list"),
+        "view_kanban": _("Kanban"),
+        # Kanban board
+        "kanban_col_done": _("Done"),
+        "kanban_empty_column": _("(empty)"),
+        "expand_done": _("Expand done column"),
+        "collapse_done": _("Collapse done column"),
         # Banners
         "configure_projects_dir": _(
             "Please configure the projects directory -- otherwise the project list stays empty."
@@ -269,7 +278,7 @@ def build_js_strings() -> dict[str, str]:
         "phase_none": _("--"),
         "phase_wip": _("In Progress"),
         "phase_planned": _("Planned"),
-        "phase_later": _("Later"),
+        "phase_review": _("Review"),
         "priority_critical": _("Critical"),
         "priority_high": _("High"),
         "priority_normal": _("Normal"),
@@ -293,7 +302,7 @@ def build_js_strings() -> dict[str, str]:
         "filter_cross_project": _("Filter: cross-project"),
         "filter_phase_wip": _("Filter: phase In Progress"),
         "filter_phase_planned": _("Filter: phase Planned"),
-        "filter_phase_later": _("Filter: phase Later"),
+        "filter_phase_review": _("Filter: phase Review"),
         "filter_priority_critical": _("Filter: priority Critical"),
         "filter_priority_high": _("Filter: priority High"),
         "filter_priority_low": _("Filter: priority Low"),
@@ -428,6 +437,38 @@ def healthz() -> dict:
     return {"ok": True, "version": VERSION}
 
 
+def _self_terminate() -> None:
+    """Schedule a clean self-shutdown shortly after the response is flushed.
+
+    Used by ``POST /shutdown`` -- send a signal to our own process so
+    uvicorn runs its lifespan-shutdown hooks (DB connections, etc.) and
+    exits with the standard code path. On Windows ``SIGTERM`` is still
+    callable through ``os.kill`` (Python maps it to TerminateProcess);
+    uvicorn handles either form gracefully.
+    """
+    import os  # noqa: PLC0415
+    import signal  # noqa: PLC0415
+    import time  # noqa: PLC0415
+
+    time.sleep(0.05)  # let the HTTP response finish flushing
+    os.kill(os.getpid(), signal.SIGTERM)
+
+
+@app.post("/shutdown")
+def shutdown(background_tasks: BackgroundTasks) -> JSONResponse:
+    """Ask the server to shut itself down. Used by ``ntasker stop``.
+
+    The actual signal is sent from a background task so the HTTP response
+    leaves the socket cleanly before the process dies. Bound to
+    127.0.0.1 only at the uvicorn layer -- never exposed externally.
+
+    Idempotent from the caller's perspective: if the server is already
+    gone, the connection just refuses and the CLI treats that as success.
+    """
+    background_tasks.add_task(_self_terminate)
+    return JSONResponse({"ok": True, "shutting_down": True}, status_code=202)
+
+
 # ---------------------------------------------------------------------------
 # Routes -- HTML
 # ---------------------------------------------------------------------------
@@ -445,6 +486,7 @@ def index(request: Request) -> HTMLResponse:
             "version": VERSION,
             "language": get_active_language(),
             "js_strings": build_js_strings(),
+            "default_view": get_default_view(),
         },
     )
     response.headers["Cache-Control"] = "no-store"
@@ -635,7 +677,12 @@ def api_priorities() -> JSONResponse:
 
 @app.get("/api/phases")
 def api_phases() -> JSONResponse:
-    """Sidebar feed for the phase filter."""
+    """Sidebar feed for the phase filter.
+
+    Returns the three workflow phases in their canonical order. Done is
+    intentionally not a phase -- it's derived from ``status`` and shown
+    as a separate kanban column in the UI.
+    """
     with get_conn() as conn:
         rows = conn.execute(
             """
@@ -645,14 +692,11 @@ def api_phases() -> JSONResponse:
             GROUP BY phase
             """
         ).fetchall()
-    counts: dict[str | None, int] = {row["phase"]: int(row["c"]) for row in rows}
+    counts: dict[str, int] = {row["phase"]: int(row["c"]) for row in rows}
 
     out: list[dict] = []
     for value, label in PHASE_ORDER:
-        key: str | None = None if value == PHASE_NONE_SENTINEL else value
-        out.append(
-            {"value": value, "label": _(label), "open_count": counts.get(key, 0)}
-        )
+        out.append({"value": value, "label": _(label), "open_count": counts.get(value, 0)})
     return JSONResponse(out)
 
 
@@ -689,30 +733,19 @@ def _build_project_filter(project: list[str]) -> tuple[str, list[object]]:
 
 
 def _build_phase_filter(phase: list[str]) -> tuple[str, list[object]]:
-    """Multi-value phase filter -> SQL fragment + bind params."""
+    """Multi-value phase filter -> SQL fragment + bind params.
+
+    Since v2.0 ``phase`` is NOT NULL and limited to ``{planned, wip, review}``;
+    unknown values are silently dropped. There is no ``__none__`` sentinel
+    anymore -- legacy queries that send it just match nothing.
+    """
     if not phase:
         return "", []
-
-    include_null = False
-    names: list[str] = []
-    for p in phase:
-        if p == PHASE_NONE_SENTINEL:
-            include_null = True
-        elif p in PHASE_VALID:
-            names.append(p)
-
-    clauses: list[str] = []
-    params: list[object] = []
-    if names:
-        placeholders = ", ".join("?" for _ in names)
-        clauses.append(f"phase IN ({placeholders})")
-        params.extend(names)
-    if include_null:
-        clauses.append("phase IS NULL")
-
-    if not clauses:
+    names = [p for p in phase if p in PHASE_VALID]
+    if not names:
         return "", []
-    return " AND (" + " OR ".join(clauses) + ")", params
+    placeholders = ", ".join("?" for _ in names)
+    return f" AND phase IN ({placeholders})", list(names)
 
 
 def _build_priority_filter(priority: list[str]) -> tuple[str, list[object]]:
@@ -780,9 +813,18 @@ def _query_tasks(
         sql += " AND archived = ?"
         params.append(1 if archived else 0)
     if search:
-        sql += " AND (title LIKE ? OR COALESCE(description, '') LIKE ?)"
+        # Substring match on title / description (always). Additionally, if
+        # the search string (with an optional leading `#` stripped) is
+        # purely digits, also match `tasks.id` exactly so users can locate
+        # a task by typing its number -- "240" and "#240" both find #240.
+        clauses = ["title LIKE ?", "COALESCE(description, '') LIKE ?"]
         like = f"%{search}%"
         params.extend([like, like])
+        candidate = search.lstrip("#").strip()
+        if candidate.isdigit():
+            clauses.append("tasks.id = ?")
+            params.append(int(candidate))
+        sql += " AND (" + " OR ".join(clauses) + ")"
 
     sql += " ORDER BY archived ASC, status ASC, created_at DESC"
 
@@ -873,6 +915,7 @@ def api_create_task(payload: TaskCreate) -> JSONResponse:
     if payload.priority not in PRIORITY_VALID:
         raise HTTPException(status_code=400, detail=_("Invalid priority"))
     norm_tags = normalize_tags(payload.tags)
+    phase_value = payload.phase or PHASE_DEFAULT
     with get_conn() as conn:
         cur = conn.execute(
             """
@@ -883,7 +926,7 @@ def api_create_task(payload: TaskCreate) -> JSONResponse:
                 payload.project,
                 payload.title,
                 payload.description,
-                payload.phase,
+                phase_value,
                 payload.priority,
             ),
         )
@@ -905,6 +948,16 @@ def api_update_task(task_id: int, payload: TaskUpdate) -> JSONResponse:
 
     if "priority" in fields and fields["priority"] not in PRIORITY_VALID:
         raise HTTPException(status_code=400, detail=_("Invalid priority"))
+
+    # phase is NOT NULL since v2.0: a legacy client trying to set phase=null
+    # falls back to the canonical default rather than tripping the SQL
+    # constraint. Unknown phase strings are rejected explicitly so callers
+    # get a clean 400 instead of a 500 with an SQLite error.
+    if "phase" in fields:
+        if fields["phase"] is None:
+            fields["phase"] = PHASE_DEFAULT
+        elif fields["phase"] not in PHASE_VALID:
+            raise HTTPException(status_code=400, detail=_("Invalid phase"))
 
     if "status" in fields:
         if fields["status"] == "done":

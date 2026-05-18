@@ -4,6 +4,13 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [1.5.0] — 2026-05-18
+- feat: Kanban-View neben der klassischen Aufgabenliste. View-Toggle im Page-Header (Aufgabenliste / Kanban). 4 Spalten Geplant -> In Arbeit -> Zu prüfen + kollabierbare Erledigt-Spalte (HTML5-Drag&Drop, PATCH bei Drop). Klick auf Card-Titel toggelt die Beschreibung (analog zur Liste).
+- feat: neues Setting `default_view` (`list` | `kanban`, Default `list`; ENV `NTASKER_DEFAULT_VIEW`) bestimmt die Start-Ansicht bei einem frischen Browser; `localStorage` überlebt danach die User-Wahl.
+- feat: Phase-Vokabular neu definiert -- `planned` -> `wip` -> `review`. `later` und NULL werden idempotent in `init_db()` zu `planned` migriert; `phase` ist jetzt `NOT NULL DEFAULT 'planned'`. API akzeptiert weiterhin `phase=null` (coerce zu `planned`) für Pre-1.5-Clients.
+- feat: SKILL.md + `/task <id>` umgestellt auf Review-Handoff -- bei Fertigstellung eines zugewiesenen Tasks setzt Claude jetzt automatisch `phase=review`. Status=done und Archivierung bleiben User-only. Voll out-of-the-box: `ntasker install-claude-assets` deployt die neue Skill-Version.
+- docs: `docs/kanban.md` -- Phasen-Mapping, DnD-Semantik, default_view Resolution-Order, Migrationshinweise.
+
 ## [1.4.1] — 2026-05-18
 - feat: `/task` loader auto-starts the server via `ntasker serve --detach` when the API call fails; web UI becomes available as a side-effect. SKILL.md documents the same pre-probe pattern for direct curl calls.
 

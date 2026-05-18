@@ -10,6 +10,11 @@ const LS_KEY_TAG_FILTER = 'ntasker.tagFilter';
 const LS_KEY_PHASE_FILTER = 'ntasker.phaseFilter';
 const LS_KEY_PRIORITY_FILTER = 'ntasker.priorityFilter';
 const LS_KEY_THEME = 'ntasker.theme';
+// View-mode + kanban Done-column collapsed flag live in localStorage so a
+// user's last choice survives navigation; the server-supplied default
+// (`default_view` setting) only kicks in on a fresh browser.
+const LS_KEY_VIEW_MODE = 'ntasker.viewMode';
+const LS_KEY_KANBAN_DONE_COLLAPSED = 'ntasker.kanbanDoneCollapsed';
 
 // Legacy keys used pre-1.0. Migrated to the ntasker.* namespace once.
 const LEGACY_KEYS = {
@@ -56,12 +61,23 @@ const PROJECT_NONE = '__none__';
 
 // Valid phase values (matches PHASE_ORDER / PHASE_VALID in app.py).
 // Used to silently drop stale entries from localStorage.
-const PHASE_VALUES = ['wip', 'planned', 'later', '__none__'];
+const PHASE_VALUES = ['planned', 'wip', 'review'];
 
 // Valid priority values (matches PRIORITY_ORDER / PRIORITY_VALID in app.py).
 const PRIORITY_VALUES = ['critical', 'high', 'normal', 'low'];
 
-function tracker() {
+// Valid view modes. Sync with DEFAULT_VIEW_ALLOWED in settings.py and the
+// `default_view` validator.
+const VIEW_MODES = ['list', 'kanban'];
+
+function tracker(serverDefaultView) {
+    // Resolve initial viewMode: localStorage > server-supplied default > 'list'.
+    // The server value comes from the `default_view` setting and is injected
+    // into the Alpine root in index.html.
+    let initialView = localStorage.getItem(LS_KEY_VIEW_MODE);
+    if (!VIEW_MODES.includes(initialView)) {
+        initialView = VIEW_MODES.includes(serverDefaultView) ? serverDefaultView : 'list';
+    }
     return {
         // Sidebar feeds.
         // projects/tags: [{name, open_count}]; phases/priorities: [{value, label, open_count}].
@@ -70,7 +86,17 @@ function tracker() {
         phases: [],
         priorities: [],
         tasks: [],
-        tab: 'open',                 // 'open' | 'done' | 'archive'
+        tab: 'open',                 // 'open' | 'done' | 'archive' (list view only)
+        viewMode: initialView,       // 'list' | 'kanban'
+        // Done column in kanban defaults to collapsed so the workflow columns
+        // get the real estate; user can expand it via the column header.
+        doneCollapsed: (localStorage.getItem(LS_KEY_KANBAN_DONE_COLLAPSED) ?? '1') === '1',
+        // Drag&drop state. ``draggedTaskId`` is captured on dragstart so the
+        // drop handler can identify the moving task without parsing dataTransfer
+        // (Firefox is picky about reading text/plain mid-drag). ``dragOverColumn``
+        // drives the column-highlight CSS class.
+        draggedTaskId: null,
+        dragOverColumn: null,
         theme: localStorage.getItem(LS_KEY_THEME) || 'light',
 
         // Multi-value project filter. Empty list = no filter (all tasks).
@@ -317,6 +343,101 @@ function tracker() {
             this.loadTasks();
         },
 
+        // ---- View mode (list / kanban) ----
+        setViewMode(mode) {
+            if (!VIEW_MODES.includes(mode)) return;
+            if (this.viewMode === mode) return;
+            this.viewMode = mode;
+            localStorage.setItem(LS_KEY_VIEW_MODE, mode);
+            // Switching views changes what we need to load: list-view honors
+            // the status tab, kanban shows open + done together.
+            this.loadTasks();
+        },
+
+        toggleDoneCollapsed() {
+            this.doneCollapsed = !this.doneCollapsed;
+            localStorage.setItem(LS_KEY_KANBAN_DONE_COLLAPSED, this.doneCollapsed ? '1' : '0');
+        },
+
+        // Static column definitions for the kanban board. ``key`` is either
+        // a phase value or the literal 'done'. Labels resolve at render time
+        // via $i18n. Icons use only glyphs known to be in the vendored
+        // tabler-icons subset (see comments in index.html).
+        get kanbanColumns() {
+            return [
+                {key: 'planned', label: _i('phase_planned'),    icon: 'ti-clock'},
+                {key: 'wip',     label: _i('phase_wip'),        icon: 'ti-progress'},
+                {key: 'review',  label: _i('phase_review'),     icon: 'ti-eye'},
+                {key: 'done',    label: _i('kanban_col_done'),  icon: 'ti-check'},
+            ];
+        },
+
+        // Group ``tasks`` by kanban column key. Done-column = status==='done';
+        // phase columns only get status==='open' tasks (a done task in phase
+        // 'wip' belongs in Done, not in WIP).
+        kanbanTasksFor(colKey) {
+            if (colKey === 'done') {
+                return this.tasks.filter(t => t.status === 'done');
+            }
+            return this.tasks.filter(t => t.status === 'open' && t.phase === colKey);
+        },
+
+        // ---- Drag & Drop (kanban) ----
+        onCardDragStart(event, task) {
+            this.draggedTaskId = task.id;
+            // dataTransfer.setData is required for Firefox to even initiate
+            // the drag; the value itself is unused (we keep the id in state).
+            try {
+                event.dataTransfer.setData('text/plain', String(task.id));
+                event.dataTransfer.effectAllowed = 'move';
+            } catch {
+                // Some embed contexts deny dataTransfer access; ignore.
+            }
+        },
+
+        onCardDragEnd() {
+            this.draggedTaskId = null;
+            this.dragOverColumn = null;
+        },
+
+        onColumnDragOver(event, colKey) {
+            // Required to allow the drop event to fire.
+            if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+            this.dragOverColumn = colKey;
+        },
+
+        onColumnDragLeave(event, colKey) {
+            // dragleave fires when crossing into a child too -- only clear
+            // the highlight if we left the column for real.
+            const related = event.relatedTarget;
+            if (!related || !event.currentTarget.contains(related)) {
+                if (this.dragOverColumn === colKey) this.dragOverColumn = null;
+            }
+        },
+
+        async onColumnDrop(event, colKey) {
+            const id = this.draggedTaskId;
+            this.dragOverColumn = null;
+            this.draggedTaskId = null;
+            if (id == null) return;
+            const task = this.tasks.find(t => t.id === id);
+            if (!task) return;
+            // Compute the patch: cross-column move = phase change (and
+            // status flip when crossing Done<->open columns).
+            const body = {};
+            if (colKey === 'done') {
+                if (task.status !== 'done') body.status = 'done';
+                // Keep the task's current phase so re-opening lands it back
+                // in its previous workflow column instead of "Planned".
+            } else {
+                if (task.status === 'done') body.status = 'open';
+                if (task.phase !== colKey) body.phase = colKey;
+            }
+            if (Object.keys(body).length === 0) return; // dropped on same column
+            const r = await this.patch(id, body);
+            if (r && r.ok) await this.refreshAll();
+        },
+
         // ---- Sidebar data ----
         async loadProjects() {
             const r = await fetch('/api/projects');
@@ -358,7 +479,11 @@ function tracker() {
 
         async loadTasks() {
             const params = this._buildFilterParams();
-            if (this.tab === 'open') {
+            // Kanban view always shows non-archived tasks (open + done) so
+            // the Done column has content; status tabs are irrelevant here.
+            if (this.viewMode === 'kanban') {
+                params.set('archived', 'false');
+            } else if (this.tab === 'open') {
                 params.set('status', 'open');
                 params.set('archived', 'false');
             } else if (this.tab === 'done') {

@@ -734,6 +734,85 @@ def cmd_config_unset(args: argparse.Namespace) -> int:
     return 0
 
 
+# Claude Code projects -------------------------------------------------------
+
+
+def _match_key(name: str) -> str:
+    """Fold a project basename for tolerant matching (case + ``_``/``-``)."""
+    base = name.rsplit("/", 1)[-1]
+    return base.casefold().replace("_", "-")
+
+
+def cmd_projects_list(args: argparse.Namespace) -> int:
+    from ntasker.projects import discover_claude_projects  # noqa: PLC0415
+
+    names = discover_claude_projects()
+    if args.json:
+        _print_json(names)
+        return 0
+    if not names:
+        print(_("(no Claude projects found)"))
+        return 0
+    for n in names:
+        print(f"  {n}")
+    return 0
+
+
+def cmd_projects_migrate(args: argparse.Namespace) -> int:
+    """Rename existing task projects to their Claude-project path form.
+
+    Matches a task's current project value against the basename of every
+    discovered Claude project (case-insensitive, ``_``/``-`` folded) and
+    rewrites it to the canonical ``~``-relative path name. Free-form names
+    with no Claude counterpart are left untouched.
+    """
+    from ntasker.projects import discover_claude_projects  # noqa: PLC0415
+
+    discovered = discover_claude_projects()
+    # match-key -> canonical name; drop ambiguous collisions.
+    canonical: dict[str, str] = {}
+    ambiguous: set[str] = set()
+    for name in discovered:
+        key = _match_key(name)
+        if key in canonical and canonical[key] != name:
+            ambiguous.add(key)
+        canonical[key] = name
+    for key in ambiguous:
+        canonical.pop(key, None)
+
+    known = set(discovered)
+    plan: list[tuple[str, str, int]] = []
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT project AS p, COUNT(*) AS c FROM tasks "
+            "WHERE project IS NOT NULL GROUP BY project"
+        ).fetchall()
+        for row in rows:
+            old = row["p"]
+            if old in known:
+                continue  # already canonical
+            new = canonical.get(_match_key(old))
+            if new and new != old:
+                plan.append((old, new, int(row["c"])))
+
+        if not plan:
+            print(_("Nothing to migrate -- task projects already match."))
+            return 0
+
+        for old, new, count in plan:
+            print(f"  {old!r:<28} -> {new!r:<32} ({count})")
+
+        if args.dry_run:
+            print(_("Dry run -- no changes written."))
+            return 0
+
+        for old, new, _count in plan:
+            conn.execute("UPDATE tasks SET project = ? WHERE project = ?", (new, old))
+        conn.commit()
+    print(_("Migrated {n} project name(s).").format(n=len(plan)))
+    return 0
+
+
 # Claude Code assets ---------------------------------------------------------
 
 
@@ -1180,6 +1259,22 @@ def build_parser() -> argparse.ArgumentParser:
     cfg_unset = cfg_sub.add_parser("unset", help=_("Remove one key"))
     cfg_unset.add_argument("key")
     cfg_unset.set_defaults(func=cmd_config_unset)
+
+    # projects ------------------------------------------------------------
+    sp_proj = sub.add_parser("projects", help=_("Claude Code projects"))
+    proj_sub = sp_proj.add_subparsers(dest="projects_cmd", required=True)
+
+    proj_list = proj_sub.add_parser("list", help=_("List discovered Claude projects"))
+    proj_list.add_argument("--json", action="store_true")
+    proj_list.set_defaults(func=cmd_projects_list)
+
+    proj_migrate = proj_sub.add_parser(
+        "migrate", help=_("Rename task projects to their Claude-project path form")
+    )
+    proj_migrate.add_argument(
+        "--dry-run", action="store_true", help=_("Show planned renames without writing.")
+    )
+    proj_migrate.set_defaults(func=cmd_projects_migrate)
 
     # install-claude-assets ----------------------------------------------
     sp_ica = sub.add_parser(

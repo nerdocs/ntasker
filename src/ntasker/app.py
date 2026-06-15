@@ -28,6 +28,7 @@ from ntasker.assets import (
     get_sri,
 )
 from ntasker.claude_assets import resolve_claude_home, scan_status
+from ntasker.projects import discover_claude_projects
 from ntasker import db as _db_module
 from ntasker.db import (
     get_conn,
@@ -596,13 +597,18 @@ def api_claude_assets_status() -> JSONResponse:
 
 @app.get("/api/projects")
 def api_projects() -> JSONResponse:
-    """Sidebar feed: ``__none__`` first, then every project name that has at
-    least one task (open or otherwise), each with its open-task count.
+    """Sidebar feed: ``__none__`` first, then the union of every Claude Code
+    project and every project name already referenced by a task, each with its
+    open-task count.
 
-    Projects are *derived* from the tasks table (since v2.0): a project
-    exists exactly as long as at least one task references it. There is
-    no separate projects table and no filesystem source -- delete the
-    last task carrying a name and that project vanishes from the feed.
+    Projects are sourced from two places (since v2.1):
+
+    * Claude Code's own project directories under ``~/.claude/projects`` --
+      decoded to ``~``-relative, ``/``-separated names (``Projekte/medux``).
+      See :func:`ntasker.projects.discover_claude_projects`.
+    * Any non-NULL ``tasks.project`` value -- so free-form names that do not
+      correspond to a Claude project (and never vanish a project that still
+      carries tasks) keep showing up.
     """
     with get_conn() as conn:
         # All distinct project names currently referenced by any task
@@ -624,11 +630,18 @@ def api_projects() -> JSONResponse:
         ).fetchall()
     counts: dict[str | None, int] = {row["project"]: int(row["c"]) for row in count_rows}
 
+    # Union of Claude-discovered projects and names already on a task.
+    # Defensively drop the reserved sentinels so a task that accidentally
+    # stored one as its project value can never produce a duplicate row.
+    names = (set(discover_claude_projects()) | {row["project"] for row in names_rows}) - {
+        PROJECT_NONE_SENTINEL,
+        PROJECT_NULL_LEGACY,
+    }
+
     out: list[dict] = [
         {"name": PROJECT_NONE_SENTINEL, "open_count": counts.get(None, 0)},
     ]
-    for row in names_rows:
-        name = row["project"]
+    for name in sorted(names, key=str.casefold):
         out.append({"name": name, "open_count": counts.get(name, 0)})
 
     return JSONResponse(out)

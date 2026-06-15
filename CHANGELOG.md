@@ -4,6 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [2.1.0] — 2026-06-15
+Projekte werden aus `~/.claude/projects` erkannt (`/`-Pfadnamen); `projects list|migrate` CLI; `/api/projects` als Union.
+
 ## [2.0.0] — 2026-05-18
 **Breaking:** Projekte sind keine Filesystem-Symlinks mehr, sondern werden aus den Tasks abgeleitet.
 - breaking: Setting `projects_dir` + ENV `NTASKER_PROJECTS_DIR` + die Filesystem-Scan-Logik in `list_projects()` ersatzlos entfernt. `validate_projects_dir`-Validator weg; `init_db()` löscht bestehende `projects_dir`-DB-Rows idempotent beim Boot, damit keine Karteileiche im Settings-UI verbleibt.

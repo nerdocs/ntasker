@@ -341,6 +341,8 @@ def build_js_strings() -> dict[str, str]:
         "save": _("Save"),
         # Toasts
         "create_failed": _("Create failed."),
+        "create_ok": _("Task #{id} created."),
+        "create_ok_hidden": _("Task #{id} created -- hidden by an active filter."),
         "delete_failed": _("Delete failed."),
         "save_failed": _("Save failed."),
         "update_failed": _("Update failed."),

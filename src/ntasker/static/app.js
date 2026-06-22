@@ -522,6 +522,7 @@ function tracker(serverDefaultView) {
                 this.showToast(_i('create_failed'), 'danger');
                 return;
             }
+            const created = await r.json();
             this.form.title = '';
             this.form.description = '';
             this.form.phase = '';
@@ -530,6 +531,17 @@ function tracker(serverDefaultView) {
             this.form.tagInput = '';
             // Keep project selection for rapid same-project entry.
             await this.refreshAll();
+            // The task is saved, but an active filter (project/phase/tag/
+            // priority/status tab) may exclude it from the refreshed list --
+            // without feedback that looks like a silent failure. Confirm the
+            // save, and flag it when the new task is hidden by a filter.
+            const visible = this.tasks.some(t => t.id === created.id);
+            this.showToast(
+                visible
+                    ? _i('create_ok', {id: created.id})
+                    : _i('create_ok_hidden', {id: created.id}),
+                visible ? 'success' : 'info',
+            );
         },
 
         async toggleStatus(task) {

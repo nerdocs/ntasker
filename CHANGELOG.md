@@ -4,6 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [2.1.1] — 2026-06-22
+Fix: Task per UI bei aktivem Filter wurde stumm ausgeblendet -- jetzt Erfolgs-Toast bzw. Hinweis "durch Filter ausgeblendet".
+
 ## [2.1.0] — 2026-06-15
 Projekte werden aus `~/.claude/projects` erkannt (`/`-Pfadnamen); `projects list|migrate` CLI; `/api/projects` als Union.
 

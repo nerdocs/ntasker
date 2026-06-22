@@ -6,9 +6,9 @@
 #, fuzzy
 msgid ""
 msgstr ""
-"Project-Id-Version: ntasker 2.0.0\n"
+"Project-Id-Version: ntasker 2.1.0\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-06-15 21:51+0200\n"
+"POT-Creation-Date: 2026-06-22 21:49+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -116,7 +116,7 @@ msgstr ""
 msgid "Remove unused tags"
 msgstr ""
 
-#: src/ntasker/app.py:271 src/ntasker/app.py:356
+#: src/ntasker/app.py:271 src/ntasker/app.py:358
 #: src/ntasker/templates/index.html:222 src/ntasker/templates/settings.html:6
 #: src/ntasker/templates/settings.html:52
 msgid "Settings"
@@ -335,160 +335,170 @@ msgid "Create failed."
 msgstr ""
 
 #: src/ntasker/app.py:344
-msgid "Delete failed."
+#, python-brace-format
+msgid "Task #{id} created."
 msgstr ""
 
 #: src/ntasker/app.py:345
-msgid "Save failed."
+#, python-brace-format
+msgid "Task #{id} created -- hidden by an active filter."
 msgstr ""
 
 #: src/ntasker/app.py:346
-msgid "Update failed."
+msgid "Delete failed."
 msgstr ""
 
 #: src/ntasker/app.py:347
-msgid "Only archived tasks can be deleted."
+msgid "Save failed."
 msgstr ""
 
 #: src/ntasker/app.py:348
+msgid "Update failed."
+msgstr ""
+
+#: src/ntasker/app.py:349
+msgid "Only archived tasks can be deleted."
+msgstr ""
+
+#: src/ntasker/app.py:350
 #, python-brace-format
 msgid "\"{title}\" -- delete permanently?"
 msgstr ""
 
-#: src/ntasker/app.py:349
+#: src/ntasker/app.py:351
 #, python-brace-format
 msgid "Copied: {text}"
 msgstr ""
 
-#: src/ntasker/app.py:350
+#: src/ntasker/app.py:352
 msgid "Copy failed"
 msgstr ""
 
-#: src/ntasker/app.py:351
+#: src/ntasker/app.py:353
 msgid "Cleanup failed."
 msgstr ""
 
-#: src/ntasker/app.py:352
+#: src/ntasker/app.py:354
 msgid "No unused tags."
 msgstr ""
 
-#: src/ntasker/app.py:353
+#: src/ntasker/app.py:355
 #, python-brace-format
 msgid "{n} unused tags removed: {head}{tail}"
 msgstr ""
 
-#: src/ntasker/app.py:354
+#: src/ntasker/app.py:356
 #, python-brace-format
 msgid ", +{n} more"
 msgstr ""
 
-#: src/ntasker/app.py:357 src/ntasker/templates/settings.html:58
+#: src/ntasker/app.py:359 src/ntasker/templates/settings.html:58
 msgid "back to tasks"
 msgstr ""
 
-#: src/ntasker/app.py:358 src/ntasker/templates/settings.html:73
+#: src/ntasker/app.py:360 src/ntasker/templates/settings.html:73
 msgid "Known keys"
 msgstr ""
 
-#: src/ntasker/app.py:359
+#: src/ntasker/app.py:361
 msgid "(not set yet)"
 msgstr ""
 
-#: src/ntasker/app.py:360
+#: src/ntasker/app.py:362
 #, python-brace-format
 msgid "{key} saved."
 msgstr ""
 
-#: src/ntasker/app.py:361
+#: src/ntasker/app.py:363
 #, python-brace-format
 msgid "{key} removed."
 msgstr ""
 
-#: src/ntasker/app.py:362 src/ntasker/templates/settings.html:118
+#: src/ntasker/app.py:364 src/ntasker/templates/settings.html:118
 msgid "Claude Code Integration"
 msgstr ""
 
-#: src/ntasker/app.py:364 src/ntasker/templates/settings.html:123
+#: src/ntasker/app.py:366 src/ntasker/templates/settings.html:123
 msgid ""
 "ntasker ships a skill (SKILL.md) and a slash command (/task <id>) for "
 "Claude Code. This card shows the install status -- writes go exclusively "
 "through the CLI."
 msgstr ""
 
-#: src/ntasker/app.py:368 src/ntasker/templates/settings.html:128
+#: src/ntasker/app.py:370 src/ntasker/templates/settings.html:128
 msgid "Installed"
 msgstr ""
 
-#: src/ntasker/app.py:369 src/ntasker/templates/settings.html:137
+#: src/ntasker/app.py:371 src/ntasker/templates/settings.html:137
 msgid "Package version"
 msgstr ""
 
-#: src/ntasker/app.py:370 src/ntasker/templates/settings.html:143
+#: src/ntasker/app.py:372 src/ntasker/templates/settings.html:143
 msgid "Drift"
 msgstr ""
 
-#: src/ntasker/app.py:371 src/ntasker/templates/settings.html:152
+#: src/ntasker/app.py:373 src/ntasker/templates/settings.html:152
 msgid "Claude home"
 msgstr ""
 
-#: src/ntasker/app.py:372
+#: src/ntasker/app.py:374
 msgid "yes"
 msgstr ""
 
-#: src/ntasker/app.py:373
+#: src/ntasker/app.py:375
 msgid "no"
 msgstr ""
 
-#: src/ntasker/app.py:374 src/ntasker/templates/settings.html:166
+#: src/ntasker/app.py:376 src/ntasker/templates/settings.html:166
 msgid "Skill + slash command are not installed yet."
 msgstr ""
 
-#: src/ntasker/app.py:376 src/ntasker/templates/settings.html:175
+#: src/ntasker/app.py:378 src/ntasker/templates/settings.html:175
 msgid "Installed files differ from the package version. Update with backup:"
 msgstr ""
 
-#: src/ntasker/app.py:378 src/ntasker/templates/settings.html:188
+#: src/ntasker/app.py:380 src/ntasker/templates/settings.html:188
 msgid "All settings (DB content)"
 msgstr ""
 
-#: src/ntasker/app.py:379 src/ntasker/templates/settings.html:195
+#: src/ntasker/app.py:381 src/ntasker/templates/settings.html:195
 msgid "Key"
 msgstr ""
 
-#: src/ntasker/app.py:380 src/ntasker/templates/settings.html:196
+#: src/ntasker/app.py:382 src/ntasker/templates/settings.html:196
 msgid "Value"
 msgstr ""
 
-#: src/ntasker/app.py:381 src/ntasker/templates/settings.html:197
+#: src/ntasker/app.py:383 src/ntasker/templates/settings.html:197
 msgid "updated"
 msgstr ""
 
-#: src/ntasker/app.py:382 src/ntasker/templates/settings.html:219
+#: src/ntasker/app.py:384 src/ntasker/templates/settings.html:219
 msgid "No settings configured."
 msgstr ""
 
-#: src/ntasker/app.py:384 src/ntasker/templates/settings.html:221
+#: src/ntasker/app.py:386 src/ntasker/templates/settings.html:221
 msgid "Configure a known key above, or set one via CLI:"
 msgstr ""
 
-#: src/ntasker/app.py:548 src/ntasker/app.py:564
+#: src/ntasker/app.py:550 src/ntasker/app.py:566
 msgid "Setting not found"
 msgstr ""
 
-#: src/ntasker/app.py:942 src/ntasker/app.py:1031 src/ntasker/app.py:1035
-#: src/ntasker/app.py:1050
+#: src/ntasker/app.py:944 src/ntasker/app.py:1033 src/ntasker/app.py:1037
+#: src/ntasker/app.py:1052
 msgid "Task not found"
 msgstr ""
 
-#: src/ntasker/app.py:964 src/ntasker/app.py:999
+#: src/ntasker/app.py:966 src/ntasker/app.py:1001
 msgid "Invalid priority"
 msgstr ""
 
-#: src/ntasker/app.py:994
+#: src/ntasker/app.py:996
 msgid "No fields to update"
 msgstr ""
 
-#: src/ntasker/app.py:1009
+#: src/ntasker/app.py:1011
 msgid "Invalid phase"
 msgstr ""
 

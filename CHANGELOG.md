@@ -4,6 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [2.2.0] — 2026-06-22
+`/task <id>` setzt die Aufgabe beim Start automatisch auf `phase=wip` ("In Arbeit"); übersprungen bei archiviert/done.
+
 ## [2.1.1] — 2026-06-22
 Fix: Task per UI bei aktivem Filter wurde stumm ausgeblendet -- jetzt Erfolgs-Toast bzw. Hinweis "durch Filter ausgeblendet".
 

@@ -14,6 +14,11 @@ allowed-tools: Bash(python3 {HELPER_PATH}:*)
 
 You have been handed task #$ARGUMENTS from nTasker.
 
+> Starting the task via `/{COMMAND_NAME}` has already moved it to
+> `phase=wip` ("In Arbeit") automatically -- the loader does this on load.
+> Skipped only for archived or `status=done` tasks. You do not need to set
+> it yourself.
+
 1. **Read the task data above** (title, description, project, tags, phase, priority).
 2. **If a `Project` is assigned** and you know where its code lives on this machine, switch to that working directory before making changes.
 3. **On unclear requirements:** ask, do not assume.
@@ -42,8 +47,9 @@ You have been handed task #$ARGUMENTS from nTasker.
 - **Never mark `status: done` autonomously** -- `status=done` is a user
   decision, period. Ask the user only if they explicitly want to flip
   status themselves; the agent never sends `{"status": "done"}`.
-- The only autonomous tracker write allowed for #$ARGUMENTS is
-  `phase: review`, and only when you genuinely finished your part.
+- The only autonomous tracker writes allowed for #$ARGUMENTS are
+  `phase: wip` on start (done for you by the loader) and `phase: review`
+  when you genuinely finished your part. No other autonomous writes.
 - Archiving stays a manual decision -- never set `archived: true` on
   someone else's behalf.
 - No new tasks, no deletes, no writes to *other* task IDs.

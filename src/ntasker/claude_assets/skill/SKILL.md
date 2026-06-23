@@ -9,8 +9,9 @@ description: >
   Note: `nerdocs-tracker` and `Tracker` remain trigger words as legacy
   aliases for installs that migrated from the pre-1.0.0 package name.
   Hard rule: NO agent creates or deletes tasks autonomously. The only
-  autonomous write is moving an assigned task to phase=review on
-  completion (since v1.5.0); status=done and archival stay user-only.
+  autonomous writes are moving a task to phase=wip when started via /task
+  (since v2.2.0) and to phase=review on completion (since v1.5.0);
+  status=done and archival stay user-only.
 ---
 
 # ntasker Skill
@@ -142,11 +143,13 @@ live in the DB, derived from the tasks themselves.)
 without an explicit user instruction. Action items the agent identifies
 itself belong in the agent's report, not in the tracker.
 
-**The single autonomous write is the review-handoff** (see section 6):
-when the user assigned `#<id>` to the agent and the agent has finished
-its part of the work, the agent moves the task to `phase=review` so the
-user can validate the result and close it themselves. This is not
-"marking the task done" -- it is "ready for your review".
+**Two autonomous writes are allowed.** First, starting a task via `/task
+<id>` moves it to `phase=wip` ("In Arbeit") automatically -- the loader
+does this on load (skipped for archived or `status=done` tasks). Second,
+the review-handoff (see section 6): when the user assigned `#<id>` and the
+agent has finished its part, it moves the task to `phase=review` so the
+user can validate and close it themselves. Neither is "marking the task
+done" -- `status=done` and archival stay user-only.
 
 ## 6. Review-Handoff on Agent-Side Completion (since v1.5.0)
 

@@ -28,6 +28,37 @@ def load_via_server(tid: str) -> dict | None:
         return None
 
 
+def set_wip_via_server(tid: str) -> bool:
+    """PATCH the task to ``phase=wip`` via the running server."""
+    try:
+        req = urllib.request.Request(
+            SERVER_URL.format(tid=tid),
+            data=json.dumps({"phase": "wip"}).encode("utf-8"),
+            method="PATCH",
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=2):
+            return True
+    except Exception:
+        return False
+
+
+def set_wip_via_cli(tid: str) -> bool:
+    """PATCH the task to ``phase=wip`` via the ``ntasker`` CLI."""
+    if shutil.which("ntasker") is None:
+        return False
+    try:
+        proc = subprocess.run(
+            ["ntasker", "patch", str(tid), "--phase", "wip"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except Exception:
+        return False
+    return proc.returncode == 0
+
+
 def load_via_cli(tid: str) -> dict | None:
     if shutil.which("ntasker") is None:
         return None
@@ -106,6 +137,7 @@ def main(argv: list[str]) -> int:
         print(f"Invalid task id: {raw!r}", file=sys.stderr)
         return 2
     tid = raw.lstrip("#")
+    via = "server"
     data = load_via_server(tid)
     if data is None:
         # Server not reachable: try to spawn it in the background so this
@@ -116,6 +148,7 @@ def main(argv: list[str]) -> int:
             data = load_via_server(tid)
         if data is None:
             data = load_via_cli(tid)
+            via = "cli"
     if data is None:
         print(
             f"Task #{tid} not found.\n"
@@ -128,6 +161,17 @@ def main(argv: list[str]) -> int:
             file=sys.stderr,
         )
         return 1
+    # Starting work via /task moves the task to "in progress" (phase=wip).
+    # Best-effort: skip archived/closed tasks (don't resurrect them) and
+    # no-op if already wip; a failed write must never break the load.
+    if (
+        not data.get("archived")
+        and data.get("status") != "done"
+        and data.get("phase") != "wip"
+    ):
+        ok = set_wip_via_cli(tid) if via == "cli" else set_wip_via_server(tid)
+        if ok:
+            data["phase"] = "wip"
     print(render(data))
     return 0
 

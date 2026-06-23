@@ -4,6 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [2.3.0] — 2026-06-23
+Task-Abhängigkeiten: `depends` (n:m, zyklenfrei) mit Autocomplete-Eingabe, Blockiert-Badge, API- und CLI-Support.
+
 ## [2.2.0] — 2026-06-22
 `/task <id>` setzt die Aufgabe beim Start automatisch auf `phase=wip` ("In Arbeit"); übersprungen bei archiviert/done.
 

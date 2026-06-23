@@ -125,7 +125,12 @@ function tracker(serverDefaultView) {
             priority: 'normal',
             tags: [],          // committed tag list (lowercase strings)
             tagInput: '',      // current text in the tag-input
+            depends: [],       // committed dependencies: [{id, title, done}]
+            depInput: '',      // current text in the dependency-input
         },
+        // Dependency autocomplete suggestions for the currently focused
+        // input (form or edit -- only one is open at a time).
+        depSuggest: [],
         editing: null,               // task object or null
         counts: { open: 0, done: 0, archive: 0 },
 
@@ -512,6 +517,7 @@ function tracker(serverDefaultView) {
                 phase: this.form.phase || null,
                 priority: this.form.priority || 'normal',
                 tags: this.form.tags,
+                depends: this.form.depends.map(d => d.id),
             };
             const r = await fetch('/api/tasks', {
                 method: 'POST',
@@ -519,7 +525,7 @@ function tracker(serverDefaultView) {
                 body: JSON.stringify(body),
             });
             if (!r.ok) {
-                this.showToast(_i('create_failed'), 'danger');
+                this.showToast(await this._errorDetail(r, 'create_failed'), 'danger');
                 return;
             }
             const created = await r.json();
@@ -529,6 +535,8 @@ function tracker(serverDefaultView) {
             this.form.priority = 'normal';
             this.form.tags = [];
             this.form.tagInput = '';
+            this.form.depends = [];
+            this.form.depInput = '';
             // Keep project selection for rapid same-project entry.
             await this.refreshAll();
             // The task is saved, but an active filter (project/phase/tag/
@@ -596,12 +604,15 @@ function tracker(serverDefaultView) {
         },
 
         startEdit(task) {
-            // Clone (incl. tags array) so cancel doesn't leak edits into the row.
+            // Clone (incl. tags + depends arrays) so cancel doesn't leak edits into the row.
             this.editing = {
                 ...task,
                 tags: [...(task.tags || [])],
                 _tagInput: '',
+                depends: (task.depends || []).map(d => ({ ...d })),
+                _depInput: '',
             };
+            this.depSuggest = [];
         },
 
         async saveEdit() {
@@ -615,6 +626,7 @@ function tracker(serverDefaultView) {
                 phase: t.phase || null,
                 priority: t.priority || 'normal',
                 tags: t.tags,
+                depends: (t.depends || []).map(d => d.id),
             };
             const r = await fetch(`/api/tasks/${t.id}`, {
                 method: 'PATCH',
@@ -622,11 +634,22 @@ function tracker(serverDefaultView) {
                 body: JSON.stringify(body),
             });
             if (!r.ok) {
-                this.showToast(_i('save_failed'), 'danger');
+                this.showToast(await this._errorDetail(r, 'save_failed'), 'danger');
                 return;
             }
             this.editing = null;
             await this.refreshAll();
+        },
+
+        // Pull a server-supplied error message out of a failed response,
+        // falling back to a generic localized key. Used so dependency
+        // validation errors (cycle / missing / self) surface verbatim.
+        async _errorDetail(response, fallbackKey) {
+            try {
+                const body = await response.json();
+                if (body && typeof body.detail === 'string') return body.detail;
+            } catch (_e) { /* not JSON */ }
+            return _i(fallbackKey);
         },
 
         async patch(id, body) {
@@ -721,6 +744,57 @@ function tracker(serverDefaultView) {
             const key = this._tagInputProp(which);
             if (!bucket.tags.includes(name)) bucket.tags.push(name);
             bucket[key] = '';
+        },
+
+        // ---- Dependency input helpers (shared by new-task form & edit-modal) ----
+        // `which` = 'form' | 'edit'. Deps are stored as [{id, title, done}].
+        _depBucket(which) {
+            return which === 'edit' ? this.editing : this.form;
+        },
+
+        _depInputProp(which) {
+            return which === 'edit' ? '_depInput' : 'depInput';
+        },
+
+        // Autocomplete by title or #id. Queries the unfiltered task list via
+        // /api/tasks?search= so dependencies can point anywhere, not just the
+        // currently filtered/visible rows. Excludes self + already-added.
+        async loadDepSuggestions(which) {
+            const bucket = this._depBucket(which);
+            if (!bucket) { this.depSuggest = []; return; }
+            const q = (bucket[this._depInputProp(which)] || '').trim();
+            if (!q) { this.depSuggest = []; return; }
+            const r = await fetch('/api/tasks?search=' + encodeURIComponent(q));
+            if (!r.ok) { this.depSuggest = []; return; }
+            const rows = await r.json();
+            const ownId = which === 'edit' && this.editing ? this.editing.id : null;
+            const present = new Set((bucket.depends || []).map(d => d.id));
+            this.depSuggest = rows
+                .filter(t => t.id !== ownId && !present.has(t.id))
+                .slice(0, 8);
+        },
+
+        addDep(which, task) {
+            const bucket = this._depBucket(which);
+            if (!bucket) return;
+            if (!(bucket.depends || []).some(d => d.id === task.id)) {
+                bucket.depends.push({ id: task.id, title: task.title, done: task.status === 'done' });
+            }
+            bucket[this._depInputProp(which)] = '';
+            this.depSuggest = [];
+        },
+
+        removeDepFromForm(idx) {
+            this.form.depends.splice(idx, 1);
+        },
+
+        removeDepFromEditing(idx) {
+            if (this.editing) this.editing.depends.splice(idx, 1);
+        },
+
+        // A task is blocked while any dependency is not yet done.
+        isBlocked(task) {
+            return (task.depends || []).some(d => !d.done);
         },
 
         // ---- ID copy + toast feedback ----

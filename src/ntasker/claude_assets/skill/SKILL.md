@@ -65,7 +65,10 @@ Server first; CLI fallback if it is not running. **No direct SQLite access**
 ```bash
 curl -s http://127.0.0.1:8766/api/tasks/43
 ```
-Response includes `tags` list.
+Response includes a `tags` list and a `depends` list. Each `depends` entry
+is `{id, title, done}` -- the tasks this one depends on. A task is *blocked*
+while any dependency has `done=false` (the UI flags it; derive it the same
+way).
 
 **CLI fallback (also resolves DB path):**
 ```bash
@@ -192,13 +195,14 @@ curl -s -X POST http://127.0.0.1:8766/api/tasks \
     "description": "...",
     "phase": "planned",
     "priority": "high",
-    "tags": ["refactoring"]
+    "tags": ["refactoring"],
+    "depends": [12, 15]
   }'
 ```
 Or:
 ```bash
 ntasker add --project myproject --title "Short title" \
-  --phase planned --priority high --tag refactoring
+  --phase planned --priority high --tag refactoring --depends 12,15
 ```
 
 Field rules: `project` = any non-empty trimmed string OR `null`
@@ -206,7 +210,11 @@ Field rules: `project` = any non-empty trimmed string OR `null`
 is created implicitly when the task is saved, and disappears
 automatically when its last task is deleted. `title` required; `phase`
 in `{planned, wip, review}` (default `planned`); `priority` in
-`{critical, high, normal, low}` (default `normal`); `tags` = List[str].
+`{critical, high, normal, low}` (default `normal`); `tags` = List[str];
+`depends` = List[int] of task ids (write sends ids; read returns
+`{id, title, done}`). On PATCH, `depends` replaces the whole set (`[]`
+clears it). The set is validated server-side: self-reference, missing
+targets, and cycles (the graph stays a DAG) are rejected with HTTP 400.
 
 **Picking a project name (autonomous behaviour, since v2.0):** when the
 user asks you to create a task and didn't specify a project, infer one
@@ -231,6 +239,7 @@ either `""` or `null` for "no project" both work.
 | `completed_at` | TEXT NULL | UTC ISO, auto-set on done |
 | `archived` | INT | 0/1 -- task remains searchable |
 | tags | n:m | via `tags` + `task_tags` tables |
+| depends | n:m | via `task_deps(task_id, depends_on_id)`, FK CASCADE; kept acyclic |
 | settings | KV | `key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT` |
 
 Workflow phases read left-to-right in the kanban view:

@@ -355,6 +355,47 @@
                                         </div>
                                     </div>
                                 </div>
+                                <div class="col-12">
+                                    <label class="form-label">{{ t('Depends on') }}</label>
+                                    {# Dependency input: autocomplete by title/#id, picks resolve to #id chips. #}
+                                    <div class="position-relative" x-data="{ focused: false }">
+                                        <div class="form-control d-flex flex-wrap align-items-center gap-1"
+                                             style="cursor: text; min-height: calc(1.5em + 0.75rem + 2px);"
+                                             @click="$refs.formDepInput.focus()">
+                                            <template x-for="(dep, idx) in form.depends" :key="dep.id">
+                                                <span class="badge bg-cyan-lt d-inline-flex align-items-center"
+                                                      :title="dep.title">
+                                                    #<span x-text="dep.id" class="ms-1"></span>
+                                                    <button type="button" class="btn-close btn-close-sm ms-1"
+                                                            style="font-size: 0.6rem;"
+                                                            :aria-label="$i18n('remove_dependency')"
+                                                            @click.stop="removeDepFromForm(idx)"></button>
+                                                </span>
+                                            </template>
+                                            <input type="text" class="border-0 flex-fill p-0"
+                                                   style="outline: none; background: transparent; min-width: 8rem;"
+                                                   x-model="form.depInput"
+                                                   x-ref="formDepInput"
+                                                   @focus="focused = true"
+                                                   @blur="setTimeout(() => focused = false, 150)"
+                                                   @input.debounce.250ms="loadDepSuggestions('form')"
+                                                   @keydown.backspace="if (!form.depInput && form.depends.length) form.depends.pop()"
+                                                   :placeholder="$i18n('dependency_input_placeholder')">
+                                        </div>
+                                        <div class="dropdown-menu show w-100 mt-1"
+                                             x-show="focused && depSuggest.length > 0"
+                                             style="max-height: 200px; overflow-y: auto;"
+                                             x-cloak>
+                                            <template x-for="s in depSuggest" :key="s.id">
+                                                <button type="button" class="dropdown-item text-truncate"
+                                                        @mousedown.prevent="addDep('form', s)">
+                                                    <span class="font-monospace text-secondary">#<span x-text="s.id"></span></span>
+                                                    <span x-text="s.title"></span>
+                                                </button>
+                                            </template>
+                                        </div>
+                                    </div>
+                                </div>
                                 <div class="col-12 text-end">
                                     <button type="submit" class="btn btn-sm btn-primary" :disabled="!form.title">
                                         <i class="ti ti-plus me-1 fs-3"></i>
@@ -514,6 +555,26 @@
                                                       style="cursor: pointer"
                                                       :title="$i18n('filter_tag', {name: tag})"
                                                       @click.stop="toggleTag(tag)">#<span x-text="tag"></span></span>
+                                            </template>
+
+                                            {# Blocked badge -- shown while any dependency is not done #}
+                                            <template x-if="isBlocked(task)">
+                                                <span class="badge bg-red text-white" :title="$i18n('blocked_hint')">
+                                                    <i class="ti ti-lock me-1"></i><span x-text="$i18n('blocked')"></span>
+                                                </span>
+                                            </template>
+                                        </div>
+
+                                        {# Dependency list: #id with done/open marker. #}
+                                        <div class="text-muted small mt-1" x-show="task.depends && task.depends.length">
+                                            <i class="ti ti-arrow-ramp-right-2 me-1"></i><span x-text="$i18n('depends_on_label')"></span>
+                                            <template x-for="dep in task.depends" :key="dep.id">
+                                                <span class="badge ms-1"
+                                                      :class="dep.done ? 'bg-green-lt' : 'bg-cyan-lt'"
+                                                      :title="dep.title">
+                                                    #<span x-text="dep.id"></span>
+                                                    <i class="ti ms-1" :class="dep.done ? 'ti-check' : 'ti-clock'"></i>
+                                                </span>
                                             </template>
                                         </div>
 
@@ -682,6 +743,25 @@
                                                 <template x-for="tag in task.tags" :key="tag">
                                                     <span class="badge bg-purple-lt">#<span x-text="tag"></span></span>
                                                 </template>
+
+                                                <template x-if="isBlocked(task)">
+                                                    <span class="badge bg-red text-white" :title="$i18n('blocked_hint')">
+                                                        <i class="ti ti-lock me-1"></i><span x-text="$i18n('blocked')"></span>
+                                                    </span>
+                                                </template>
+                                            </div>
+
+                                            {# Dependencies on the card: #id + done/open marker. #}
+                                            <div class="d-flex flex-wrap gap-1 small mt-1"
+                                                 x-show="task.depends && task.depends.length">
+                                                <template x-for="dep in task.depends" :key="dep.id">
+                                                    <span class="badge"
+                                                          :class="dep.done ? 'bg-green-lt' : 'bg-cyan-lt'"
+                                                          :title="dep.title">
+                                                        #<span x-text="dep.id"></span>
+                                                        <i class="ti ms-1" :class="dep.done ? 'ti-check' : 'ti-clock'"></i>
+                                                    </span>
+                                                </template>
                                             </div>
                                         </div>
                                     </template>
@@ -786,6 +866,48 @@
                                     <button type="button" class="dropdown-item"
                                             @mousedown.prevent="selectSuggestion('edit', s)">
                                         #<span x-text="s"></span>
+                                    </button>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">{{ t('Depends on') }}</label>
+                        {# Edit-modal dependency input: same pattern as new-task form, bound to editing.depends. #}
+                        <div class="position-relative" x-data="{ focused: false }">
+                            <div class="form-control d-flex flex-wrap align-items-center gap-1"
+                                 style="cursor: text; min-height: calc(1.5em + 0.75rem + 2px);"
+                                 @click="$refs.editDepInput.focus()">
+                                <template x-for="(dep, idx) in editing.depends" :key="dep.id">
+                                    <span class="badge d-inline-flex align-items-center"
+                                          :class="dep.done ? 'bg-green-lt' : 'bg-cyan-lt'"
+                                          :title="dep.title">
+                                        #<span x-text="dep.id" class="ms-1"></span>
+                                        <button type="button" class="btn-close btn-close-sm ms-1"
+                                                style="font-size: 0.6rem;"
+                                                :aria-label="$i18n('remove_dependency')"
+                                                @click.stop="removeDepFromEditing(idx)"></button>
+                                    </span>
+                                </template>
+                                <input type="text" class="border-0 flex-fill p-0"
+                                       style="outline: none; background: transparent; min-width: 8rem;"
+                                       x-model="editing._depInput"
+                                       x-ref="editDepInput"
+                                       @focus="focused = true"
+                                       @blur="setTimeout(() => focused = false, 150)"
+                                       @input.debounce.250ms="loadDepSuggestions('edit')"
+                                       @keydown.backspace="if (!editing._depInput && editing.depends.length) editing.depends.pop()"
+                                       :placeholder="$i18n('dependency_input_placeholder')">
+                            </div>
+                            <div class="dropdown-menu show w-100 mt-1"
+                                 x-show="focused && depSuggest.length > 0"
+                                 style="max-height: 200px; overflow-y: auto;"
+                                 x-cloak>
+                                <template x-for="s in depSuggest" :key="s.id">
+                                    <button type="button" class="dropdown-item text-truncate"
+                                            @mousedown.prevent="addDep('edit', s)">
+                                        <span class="font-monospace text-secondary">#<span x-text="s.id"></span></span>
+                                        <span x-text="s.title"></span>
                                     </button>
                                 </template>
                             </div>

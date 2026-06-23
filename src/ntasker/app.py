@@ -31,14 +31,20 @@ from ntasker.claude_assets import resolve_claude_home, scan_status
 from ntasker.projects import discover_claude_projects
 from ntasker import db as _db_module
 from ntasker.db import (
+    DepError,
     get_conn,
     init_db,
+    load_deps_bulk,
+    load_deps_for,
     load_tags_bulk,
     load_tags_for,
+    normalize_dep_ids,
     normalize_tags,
     row_to_task,
     set_db_path,
+    set_task_deps,
     set_task_tags,
+    validate_deps,
 )
 from ntasker.i18n import (
     N_,
@@ -136,6 +142,9 @@ class TaskCreate(BaseModel):
     # values via the explicit whitelist check.
     priority: str = "normal"
     tags: list[str] = Field(default_factory=list)
+    # Task ids this task depends on. Validated (existence + no cycles) on
+    # insert; an invalid set yields HTTP 400.
+    depends: list[int] = Field(default_factory=list)
 
 
 class TaskUpdate(BaseModel):
@@ -147,6 +156,7 @@ class TaskUpdate(BaseModel):
     priority: str | None = None
     archived: bool | None = None
     tags: list[str] | None = None  # None = unchanged; [] = clear all
+    depends: list[int] | None = None  # None = unchanged; [] = clear all
 
 
 class SettingUpdate(BaseModel):
@@ -304,6 +314,11 @@ def build_js_strings() -> dict[str, str]:
         "description_placeholder": _("Optional"),
         "tag_input_placeholder": _("Type a tag, Enter to add"),
         "remove_tag": _("Remove tag"),
+        "dependency_input_placeholder": _("Type a task title or #id"),
+        "remove_dependency": _("Remove dependency"),
+        "depends_on_label": _("depends on:"),
+        "blocked": _("Blocked"),
+        "blocked_hint": _("Blocked: a dependency is not done yet."),
         "create": _("Create"),
         # Search
         "search_placeholder": _("Search in title and description..."),
@@ -882,7 +897,17 @@ def api_list_tasks(
     ids = [int(r["id"]) for r in rows]
     with get_conn() as conn:
         tags_by_id = load_tags_bulk(conn, ids)
-    return JSONResponse([row_to_task(r, tags_by_id.get(int(r["id"]), [])) for r in rows])
+        deps_by_id = load_deps_bulk(conn, ids)
+    return JSONResponse(
+        [
+            row_to_task(
+                r,
+                tags_by_id.get(int(r["id"]), []),
+                deps_by_id.get(int(r["id"]), []),
+            )
+            for r in rows
+        ]
+    )
 
 
 @app.get("/api/stats")
@@ -943,7 +968,18 @@ def api_get_task(task_id: int) -> JSONResponse:
         if row is None:
             raise HTTPException(status_code=404, detail=_("Task not found"))
         tags = load_tags_for(conn, task_id)
-    return JSONResponse(row_to_task(row, tags))
+        depends = load_deps_for(conn, task_id)
+    return JSONResponse(row_to_task(row, tags, depends))
+
+
+def _dep_error_detail(e: DepError) -> str:
+    """Localized HTTP-400 message for a dependency validation failure."""
+    if e.reason == "self":
+        return _("A task cannot depend on itself.")
+    if e.reason == "missing":
+        return _("Dependency task #{id} does not exist.").format(id=e.ref)
+    # cycle
+    return _("That dependency would create a cycle (via task #{id}).").format(id=e.ref)
 
 
 def _normalize_project(value: str | None) -> str | None:
@@ -984,9 +1020,17 @@ def api_create_task(payload: TaskCreate) -> JSONResponse:
         new_id = int(cur.lastrowid)
         if norm_tags:
             set_task_tags(conn, new_id, norm_tags)
+        dep_ids = normalize_dep_ids(payload.depends)
+        if dep_ids:
+            try:
+                validate_deps(conn, new_id, dep_ids)
+            except DepError as e:
+                raise HTTPException(status_code=400, detail=_dep_error_detail(e))
+            set_task_deps(conn, new_id, dep_ids)
         row = conn.execute("SELECT * FROM tasks WHERE id = ?", (new_id,)).fetchone()
         tags = load_tags_for(conn, new_id)
-    return JSONResponse(row_to_task(row, tags), status_code=201)
+        depends = load_deps_for(conn, new_id)
+    return JSONResponse(row_to_task(row, tags, depends), status_code=201)
 
 
 @app.patch("/api/tasks/{task_id}")
@@ -996,6 +1040,7 @@ def api_update_task(task_id: int, payload: TaskUpdate) -> JSONResponse:
         raise HTTPException(status_code=400, detail=_("No fields to update"))
 
     tags_raw = fields.pop("tags", None)
+    deps_raw = fields.pop("depends", None)
 
     if "priority" in fields and fields["priority"] not in PRIORITY_VALID:
         raise HTTPException(status_code=400, detail=_("Invalid priority"))
@@ -1039,9 +1084,18 @@ def api_update_task(task_id: int, payload: TaskUpdate) -> JSONResponse:
         if tags_raw is not None:
             set_task_tags(conn, task_id, normalize_tags(tags_raw))
 
+        if deps_raw is not None:
+            dep_ids = normalize_dep_ids(deps_raw)
+            try:
+                validate_deps(conn, task_id, dep_ids)
+            except DepError as e:
+                raise HTTPException(status_code=400, detail=_dep_error_detail(e))
+            set_task_deps(conn, task_id, dep_ids)
+
         row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         tags = load_tags_for(conn, task_id)
-    return JSONResponse(row_to_task(row, tags))
+        depends = load_deps_for(conn, task_id)
+    return JSONResponse(row_to_task(row, tags, depends))
 
 
 @app.delete("/api/tasks/{task_id}", status_code=204)

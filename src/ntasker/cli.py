@@ -44,13 +44,18 @@ from ntasker.claude_assets import (
     validate_command_name,
 )
 from ntasker.db import (
+    DepError,
     get_conn,
     init_db,
+    load_deps_for,
     load_tags_for,
+    normalize_dep_ids,
     normalize_tags,
     row_to_task,
     set_db_path,
+    set_task_deps,
     set_task_tags,
+    validate_deps,
 )
 from ntasker.i18n import _, resolve_for_cli, set_active_language
 from ntasker.paths import resolve_db_path, warn_if_missing
@@ -109,6 +114,9 @@ def _print_task_detail(t: dict) -> None:
     print(f"  {_('Phase'):<14}{t.get('phase') or '-'}")
     print(f"  {_('Priority'):<14}{t.get('priority') or 'normal'}")
     print(f"  {_('Tags'):<14}{', '.join(t.get('tags') or []) or '-'}")
+    deps = t.get("depends") or []
+    dep_str = ", ".join(f"#{d['id']}{'' if d['done'] else ' (open)'}" for d in deps) or "-"
+    print(f"  {_('Depends on'):<14}{dep_str}")
     print(f"  {_('Archived'):<14}{bool(t.get('archived'))}")
     print(f"  {_('Created'):<14}{t.get('created_at') or '-'}")
     if t.get("completed_at"):
@@ -196,8 +204,27 @@ def _query_tasks(args: argparse.Namespace) -> list[dict]:
         rows = conn.execute(sql, params).fetchall()
         out: list[dict] = []
         for r in rows:
-            tags = load_tags_for(conn, int(r["id"]))
-            out.append(row_to_task(r, tags))
+            tid = int(r["id"])
+            tags = load_tags_for(conn, tid)
+            depends = load_deps_for(conn, tid)
+            out.append(row_to_task(r, tags, depends))
+    return out
+
+
+def _parse_depends(raw: str | None) -> list[int] | None:
+    """Parse a comma-separated ``--depends`` value into a list of task ids.
+
+    ``None`` (flag omitted) -> ``None`` (leave unchanged). Empty string ->
+    ``[]`` (clear all). Accepts an optional leading ``#`` per id. Raises
+    ``ValueError`` on a non-numeric token.
+    """
+    if raw is None:
+        return None
+    out: list[int] = []
+    for part in raw.split(","):
+        token = part.strip().lstrip("#").strip()
+        if token:
+            out.append(int(token))  # ValueError bubbles up to the caller
     return out
 
 
@@ -473,7 +500,8 @@ def cmd_show(args: argparse.Namespace) -> int:
             print(_("ntasker: task #{id} not found").format(id=args.task_id), file=sys.stderr)
             return 1
         tags = load_tags_for(conn, args.task_id)
-    task = row_to_task(row, tags)
+        depends = load_deps_for(conn, args.task_id)
+    task = row_to_task(row, tags, depends)
     if args.json:
         _print_json(task)
     else:
@@ -498,7 +526,25 @@ def cmd_add(args: argparse.Namespace) -> int:
     # caller omits ``--phase`` so ``ntasker add --title X`` keeps working.
     phase_value = args.phase or "planned"
     norm_tags = normalize_tags(args.tag or [])
+    try:
+        dep_ids = normalize_dep_ids(_parse_depends(args.depends) or [])
+    except ValueError:
+        print(
+            _("ntasker: invalid --depends value: {value!r}").format(value=args.depends),
+            file=sys.stderr,
+        )
+        return 2
     with get_conn() as conn:
+        # Check dependency targets exist *before* inserting, so a bad
+        # reference aborts cleanly without leaving an orphan task. A brand-new
+        # task has no incoming edges, so it cannot be part of a cycle yet.
+        for d in dep_ids:
+            if conn.execute("SELECT 1 FROM tasks WHERE id = ?", (d,)).fetchone() is None:
+                print(
+                    _("ntasker: dependency task #{id} does not exist").format(id=d),
+                    file=sys.stderr,
+                )
+                return 2
         cur = conn.execute(
             "INSERT INTO tasks (project, title, description, phase, priority) "
             "VALUES (?, ?, ?, ?, ?)",
@@ -507,6 +553,8 @@ def cmd_add(args: argparse.Namespace) -> int:
         new_id = int(cur.lastrowid)
         if norm_tags:
             set_task_tags(conn, new_id, norm_tags)
+        if dep_ids:
+            set_task_deps(conn, new_id, dep_ids)
     print(_("#{id} created: {title}").format(id=new_id, title=args.title))
     return 0
 
@@ -609,20 +657,56 @@ def cmd_patch(args: argparse.Namespace) -> int:
             datetime.now().isoformat(timespec="seconds") if args.status == "done" else None
         )
 
-    if not fields:
+    try:
+        dep_ids = _parse_depends(args.depends)
+    except ValueError:
+        print(
+            _("ntasker: invalid --depends value: {value!r}").format(value=args.depends),
+            file=sys.stderr,
+        )
+        return 2
+
+    if not fields and dep_ids is None:
         print(_("ntasker: nothing to change (specify at least one field)"), file=sys.stderr)
         return 2
 
-    set_clause = ", ".join(f"{k} = ?" for k in fields)
-    params = [*fields.values(), args.task_id]
     with get_conn() as conn:
-        cur = conn.execute(f"UPDATE tasks SET {set_clause} WHERE id = ?", params)
-        if cur.rowcount == 0:
+        exists = conn.execute(
+            "SELECT 1 FROM tasks WHERE id = ?", (args.task_id,)
+        ).fetchone()
+        if exists is None:
             print(_("ntasker: task #{id} not found").format(id=args.task_id), file=sys.stderr)
             return 1
+
+        if dep_ids is not None:
+            dep_ids = normalize_dep_ids(dep_ids)
+            try:
+                validate_deps(conn, args.task_id, dep_ids)
+            except DepError as e:
+                if e.reason == "self":
+                    msg = _("ntasker: a task cannot depend on itself")
+                elif e.reason == "missing":
+                    msg = _("ntasker: dependency task #{id} does not exist").format(id=e.ref)
+                else:
+                    msg = _("ntasker: that dependency would create a cycle (via #{id})").format(
+                        id=e.ref
+                    )
+                print(msg, file=sys.stderr)
+                return 2
+
+        changed: list[str] = list(fields.keys())
+        if fields:
+            set_clause = ", ".join(f"{k} = ?" for k in fields)
+            conn.execute(
+                f"UPDATE tasks SET {set_clause} WHERE id = ?",
+                [*fields.values(), args.task_id],
+            )
+        if dep_ids is not None:
+            set_task_deps(conn, args.task_id, dep_ids)
+            changed.append("depends")
     print(
         _("#{id} updated ({fields})").format(
-            id=args.task_id, fields=", ".join(fields.keys())
+            id=args.task_id, fields=", ".join(changed)
         )
     )
     return 0
@@ -1178,6 +1262,10 @@ def build_parser() -> argparse.ArgumentParser:
     sp_add.add_argument("--phase", choices=["planned", "wip", "review"])
     sp_add.add_argument("--priority", default="normal")
     sp_add.add_argument("--tag", action="append", default=[])
+    sp_add.add_argument(
+        "--depends",
+        help=_("Comma-separated task ids this task depends on, e.g. 12,15."),
+    )
     sp_add.set_defaults(func=cmd_add)
 
     # done ----------------------------------------------------------------
@@ -1214,6 +1302,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--archived",
         type=lambda v: v.lower() in {"1", "true", "yes", "y"},
         default=None,
+    )
+    sp_patch.add_argument(
+        "--depends",
+        help=_("Comma-separated task ids to depend on (replaces the set; '' clears)."),
     )
     sp_patch.set_defaults(func=cmd_patch)
 

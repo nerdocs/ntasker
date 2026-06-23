@@ -58,6 +58,13 @@ CREATE TABLE IF NOT EXISTS task_tags (
 );
 CREATE INDEX IF NOT EXISTS idx_task_tags_tag ON task_tags(tag_id);
 
+CREATE TABLE IF NOT EXISTS task_deps (
+    task_id       INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    depends_on_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    PRIMARY KEY (task_id, depends_on_id)
+);
+CREATE INDEX IF NOT EXISTS idx_task_deps_dep ON task_deps(depends_on_id);
+
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL,
@@ -128,8 +135,18 @@ def get_conn() -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
-def row_to_task(row: sqlite3.Row, tags: list[str] | None = None) -> dict:
-    """Convert a sqlite3.Row to a JSON-serialisable dict."""
+def row_to_task(
+    row: sqlite3.Row,
+    tags: list[str] | None = None,
+    depends: list[dict] | None = None,
+) -> dict:
+    """Convert a sqlite3.Row to a JSON-serialisable dict.
+
+    ``depends`` is a list of ``{id, title, done}`` dicts (the tasks this
+    one depends on), resolved by the caller. A task is "blocked" as long as
+    any of its dependencies is not ``done`` -- the frontend derives that
+    from the ``done`` flags.
+    """
     return {
         "id": row["id"],
         "project": row["project"],
@@ -142,6 +159,7 @@ def row_to_task(row: sqlite3.Row, tags: list[str] | None = None) -> dict:
         "completed_at": row["completed_at"],
         "archived": bool(row["archived"]),
         "tags": tags or [],
+        "depends": depends or [],
     }
 
 
@@ -226,4 +244,132 @@ def load_tags_bulk(conn: sqlite3.Connection, task_ids: list[int]) -> dict[int, l
     out: dict[int, list[str]] = {tid: [] for tid in task_ids}
     for r in rows:
         out[int(r["task_id"])].append(r["name"])
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Dependency helpers (task -> task, M2M, kept acyclic)
+# ---------------------------------------------------------------------------
+
+
+class DepError(ValueError):
+    """Raised when a proposed dependency set is invalid.
+
+    ``reason`` is one of ``"self"`` / ``"missing"`` / ``"cycle"``; ``ref`` is
+    the offending task id (or ``None`` for self-reference). Callers map this
+    onto an HTTP 400 with a localized message.
+    """
+
+    def __init__(self, reason: str, ref: int | None = None):
+        self.reason = reason
+        self.ref = ref
+        super().__init__(f"dependency error: {reason} (ref={ref})")
+
+
+def normalize_dep_ids(raw: list[int]) -> list[int]:
+    """Dedupe to ints, first-seen order. No other filtering.
+
+    Self-reference is deliberately NOT dropped here -- :func:`validate_deps`
+    rejects it (and cycles / missing targets) with a clear error, rather
+    than silently turning a bad input into a destructive empty-set update.
+    """
+    seen: set[int] = set()
+    out: list[int] = []
+    for v in raw:
+        i = int(v)
+        if i in seen:
+            continue
+        seen.add(i)
+        out.append(i)
+    return out
+
+
+def _depends_on(conn: sqlite3.Connection, task_id: int) -> list[int]:
+    rows = conn.execute(
+        "SELECT depends_on_id FROM task_deps WHERE task_id = ?", (task_id,)
+    ).fetchall()
+    return [int(r["depends_on_id"]) for r in rows]
+
+
+def validate_deps(conn: sqlite3.Connection, task_id: int, dep_ids: list[int]) -> None:
+    """Reject self-reference, missing targets, and cycles. Raises DepError.
+
+    Cycle check: setting ``task_id`` to depend on each ``d`` would close a
+    cycle iff ``task_id`` is already reachable from ``d`` along existing
+    dependency edges. We walk the graph but ignore ``task_id``'s own current
+    outgoing edges, since this call *replaces* them.
+    """
+    for d in dep_ids:
+        if d == task_id:
+            raise DepError("self")
+        exists = conn.execute("SELECT 1 FROM tasks WHERE id = ?", (d,)).fetchone()
+        if exists is None:
+            raise DepError("missing", d)
+
+    for d in dep_ids:
+        # BFS from d; can we get back to task_id? Skip task_id's outgoing
+        # edges (they are being overwritten by this very update).
+        stack = [d]
+        visited: set[int] = set()
+        while stack:
+            cur = stack.pop()
+            if cur == task_id:
+                raise DepError("cycle", d)
+            if cur in visited:
+                continue
+            visited.add(cur)
+            if cur == task_id:
+                continue
+            stack.extend(_depends_on(conn, cur))
+
+
+def set_task_deps(conn: sqlite3.Connection, task_id: int, dep_ids: list[int]) -> None:
+    """Replace the full dependency set of a task (delete + reinsert)."""
+    conn.execute("DELETE FROM task_deps WHERE task_id = ?", (task_id,))
+    if not dep_ids:
+        return
+    conn.executemany(
+        "INSERT OR IGNORE INTO task_deps (task_id, depends_on_id) VALUES (?, ?)",
+        [(task_id, d) for d in dep_ids],
+    )
+
+
+def load_deps_for(conn: sqlite3.Connection, task_id: int) -> list[dict]:
+    """Return ``[{id, title, done}]`` for a single task, ordered by id."""
+    rows = conn.execute(
+        """
+        SELECT t.id AS id, t.title AS title, t.status AS status
+        FROM task_deps d
+        JOIN tasks t ON t.id = d.depends_on_id
+        WHERE d.task_id = ?
+        ORDER BY t.id ASC
+        """,
+        (task_id,),
+    ).fetchall()
+    return [
+        {"id": int(r["id"]), "title": r["title"], "done": r["status"] == "done"}
+        for r in rows
+    ]
+
+
+def load_deps_bulk(conn: sqlite3.Connection, task_ids: list[int]) -> dict[int, list[dict]]:
+    """Bulk lookup: task_id -> ``[{id, title, done}]``."""
+    if not task_ids:
+        return {}
+    placeholders = ", ".join("?" for _ in task_ids)
+    rows = conn.execute(
+        f"""
+        SELECT d.task_id AS task_id, t.id AS id, t.title AS title, t.status AS status
+        FROM task_deps d
+        JOIN tasks t ON t.id = d.depends_on_id
+        WHERE d.task_id IN ({placeholders})
+        ORDER BY t.id ASC
+        """,
+        task_ids,
+    ).fetchall()
+    out: dict[int, list[dict]] = {tid: [] for tid in task_ids}
+    for r in rows:
+        out[int(r["task_id"])].append(
+            {"id": int(r["id"]), "title": r["title"], "done": r["status"] == "done"}
+        )
     return out

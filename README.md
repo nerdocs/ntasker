@@ -237,6 +237,7 @@ couple of CLI subcommands via subprocess.
 |---|---|---|
 | GET | `/` | The single-page task UI |
 | GET | `/settings` | The settings UI |
+| GET | `/api/changes` | Cheap change token (`{v}` = DB file mtime in ns). The UI polls it and refetches only when it changed, so CLI/API writes surface live. See [docs/live-updates.md](docs/live-updates.md). |
 | GET | `/api/projects` | `[{name, open_count}]`, `__none__` first; sets `X-Settings-Missing: projects_dir` if unconfigured |
 | GET | `/api/tags` | `[{name, open_count}]`, sorted by `open_count DESC, name ASC` |
 | POST | `/api/tags/cleanup` | Delete dangling tags (no `task_tags` row). Returns `{removed, removed_names}`. Idempotent. |

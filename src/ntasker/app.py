@@ -960,6 +960,28 @@ def api_stats(
     return JSONResponse(counts)
 
 
+@app.get("/api/changes")
+def api_changes() -> JSONResponse:
+    """Cheap change token for the frontend live-update poll.
+
+    Returns the DB file's modification time in nanoseconds. The CLI and the
+    API both write straight to SQLite, so any mutation -- from either process
+    -- bumps the file mtime (rollback-journal mode rewrites the main DB file on
+    every commit). The UI polls this endpoint and only refetches the task list
+    when the value changed, so a CLI-driven phase transition surfaces within
+    one poll interval without the client repeatedly pulling the full list.
+
+    NB: relies on rollback-journal mode (ntasker's default). Under WAL, commits
+    land in the ``-wal`` sidecar and the main-file mtime would lag until a
+    checkpoint -- ntasker does not enable WAL.
+    """
+    try:
+        token = _db_module.DB_PATH.stat().st_mtime_ns
+    except OSError:
+        token = 0
+    return JSONResponse({"v": token})
+
+
 @app.get("/api/tasks/{task_id}")
 def api_get_task(task_id: int) -> JSONResponse:
     """Single-task lookup. Used by FRIDAY for ``#<id>`` resolution."""

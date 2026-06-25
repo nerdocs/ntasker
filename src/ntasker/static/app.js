@@ -151,6 +151,9 @@ function tracker(serverDefaultView) {
             this.pruneStaleTagFilter();
             // Phase / priority filters are validated against fixed value lists at restore time.
             await this.loadTasks();
+            // Start the live-update poll last, once the initial state is in
+            // place -- it then refetches whenever a CLI/API change is detected.
+            this.startChangePolling();
         },
 
         // Convenience: just the project names (for <select> in forms).
@@ -399,6 +402,12 @@ function tracker(serverDefaultView) {
         onCardDragEnd() {
             this.draggedTaskId = null;
             this.dragOverColumn = null;
+            // A change detected mid-drag was deferred (re-rendering would abort
+            // the drag); apply it now that the drag is over.
+            if (this._liveRefreshPending) {
+                this._liveRefreshPending = false;
+                this.refreshAll();
+            }
         },
 
         onColumnDragOver(event, colKey) {
@@ -675,6 +684,44 @@ function tracker(serverDefaultView) {
             this.pruneStaleProjectFilter();
             this.pruneStaleTagFilter();
             await this.loadTasks();
+        },
+
+        // ---- Live updates (poll a cheap change token) ----
+        // The CLI and the API both write straight to SQLite, so a write from
+        // any source -- another browser tab, the CLI, or Claude via the CLI --
+        // bumps /api/changes (the DB file's mtime). We poll it on an interval
+        // and refetch only when the token changed, so phase transitions
+        // (planned -> wip -> review -> done) and every other change reflect
+        // within ~1.5s without a manual reload and without repeatedly pulling
+        // the full task list. Own actions still refresh eagerly (see refreshAll).
+        startChangePolling() {
+            this._changeToken = null;
+            this._pollChanges();   // establish the baseline immediately
+            this._changeTimer = setInterval(() => this._pollChanges(), 1500);
+        },
+
+        async _pollChanges() {
+            let token;
+            try {
+                const r = await fetch('/api/changes');
+                if (!r.ok) return;
+                token = (await r.json()).v;
+            } catch {
+                return;   // server momentarily unreachable (restart) -- retry next tick
+            }
+            if (this._changeToken == null) {   // first successful read = baseline
+                this._changeToken = token;
+                return;
+            }
+            if (token === this._changeToken) return;
+            this._changeToken = token;
+            // Don't re-render mid-drag (an HTML5 drag aborts if its node is
+            // replaced); onCardDragEnd applies the deferred refresh.
+            if (this.draggedTaskId != null) {
+                this._liveRefreshPending = true;
+                return;
+            }
+            this.refreshAll();
         },
 
         // ---- Tag input helpers (shared by new-task form & edit-modal) ----

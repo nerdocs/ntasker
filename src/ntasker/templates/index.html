@@ -389,7 +389,7 @@
                                             <template x-for="s in depSuggest" :key="s.id">
                                                 <button type="button" class="dropdown-item text-truncate"
                                                         @mousedown.prevent="addDep('form', s)">
-                                                    <span class="font-monospace text-secondary">#<span x-text="s.id"></span></span>
+                                                    <span class="font-monospace text-secondary me-1">#<span x-text="s.id"></span></span>
                                                     <span x-text="s.title"></span>
                                                 </button>
                                             </template>
@@ -907,7 +907,7 @@
                                 <template x-for="s in depSuggest" :key="s.id">
                                     <button type="button" class="dropdown-item text-truncate"
                                             @mousedown.prevent="addDep('edit', s)">
-                                        <span class="font-monospace text-secondary">#<span x-text="s.id"></span></span>
+                                        <span class="font-monospace text-secondary me-1">#<span x-text="s.id"></span></span>
                                         <span x-text="s.title"></span>
                                     </button>
                                 </template>

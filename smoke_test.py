@@ -745,9 +745,10 @@ def main() -> int:
         )
     print("OK rendered task.md is generic (no persona names, no user paths)")
 
-    # 37d2. Rendered command template enforces the v1.5.0 review-handoff
-    # contract: the agent never sets status=done. It may move the task to
-    # phase=review on completion; status=done stays user-only.
+    # 37d2. Rendered command template enforces the done-policy: the agent
+    # never closes the task *autonomously*. Since v2.4.0 it MAY set
+    # status=done, but only on the user's *explicit* request -- so a gated
+    # `ntasker done` reference is allowed; an autonomous one is not.
     import re as _re_check  # noqa: PLC0415
     assert _re_check.search(r"[Nn]ever mark `?status:\s*done`?", rendered), (
         "task.md.template must explicitly forbid marking status: done autonomously"
@@ -760,18 +761,17 @@ def main() -> int:
     assert "phase" in rendered and "review" in rendered, (
         "task.md.template must instruct the agent to move to phase=review on completion"
     )
-    # Bare `ntasker done` instructions for the agent are gone -- closing
-    # the task is the user's job now.
-    assert "ntasker done" not in rendered, (
-        "task.md.template must not tell the agent to call `ntasker done` -- "
-        "since v1.5.0 status=done is user-only and never appears in agent steps"
+    # status=done is permitted only on the user's *explicit* instruction
+    # (v2.4.0) -- the gating wording must be present.
+    assert "explicitly" in rendered, (
+        "task.md.template must gate status=done behind an explicit user request"
     )
     # The old bare "On completion: mark the task as done." wording must be gone.
     assert "On completion:** mark the task as done" not in rendered, (
         "task.md.template still carries the pre-1.2.1 'mark the task as done' "
         "wording"
     )
-    print("OK task.md enforces review-handoff (no autonomous done writes)")
+    print("OK task.md done-policy (no autonomous done; explicit-request close allowed)")
 
     # 37d3. Bash-comment trap: every `$ARGUMENTS` in a Bash context (the
     # `!`-backtick line, the rendered `ntasker done ...` invocation, the

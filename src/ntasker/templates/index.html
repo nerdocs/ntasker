@@ -752,17 +752,18 @@
                                             </div>
 
                                             {# Dependencies on the card: #id + done/open marker. #}
-                                            <div class="d-flex flex-wrap gap-1 small mt-1"
-                                                 x-show="task.depends && task.depends.length">
-                                                <template x-for="dep in task.depends" :key="dep.id">
-                                                    <span class="badge"
-                                                          :class="dep.done ? 'bg-green-lt' : 'bg-cyan-lt'"
-                                                          :title="dep.title">
-                                                        #<span x-text="dep.id"></span>
-                                                        <i class="ti ms-1" :class="dep.done ? 'ti-check' : 'ti-clock'"></i>
-                                                    </span>
-                                                </template>
-                                            </div>
+                                            <template x-if="task.depends && task.depends.length">
+                                                <div class="d-flex flex-wrap gap-1 small mt-1">
+                                                    <template x-for="dep in task.depends" :key="dep.id">
+                                                        <span class="badge"
+                                                              :class="dep.done ? 'bg-green-lt' : 'bg-cyan-lt'"
+                                                              :title="dep.title">
+                                                            #<span x-text="dep.id"></span>
+                                                            <i class="ti ms-1" :class="dep.done ? 'ti-check' : 'ti-clock'"></i>
+                                                        </span>
+                                                    </template>
+                                                </div>
+                                            </template>
                                         </div>
                                     </template>
 

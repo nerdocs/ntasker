@@ -1193,6 +1193,19 @@ def cmd_assets_status(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 
+def _task_id(value: str) -> int:
+    """Parse a task id, tolerating a leading ``#``.
+
+    Task ids are shown to humans as ``#311`` everywhere (UI, ``show``
+    output, copy-to-clipboard), so users and agents naturally pass that
+    form back -- e.g. ``ntasker patch #311``. Strip an optional leading
+    ``#`` (and surrounding whitespace) before the int conversion so the
+    decorated form is accepted instead of failing with "invalid int
+    value".
+    """
+    return int(value.strip().lstrip("#"))
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="ntasker",
@@ -1250,7 +1263,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # show ----------------------------------------------------------------
     sp_show = sub.add_parser("show", help=_("Show task detail"))
-    sp_show.add_argument("task_id", type=int)
+    sp_show.add_argument("task_id", type=_task_id)
     sp_show.add_argument("--json", action="store_true")
     sp_show.set_defaults(func=cmd_show)
 
@@ -1270,7 +1283,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # done ----------------------------------------------------------------
     sp_done = sub.add_parser("done", help=_("Mark a task as done"))
-    sp_done.add_argument("task_id", type=int)
+    sp_done.add_argument("task_id", type=_task_id)
     sp_done.set_defaults(func=cmd_done)
 
     # delete --------------------------------------------------------------
@@ -1281,7 +1294,7 @@ def build_parser() -> argparse.ArgumentParser:
         "delete",
         help=_("Delete a task permanently (use with care)."),
     )
-    sp_del.add_argument("task_id", type=int)
+    sp_del.add_argument("task_id", type=_task_id)
     sp_del.add_argument(
         "--yes",
         action="store_true",
@@ -1291,7 +1304,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # patch ---------------------------------------------------------------
     sp_patch = sub.add_parser("patch", help=_("Edit task fields"))
-    sp_patch.add_argument("task_id", type=int)
+    sp_patch.add_argument("task_id", type=_task_id)
     sp_patch.add_argument("--title")
     sp_patch.add_argument("--description")
     sp_patch.add_argument("--project")
@@ -1311,12 +1324,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     # tag-add / tag-rm ----------------------------------------------------
     sp_ta = sub.add_parser("tag-add", help=_("Add a tag"))
-    sp_ta.add_argument("task_id", type=int)
+    sp_ta.add_argument("task_id", type=_task_id)
     sp_ta.add_argument("tag")
     sp_ta.set_defaults(func=cmd_tag_add)
 
     sp_tr = sub.add_parser("tag-rm", help=_("Remove a tag"))
-    sp_tr.add_argument("task_id", type=int)
+    sp_tr.add_argument("task_id", type=_task_id)
     sp_tr.add_argument("tag")
     sp_tr.set_defaults(func=cmd_tag_rm)
 

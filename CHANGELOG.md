@@ -4,6 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [2.5.2] — 2026-06-25
+CLI akzeptiert Task-IDs mit führendem `#` (`ntasker patch #311`); Skill/`/task`-Loader klären ID-Form für CLI vs. HTTP.
+
 ## [2.5.1] — 2026-06-25
 Skill: lädt bei „offene Tasks"-Fragen und schlägt die nächsten Aufgaben des aktuellen Projekts nach Dringlichkeit vor.
 

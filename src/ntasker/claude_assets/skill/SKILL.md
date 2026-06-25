@@ -67,6 +67,12 @@ The `/task <id>` slash command handles this transparently via its loader
 Server first; CLI fallback if it is not running. **No direct SQLite access**
 (the DB path is no longer hardcoded).
 
+**Id form:** the CLI accepts the id with or without a leading `#`
+(`ntasker patch #43` and `ntasker patch 43` are equivalent -- it is
+stripped). In an HTTP URL pass the **bare number** only
+(`/api/tasks/43`): a `#` in a URL is a client-side fragment and never
+reaches the server.
+
 **Server:**
 ```bash
 curl -s http://127.0.0.1:8766/api/tasks/43

@@ -802,10 +802,26 @@ def main() -> int:
         "task.md.template missing quoted `ntasker patch` invocation for the "
         "review-handoff step"
     )
-    assert '"http://127.0.0.1:8766/api/tasks/$ARGUMENTS"' in rendered, (
-        "task.md.template missing quoted curl URL"
+    # The curl fallback must use the #-stripped id, not $ARGUMENTS directly:
+    # a '#' in a URL is a client-side fragment and would never reach the
+    # server. The template derives TASK_ID via `tr -d '#'` first.
+    assert '"http://127.0.0.1:8766/api/tasks/$TASK_ID"' in rendered, (
+        "task.md.template curl URL must use the #-stripped $TASK_ID"
+    )
+    assert 'TASK_ID=$(printf \'%s\' "$ARGUMENTS" | tr -d \'#\')' in rendered, (
+        "task.md.template must derive a #-stripped TASK_ID for the curl URL"
     )
     print("OK task.md quotes $ARGUMENTS in all Bash contexts (#<id> survives)")
+
+    # The curl URL uses the #-stripped id: simulate the derivation in bash.
+    proc_id = subprocess.run(
+        ["bash", "-c", 'ARGUMENTS="#311"; ' + "TASK_ID=$(printf '%s' \"$ARGUMENTS\" | tr -d '#'); printf %s \"$TASK_ID\""],
+        capture_output=True, text=True,
+    )
+    assert proc_id.returncode == 0 and proc_id.stdout.strip() == "311", (
+        f"TASK_ID derivation broken -- got {proc_id.stdout!r}, expected '311'"
+    )
+    print("OK task.md curl derives a bare TASK_ID from '#311'")
 
     # 37d4. End-to-end: simulate `bash -c` with a #-prefixed argument and
     # ensure the id reaches the wrapped command. We strip the slash-command

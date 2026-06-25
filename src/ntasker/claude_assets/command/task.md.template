@@ -35,9 +35,12 @@ You have been handed task #$ARGUMENTS from nTasker.
      "Zu prüfen" / Review column for verification. This is automatic --
      no user OK required, because review is a *handoff*, not a *close*:
      ```bash
+     # The CLI accepts the id with or without a leading '#'.
      ntasker patch "$ARGUMENTS" --phase review
-     # or:
-     curl -s -X PATCH "http://127.0.0.1:8766/api/tasks/$ARGUMENTS" \
+     # or, via the HTTP API -- strip the '#' first ('#311' -> '311'),
+     # otherwise it is treated as a URL fragment and never reaches the server:
+     TASK_ID=$(printf '%s' "$ARGUMENTS" | tr -d '#')
+     curl -s -X PATCH "http://127.0.0.1:8766/api/tasks/$TASK_ID" \
        -H 'Content-Type: application/json' \
        -d '{"phase":"review"}'
      ```

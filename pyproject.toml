@@ -1,6 +1,6 @@
 [project]
 name = "ntasker"
-version = "2.5.1"
+version = "2.5.2"
 description = "Lightweight local task tracker. Single-user, FastAPI + SQLite, Tabler.io UI."
 requires-python = ">=3.12"
 license = "AGPL-3.0-or-later"

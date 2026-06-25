@@ -8,10 +8,11 @@ description: >
   "leg einen Task an", "trag das ein", "neuer Task").
   Note: `nerdocs-tracker` and `Tracker` remain trigger words as legacy
   aliases for installs that migrated from the pre-1.0.0 package name.
-  Hard rule: NO agent creates or deletes tasks autonomously. The only
+  Hard rule: NO agent creates, deletes or closes tasks autonomously. The
   autonomous writes are moving a task to phase=wip when started via /task
   (since v2.2.0) and to phase=review on completion (since v1.5.0);
-  status=done and archival stay user-only.
+  status=done is allowed ONLY on the user's explicit instruction, archival
+  stays user-only.
 ---
 
 # ntasker Skill
@@ -137,22 +138,29 @@ live in the DB, derived from the tasks themselves.)
 
 ## 5. Write Rules -- HARD LIMIT
 
-**Creation, deletion and archival are user-only.** No agent may
+**Creation, deletion, closing and archival are never autonomous.** No
+agent may, *without an explicit user instruction*,
 - create a new task (POST /api/tasks),
 - delete a task (DELETE /api/tasks/<id>),
 - archive a task ({"archived": true}),
-- set a task to `status=done`,
+- set a task to `status=done`.
 
-without an explicit user instruction. Action items the agent identifies
-itself belong in the agent's report, not in the tracker.
+Action items the agent identifies itself belong in the agent's report,
+not in the tracker.
+
+**Closing on explicit request (since v2.4):** if the user explicitly
+tells the agent to close `#<id>` (e.g. "set #43 to done", "mark it
+done", "schliess #43 ab"), the agent MAY send `{"status":"done"}` (or
+`ntasker done <id>`). What stays forbidden is closing a task on the
+agent's own initiative -- the trigger must come from the user.
 
 **Two autonomous writes are allowed.** First, starting a task via `/task
 <id>` moves it to `phase=wip` ("In Arbeit") automatically -- the loader
 does this on load (skipped for archived or `status=done` tasks). Second,
 the review-handoff (see section 6): when the user assigned `#<id>` and the
 agent has finished its part, it moves the task to `phase=review` so the
-user can validate and close it themselves. Neither is "marking the task
-done" -- `status=done` and archival stay user-only.
+user can validate and close it. Neither is "marking the task done" --
+autonomous closing and archival stay forbidden.
 
 ## 6. Review-Handoff on Agent-Side Completion (since v1.5.0)
 
@@ -169,16 +177,17 @@ ntasker patch 43 --phase review
 ```
 
 The card then shows up in the kanban "Review" column (UI: "Zu prüfen")
-for the user to verify. The user, not the agent, ultimately flips the
-task to `status=done` -- via the kanban Done column, the list-view
-checkbox, or:
+for the user to verify. The user normally flips the task to `status=done`
+themselves -- via the kanban Done column, the list-view checkbox, or:
 
 ```bash
 ntasker done 43
 ```
 
-`completed_at` is set on the user's `done`. Archiving stays a manual
-decision -- never archive on the user's behalf.
+`completed_at` is set on `done`. The agent runs `done` only when the
+user explicitly asks it to close the task (see section 5), never as part
+of the handoff. Archiving stays a manual decision -- never archive on the
+user's behalf.
 
 **When NOT to move to review:** if the agent could not finish (blocker,
 missing info, failed verification), leave the phase as-is and report the

@@ -4,6 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [2.4.0] — 2026-06-25
+Skill/Command: Claude darf Tasks auf `status=done` setzen, wenn der User es ausdrücklich verlangt (autonom weiterhin nie).
+
 ## [2.3.0] — 2026-06-23
 Task-Abhängigkeiten: `depends` (n:m, zyklenfrei) mit Autocomplete-Eingabe, Blockiert-Badge, API- und CLI-Support.
 

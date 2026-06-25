@@ -34,19 +34,21 @@ You have been handed task #$ARGUMENTS from nTasker.
        -H 'Content-Type: application/json' \
        -d '{"phase":"review"}'
      ```
-   - **The user, not you, flips the task to `status: done`.** Do not
-     send `{"status":"done"}` even after the review is finished. The
-     user closes the task themselves via the kanban Done column or the
-     list checkbox.
+   - **Do not close the task as part of the handoff.** Moving to review
+     is the end of your autonomous work -- do not send `{"status":"done"}`
+     on your own initiative. The user normally closes it via the kanban
+     Done column or the list checkbox. Only when the user *explicitly*
+     tells you to close it may you send `{"status":"done"}` (e.g.
+     `ntasker done "$ARGUMENTS"`).
    - If you could not finish (blocker, missing info, failed
      verification), do NOT move to review -- leave the phase as-is and
      report the blocker.
 
 **Hard rules:**
 
-- **Never mark `status: done` autonomously** -- `status=done` is a user
-  decision, period. Ask the user only if they explicitly want to flip
-  status themselves; the agent never sends `{"status": "done"}`.
+- **Never mark `status: done` autonomously** -- closing a task is never
+  part of your handoff. You may send `{"status": "done"}` *only* when the
+  user explicitly asks you to close it; never on your own initiative.
 - The only autonomous tracker writes allowed for #$ARGUMENTS are
   `phase: wip` on start (done for you by the loader) and `phase: review`
   when you genuinely finished your part. No other autonomous writes.

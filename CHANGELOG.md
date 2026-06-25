@@ -4,6 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [2.5.1] — 2026-06-25
+Skill: lädt bei „offene Tasks"-Fragen und schlägt die nächsten Aufgaben des aktuellen Projekts nach Dringlichkeit vor.
+
 ## [2.5.0] — 2026-06-25
 `/task` warnt bei Projekt-Mismatch (cwd nicht im Task-Projekt), fragt nach und setzt `phase=wip` erst nach Bestätigung.
 Neue Einstellung `projects_base`: entdeckte Claude-Projekte erscheinen relativ dazu (`~/Projekte/medux` → `medux`).

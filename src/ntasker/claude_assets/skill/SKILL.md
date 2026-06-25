@@ -6,6 +6,11 @@ description: >
   "tasks.db", "ntasker", "nerdocs-tracker", "Tracker", "Aufgaben-Liste",
   or an explicit user write-command ("create a task", "add a todo",
   "leg einen Task an", "trag das ein", "neuer Task").
+  Also load when the user asks for open tasks or what to do next in the
+  current project ("offene Tasks", "open tasks", "was soll ich als
+  nächstes machen", "what should I work on next", "what's next", "nächste
+  Aufgabe", "woran arbeiten", "todo in diesem Projekt") -- then suggest
+  the next tasks ranked by urgency (see section 3.1).
   Note: `nerdocs-tracker` and `Tracker` remain trigger words as legacy
   aliases for installs that migrated from the pre-1.0.0 package name.
   Hard rule: NO agent creates, deletes or closes tasks autonomously. The
@@ -109,6 +114,39 @@ Additional endpoints:
 - `GET /api/phases` -> 3 fixed entries (`planned` / `wip` / `review`)
 - `GET /api/priorities` -> 4 fixed entries (`critical` / `high` / `normal` / `low`)
 - `GET /api/tags` -> `[{name, open_count}, ...]`
+
+### 3.1 Suggesting the next task (current project)
+
+When the user asks what to work on next, or for the open tasks in the
+current project (no explicit `#<id>`), suggest -- never start -- the most
+urgent ones:
+
+1. **Resolve the current project** from the working directory. Read the
+   base with `ntasker config get projects_base` (or `GET
+   /api/settings/projects_base`); the project name is your cwd made
+   relative to that base, else to `~`. If you are in a subfolder, use the
+   nearest ancestor that appears in `GET /api/projects`. If nothing
+   matches, tell the user and stop -- do not guess across projects.
+2. **Fetch open, non-archived tasks** for that project:
+   ```bash
+   curl -s 'http://127.0.0.1:8766/api/tasks?project=<name>&status=open&archived=false'
+   ```
+   (CLI: `ntasker list --project <name> --status open --json`.) Each task
+   carries `priority`, `phase`, and `depends` (see section 2).
+3. **Rank by urgency:**
+   - A task is **blocked** while any entry in `depends` has `done=false`.
+     Blocked tasks can't be started -- list them separately, not as a
+     "do next" pick.
+   - Order the actionable (un-blocked) tasks by `priority`:
+     `critical` > `high` > `normal` > `low`.
+   - Tie-break: `wip` (already in progress) before `review` before
+     `planned`, then oldest `created_at` first.
+4. **Present** the top few as a short ranked list, each cited as
+   `#<id> <title>` with its priority and phase, and name any blocked
+   tasks (with what they wait on). Recommend the single best next pick.
+   Suggesting is a read action -- do not set `phase`/`status` or create
+   anything without an explicit instruction (see section 5). Starting one
+   is the user's call (often via `/task <id>`).
 
 ## 4. Settings
 

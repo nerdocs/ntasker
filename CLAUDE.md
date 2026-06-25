@@ -95,7 +95,7 @@ without binary catalogs. `make i18n-compile` is the safe pre-build step.
 - Never `--no-verify`, `--no-gpg-sign`, force-push to main/master.
 - Never `git config`, `git commit --amend`, `git rebase -i`.
 - Never `cd path/to/ntasker/ntasker && git ...` -- permission pattern only matches `-C` form.
-- `git push` to GitLab is allowed but **only on user's explicit OK** (Memory `feedback_tracker_repo_commits`).
+- `git push` to GitHub is allowed but **only on user's explicit OK** (Memory `feedback_tracker_repo_commits`).
 
 ## Skill crosslink
 

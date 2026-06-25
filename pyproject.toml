@@ -25,9 +25,9 @@ dependencies = [
 ntasker = "ntasker.cli:main"
 
 [project.urls]
-Homepage = "https://gitlab.com/nerdocs/ntasker"
-Source = "https://gitlab.com/nerdocs/ntasker"
-Issues = "https://gitlab.com/nerdocs/ntasker/-/issues"
+Homepage = "https://github.com/nerdocs/ntasker"
+Source = "https://github.com/nerdocs/ntasker"
+Issues = "https://github.com/nerdocs/ntasker/issues"
 
 [tool.ruff]
 line-length = 100

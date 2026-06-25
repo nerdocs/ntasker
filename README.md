@@ -295,7 +295,7 @@ Tag names are normalised to lowercase on write; `UNIQUE COLLATE NOCASE` keeps it
 
 ## Project home
 
-GitLab: <https://gitlab.com/nerdocs/ntasker>
+GitHub: <https://github.com/nerdocs/ntasker>
 
 ## Changelog
 

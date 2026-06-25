@@ -4,13 +4,14 @@ name: Publish to PyPI
 # publisher on PyPI with: owner=nerdocs, repo=ntasker,
 # workflow=publish.yml, environment=pypi.
 #
-# Publishing is triggered by publishing a GitHub Release (which also
-# creates the version tag). Bump the version first -- PyPI rejects a
-# re-upload of an existing version.
+# Publishing is triggered by pushing a version tag (v*). Bump the version
+# first, commit, then `git tag vX.Y.Z && git push origin vX.Y.Z` -- PyPI
+# rejects a re-upload of an existing version.
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - "v*"
 
 permissions:
   contents: read

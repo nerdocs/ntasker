@@ -4,6 +4,10 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [2.5.3] — 2026-06-25
+Live-Updates: Web-UI aktualisiert sich bei CLI/API-Änderungen selbst (pollt `/api/changes`, neu nur bei Änderung).
+„Neue Aufgabe" als zugeklapptes Accordion; Tags + „Hängt ab von" in einer Reihe; Fokus ins Projekt-Feld beim Öffnen.
+
 ## [2.5.2] — 2026-06-25
 CLI akzeptiert Task-IDs mit führendem `#` (`ntasker patch #311`); Skill/`/task`-Loader klären ID-Form für CLI vs. HTTP.
 

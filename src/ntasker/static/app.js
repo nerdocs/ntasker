@@ -91,6 +91,9 @@ function tracker(serverDefaultView) {
         // Done column in kanban defaults to collapsed so the workflow columns
         // get the real estate; user can expand it via the column header.
         doneCollapsed: (localStorage.getItem(LS_KEY_KANBAN_DONE_COLLAPSED) ?? '1') === '1',
+        // New-task form accordion: collapsed by default so more of the task
+        // list stays visible; the card header toggles it (toggleNewTaskForm).
+        formOpen: false,
         // Drag&drop state. ``draggedTaskId`` is captured on dragstart so the
         // drop handler can identify the moving task without parsing dataTransfer
         // (Firefox is picky about reading text/plain mid-drag). ``dragOverColumn``
@@ -361,6 +364,17 @@ function tracker(serverDefaultView) {
         toggleDoneCollapsed() {
             this.doneCollapsed = !this.doneCollapsed;
             localStorage.setItem(LS_KEY_KANBAN_DONE_COLLAPSED, this.doneCollapsed ? '1' : '0');
+        },
+
+        // New-task accordion toggle. On expand, move focus into the Project
+        // field -- but only after $nextTick, since the form body is x-show'd
+        // and still display:none at the moment of the click (focus() on a
+        // hidden element is a no-op).
+        toggleNewTaskForm() {
+            this.formOpen = !this.formOpen;
+            if (this.formOpen) {
+                this.$nextTick(() => this.$refs.projectInput?.focus());
+            }
         },
 
         // Static column definitions for the kanban board. ``key`` is either

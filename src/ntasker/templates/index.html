@@ -267,15 +267,24 @@
                 {# v2.0: projects_dir-Banner is gone -- projects emerge #}
                 {# implicitly from tasks; no filesystem setup required. #}
 
-                {# New-task form #}
+                {# New-task form. The header doubles as an accordion toggle and #}
+                {# the body starts collapsed, so more of the task list stays #}
+                {# visible until the user actually wants to add something. #}
                 <div class="card mb-3">
-                    <div class="card-header">
-                        <h3 class="card-title">
+                    <div class="card-header" role="button" tabindex="0"
+                         style="cursor: pointer;"
+                         @click="toggleNewTaskForm()"
+                         @keydown.enter.prevent="toggleNewTaskForm()"
+                         @keydown.space.prevent="toggleNewTaskForm()"
+                         :aria-expanded="formOpen">
+                        <h3 class="card-title mb-0">
                             <i class="ti ti-plus me-1"></i>
                             {{ t('New task') }}
                         </h3>
+                        <i class="ti ms-auto fs-2 text-secondary"
+                           :class="formOpen ? 'ti-chevron-up' : 'ti-chevron-down'"></i>
                     </div>
-                    <div class="card-body">
+                    <div class="card-body" x-show="formOpen" x-cloak>
                         <form @submit.prevent="createTask()">
                             <div class="row g-2">
                                 <div class="col-md-3">
@@ -285,6 +294,7 @@
                                     {# implicitly when the task is saved. Empty = cross-project. #}
                                     <input type="text" class="form-control"
                                            x-model="form.project"
+                                           x-ref="projectInput"
                                            list="ntasker-project-suggestions"
                                            maxlength="100"
                                            :placeholder="$i18n('project_placeholder')">
@@ -316,7 +326,7 @@
                                     <textarea class="form-control" rows="2" x-model="form.description"
                                               :placeholder="$i18n('description_placeholder')"></textarea>
                                 </div>
-                                <div class="col-12">
+                                <div class="col-md-6">
                                     <label class="form-label">{{ t('Tags') }}</label>
                                     {# Tag-Input: AlpineJS-driven combobox. Tags as badges, free-text input, autocomplete dropdown. #}
                                     <div class="position-relative" x-data="{ focused: false }">
@@ -355,7 +365,7 @@
                                         </div>
                                     </div>
                                 </div>
-                                <div class="col-12">
+                                <div class="col-md-6">
                                     <label class="form-label">{{ t('Depends on') }}</label>
                                     {# Dependency input: autocomplete by title/#id, picks resolve to #id chips. #}
                                     <div class="position-relative" x-data="{ focused: false }">

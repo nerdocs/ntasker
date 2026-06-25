@@ -78,15 +78,20 @@ def resolve_claude_home(override: str | os.PathLike | None) -> Path:
     """Resolve the Claude home directory.
 
     Precedence: explicit ``override`` > ``NTASKER_CLAUDE_HOME`` env var >
-    ``~/.claude``. The result is expanduser-resolved + made absolute, but
+    ``~/.claude``. The result is expanduser-expanded + made absolute, but
     we deliberately do NOT enforce that it equals ``~/.claude`` -- tests
     and ad-hoc setups need to redirect it.
+
+    Symlinks are NOT resolved: when ``~/.claude`` is a symlink (e.g. to a
+    dotfiles repo under ``~/Projekte/claude``), we keep the logical
+    ``~/.claude`` path rather than its target -- that is the location users
+    expect to see and write through.
     """
     if override is not None:
         raw = str(override)
     else:
         raw = os.environ.get("NTASKER_CLAUDE_HOME", str(DEFAULT_CLAUDE_HOME))
-    return Path(os.path.expanduser(raw)).resolve()
+    return Path(os.path.abspath(os.path.expanduser(raw)))
 
 
 # ---------------------------------------------------------------------------

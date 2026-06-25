@@ -82,10 +82,32 @@ def validate_default_view(value: str) -> str:
     return norm
 
 
+def validate_projects_base(value: str) -> str:
+    """Validator for the ``projects_base`` setting.
+
+    A filesystem path used as the base for relativizing discovered Claude
+    project names: with ``projects_base = ~/Projekte`` the project at
+    ``~/Projekte/medux`` shows up as ``medux`` instead of ``Projekte/medux``.
+
+    ``~`` is kept verbatim (expanded per-machine at read time); the value is
+    only required to expand to an *absolute* path. Existence is NOT checked.
+    To clear it, unset/DELETE the key rather than storing an empty string.
+    """
+    norm = (value or "").strip()
+    if not norm:
+        raise ValueError(_("projects_base must not be empty -- unset it to clear."))
+    if not os.path.isabs(os.path.expanduser(norm)):
+        raise ValueError(
+            _("projects_base must be an absolute path (got {value!r}).").format(value=value)
+        )
+    return norm
+
+
 VALIDATORS: dict[str, Validator] = {
     "assets_mode": validate_assets_mode,
     "language": validate_language,
     "default_view": validate_default_view,
+    "projects_base": validate_projects_base,
 }
 """Registry of known settings keys with their validators.
 
@@ -111,6 +133,13 @@ HINTS: dict[str, object] = {
         "Default view on startup: 'list' (classic task list) or 'kanban' "
         "(4-column board). The frontend remembers the last user choice in "
         "localStorage; this setting drives the initial pick on a fresh browser."
+    ),
+    "projects_base": _lazy(
+        "Base path for project names, e.g. '~/Projekte'. Discovered Claude "
+        "projects below it are named relative to it (the folder right under "
+        "the base becomes the project name) instead of relative to your home "
+        "directory. Unset to fall back to home-relative names. "
+        "ENV: NTASKER_PROJECTS_BASE."
     ),
 }
 

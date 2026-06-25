@@ -6,9 +6,9 @@
 #, fuzzy
 msgid ""
 msgstr ""
-"Project-Id-Version: ntasker 2.2.0\n"
+"Project-Id-Version: ntasker 2.4.0\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-06-23 20:39+0200\n"
+"POT-Creation-Date: 2026-06-25 08:48+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -1024,23 +1024,41 @@ msgstr ""
 msgid "Invalid default_view: {value!r}. Allowed: {allowed}"
 msgstr ""
 
-#: src/ntasker/settings.py:103
+#: src/ntasker/settings.py:98
+msgid "projects_base must not be empty -- unset it to clear."
+msgstr ""
+
+#: src/ntasker/settings.py:101
+#, python-brace-format
+msgid "projects_base must be an absolute path (got {value!r})."
+msgstr ""
+
+#: src/ntasker/settings.py:125
 msgid ""
 "Vendor assets (Tabler/Alpine): cdn (default, jsDelivr + SRI), local (from"
 " user-data dir, populate via `ntasker assets fetch`), auto (local if "
 "cache complete, else cdn)."
 msgstr ""
 
-#: src/ntasker/settings.py:108
+#: src/ntasker/settings.py:130
 msgid ""
 "UI language: 'auto' (Accept-Language header, fallback English), 'en', or "
 "'de'."
 msgstr ""
 
-#: src/ntasker/settings.py:111
+#: src/ntasker/settings.py:133
 msgid ""
 "Default view on startup: 'list' (classic task list) or 'kanban' (4-column"
 " board). The frontend remembers the last user choice in localStorage; "
 "this setting drives the initial pick on a fresh browser."
+msgstr ""
+
+#: src/ntasker/settings.py:138
+msgid ""
+"Base path for project names, e.g. '~/Projekte'. Discovered Claude "
+"projects below it are named relative to it (the folder right under the "
+"base becomes the project name) instead of relative to your home "
+"directory. Unset to fall back to home-relative names. ENV: "
+"NTASKER_PROJECTS_BASE."
 msgstr ""
 

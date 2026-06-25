@@ -101,8 +101,11 @@ ntasker stats         # tab-counts
 Additional endpoints:
 - `GET /api/stats?<same filters>` -> `{open, done, archive}`
 - `GET /api/projects` -> `[{name, open_count}, ...]` -- `__none__` first;
-  the list is derived from `SELECT DISTINCT project FROM tasks`. A project
-  disappears automatically once its last task is gone.
+  the list is the union of `SELECT DISTINCT project FROM tasks` and the
+  Claude projects discovered under `~/.claude/projects`. Discovered names
+  are relativized against the `projects_base` setting when set (a folder
+  right under the base becomes its bare name), else against `~`. A
+  task-derived project disappears once its last task is gone.
 - `GET /api/phases` -> 3 fixed entries (`planned` / `wip` / `review`)
 - `GET /api/priorities` -> 4 fixed entries (`critical` / `high` / `normal` / `low`)
 - `GET /api/tags` -> `[{name, open_count}, ...]`
@@ -132,6 +135,10 @@ Known keys:
   user choice in localStorage; this setting only kicks in on first load.
 - `language` -- UI language: `auto` | `en` | `de` (default `auto`).
 - `assets_mode` -- vendor asset loading: `cdn` | `local` | `auto`.
+- `projects_base` -- base path for project names (e.g. `~/Projekte`).
+  Discovered Claude projects below it are shown relative to it (the folder
+  right under the base becomes the project name); unset = home-relative.
+  ENV override: `NTASKER_PROJECTS_BASE`.
 
 (The pre-v2.0 `projects_dir` setting has been removed -- projects now
 live in the DB, derived from the tasks themselves.)

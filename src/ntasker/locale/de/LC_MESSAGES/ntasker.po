@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: ntasker 1.3.0\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-06-23 20:39+0200\n"
+"POT-Creation-Date: 2026-06-25 08:48+0200\n"
 "PO-Revision-Date: 2026-05-02 09:19+0200\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: de\n"
@@ -932,7 +932,9 @@ msgstr "Task-Felder ändern"
 
 #: src/ntasker/cli.py:1308
 msgid "Comma-separated task ids to depend on (replaces the set; '' clears)."
-msgstr "Kommagetrennte Aufgaben-IDs als Abhängigkeiten (ersetzt die Menge; '' löscht)."
+msgstr ""
+"Kommagetrennte Aufgaben-IDs als Abhängigkeiten (ersetzt die Menge; '' "
+"löscht)."
 
 #: src/ntasker/cli.py:1313
 msgid "Add a tag"
@@ -1045,7 +1047,16 @@ msgstr "Ungültige Sprache: {value!r}. Erlaubt: {allowed}"
 msgid "Invalid default_view: {value!r}. Allowed: {allowed}"
 msgstr "Ungültige Standard-Ansicht: {value!r}. Erlaubt: {allowed}"
 
-#: src/ntasker/settings.py:103
+#: src/ntasker/settings.py:98
+msgid "projects_base must not be empty -- unset it to clear."
+msgstr "projects_base darf nicht leer sein -- zum Löschen die Einstellung entfernen."
+
+#: src/ntasker/settings.py:101
+#, python-brace-format
+msgid "projects_base must be an absolute path (got {value!r})."
+msgstr "projects_base muss ein absoluter Pfad sein (erhalten: {value!r})."
+
+#: src/ntasker/settings.py:125
 msgid ""
 "Vendor assets (Tabler/Alpine): cdn (default, jsDelivr + SRI), local (from"
 " user-data dir, populate via `ntasker assets fetch`), auto (local if "
@@ -1055,7 +1066,7 @@ msgstr ""
 "User-Data-Dir, vorher mit `ntasker assets fetch` laden), auto (local wenn"
 " Cache vollständig, sonst cdn)."
 
-#: src/ntasker/settings.py:108
+#: src/ntasker/settings.py:130
 msgid ""
 "UI language: 'auto' (Accept-Language header, fallback English), 'en', or "
 "'de'."
@@ -1063,7 +1074,7 @@ msgstr ""
 "UI-Sprache: 'auto' (Accept-Language-Header, Fallback Englisch), 'en' oder"
 " 'de'."
 
-#: src/ntasker/settings.py:111
+#: src/ntasker/settings.py:133
 msgid ""
 "Default view on startup: 'list' (classic task list) or 'kanban' (4-column"
 " board). The frontend remembers the last user choice in localStorage; "
@@ -1073,6 +1084,20 @@ msgstr ""
 "'kanban' (4-Spalten-Board). Das Frontend merkt sich die letzte Auswahl im"
 " localStorage; diese Einstellung greift nur beim ersten Aufruf in einem "
 "frischen Browser."
+
+#: src/ntasker/settings.py:138
+msgid ""
+"Base path for project names, e.g. '~/Projekte'. Discovered Claude "
+"projects below it are named relative to it (the folder right under the "
+"base becomes the project name) instead of relative to your home "
+"directory. Unset to fall back to home-relative names. ENV: "
+"NTASKER_PROJECTS_BASE."
+msgstr ""
+"Basispfad für Projektnamen, z. B. '~/Projekte'. Darunter gefundene "
+"Claude-Projekte werden relativ dazu benannt (der Ordner direkt unterhalb "
+"der Basis wird zum Projektnamen) statt relativ zu deinem Home-Verzeichnis. "
+"Leer lassen, um auf Home-relative Namen zurückzufallen. ENV: "
+"NTASKER_PROJECTS_BASE."
 
 #~ msgid "Later"
 #~ msgstr "Später"

@@ -15,9 +15,11 @@ is recovered in two escalating steps:
    ``medux-online`` from ``medux/online`` by checking which directories
    actually exist. Best-effort fallback when no session file carries a ``cwd``.
 
-The resulting absolute path is turned into a project *name* relative to the
-user's home directory using ``/`` separators (``Projekte/medux-online``).
-Paths outside home keep their absolute (POSIX) form.
+The resulting absolute path is turned into a project *name* using ``/``
+separators, relative to the ``projects_base`` setting when set (``~/Projekte``
+-> ``medux-online``), otherwise relative to the user's home directory
+(``Projekte/medux-online``). Paths outside that base keep their absolute
+(POSIX) form.
 """
 
 from __future__ import annotations
@@ -110,27 +112,56 @@ def _decode_dir(entry: Path) -> Path | None:
     return None
 
 
-def _path_to_name(path: Path, home: Path) -> str | None:
-    """Turn an absolute path into a project name relative to ``home`` (``/``-joined).
+def _resolve_projects_base() -> Path | None:
+    """Read the ``projects_base`` setting as an absolute ``Path`` (or ``None``).
 
-    Paths outside ``home`` keep their absolute POSIX form. ``home`` itself maps
-    to ``None`` (no meaningful project name).
+    Guarded by design: a missing DB, missing key or bad value all collapse to
+    ``None`` (home-relative naming) so discovery never breaks. The ENV override
+    ``NTASKER_PROJECTS_BASE`` takes precedence over the DB row. The local import
+    keeps this module free of a DB dependency at import time.
     """
     try:
-        rel = path.relative_to(home)
-    except ValueError:
-        return path.as_posix()
-    posix = rel.as_posix()
-    if not posix or posix == ".":
+        from ntasker.settings import get_setting  # noqa: PLC0415
+
+        raw = get_setting("projects_base", env_var="NTASKER_PROJECTS_BASE")
+    except Exception:
         return None
-    return posix
+    if not raw:
+        return None
+    return Path(os.path.abspath(os.path.expanduser(raw)))
+
+
+def _path_to_name(path: Path, home: Path, base: Path | None = None) -> str | None:
+    """Turn an absolute path into a project name (``/``-joined).
+
+    Relativized against ``base`` when the path lives under it, else against
+    ``home``; paths under neither keep their absolute POSIX form. A path equal
+    to ``base`` or ``home`` maps to ``None`` (no meaningful project name).
+    """
+    for root in (base, home):
+        if root is None:
+            continue
+        try:
+            rel = path.relative_to(root)
+        except ValueError:
+            continue
+        posix = rel.as_posix()
+        if not posix or posix == ".":
+            return None
+        return posix
+    return path.as_posix()
 
 
 def discover_claude_projects(
     claude_home: str | os.PathLike | None = None,
     home: Path | None = None,
+    base: Path | None = None,
 ) -> list[str]:
     """Return sorted, unique project names discovered under ``<claude_home>/projects``.
+
+    Names are relativized against ``base`` (the ``projects_base`` setting) when
+    given, else against ``home``. When ``base`` is left ``None`` it is read from
+    the setting; pass an explicit ``Path`` to override (or ``home`` only).
 
     Resilient by design: any unreadable entry is skipped and a missing
     ``projects`` directory yields ``[]`` -- discovery must never break the
@@ -138,6 +169,8 @@ def discover_claude_projects(
     """
     if home is None:
         home = Path.home()
+    if base is None:
+        base = _resolve_projects_base()
     try:
         root = resolve_claude_home(claude_home) / "projects"
         entries = sorted(root.iterdir()) if root.is_dir() else []
@@ -152,7 +185,7 @@ def discover_claude_projects(
             path = _decode_dir(entry)
             if path is None:
                 continue
-            name = _path_to_name(path, home)
+            name = _path_to_name(path, home, base)
             if name:
                 names.add(name)
         except OSError:

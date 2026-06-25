@@ -4,6 +4,11 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [2.5.0] — 2026-06-25
+`/task` warnt bei Projekt-Mismatch (cwd nicht im Task-Projekt), fragt nach und setzt `phase=wip` erst nach Bestätigung.
+Neue Einstellung `projects_base`: entdeckte Claude-Projekte erscheinen relativ dazu (`~/Projekte/medux` → `medux`).
+Fixes: `~/.claude`-Symlink nicht mehr aufgelöst; depends-Badge nur bei Abhängigkeiten; Abstand im Dependency-Dropdown.
+
 ## [2.4.0] — 2026-06-25
 Skill/Command: Claude darf Tasks auf `status=done` setzen, wenn der User es ausdrücklich verlangt (autonom weiterhin nie).
 

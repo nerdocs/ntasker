@@ -16,11 +16,18 @@ You have been handed task #$ARGUMENTS from nTasker.
 
 > Starting the task via `/{COMMAND_NAME}` has already moved it to
 > `phase=wip` ("In Arbeit") automatically -- the loader does this on load.
-> Skipped only for archived or `status=done` tasks. You do not need to set
-> it yourself.
+> Skipped for archived / `status=done` tasks, and **when the loader printed
+> a project-mismatch warning** (see step 2) -- in that case set `phase=wip`
+> yourself only once the user confirms.
 
 1. **Read the task data above** (title, description, project, tags, phase, priority).
-2. **If a `Project` is assigned** and you know where its code lives on this machine, switch to that working directory before making changes.
+2. **Make sure you are in the right project.** If the loader printed a
+   **`WARNUNG -- Projekt-Mismatch`** banner (your current directory is not
+   the task's project), STOP: show the user the task's project and your
+   current directory, and ask whether to proceed here or switch. Do not
+   start work -- and do not set `phase=wip` -- until they confirm. If they
+   want to switch (or you otherwise know where the project's code lives),
+   `cd` into that directory first; then set `phase=wip` yourself.
 3. **On unclear requirements:** ask, do not assume.
 4. **When you believe your work is done -- hand it off to review:**
    - Post a compact status summary in chat (what changed, key files, test status).

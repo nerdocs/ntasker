@@ -11,6 +11,7 @@ need to know anything about the filesystem layout).
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -101,6 +102,68 @@ def try_autostart() -> bool:
     return proc.returncode == 0
 
 
+def resolve_projects_base() -> str | None:
+    """Resolve the ``projects_base`` setting: env override first, then the
+    running server's settings endpoint. Returns ``None`` if unset or
+    unreachable -- the mismatch check then degrades to home-relative only.
+    """
+    base = os.environ.get("NTASKER_PROJECTS_BASE")
+    if base:
+        return base
+    try:
+        url = "http://127.0.0.1:8766/api/settings/projects_base"
+        with urllib.request.urlopen(url, timeout=2) as r:
+            row = json.load(r)
+        return (row.get("value") or None) if isinstance(row, dict) else None
+    except Exception:
+        return None
+
+
+def _expected_dirs(project: str, base: str | None) -> list[str]:
+    """Candidate absolute dirs a task's project *name* could map to.
+
+    Mirrors :func:`ntasker.projects._path_to_name` in reverse: a name is
+    either an absolute path, ``<projects_base>/<name>`` or ``~/<name>``.
+    """
+    if os.path.isabs(project):
+        return [os.path.normpath(project)]
+    home = os.path.expanduser("~")
+    cands = []
+    if base:
+        cands.append(os.path.normpath(os.path.join(os.path.expanduser(base), project)))
+    cands.append(os.path.normpath(os.path.join(home, project)))
+    return cands
+
+
+def project_mismatch(project: str | None, base: str | None) -> tuple[str, str] | None:
+    """Detect that the cwd is not inside the task's project directory.
+
+    Returns ``(expected_dir, cwd)`` on a real mismatch, else ``None``.
+    Stays silent when no project is set or when the project cannot be
+    located on disk -- never cry wolf on a label-only project name.
+    """
+    if not project:
+        return None
+    cwd = os.path.normpath(os.getcwd())
+    existing = [c for c in _expected_dirs(project, base) if os.path.isdir(c)]
+    if not existing:
+        return None  # can't tell where this project lives -> stay quiet
+    for cand in existing:
+        if cwd == cand or cwd.startswith(cand + os.sep):
+            return None  # already inside the right tree
+    return (existing[0], cwd)
+
+
+def render_warning(project: str, expected: str, cwd: str) -> str:
+    """Blockquote callout prepended to the loaded card on a mismatch."""
+    return (
+        f"> WARNUNG -- Projekt-Mismatch: dieser Task ist Projekt `{project}`\n"
+        f"> zugeordnet (Verzeichnis `{expected}`), aber du arbeitest gerade in\n"
+        f"> `{cwd}`. Frage den User, ob das ok ist, **bevor** du startest --\n"
+        f"> oder wechsle ins richtige Verzeichnis.\n"
+    )
+
+
 def render(data: dict) -> str:
     lines = [
         f'## #{data["id"]} {data["title"]}',
@@ -161,18 +224,32 @@ def main(argv: list[str]) -> int:
             file=sys.stderr,
         )
         return 1
+    # Detect a project mismatch BEFORE marking the task in progress: if the
+    # current directory is not inside the task's project, the agent must ask
+    # the user first -- so defer phase=wip until they confirm.
+    mismatch = None
+    if data.get("project"):
+        mismatch = project_mismatch(data["project"], resolve_projects_base())
+
     # Starting work via /task moves the task to "in progress" (phase=wip).
-    # Best-effort: skip archived/closed tasks (don't resurrect them) and
-    # no-op if already wip; a failed write must never break the load.
+    # Best-effort: skip archived/closed tasks (don't resurrect them), skip
+    # on a project mismatch (wait for the user's OK), no-op if already wip;
+    # a failed write must never break the load.
     if (
-        not data.get("archived")
+        mismatch is None
+        and not data.get("archived")
         and data.get("status") != "done"
         and data.get("phase") != "wip"
     ):
         ok = set_wip_via_cli(tid) if via == "cli" else set_wip_via_server(tid)
         if ok:
             data["phase"] = "wip"
-    print(render(data))
+
+    out = render(data)
+    if mismatch is not None:
+        expected, cwd = mismatch
+        out = render_warning(data["project"], expected, cwd) + "\n" + out
+    print(out)
     return 0
 
 

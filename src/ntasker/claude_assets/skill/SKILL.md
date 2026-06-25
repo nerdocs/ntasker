@@ -163,7 +163,10 @@ agent's own initiative -- the trigger must come from the user.
 
 **Two autonomous writes are allowed.** First, starting a task via `/task
 <id>` moves it to `phase=wip` ("In Arbeit") automatically -- the loader
-does this on load (skipped for archived or `status=done` tasks). Second,
+does this on load (skipped for archived / `status=done` tasks, and on a
+**project mismatch**: if the cwd is not inside the task's project dir the
+loader emits a `WARNUNG -- Projekt-Mismatch` banner, defers `phase=wip`,
+and the agent must ask the user before starting). Second,
 the review-handoff (see section 6): when the user assigned `#<id>` and the
 agent has finished its part, it moves the task to `phase=review` so the
 user can validate and close it. Neither is "marking the task done" --

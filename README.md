@@ -2,6 +2,20 @@
 
 Lightweight local task tracker. Single-user, FastAPI + SQLite, Tabler.io UI.
 
+## In Claude Code
+
+ntasker doubles as Claude's task memory -- the [skill + `/task` command](#claude-code-integration)
+let Claude read and drive your tracker, no copy-paste:
+
+- **"What should I work on next?"** -- Claude grabs the open tasks for your current
+  project folder and ranks them by urgency.
+- **`/task 34`** -- pulls #34 into the session (title, description, tags), flips it to
+  *in progress*, and warns you if you're sitting in the wrong project.
+- **"Add a todo: ..."** -- Claude files it for you; drop a `#34` anywhere later and it
+  knows exactly which task you mean.
+- Finished an assigned task? Claude moves it to **Review** for you to sign off -- it
+  never closes, deletes, or archives tasks on its own.
+
 ## Stack
 
 - Backend: FastAPI + uvicorn, Python stdlib `sqlite3`

@@ -71,24 +71,27 @@ without binary catalogs. `make i18n-compile` is the safe pre-build step.
 ## Workflow for changes
 
 1. Implement the feature or fix.
-2. Ask user: **"shall I commit as v<x.y.z>?"** -- wait for explicit OK.
-3. On OK:
-   - Bump `__version__` in `src/ntasker/__init__.py`.
-   - Bump `version` in `pyproject.toml`.
-   - Prepend a one-liner to `CHANGELOG.md` under a new version section.
-4. **Always invoke git as `git -C path/to/ntasker <cmd>`** --
-   never `cd && git`. Permission rules in `.claude/settings.local.json` are
-   pinned to this exact pattern.
-5. Commit + tag sequence:
+2. Commit only when asked. A plain commit is **just** a commit: a short descriptive message and
+   **no** version/CHANGELOG bump. Do not propose a version bump -- release is the separate, opt-in
+   step below.
+3. **Always invoke git as `git -C path/to/ntasker <cmd>`** -- never `cd && git`. Permission rules in
+   `.claude/settings.local.json` are pinned to this exact pattern.
+
+### Release -- only when the user explicitly names a version
+
+Trigger: the user explicitly asks for it ("committe als v2.5.0", "bump version"). Then, and only then:
+
+1. Bump `__version__` in `src/ntasker/__init__.py`.
+2. Bump `version` in `pyproject.toml`.
+3. Prepend a one-liner to `CHANGELOG.md` under a new version section.
+4. Commit + tag sequence:
    ```
    git -C path/to/ntasker/ntasker add <files>
    git -C path/to/ntasker/ntasker commit -m "release: v<x.y.z> -- <one-liner>"
    git -C path/to/ntasker/ntasker tag -a v<x.y.z> -m "v<x.y.z>"
    ```
-6. SemVer:
-   - **PATCH** = bugfix.
-   - **MINOR** = feature, no breaking change.
-   - **MAJOR** = breaking change.
+
+SemVer: **PATCH** = bugfix, **MINOR** = feature (no breaking change), **MAJOR** = breaking change.
 
 ## Hard NOs
 

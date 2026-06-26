@@ -430,10 +430,16 @@
                 {# Filter bar: search only -- project, tag, phase filters live in the sidebar. #}
                 <div class="card mb-3">
                     <div class="card-body py-2">
-                        <div class="input-icon">
+                        <div class="input-icon search-box">
                             <span class="input-icon-addon"><i class="ti ti-search"></i></span>
                             <input type="text" class="form-control form-control-sm" x-model="filter.search"
                                    @input.debounce.300ms="loadTasks()" :placeholder="$i18n('search_placeholder')">
+                            {# Clear button: only when there is text; resets the search and reloads. #}
+                            <button type="button" class="search-clear" x-show="filter.search" x-cloak
+                                    @click="clearSearch()"
+                                    :title="$i18n('clear_search')" :aria-label="$i18n('clear_search')">
+                                <i class="ti ti-x"></i>
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -470,8 +476,12 @@
                             <div class="list-group-item">
                                 <div class="row align-items-start">
                                     <div class="col-auto">
+                                        {# Disabled while blocked: a task with open dependencies #}
+                                        {# can't be completed (mirrors the kanban drag guard). #}
                                         <input type="checkbox" class="form-check-input mt-2"
                                                :checked="task.status === 'done'"
+                                               :disabled="task.status === 'open' && isBlocked(task)"
+                                               :title="(task.status === 'open' && isBlocked(task)) ? $i18n('blocked_hint') : ''"
                                                @change="toggleStatus(task)">
                                     </div>
                                     <div class="col">
@@ -577,23 +587,11 @@
                                                       @click.stop="toggleTag(tag)">#<span x-text="tag"></span></span>
                                             </template>
 
-                                            {# Blocked badge -- shown while any dependency is not done #}
+                                            {# Blocked badge -- names the still-open dependencies that block this task. #}
                                             <template x-if="isBlocked(task)">
                                                 <span class="badge bg-red text-white" :title="$i18n('blocked_hint')">
-                                                    <i class="ti ti-lock me-1"></i><span x-text="$i18n('blocked')"></span>
-                                                </span>
-                                            </template>
-                                        </div>
-
-                                        {# Dependency list: #id with done/open marker. #}
-                                        <div class="text-muted small mt-1" x-show="task.depends && task.depends.length">
-                                            <i class="ti ti-arrow-ramp-right-2 me-1"></i><span x-text="$i18n('depends_on_label')"></span>
-                                            <template x-for="dep in task.depends" :key="dep.id">
-                                                <span class="badge ms-1"
-                                                      :class="dep.done ? 'bg-green-lt' : 'bg-cyan-lt'"
-                                                      :title="dep.title">
-                                                    #<span x-text="dep.id"></span>
-                                                    <i class="ti ms-1" :class="dep.done ? 'ti-check' : 'ti-clock'"></i>
+                                                    <i class="ti ti-lock me-1"></i><span x-text="$i18n('blocked_by')"></span>
+                                                    <span class="ms-1" x-text="blockingDeps(task).map(d => '#' + d.id).join(', ')"></span>
                                                 </span>
                                             </template>
                                         </div>
@@ -766,24 +764,11 @@
 
                                                 <template x-if="isBlocked(task)">
                                                     <span class="badge bg-red text-white" :title="$i18n('blocked_hint')">
-                                                        <i class="ti ti-lock me-1"></i><span x-text="$i18n('blocked')"></span>
+                                                        <i class="ti ti-lock me-1"></i><span x-text="$i18n('blocked_by')"></span>
+                                                        <span class="ms-1" x-text="blockingDeps(task).map(d => '#' + d.id).join(', ')"></span>
                                                     </span>
                                                 </template>
                                             </div>
-
-                                            {# Dependencies on the card: #id + done/open marker. #}
-                                            <template x-if="task.depends && task.depends.length">
-                                                <div class="d-flex flex-wrap gap-1 small mt-1">
-                                                    <template x-for="dep in task.depends" :key="dep.id">
-                                                        <span class="badge"
-                                                              :class="dep.done ? 'bg-green-lt' : 'bg-cyan-lt'"
-                                                              :title="dep.title">
-                                                            #<span x-text="dep.id"></span>
-                                                            <i class="ti ms-1" :class="dep.done ? 'ti-check' : 'ti-clock'"></i>
-                                                        </span>
-                                                    </template>
-                                                </div>
-                                            </template>
                                         </div>
                                     </template>
 

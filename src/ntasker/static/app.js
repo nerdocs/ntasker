@@ -449,7 +449,25 @@ function tracker(serverDefaultView) {
             }
         },
 
+        // A blocked task (open dependencies) must not advance to Review or Done.
+        canDropOn(task, colKey) {
+            if ((colKey === 'review' || colKey === 'done') && this.isBlocked(task)) {
+                return false;
+            }
+            return true;
+        },
+
         onColumnDragOver(event, colKey) {
+            const task = this.draggedTaskId != null
+                ? this.tasks.find(t => t.id === this.draggedTaskId)
+                : null;
+            // Reject the drop visually (no-drop cursor + no highlight) when a
+            // blocked task is dragged onto Review/Done.
+            if (task && !this.canDropOn(task, colKey)) {
+                if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
+                this.dragOverColumn = null;
+                return;
+            }
             // Required to allow the drop event to fire.
             if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
             this.dragOverColumn = colKey;
@@ -471,6 +489,13 @@ function tracker(serverDefaultView) {
             if (id == null) return;
             const task = this.tasks.find(t => t.id === id);
             if (!task) return;
+            // Safety net behind onColumnDragOver: a blocked task can't move to
+            // Review/Done. The drop event can still fire in some browsers, so
+            // re-check here and explain via a toast.
+            if (!this.canDropOn(task, colKey)) {
+                this.showToast(_i('blocked_hint'), 'danger');
+                return;
+            }
             // Compute the patch: cross-column move = phase change (and
             // status flip when crossing Done<->open columns).
             const body = {};
@@ -552,6 +577,12 @@ function tracker(serverDefaultView) {
             const params = this._buildFilterParams();
             const r = await fetch('/api/stats?' + params.toString());
             this.counts = await r.json();
+        },
+
+        // Reset the search box (clear-button in the search field) and reload.
+        clearSearch() {
+            this.filter.search = '';
+            this.loadTasks();
         },
 
         // ---- Task CRUD ----
@@ -878,9 +909,14 @@ function tracker(serverDefaultView) {
             if (this.editing) this.editing.depends.splice(idx, 1);
         },
 
+        // The still-open dependencies that block this task ([] = not blocked).
+        blockingDeps(task) {
+            return (task.depends || []).filter(d => !d.done);
+        },
+
         // A task is blocked while any dependency is not yet done.
         isBlocked(task) {
-            return (task.depends || []).some(d => !d.done);
+            return this.blockingDeps(task).length > 0;
         },
 
         // ---- ID copy + toast feedback ----

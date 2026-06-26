@@ -4,6 +4,31 @@
     display: none !important;
 }
 
+/* Search field clear button: sits at the right edge of the search input.
+ * The input gets right padding so its text never slides under the button. */
+.search-box {
+    position: relative;
+}
+.search-box .form-control {
+    padding-right: 2rem;
+}
+.search-clear {
+    position: absolute;
+    top: 50%;
+    right: 0.25rem;
+    transform: translateY(-50%);
+    border: 0;
+    background: transparent;
+    color: var(--tblr-secondary);
+    cursor: pointer;
+    padding: 0.25rem;
+    line-height: 1;
+    z-index: 5;
+}
+.search-clear:hover {
+    color: var(--tblr-body-color);
+}
+
 .list-group-item .btn-list {
     flex-wrap: nowrap;
 }

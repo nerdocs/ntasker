@@ -316,12 +316,13 @@ def build_js_strings() -> dict[str, str]:
         "remove_tag": _("Remove tag"),
         "dependency_input_placeholder": _("Type a task title or #id"),
         "remove_dependency": _("Remove dependency"),
-        "depends_on_label": _("depends on:"),
         "blocked": _("Blocked"),
         "blocked_hint": _("Blocked: a dependency is not done yet."),
+        "blocked_by": _("blocked by:"),
         "create": _("Create"),
         # Search
         "search_placeholder": _("Search in title and description..."),
+        "clear_search": _("Clear search"),
         # Tabs
         "tab_open": _("Open"),
         "tab_done": _("Done"),

@@ -60,12 +60,22 @@
             </button>
         </div>
 
+        {# Projects with no open tasks are hidden by default to cut clutter; #}
+        {# this switch (persisted) reveals them. Only shown when there is at #}
+        {# least one empty project, so it never appears as a dead control. #}
+        <label class="form-check form-switch mb-2" x-show="hasEmptyProjects" x-cloak>
+            <input class="form-check-input" type="checkbox"
+                   x-model="showEmptyProjects"
+                   @change="persistShowEmptyProjects()">
+            <span class="form-check-label small text-secondary">{{ t('Show empty projects') }}</span>
+        </label>
+
         <div class="text-muted small mb-2" x-show="projectFilter.length === 0 && tagFilter.length === 0">
             {{ t('No filter active -- all tasks visible.') }}
         </div>
 
         {# Cross-project sentinel #}
-        <template x-for="proj in projects" :key="proj.name">
+        <template x-for="proj in visibleProjects" :key="proj.name">
             <label class="form-check d-flex align-items-center w-100 mb-1"
                    :title="proj.name === '__none__' ? $i18n('tasks_without_project') : proj.name">
                 <input type="checkbox" class="form-check-input"

@@ -4,55 +4,58 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [2.6.0] — 2026-06-26
+Projects sidebar hides projects with no open tasks by default; a "Show empty projects" switch brings them back.
+
 ## [2.5.3] — 2026-06-25
-Live-Updates: Web-UI aktualisiert sich bei CLI/API-Änderungen selbst (pollt `/api/changes`, neu nur bei Änderung).
-„Neue Aufgabe" als zugeklapptes Accordion; Tags + „Hängt ab von" in einer Reihe; Fokus ins Projekt-Feld beim Öffnen.
+Live updates: the web UI refreshes itself on any CLI/API change (polls `/api/changes`, reloads only on change).
+New-task form is a collapsed accordion; Tags + "Depends on" share one row; focus jumps to the Project field on open.
 
 ## [2.5.2] — 2026-06-25
-CLI akzeptiert Task-IDs mit führendem `#` (`ntasker patch #311`); Skill/`/task`-Loader klären ID-Form für CLI vs. HTTP.
+CLI accepts task IDs with a leading `#` (`ntasker patch #311`); skill/`/task` loader clarify ID form for CLI vs. HTTP.
 
 ## [2.5.1] — 2026-06-25
-Skill: lädt bei „offene Tasks"-Fragen und schlägt die nächsten Aufgaben des aktuellen Projekts nach Dringlichkeit vor.
+Skill: loads on "open tasks" questions and suggests the current project's next tasks ranked by urgency.
 
 ## [2.5.0] — 2026-06-25
-`/task` warnt bei Projekt-Mismatch (cwd nicht im Task-Projekt), fragt nach und setzt `phase=wip` erst nach Bestätigung.
-Neue Einstellung `projects_base`: entdeckte Claude-Projekte erscheinen relativ dazu (`~/Projekte/medux` → `medux`).
-Fixes: `~/.claude`-Symlink nicht mehr aufgelöst; depends-Badge nur bei Abhängigkeiten; Abstand im Dependency-Dropdown.
+`/task` warns on a project mismatch (cwd not in the task's project), asks, and sets `phase=wip` only after confirmation.
+New setting `projects_base`: discovered Claude projects appear relative to it (`~/Projekte/medux` → `medux`).
+Fixes: `~/.claude` symlink no longer resolved; depends badge only when there are dependencies; dependency-dropdown spacing.
 
 ## [2.4.0] — 2026-06-25
-Skill/Command: Claude darf Tasks auf `status=done` setzen, wenn der User es ausdrücklich verlangt (autonom weiterhin nie).
+Skill/command: Claude may set tasks to `status=done` when the user explicitly asks (still never autonomously).
 
 ## [2.3.0] — 2026-06-23
-Task-Abhängigkeiten: `depends` (n:m, zyklenfrei) mit Autocomplete-Eingabe, Blockiert-Badge, API- und CLI-Support.
+Task dependencies: `depends` (n:m, acyclic) with autocomplete input, blocked badge, API and CLI support.
 
 ## [2.2.0] — 2026-06-22
-`/task <id>` setzt die Aufgabe beim Start automatisch auf `phase=wip` ("In Arbeit"); übersprungen bei archiviert/done.
+`/task <id>` automatically sets the task to `phase=wip` ("In Progress") on start; skipped for archived/done tasks.
 
 ## [2.1.1] — 2026-06-22
-Fix: Task per UI bei aktivem Filter wurde stumm ausgeblendet -- jetzt Erfolgs-Toast bzw. Hinweis "durch Filter ausgeblendet".
+Fix: a task created via the UI under an active filter was silently hidden -- now a success toast or a "hidden by filter" hint.
 
 ## [2.1.0] — 2026-06-15
-Projekte werden aus `~/.claude/projects` erkannt (`/`-Pfadnamen); `projects list|migrate` CLI; `/api/projects` als Union.
+Projects are discovered from `~/.claude/projects` (`/`-path names); `projects list|migrate` CLI; `/api/projects` as a union.
 
 ## [2.0.0] — 2026-05-18
-**Breaking:** Projekte sind keine Filesystem-Symlinks mehr, sondern werden aus den Tasks abgeleitet.
-- breaking: Setting `projects_dir` + ENV `NTASKER_PROJECTS_DIR` + die Filesystem-Scan-Logik in `list_projects()` ersatzlos entfernt. `validate_projects_dir`-Validator weg; `init_db()` löscht bestehende `projects_dir`-DB-Rows idempotent beim Boot, damit keine Karteileiche im Settings-UI verbleibt.
-- breaking: Response-Header `X-Settings-Missing: projects_dir` ist weg. Frontend-Banner „Bitte Projekte-Verzeichnis konfigurieren..." entfernt.
-- feat: `/api/projects` baut die Projektliste jetzt aus `SELECT DISTINCT project FROM tasks`. Projekte entstehen implizit beim Anlegen eines Tasks mit beliebigem `project`-Namen und werden automatisch entfernt, sobald der letzte Task das Projekt nicht mehr referenziert. Keine Projekt-Leichen.
-- feat: Server normalisiert `project`-Werte (trim; leerer String → NULL) bei POST und PATCH, damit kein Phantom-Eintrag in der Sidebar entsteht.
-- feat: Frontend: `<select>` für Projekte → freie Texteingabe mit `<datalist>`-Autocomplete (alle bisherigen Projektnamen). Anlegen eines neuen Projekts ist ein Side-Effect des Task-Speicherns.
-- feat: Task-Löschung direkt aus dem Edit-Modal (btn-ghost-danger im Footer, Confirm-Dialog). Backend hatte die Restriktion nie -- jetzt auch in der UI verfügbar. Der Listen-Delete-Button bleibt aus Sicherheit archived-only.
-- feat: Neuer CLI-Befehl `ntasker delete <id>` mit `--yes` für Skripte. Funktioniert unabhängig vom archived-State.
-- feat: Cache-Buster für `/static/`-Dateien jetzt `<__version__>-<mtime>` statt nur `<__version__>` -- Browser laden geänderte `app.js`/`style.css` zuverlässig neu, auch innerhalb derselben Release-Periode.
-- feat: page-wrapper auf `container-fluid` umgestellt; Inhalt nutzt jetzt die volle Browser-Breite, statt bei `container-xl` (≈1320 px) abzuschneiden.
-- feat: SKILL.md instruiert Claude, beim autonomen Task-Anlegen (auf User-Aufforderung) einen sinnvollen Projektnamen aus dem Working-Directory-Kontext zu wählen und vorhandene Namen wiederzuverwenden.
+**Breaking:** projects are no longer filesystem symlinks -- they are derived from the tasks themselves.
+- breaking: setting `projects_dir` + ENV `NTASKER_PROJECTS_DIR` + the filesystem-scan logic in `list_projects()` removed outright. `validate_projects_dir` validator gone; `init_db()` idempotently deletes existing `projects_dir` DB rows on boot so no stale entry lingers in the settings UI.
+- breaking: response header `X-Settings-Missing: projects_dir` is gone. Frontend banner "Please configure the projects directory..." removed.
+- feat: `/api/projects` now builds the project list from `SELECT DISTINCT project FROM tasks`. Projects come into being implicitly when a task is created with any `project` name and disappear automatically once the last task stops referencing them. No project leftovers.
+- feat: the server normalizes `project` values (trim; empty string → NULL) on POST and PATCH so no phantom entry appears in the sidebar.
+- feat: frontend: project `<select>` → free-text input with `<datalist>` autocomplete (all existing project names). Creating a new project is a side-effect of saving the task.
+- feat: delete a task straight from the edit modal (btn-ghost-danger in the footer, confirm dialog). The backend never had the restriction -- now available in the UI too. The list delete button stays archived-only for safety.
+- feat: new CLI command `ntasker delete <id>` with `--yes` for scripts. Works regardless of archived state.
+- feat: cache-buster for `/static/` files is now `<__version__>-<mtime>` instead of just `<__version__>` -- browsers reliably reload changed `app.js`/`style.css`, even within the same release window.
+- feat: page wrapper switched to `container-fluid`; content now uses the full browser width instead of being cut off at `container-xl` (≈1320 px).
+- feat: SKILL.md instructs Claude to pick a sensible project name from the working-directory context when creating tasks (on user request) and to reuse existing names.
 
 ## [1.5.0] — 2026-05-18
-- feat: Kanban-View neben der klassischen Aufgabenliste. View-Toggle im Page-Header (Aufgabenliste / Kanban). 4 Spalten Geplant -> In Arbeit -> Zu prüfen + kollabierbare Erledigt-Spalte (HTML5-Drag&Drop, PATCH bei Drop). Klick auf Card-Titel toggelt die Beschreibung (analog zur Liste).
-- feat: neues Setting `default_view` (`list` | `kanban`, Default `list`; ENV `NTASKER_DEFAULT_VIEW`) bestimmt die Start-Ansicht bei einem frischen Browser; `localStorage` überlebt danach die User-Wahl.
-- feat: Phase-Vokabular neu definiert -- `planned` -> `wip` -> `review`. `later` und NULL werden idempotent in `init_db()` zu `planned` migriert; `phase` ist jetzt `NOT NULL DEFAULT 'planned'`. API akzeptiert weiterhin `phase=null` (coerce zu `planned`) für Pre-1.5-Clients.
-- feat: SKILL.md + `/task <id>` umgestellt auf Review-Handoff -- bei Fertigstellung eines zugewiesenen Tasks setzt Claude jetzt automatisch `phase=review`. Status=done und Archivierung bleiben User-only. Voll out-of-the-box: `ntasker install-claude-assets` deployt die neue Skill-Version.
-- docs: `docs/kanban.md` -- Phasen-Mapping, DnD-Semantik, default_view Resolution-Order, Migrationshinweise.
+- feat: kanban view alongside the classic task list. View toggle in the page header (Task list / Kanban). 4 columns Planned -> In Progress -> Review + a collapsible Done column (HTML5 drag & drop, PATCH on drop). Clicking a card title toggles the description (as in the list).
+- feat: new setting `default_view` (`list` | `kanban`, default `list`; ENV `NTASKER_DEFAULT_VIEW`) sets the initial view on a fresh browser; `localStorage` keeps the user's choice afterwards.
+- feat: phase vocabulary redefined -- `planned` -> `wip` -> `review`. `later` and NULL are idempotently migrated to `planned` in `init_db()`; `phase` is now `NOT NULL DEFAULT 'planned'`. The API still accepts `phase=null` (coerced to `planned`) for pre-1.5 clients.
+- feat: SKILL.md + `/task <id>` switched to a review handoff -- on finishing an assigned task Claude now sets `phase=review` automatically. Status=done and archiving stay user-only. Fully out-of-the-box: `ntasker install-claude-assets` deploys the new skill version.
+- docs: `docs/kanban.md` -- phase mapping, DnD semantics, default_view resolution order, migration notes.
 
 ## [1.4.1] — 2026-05-18
 - feat: `/task` loader auto-starts the server via `ntasker serve --detach` when the API call fails; web UI becomes available as a side-effect. SKILL.md documents the same pre-probe pattern for direct curl calls.
@@ -96,7 +99,7 @@ Projekte werden aus `~/.claude/projects` erkannt (`/`-Pfadnamen); `projects list
 - Changed: src-Layout (PyPA standard).
 
 ## [0.4.0] — 2026-05-01
-- Neues Feld `priority` (low/normal/high/critical) mit Sidebar-Filter und Badge.
+- New field `priority` (low/normal/high/critical) with sidebar filter and badge.
 
 ## [0.3.4] — 2026-05-01
 - Version badge moved from page-title to navbar-brand (top bar, next to "nerdocs Tracker").

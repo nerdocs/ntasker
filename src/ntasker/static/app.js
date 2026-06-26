@@ -15,6 +15,7 @@ const LS_KEY_THEME = 'ntasker.theme';
 // (`default_view` setting) only kicks in on a fresh browser.
 const LS_KEY_VIEW_MODE = 'ntasker.viewMode';
 const LS_KEY_KANBAN_DONE_COLLAPSED = 'ntasker.kanbanDoneCollapsed';
+const LS_KEY_SHOW_EMPTY_PROJECTS = 'ntasker.showEmptyProjects';
 
 // Legacy keys used pre-1.0. Migrated to the ntasker.* namespace once.
 const LEGACY_KEYS = {
@@ -94,6 +95,9 @@ function tracker(serverDefaultView) {
         // New-task form accordion: collapsed by default so more of the task
         // list stays visible; the card header toggles it (toggleNewTaskForm).
         formOpen: false,
+        // Sidebar: hide projects with 0 open tasks by default; this switch
+        // (persisted) flips them back into view.
+        showEmptyProjects: localStorage.getItem(LS_KEY_SHOW_EMPTY_PROJECTS) === '1',
         // Drag&drop state. ``draggedTaskId`` is captured on dragstart so the
         // drop handler can identify the moving task without parsing dataTransfer
         // (Firefox is picky about reading text/plain mid-drag). ``dragOverColumn``
@@ -167,6 +171,23 @@ function tracker(serverDefaultView) {
                 .map(p => p.name);
         },
 
+        // Projects shown in the sidebar. By default rows with no open tasks are
+        // hidden to cut clutter; the "show empty projects" switch reveals them.
+        // A project currently in the filter stays visible even when empty, so
+        // the user can always un-check it.
+        get visibleProjects() {
+            if (this.showEmptyProjects) return this.projects;
+            return this.projects.filter(p =>
+                p.open_count > 0 || this.projectFilter.includes(p.name)
+            );
+        },
+
+        // True when at least one project has no open tasks -- gates the switch
+        // so it only appears when it would actually do something.
+        get hasEmptyProjects() {
+            return this.projects.some(p => p.open_count === 0);
+        },
+
         // ---- Theme ----
         applyTheme() {
             document.documentElement.setAttribute('data-bs-theme', this.theme);
@@ -193,6 +214,10 @@ function tracker(serverDefaultView) {
 
         persistProjectFilter() {
             localStorage.setItem(LS_KEY_PROJECT_FILTER, JSON.stringify(this.projectFilter));
+        },
+
+        persistShowEmptyProjects() {
+            localStorage.setItem(LS_KEY_SHOW_EMPTY_PROJECTS, this.showEmptyProjects ? '1' : '0');
         },
 
         pruneStaleProjectFilter() {

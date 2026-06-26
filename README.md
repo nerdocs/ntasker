@@ -16,6 +16,8 @@ let Claude read and drive your tracker, no copy-paste:
 - Finished an assigned task? Claude moves it to **Review** for you to sign off -- it
   never closes, deletes, or archives tasks on its own.
 
+![ntasker kanban board with the projects sidebar](docs/screenshot.png)
+
 ## Stack
 
 - Backend: FastAPI + uvicorn, Python stdlib `sqlite3`

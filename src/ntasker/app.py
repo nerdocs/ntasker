@@ -15,7 +15,7 @@ from datetime import datetime
 from importlib.resources import files
 from typing import Literal
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request, WebSocket
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -28,6 +28,12 @@ from ntasker.assets import (
     get_sri,
 )
 from ntasker.claude_assets import resolve_claude_home, scan_status
+from ntasker.claude_runner import (
+    default_cwd_for_project,
+    default_prompt_for_task,
+    run_session,
+    runner_available,
+)
 from ntasker.projects import discover_claude_projects
 from ntasker import db as _db_module
 from ntasker.db import (
@@ -401,6 +407,45 @@ def build_js_strings() -> dict[str, str]:
         "no_settings_hint_prefix": _(
             "Configure a known key above, or set one via CLI:"
         ),
+        # Claude run -- "Run with Claude" feature
+        "claude_run": _("Run with Claude"),
+        "claude_run_title": _("Run task with Claude"),
+        "claude_unavailable": _("Claude integration unavailable"),
+        "claude_prompt_label": _("Prompt"),
+        "claude_cwd_label": _("Working directory"),
+        "claude_cwd_placeholder": _("Absolute path (leave empty for none)"),
+        "claude_permission_mode": _("Permissions"),
+        "claude_mode_default": _("Only allowed tools (others denied)"),
+        "claude_mode_acceptEdits": _("Auto-approve file edits"),
+        "claude_mode_plan": _("Plan only (read-only)"),
+        "claude_mode_bypassPermissions": _("Allow everything"),
+        "claude_bypass_warning": _(
+            "Claude may run any tool -- including shell commands -- without asking."
+        ),
+        "claude_allowed_tools_label": _("Allowed tools"),
+        "claude_denied_tools_label": _("Denied tools"),
+        "claude_tools_placeholder": _("comma-separated, e.g. Read, Edit, Bash"),
+        "claude_tools_hint": _(
+            "Tool names to allow or deny for this run. Leave empty to rely on the "
+            "permission mode alone."
+        ),
+        "claude_start": _("Start"),
+        "claude_stop": _("Stop"),
+        "claude_running": _("Running..."),
+        "claude_connecting": _("Connecting..."),
+        "claude_mode_label": _("Mode"),
+        "claude_thinking": _("Thinking"),
+        "claude_tool_use": _("Tool"),
+        "claude_tool_result": _("Result"),
+        "claude_error": _("Error"),
+        "claude_run_finished": _("Run finished"),
+        "claude_status_completed": _("completed"),
+        "claude_status_error": _("error"),
+        "claude_status_stopped": _("stopped"),
+        "claude_status_disconnected": _("connection closed"),
+        "claude_security_note": _(
+            "Runs execute locally with your full user permissions."
+        ),
     }
 
 # Mount the user-data vendor cache at ``/static/vendor`` *before* the
@@ -606,6 +651,57 @@ def api_claude_assets_status() -> JSONResponse:
         "files": [f.to_dict() for f in status.files],
     }
     return JSONResponse(body)
+
+
+# ---------------------------------------------------------------------------
+# Routes -- API + WebSocket: Claude Code runs
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/claude/status")
+def api_claude_status() -> JSONResponse:
+    """Whether a Claude run can be launched (SDK + ``claude`` CLI present)."""
+    available, reason = runner_available()
+    return JSONResponse({"available": available, "reason": reason})
+
+
+@app.get("/api/tasks/{task_id}/claude-run/defaults")
+def api_claude_run_defaults(task_id: int) -> JSONResponse:
+    """Pre-fill values for the run dialog: a starter prompt + a guessed cwd."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail=_("Task not found"))
+    task = dict(row)
+    return JSONResponse(
+        {
+            "prompt": default_prompt_for_task(task),
+            "cwd": default_cwd_for_project(task["project"]) or "",
+        }
+    )
+
+
+@app.websocket("/ws/claude/{task_id}")
+async def ws_claude_run(websocket: WebSocket, task_id: int) -> None:
+    """Bidirectional channel driving one Claude run for ``task_id``.
+
+    Bound to 127.0.0.1 like the rest of ntasker; there is no auth layer, so the
+    run inherits the local user's full filesystem reach -- the permission policy
+    negotiated over this socket is the only gate. See :mod:`ntasker.claude_runner`.
+    """
+    await websocket.accept()
+    available, reason = runner_available()
+    if not available:
+        await websocket.send_json({"type": "error", "error": reason})
+        await websocket.close()
+        return
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+    if row is None:
+        await websocket.send_json({"type": "error", "error": "task not found"})
+        await websocket.close()
+        return
+    await run_session(websocket, dict(row))
 
 
 # ---------------------------------------------------------------------------

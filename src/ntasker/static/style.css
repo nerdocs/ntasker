@@ -140,3 +140,62 @@
 .kanban-card.kanban-card-dragging {
     opacity: 0.4;
 }
+
+/* ---------------- Claude run ----------------
+ * Live event stream rendered inside the run modal. Scrollable, terminal-ish.
+ */
+.claude-stream {
+    max-height: 45vh;
+    overflow-y: auto;
+    border: 1px solid var(--tblr-border-color);
+    border-radius: var(--tblr-border-radius);
+    background-color: var(--tblr-bg-surface-secondary, var(--tblr-bg-surface));
+    padding: 0.5rem;
+}
+.claude-item {
+    padding: 0.25rem 0.375rem;
+    border-radius: var(--tblr-border-radius);
+}
+.claude-item + .claude-item {
+    margin-top: 0.25rem;
+}
+.claude-item-head {
+    font-size: 0.8125rem;
+    color: var(--tblr-secondary);
+}
+.claude-item-text {
+    margin: 0.125rem 0 0;
+    padding: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 0.8125rem;
+    background: transparent;
+    border: 0;
+    color: var(--tblr-body-color);
+}
+.claude-item-thinking .claude-item-text {
+    color: var(--tblr-secondary);
+    font-style: italic;
+}
+.claude-item-tool_use,
+.claude-item-tool_result {
+    background-color: var(--tblr-bg-surface);
+    border: 1px solid var(--tblr-border-color);
+}
+.claude-item-error .claude-item-text {
+    color: var(--tblr-danger);
+}
+
+/* "Run with Claude" button -- Claude terracotta-orange, light foreground. */
+.btn-claude,
+.btn-claude:focus {
+    background-color: #d97757;
+    border-color: #d97757;
+    color: #fff;
+}
+.btn-claude:hover,
+.btn-claude:active {
+    background-color: #c25e3f;
+    border-color: #c25e3f;
+    color: #fff;
+}

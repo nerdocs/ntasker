@@ -21,6 +21,14 @@ dependencies = [
     "httpx>=0.28",
 ]
 
+[project.optional-dependencies]
+# Web-UI "Run with Claude" feature. Optional: without it the button reports
+# the feature as unavailable and the rest of ntasker is unaffected. The SDK
+# also needs the `claude` CLI on PATH at runtime (not a pip dependency).
+claude = [
+    "claude-agent-sdk>=0.2",
+]
+
 [project.scripts]
 ntasker = "ntasker.cli:main"
 

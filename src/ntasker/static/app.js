@@ -106,6 +106,14 @@ function tracker(serverDefaultView) {
         dragOverColumn: null,
         theme: localStorage.getItem(LS_KEY_THEME) || 'light',
 
+        // ---- Claude run ("Run with Claude") ----
+        // claudeAvailable gates the per-task run button; set from
+        // GET /api/claude/status on init. claudeRun is null until a run
+        // dialog is open, then an object (see openClaudeRun for its shape).
+        claudeAvailable: false,
+        claudeReason: null,
+        claudeRun: null,
+
         // Multi-value project filter. Empty list = no filter (all tasks).
         // Special value '__none__' = include cross-project tasks (project IS NULL).
         projectFilter: [],
@@ -156,6 +164,7 @@ function tracker(serverDefaultView) {
                 this.loadTags(),
                 this.loadPhases(),
                 this.loadPriorities(),
+                this.loadClaudeStatus(),
             ]);
             // After loading projects/tags, drop stale entries silently.
             this.pruneStaleProjectFilter();
@@ -1053,6 +1062,214 @@ function tracker(serverDefaultView) {
             // Tag-list may have shrunk -> refresh sidebar feed and prune stale filter.
             await this.loadTags();
             this.pruneStaleTagFilter();
+        },
+
+        // ---- Claude run ("Run with Claude") ----
+
+        // Probe feature availability (SDK + `claude` CLI). Failures are
+        // non-fatal: the run button just stays hidden.
+        async loadClaudeStatus() {
+            try {
+                const r = await fetch('/api/claude/status');
+                if (!r.ok) return;
+                const data = await r.json();
+                this.claudeAvailable = !!data.available;
+                this.claudeReason = data.reason || null;
+            } catch (_e) {
+                this.claudeAvailable = false;
+            }
+        },
+
+        // Open the run dialog for a task: fetch a starter prompt + guessed
+        // cwd, then drop into the 'config' phase so the user can tweak both
+        // and pick a permission mode before launching.
+        async openClaudeRun(task) {
+            let prompt = '';
+            let cwd = '';
+            try {
+                const r = await fetch(`/api/tasks/${task.id}/claude-run/defaults`);
+                if (r.ok) {
+                    const d = await r.json();
+                    prompt = d.prompt || '';
+                    cwd = d.cwd || '';
+                }
+            } catch (_e) { /* fall back to empty defaults */ }
+            this.claudeRun = {
+                taskId: task.id,
+                prompt: prompt,
+                cwd: cwd,
+                permissionMode: 'default',
+                allowedTools: '',       // comma-separated tool whitelist (config phase)
+                deniedTools: '',        // comma-separated tool blacklist (config phase)
+                phase: 'config',        // 'config' | 'running' | 'done'
+                status: null,           // 'connecting' | 'completed' | 'error' | 'stopped' | ...
+                items: [],              // rendered event stream
+                ws: null,
+            };
+        },
+
+        // Close the dialog and tear down the socket. Safe to call any time.
+        closeClaudeRun() {
+            if (this.claudeRun && this.claudeRun.ws) {
+                try { this.claudeRun.ws.close(); } catch (_e) { /* already closing */ }
+            }
+            this.claudeRun = null;
+        },
+
+        // Open the WebSocket and send the start frame.
+        startClaudeRun() {
+            const run = this.claudeRun;
+            if (!run) return;
+            run.phase = 'running';
+            run.status = 'connecting';
+            const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+            const ws = new WebSocket(`${proto}://${location.host}/ws/claude/${run.taskId}`);
+            run.ws = ws;
+            const splitTools = (s) => (s || '').split(',').map(t => t.trim()).filter(Boolean);
+            ws.onopen = () => {
+                ws.send(JSON.stringify({
+                    type: 'start',
+                    prompt: run.prompt,
+                    cwd: run.cwd,
+                    permission_mode: run.permissionMode,
+                    allowed_tools: splitTools(run.allowedTools),
+                    disallowed_tools: splitTools(run.deniedTools),
+                }));
+            };
+            ws.onmessage = (ev) => this._onClaudeMessage(JSON.parse(ev.data));
+            ws.onerror = () => { run.status = 'error'; };
+            ws.onclose = () => {
+                if (run.phase === 'running') {
+                    run.phase = 'done';
+                    if (run.status === 'connecting' || run.status === null) run.status = 'disconnected';
+                }
+            };
+        },
+
+        // Dispatch one server frame.
+        _onClaudeMessage(msg) {
+            const run = this.claudeRun;
+            if (!run) return;
+            switch (msg.type) {
+                case 'started':
+                    run.status = 'running';
+                    break;
+                case 'event':
+                    this._pushClaudeItems(msg.data);
+                    break;
+                case 'done':
+                    run.phase = 'done';
+                    run.status = msg.status || 'completed';
+                    if (msg.error) this._pushClaudeItem({ type: 'error', text: msg.error });
+                    break;
+                case 'error':
+                    run.phase = 'done';
+                    run.status = 'error';
+                    this._pushClaudeItem({ type: 'error', text: msg.error || '' });
+                    break;
+            }
+        },
+
+        // Ask the server to stop the run.
+        stopClaudeRun() {
+            const run = this.claudeRun;
+            if (run && run.ws) run.ws.send(JSON.stringify({ type: 'stop' }));
+        },
+
+        // ---- Claude run: rendering helpers ----
+
+        // Flatten one serialized SDK message into renderable stream items.
+        _pushClaudeItems(data) {
+            if (!data) return;
+            const kind = data.kind;
+            if (kind === 'assistant' || kind === 'user') {
+                for (const b of (data.blocks || [])) this._pushClaudeBlock(b);
+            } else if (kind === 'system') {
+                // Skip noisy init/system frames; surface only on error subtypes.
+                if (data.subtype && data.subtype !== 'init') {
+                    this._pushClaudeItem({ type: 'system', text: data.subtype });
+                }
+            } else if (kind === 'result') {
+                const txt = (data.result || '').toString().trim();
+                this._pushClaudeItem({ type: data.is_error ? 'error' : 'result', text: txt });
+            }
+        },
+
+        _pushClaudeBlock(b) {
+            if (!b) return;
+            if (b.type === 'text') {
+                const t = (b.text || '').trim();
+                if (t) this._pushClaudeItem({ type: 'text', text: t });
+            } else if (b.type === 'thinking') {
+                const t = (b.text || '').trim();
+                if (t) this._pushClaudeItem({ type: 'thinking', text: t });
+            } else if (b.type === 'tool_use') {
+                this._pushClaudeItem({
+                    type: 'tool_use',
+                    name: b.name,
+                    text: this._claudeJson(b.input),
+                });
+            } else if (b.type === 'tool_result') {
+                const t = (typeof b.content === 'string') ? b.content : this._claudeJson(b.content);
+                this._pushClaudeItem({ type: 'tool_result', text: (t || '').toString(), is_error: b.is_error });
+            }
+        },
+
+        _pushClaudeItem(item) {
+            if (!this.claudeRun) return;
+            this.claudeRun.items.push(item);
+            // Autoscroll to the newest item after Alpine renders it.
+            this.$nextTick(() => {
+                const el = this.$refs.claudeStream;
+                if (el) el.scrollTop = el.scrollHeight;
+            });
+        },
+
+        _claudeJson(value) {
+            if (value === null || value === undefined) return '';
+            try { return JSON.stringify(value, null, 2); }
+            catch (_e) { return String(value); }
+        },
+
+        claudeItemIcon(type) {
+            const map = {
+                text: 'ti-message',
+                thinking: 'ti-bulb',
+                tool_use: 'ti-tool',
+                tool_result: 'ti-arrow-back-up',
+                result: 'ti-circle-check',
+                system: 'ti-info-circle',
+                error: 'ti-alert-triangle',
+            };
+            return map[type] || 'ti-point';
+        },
+
+        claudeItemLabel(item) {
+            if (item.type === 'tool_use') return `${_i('claude_tool_use')}: ${item.name}`;
+            if (item.type === 'tool_result') return _i('claude_tool_result');
+            if (item.type === 'thinking') return _i('claude_thinking');
+            if (item.type === 'error') return _i('claude_error') || 'Error';
+            return '';
+        },
+
+        claudeStatusLabel(status) {
+            const keys = {
+                completed: 'claude_status_completed',
+                error: 'claude_status_error',
+                stopped: 'claude_status_stopped',
+                disconnected: 'claude_status_disconnected',
+            };
+            return keys[status] ? _i(keys[status]) : (status || '');
+        },
+
+        claudeModeLabel(mode) {
+            const keys = {
+                plan: 'claude_mode_plan',
+                default: 'claude_mode_default',
+                acceptEdits: 'claude_mode_acceptEdits',
+                bypassPermissions: 'claude_mode_bypassPermissions',
+            };
+            return keys[mode] ? _i(keys[mode]) : (mode || '');
         },
     };
 }

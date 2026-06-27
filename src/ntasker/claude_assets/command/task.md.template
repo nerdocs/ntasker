@@ -26,8 +26,9 @@ You have been handed task #$ARGUMENTS from nTasker.
    the task's project), STOP: show the user the task's project and your
    current directory, and ask whether to proceed here or switch. Do not
    start work -- and do not set `phase=wip` -- until they confirm. If they
-   want to switch (or you otherwise know where the project's code lives),
-   `cd` into that directory first; then set `phase=wip` yourself.
+   want to switch, offer them the exact `/cd <dir>` line to type -- you
+   cannot move the session's working directory yourself, only the user can,
+   via `/cd`. Once they have switched, set `phase=wip` yourself.
 3. **On unclear requirements:** ask, do not assume.
 4. **When you believe your work is done -- hand it off to review:**
    - Post a compact status summary in chat (what changed, key files, test status).

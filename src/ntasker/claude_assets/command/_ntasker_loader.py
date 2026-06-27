@@ -155,12 +155,19 @@ def project_mismatch(project: str | None, base: str | None) -> tuple[str, str] |
 
 
 def render_warning(project: str, expected: str, cwd: str) -> str:
-    """Blockquote callout prepended to the loaded card on a mismatch."""
+    """Blockquote callout prepended to the loaded card on a mismatch.
+
+    Offers the concrete ``/cd`` command so the agent can suggest the exact
+    line for the user to type -- the session's working directory can only
+    be moved by the user via ``/cd``, not by a Bash ``cd`` from the agent.
+    """
     return (
         f"> WARNUNG -- Projekt-Mismatch: dieser Task ist Projekt `{project}`\n"
         f"> zugeordnet (Verzeichnis `{expected}`), aber du arbeitest gerade in\n"
         f"> `{cwd}`. Frage den User, ob das ok ist, **bevor** du startest --\n"
-        f"> oder wechsle ins richtige Verzeichnis.\n"
+        f"> oder biete an, ins richtige Verzeichnis zu wechseln: schlage ihm\n"
+        f"> vor, `/cd {expected}` einzugeben, damit die Session dort\n"
+        f"> weiterläuft.\n"
     )
 
 

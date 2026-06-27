@@ -14,8 +14,11 @@ install:
 init:
 	uv run ntasker init
 
+# No --reload: a worker restart wipes the in-memory Claude PTY session
+# registry (the master fd can't be re-adopted), silently killing any live
+# session. Restart by hand (Ctrl-C + make run) when you change server code.
 run:
-	uv run ntasker serve --reload
+	uv run ntasker serve
 
 smoke:
 	uv run python smoke_test.py

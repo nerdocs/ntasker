@@ -113,6 +113,10 @@ function tracker(serverDefaultView) {
         // Multi-value tag filter (OR-combined). Empty list = no filter.
         tagFilter: [],
 
+        // Type-ahead query that narrows the sidebar tag list (display only --
+        // it does not change which tasks are shown).
+        tagSearch: '',
+
         // Multi-value phase filter (OR-combined). Empty list = no filter.
         // Special value '__none__' = include tasks with phase IS NULL.
         phaseFilter: [],
@@ -186,6 +190,14 @@ function tracker(serverDefaultView) {
         // so it only appears when it would actually do something.
         get hasEmptyProjects() {
             return this.projects.some(p => p.open_count === 0);
+        },
+
+        // Sidebar tag list: narrowed by the type-ahead query and sorted
+        // alphabetically (the API's open-count order is overridden here).
+        get visibleTags() {
+            const q = this.tagSearch.trim().toLowerCase();
+            const list = q ? this.tags.filter(t => t.name.includes(q)) : this.tags;
+            return [...list].sort((a, b) => a.name.localeCompare(b.name));
         },
 
         // ---- Theme ----

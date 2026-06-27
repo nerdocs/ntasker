@@ -201,7 +201,19 @@
                     </div>
                 </div>
 
-                <template x-for="t in tags" :key="t.name">
+                {# Type-ahead filter over the tag list (display-only; does not filter tasks). #}
+                <div class="input-icon search-box mb-2" x-show="tags.length > 0" x-cloak>
+                    <span class="input-icon-addon"><i class="ti ti-search"></i></span>
+                    <input type="text" class="form-control form-control-sm" x-model="tagSearch"
+                           placeholder="{{ t('Filter tags...') }}">
+                    <button type="button" class="search-clear" x-show="tagSearch" x-cloak
+                            @click="tagSearch = ''"
+                            title="{{ t('Clear search') }}" aria-label="{{ t('Clear search') }}">
+                        <i class="ti ti-x"></i>
+                    </button>
+                </div>
+
+                <template x-for="t in visibleTags" :key="t.name">
                     <label class="form-check d-flex align-items-center w-100 mb-1" :title="t.name">
                         <input type="checkbox" class="form-check-input"
                                :checked="tagFilter.includes(t.name)"

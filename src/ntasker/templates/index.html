@@ -605,7 +605,7 @@
 
                                             {# Blocked badge -- names the still-open dependencies that block this task. #}
                                             <template x-if="isBlocked(task)">
-                                                <span class="badge bg-red text-white" :title="$i18n('blocked_hint')">
+                                                <span class="badge bg-danger-lt" :title="$i18n('blocked_hint')">
                                                     <i class="ti ti-lock me-1"></i><span x-text="$i18n('blocked_by')"></span>
                                                     <span class="ms-1" x-text="blockingDeps(task).map(d => '#' + d.id).join(', ')"></span>
                                                 </span>
@@ -800,7 +800,7 @@
                                                 </template>
 
                                                 <template x-if="isBlocked(task)">
-                                                    <span class="badge bg-red text-white" :title="$i18n('blocked_hint')">
+                                                    <span class="badge bg-danger-lt" :title="$i18n('blocked_hint')">
                                                         <i class="ti ti-lock me-1"></i><span x-text="$i18n('blocked_by')"></span>
                                                         <span class="ms-1" x-text="blockingDeps(task).map(d => '#' + d.id).join(', ')"></span>
                                                     </span>

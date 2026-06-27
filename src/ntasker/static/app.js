@@ -810,7 +810,16 @@ function tracker(serverDefaultView) {
         startChangePolling() {
             this._changeToken = null;
             this._pollChanges();   // establish the baseline immediately
-            this._changeTimer = setInterval(() => this._pollChanges(), 1500);
+            this._changeTimer = setInterval(() => {
+                this._pollChanges();
+                // Busy indicators must self-heal. A worker restart (e.g.
+                // `serve --reload`, a crash) wipes the in-memory session
+                // registry without touching the DB, so the change token never
+                // bumps -- _pollChanges alone would never notice. Re-poll the
+                // live-session set on its own cadence so a spinner for a
+                // vanished session clears within ~1.5s instead of forever.
+                if (this.claudeAvailable) this.loadClaudeSessions();
+            }, 1500);
         },
 
         async _pollChanges() {

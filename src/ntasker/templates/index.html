@@ -638,7 +638,7 @@
                                                         :class="{'btn-claude-waiting': taskRunPhase(task.id) === 'waiting'}"
                                                         :aria-label="taskRunPhase(task.id) === 'waiting' ? $i18n('claude_waiting') : $i18n('claude_run')"
                                                         :title="taskRunPhase(task.id) === 'waiting' ? $i18n('claude_waiting') : $i18n('claude_run')">
-                                                    <template x-if="taskRunPhase(task.id) === 'waiting'"><i class="ti ti-help fs-3"></i></template><template x-if="taskRunPhase(task.id) === 'running'"><span class="spinner-border spinner-border-sm"></span></template><template x-if="!taskRunPhase(task.id)"><i class="ti ti-robot fs-3"></i></template>
+                                                    <template x-if="taskRunPhase(task.id) === 'waiting'"><i class="ti ti-help fs-3"></i></template><template x-if="taskRunPhase(task.id) === 'running'"><span class="spinner-border spinner-border-sm"></span></template><template x-if="!taskRunPhase(task.id)"><img src="/static/claude.webp?v={{ static_bust('claude.webp') }}" class="claude-logo-icon" alt=""></template>
                                                 </button>
                                             </template>
                                             <button class="btn btn-sm btn-ghost-secondary" @click="startEdit(task)"
@@ -751,7 +751,7 @@
                                                             :class="{'btn-claude-waiting': taskRunPhase(task.id) === 'waiting'}"
                                                             :aria-label="taskRunPhase(task.id) === 'waiting' ? $i18n('claude_waiting') : $i18n('claude_run')"
                                                             :title="taskRunPhase(task.id) === 'waiting' ? $i18n('claude_waiting') : $i18n('claude_run')">
-                                                        <template x-if="taskRunPhase(task.id) === 'waiting'"><i class="ti ti-help fs-3"></i></template><template x-if="taskRunPhase(task.id) === 'running'"><span class="spinner-border spinner-border-sm"></span></template><template x-if="!taskRunPhase(task.id)"><i class="ti ti-robot fs-3"></i></template>
+                                                        <template x-if="taskRunPhase(task.id) === 'waiting'"><i class="ti ti-help fs-3"></i></template><template x-if="taskRunPhase(task.id) === 'running'"><span class="spinner-border spinner-border-sm"></span></template><template x-if="!taskRunPhase(task.id)"><img src="/static/claude.webp?v={{ static_bust('claude.webp') }}" class="claude-logo-icon" alt=""></template>
                                                     </button>
                                                 </template>
                                                 <button class="btn btn-sm btn-ghost-secondary px-1 py-0"

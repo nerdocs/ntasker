@@ -165,18 +165,45 @@
     height: 100% !important;
 }
 
-/* "Run with Claude" button -- Claude terracotta-orange, light foreground. */
+/* "Run with Claude" button -- ghost (bare): the Claude logo tile it carries is
+ * already terracotta/white, so the button itself stays transparent. The orange
+ * foreground tints the running spinner Claude-coloured. */
 .btn-claude,
 .btn-claude:focus {
-    background-color: #d97757;
-    border-color: #d97757;
-    color: #fff;
+    background-color: transparent;
+    border-color: transparent;
+    color: #d97757;
+    /* Constant footprint so the icon column never shifts when the state
+     * switches between logo / spinner / question mark (each a different
+     * intrinsic width). flex: 0 0 auto stops the card-header flex row from
+     * shrinking the button below its width. Center whichever icon shows. */
+    flex: 0 0 auto;
+    width: 2rem;
+    padding-left: 0;
+    padding-right: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 .btn-claude:hover,
 .btn-claude:active {
-    background-color: #c25e3f;
-    border-color: #c25e3f;
-    color: #fff;
+    background-color: rgba(217, 119, 87, 0.12);
+    border-color: transparent;
+    color: #c25e3f;
+}
+/* Normalize the running spinner to the logo's box so the width stays constant. */
+.btn-claude .spinner-border {
+    width: 1.25rem;
+    height: 1.25rem;
+}
+/* The Claude logomark, sized to sit like the other row icons. The source webp
+ * is a square white burst on a terracotta tile; the radius rounds the tile. */
+.claude-logo-icon {
+    height: 1.25rem;
+    width: 1.25rem;
+    border-radius: 4px;
+    display: block;
+    object-fit: cover;
 }
 /* Claude is blocked on a prompt: the run button turns amber and pulses so the
  * waiting task is easy to spot among the others. */

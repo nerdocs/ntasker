@@ -130,12 +130,36 @@ def validate_claude_idle_seconds(value: str) -> str:
     return norm
 
 
+# Boolean-setting spellings. Truthy values arm a flag; everything else clears it.
+_TRUE_STRINGS = frozenset({"1", "true", "yes", "on"})
+_FALSE_STRINGS = frozenset({"0", "false", "no", "off", ""})
+
+
+def validate_claude_auto_mode(value: str) -> str:
+    """Validator for the ``claude_auto_mode`` boolean setting.
+
+    Normalizes truthy/falsy spellings to ``"true"`` / ``"false"``. When enabled,
+    interactive Claude sessions launch with permission prompts skipped (see
+    :func:`ntasker.claude_runner._auto_mode_enabled`). Rejects anything else so a
+    typo can neither silently arm nor silently fail to arm this powerful flag.
+    """
+    norm = (value or "").strip().lower()
+    if norm in _TRUE_STRINGS:
+        return "true"
+    if norm in _FALSE_STRINGS:
+        return "false"
+    raise ValueError(
+        _("claude_auto_mode must be a yes/no value (got {value!r}).").format(value=value)
+    )
+
+
 VALIDATORS: dict[str, Validator] = {
     "assets_mode": validate_assets_mode,
     "language": validate_language,
     "default_view": validate_default_view,
     "projects_base": validate_projects_base,
     "claude_idle_seconds": validate_claude_idle_seconds,
+    "claude_auto_mode": validate_claude_auto_mode,
 }
 """Registry of known settings keys with their validators.
 
@@ -168,6 +192,12 @@ HINTS: dict[str, object] = {
         "the base becomes the project name) instead of relative to your home "
         "directory. Unset to fall back to home-relative names. "
         "ENV: NTASKER_PROJECTS_BASE."
+    ),
+    "claude_auto_mode": _lazy(
+        "Run interactive Claude sessions without permission prompts (skips every "
+        "confirmation). Convenient but dangerous -- Claude can edit files and run "
+        "shell commands unattended. Only enable on code you fully trust. "
+        "Values: yes/no."
     ),
 }
 
@@ -208,6 +238,15 @@ def get_setting(key: str, env_var: str | None = None) -> str | None:
             return env_val
     row = get_setting_raw(key)
     return row["value"] if row else None
+
+
+def claude_auto_mode_enabled() -> bool:
+    """True if interactive Claude sessions should skip permission prompts.
+
+    Backs the ``claude_auto_mode`` checkbox; read at session spawn in
+    :func:`ntasker.claude_runner._start_session`. Defaults to off (safe).
+    """
+    return (get_setting("claude_auto_mode") or "").strip().lower() in _TRUE_STRINGS
 
 
 def set_setting(key: str, value: str) -> dict:

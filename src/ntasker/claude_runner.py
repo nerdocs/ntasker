@@ -177,7 +177,16 @@ def _child_setup() -> None:
 def _start_session(task_id: int, cwd: str | None, seed: str | None) -> TermSession:
     """Spawn a fresh ``claude`` in a PTY and register it with a live reader."""
     master, slave = os.openpty()
-    args = ["claude", seed] if seed else ["claude"]
+    args = ["claude"]
+    # Opt-in "auto mode": skip every permission prompt. Powerful and dangerous
+    # (Claude edits files / runs shell commands unattended) -- gated behind the
+    # claude_auto_mode setting, default off. See settings.py.
+    from ntasker.settings import claude_auto_mode_enabled  # noqa: PLC0415
+
+    if claude_auto_mode_enabled():
+        args.append("--dangerously-skip-permissions")
+    if seed:
+        args.append(seed)
     proc = subprocess.Popen(
         args,
         stdin=slave,

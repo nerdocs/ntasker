@@ -4,6 +4,11 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [2.8.0] — 2026-06-27
+Claude sessions are flagged per task: amber "waiting for input", tinted "running"; the busy indicator self-heals.
+Run button shows the Claude logomark and is hidden on done tasks; `/task` can `/cd` into the project dir.
+New Settings switch: auto mode runs Claude without permission prompts (with a clear danger warning).
+
 ## [2.7.0] — 2026-06-27
 Run with Claude: a per-task button opens the real interactive Claude Code TUI (PTY + xterm.js) right in the web UI.
 Sessions run in the background and reattach; marking a task done ends its session.

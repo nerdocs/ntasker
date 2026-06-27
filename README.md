@@ -16,7 +16,20 @@ let Claude read and drive your tracker, no copy-paste:
 - Finished an assigned task? Claude moves it to **Review** for you to sign off -- it
   never closes, deletes, or archives tasks on its own.
 
-![ntasker kanban board with the projects sidebar](docs/screenshot.png)
+![ntasker kanban board with the projects sidebar](docs/screenshot.jpg)
+
+## Run with Claude (web UI)
+
+The flip side of the integration above: every task row has a **Run with Claude** button that opens a real interactive
+Claude Code session -- the genuine TUI, embedded in the page via xterm.js -- running in the task's project directory
+and seeded with `/task <id>`. You answer Claude's questions, approve its tool prompts and interrupt it exactly as in a
+terminal; it is the same `claude` binary with the same `CLAUDE.md`, skills, MCP and permissions.
+
+Sessions run in the background (the button shows a spinner, and re-opening reattaches to the live session); marking a
+task **done** ends its session. Needs the `claude` CLI on `PATH` and a POSIX pseudo-terminal, otherwise the button
+stays hidden. See [docs/claude-runs.md](docs/claude-runs.md).
+
+![Interactive Claude Code session embedded in the ntasker web UI](docs/screenshot-xterm.jpg)
 
 ## Stack
 

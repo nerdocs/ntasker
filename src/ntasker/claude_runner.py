@@ -1,70 +1,73 @@
-"""Drive a Claude Code agent run from the web UI over a WebSocket.
+"""Embed a real interactive ``claude`` session in the web UI over a WebSocket.
 
-This is the first (and only) async/WebSocket surface in ntasker. It wraps the
-`claude-agent-sdk` ``query()`` async iterator: Claude's message stream flows
-*down* to the browser as structured events, while the browser can stop the run
-*up* the same socket. (A WebSocket rather than a one-way ``StreamingResponse``
-so a stop reaches the running agent promptly.)
+Spawns the actual ``claude`` CLI in a pseudo-terminal (PTY) and bridges it to a
+terminal emulator (xterm.js) in the browser. The user gets the genuine Claude
+Code TUI -- interactive prompts, permission dialogs, interrupt (Ctrl-C), and the
+*identical* context (same ``~/.claude``, ``CLAUDE.md``, skills, MCP servers,
+permissions) because it is the same binary they run from a shell.
 
-The SDK (and the ``claude`` CLI it shells out to) are an **optional** dependency.
-When either is missing :func:`runner_available` reports the reason and the WS
-endpoint refuses cleanly; the rest of ntasker is unaffected.
+Sessions are **persistent and reattachable**: the ``claude`` process lives in a
+module-level registry keyed by task id and keeps running when the browser
+detaches (navigates away or reloads). A reattaching client replays a bounded
+output buffer to reconstruct the current screen, then streams live. The process
+ends only when it exits on its own or the user stops it.
 
-Run state is purely in-memory and per-connection -- there is no ``claude_runs``
-table. A run lives exactly as long as its WebSocket; closing the socket ends it.
-
-Permission model
-----------------
-Permissions are fixed for the run at start time, because that is the only model
-this CLI/SDK combination supports reliably in headless mode:
-
-* ``permission_mode`` -- ``plan`` (read-only), ``default`` (only pre-allowed
-  tools run; others are denied), ``acceptEdits`` (file edits auto-approved), or
-  ``bypassPermissions`` (everything runs, no gate).
-* ``allowed_tools`` / ``disallowed_tools`` -- explicit whitelist / blacklist,
-  passed straight through to the CLI's ``--allowedTools`` / ``--disallowedTools``.
-
-Interactive per-call approval is intentionally absent: the SDK's ``can_use_tool``
-control callback never fires against the headless CLI (there is no human at the
-subprocess to prompt), and mid-run ``set_permission_mode`` does not take effect.
-Both were verified not to work, so the gate is established up front instead.
+POSIX only: a PTY needs ``os.openpty`` + ``termios``. On a platform without
+them the feature reports unavailable and the rest of ntasker is unaffected.
 """
 
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import os
 import shutil
+import signal
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
 
-try:  # optional dependency -- feature degrades to "unavailable" without it
-    import claude_agent_sdk as _sdk
+try:  # POSIX-only PTY machinery
+    import fcntl
+    import struct
+    import subprocess
+    import termios
 
-    _SDK_IMPORT_ERROR: str | None = None
-except ImportError as exc:  # pragma: no cover - exercised only without the SDK
-    _sdk = None  # type: ignore[assignment]
-    _SDK_IMPORT_ERROR = str(exc)
-
-
-# Permission modes accepted from the UI, mapped straight onto the SDK's
-# ``permission_mode``. ``plan`` is a read-only dry run ("see what it would do").
-PERMISSION_MODES = ("plan", "default", "acceptEdits", "bypassPermissions")
-DEFAULT_PERMISSION_MODE = "default"
+    _PTY_OK = True
+except ImportError:  # pragma: no cover - non-POSIX
+    _PTY_OK = False
 
 
-def runner_available() -> tuple[bool, str | None]:
+# Cap on the per-session replay buffer. Large enough to hold a full TUI redraw
+# (the alt-screen plus recent scrollback) so a reattaching client lands on the
+# correct final screen; small enough to stay cheap.
+BUFFER_LIMIT = 512 * 1024
+
+# Environment markers that would make the spawned CLI behave as a *nested*
+# Claude Code session. Stripped so it always starts as a fresh top-level
+# session -- exactly as if launched from the user's own shell.
+_STRIP_ENV = (
+    "CLAUDECODE",
+    "CLAUDE_CODE_CHILD_SESSION",
+    "CLAUDE_CODE_ENTRYPOINT",
+    "CLAUDE_CODE_EXECPATH",
+    "CLAUDE_CODE_SESSION_ID",
+    "CLAUDE_CODE_DISABLE_MOUSE",
+    "AI_AGENT",
+    "CLAUDE_EFFORT",
+)
+
+
+def terminal_available() -> tuple[bool, str | None]:
     """Return ``(available, reason_if_not)``.
 
-    The feature needs both the Python SDK *and* the ``claude`` CLI on PATH (the
-    SDK shells out to it). Either missing -> unavailable with a human-readable
-    reason the UI surfaces instead of offering a dead button.
+    Needs the ``claude`` CLI on PATH and a POSIX PTY. Either missing -> the UI
+    hides the run button and surfaces the reason.
     """
-    if _sdk is None:
-        return False, f"claude-agent-sdk is not installed ({_SDK_IMPORT_ERROR})"
+    if not _PTY_OK:
+        return False, "interactive runs need a POSIX pseudo-terminal"
     if shutil.which("claude") is None:
         return False, "the `claude` CLI was not found on PATH"
     return True, None
@@ -75,15 +78,14 @@ def default_cwd_for_project(project: str | None) -> str | None:
 
     Inverse of :func:`ntasker.projects._path_to_name`: an absolute project name
     is used verbatim; a relative one is resolved under ``projects_base`` (or the
-    home directory when unset). The result is only a *suggestion* -- the UI shows
-    it pre-filled and editable, so a wrong guess costs one edit, not a failed run.
+    home directory when unset). Only a *suggestion* -- the session shows its cwd
+    in the TUI, and a wrong guess is one ``cd`` away.
     """
     if not project:
         return None
     p = Path(project).expanduser()
     if p.is_absolute():
         return str(p)
-    # Local import: keep this module importable before the DB exists.
     from ntasker.settings import get_setting  # noqa: PLC0415
 
     raw = get_setting("projects_base", env_var="NTASKER_PROJECTS_BASE")
@@ -91,161 +93,225 @@ def default_cwd_for_project(project: str | None) -> str | None:
     return str(base / project)
 
 
-def default_prompt_for_task(task: dict) -> str:
-    """Compose a starter prompt that triggers the ntasker skill.
+def seed_command_for_task(task: dict) -> str:
+    """Initial input for the session: the ntasker ``/task <id>`` slash command.
 
-    The ``#<id>`` token makes Claude Code auto-load the packaged ntasker skill
-    (SKILL.md), which knows the tracker workflow. Kept short and editable -- the
-    user tweaks it in the start dialog before launching.
+    ntasker ships that command for Claude Code; firing it as the first message
+    loads the task (title, description, phase) into the session via the existing
+    integration -- no guessing, no clash with the built-in ``Task`` tools.
     """
-    lines = [f"Please work on ntasker task #{task['id']}: {task['title']}"]
-    desc = (task.get("description") or "").strip()
-    if desc:
-        lines += ["", desc]
-    return "\n".join(lines)
+    return f"/task {task['id']}"
 
 
 # ---------------------------------------------------------------------------
-# Message serialisation -- SDK dataclasses -> plain JSON the UI can render
+# Session registry
 # ---------------------------------------------------------------------------
 
 
-def _json_safe(value: Any, _depth: int = 0) -> Any:
-    """Coerce arbitrary SDK payloads into JSON-serialisable primitives."""
-    if _depth > 6:
-        return str(value)
-    if value is None or isinstance(value, (bool, int, float, str)):
-        return value
-    if isinstance(value, dict):
-        return {str(k): _json_safe(v, _depth + 1) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_json_safe(v, _depth + 1) for v in value]
-    return str(value)
+@dataclass
+class TermSession:
+    """One persistent ``claude`` PTY process plus its attached subscribers."""
+
+    task_id: int
+    proc: subprocess.Popen
+    master_fd: int
+    buffer: bytearray = field(default_factory=bytearray)
+    subscribers: set = field(default_factory=set)  # set[asyncio.Queue]
+    alive: bool = True
+    exit_code: int | None = None
 
 
-def _serialize_block(block: Any) -> dict:
-    """One content block -> ``{type, ...}`` for the run view."""
-    if isinstance(block, _sdk.TextBlock):
-        return {"type": "text", "text": block.text}
-    if isinstance(block, _sdk.ThinkingBlock):
-        return {"type": "thinking", "text": block.thinking}
-    if isinstance(block, _sdk.ToolUseBlock):
-        return {"type": "tool_use", "id": block.id, "name": block.name,
-                "input": _json_safe(block.input)}
-    if isinstance(block, _sdk.ToolResultBlock):
-        return {"type": "tool_result", "tool_use_id": block.tool_use_id,
-                "content": _json_safe(block.content), "is_error": bool(block.is_error)}
-    return {"type": "other", "repr": str(block)[:1000]}
+SESSIONS: dict[int, TermSession] = {}
 
 
-def _serialize_message(message: Any) -> dict:
-    """One SDK message -> a compact ``{kind, ...}`` event for the browser."""
-    if isinstance(message, _sdk.AssistantMessage):
-        return {"kind": "assistant",
-                "blocks": [_serialize_block(b) for b in message.content]}
-    if isinstance(message, _sdk.UserMessage):
-        content = message.content
-        blocks = content if isinstance(content, list) else [_sdk.TextBlock(text=str(content))]
-        return {"kind": "user", "blocks": [_serialize_block(b) for b in blocks]}
-    if isinstance(message, _sdk.SystemMessage):
-        return {"kind": "system", "subtype": message.subtype, "data": _json_safe(message.data)}
-    if isinstance(message, _sdk.ResultMessage):
-        return {"kind": "result", "is_error": bool(message.is_error),
-                "result": message.result, "num_turns": message.num_turns,
-                "duration_ms": message.duration_ms,
-                "total_cost_usd": message.total_cost_usd}
-    return {"kind": "other", "type": type(message).__name__}
+def active_session_ids() -> list[int]:
+    """Task ids with a *live* session -- drives the per-task busy indicator."""
+    return [tid for tid, s in SESSIONS.items() if s.alive]
 
 
-def _str_list(value: Any) -> list[str]:
-    """Filter an arbitrary payload down to a list of non-empty strings."""
-    if not isinstance(value, list):
-        return []
-    return [s.strip() for s in value if isinstance(s, str) and s.strip()]
+def _clean_env() -> dict:
+    env = {k: v for k, v in os.environ.items() if k not in _STRIP_ENV}
+    env["TERM"] = "xterm-256color"
+    return env
+
+
+def _child_setup() -> None:
+    """Run in the forked child before exec: make the PTY our controlling tty."""
+    os.setsid()
+    with contextlib.suppress(OSError):
+        fcntl.ioctl(0, termios.TIOCSCTTY, 0)
+
+
+def _start_session(task_id: int, cwd: str | None, seed: str | None) -> TermSession:
+    """Spawn a fresh ``claude`` in a PTY and register it with a live reader."""
+    master, slave = os.openpty()
+    args = ["claude", seed] if seed else ["claude"]
+    proc = subprocess.Popen(
+        args,
+        stdin=slave,
+        stdout=slave,
+        stderr=slave,
+        cwd=cwd or os.path.expanduser("~"),
+        env=_clean_env(),
+        preexec_fn=_child_setup,
+        close_fds=True,
+    )
+    os.close(slave)
+    os.set_blocking(master, False)
+    sess = TermSession(task_id=task_id, proc=proc, master_fd=master)
+    SESSIONS[task_id] = sess
+    _attach_reader(sess)
+    return sess
+
+
+def _attach_reader(sess: TermSession) -> None:
+    """Drain the PTY master into the buffer + all subscriber queues."""
+    loop = asyncio.get_running_loop()
+
+    def on_readable() -> None:
+        try:
+            data = os.read(sess.master_fd, 65536)
+        except OSError:
+            data = b""
+        if not data:  # EOF / EIO -> the process exited
+            _reap(sess)
+            return
+        sess.buffer.extend(data)
+        if len(sess.buffer) > BUFFER_LIMIT:
+            del sess.buffer[: len(sess.buffer) - BUFFER_LIMIT]
+        for q in list(sess.subscribers):
+            with contextlib.suppress(asyncio.QueueFull):
+                q.put_nowait(("output", data))
+
+    loop.add_reader(sess.master_fd, on_readable)
+
+
+def _reap(sess: TermSession) -> None:
+    """Tear down a session whose process has exited."""
+    with contextlib.suppress(Exception):
+        asyncio.get_running_loop().remove_reader(sess.master_fd)
+    with contextlib.suppress(OSError):
+        os.close(sess.master_fd)
+    sess.alive = False
+    rc = sess.proc.poll()
+    if rc is None:
+        with contextlib.suppress(Exception):
+            rc = sess.proc.wait(timeout=1)
+    sess.exit_code = rc
+    for q in list(sess.subscribers):
+        with contextlib.suppress(asyncio.QueueFull):
+            q.put_nowait(("exit", rc))
+    # A finished session with nobody attached can't be reattached usefully --
+    # drop it so it doesn't linger in the registry (and the busy indicator).
+    if not sess.subscribers:
+        SESSIONS.pop(sess.task_id, None)
+
+
+def _resize(sess: TermSession, rows: int, cols: int) -> None:
+    rows = max(1, min(int(rows), 1000))
+    cols = max(1, min(int(cols), 1000))
+    with contextlib.suppress(OSError):
+        fcntl.ioctl(sess.master_fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+
+
+def _stop(sess: TermSession) -> None:
+    """Signal the whole process group so child processes die too."""
+    if not sess.alive:
+        return
+    with contextlib.suppress(Exception):
+        os.killpg(os.getpgid(sess.proc.pid), signal.SIGTERM)
+
+
+def stop_session(task_id: int) -> bool:
+    """Terminate a task's session completely, if one is running.
+
+    Used when a task is marked done -- the work is finished, so the interactive
+    session is torn down. Returns ``True`` iff a live session was stopped.
+    """
+    sess = SESSIONS.get(task_id)
+    if sess is None or not sess.alive:
+        return False
+    _stop(sess)
+    return True
+
+
+def _b64(data: bytes) -> str:
+    return base64.b64encode(bytes(data)).decode("ascii")
 
 
 # ---------------------------------------------------------------------------
-# Session driver
+# WebSocket bridge
 # ---------------------------------------------------------------------------
 
 
-async def run_session(websocket: WebSocket, task: dict) -> None:
-    """Drive one Claude run for ``task`` over an accepted WebSocket.
+async def serve(websocket: WebSocket, task_id: int) -> None:
+    """Bridge an accepted WebSocket to task ``task_id``'s PTY session.
 
-    Protocol (JSON messages):
+    Protocol (JSON):
 
-    * client -> ``{"type":"start", "prompt", "cwd", "permission_mode",
-      "allowed_tools":[...], "disallowed_tools":[...]}``
+    * client -> ``{"type":"attach", "cwd", "seed"}`` (cwd/seed only used when a
+      session has to be started; ignored on reattach)
+    * client -> ``{"type":"input", "data"}`` (keystrokes, written to the PTY)
+    * client -> ``{"type":"resize", "rows", "cols"}``
     * client -> ``{"type":"stop"}``
-    * server -> ``{"type":"started", "cwd", "permission_mode"}`` / ``event`` /
-      ``done`` / ``error``
-
-    Two coroutines run concurrently: the query consumer (streams events) and the
-    command reader (waits for a stop or a disconnect). Whichever finishes first
-    cancels the other, so a stop/disconnect ends the run promptly.
+    * server -> ``{"type":"output", "data"}`` (base64 PTY bytes)
+    * server -> ``{"type":"exit", "code"}``
     """
+    available, reason = terminal_available()
+    if not available:
+        await websocket.send_json({"type": "error", "error": reason})
+        return
     try:
-        start = await websocket.receive_json()
+        first = await websocket.receive_json()
     except (WebSocketDisconnect, ValueError):
         return
-    if start.get("type") != "start":
-        await websocket.send_json({"type": "error", "error": "expected a start message"})
+    if first.get("type") != "attach":
+        await websocket.send_json({"type": "error", "error": "expected an attach message"})
         return
 
-    prompt = (start.get("prompt") or "").strip() or default_prompt_for_task(task)
-    cwd = (start.get("cwd") or "").strip() or None
-    mode = start.get("permission_mode")
-    if mode not in PERMISSION_MODES:
-        mode = DEFAULT_PERMISSION_MODE
+    sess = SESSIONS.get(task_id)
+    if sess is None or not sess.alive:
+        if sess is not None:  # stale dead session -> replace
+            SESSIONS.pop(task_id, None)
+        cwd = (first.get("cwd") or "").strip() or None
+        seed = (first.get("seed") or "").strip() or None
+        sess = _start_session(task_id, cwd, seed)
 
-    options = _sdk.ClaudeAgentOptions(
-        cwd=cwd,
-        permission_mode=mode,
-        allowed_tools=_str_list(start.get("allowed_tools")),
-        disallowed_tools=_str_list(start.get("disallowed_tools")),
-        # Isolation: ignore the user's ambient ~/.claude permission settings so
-        # the UI's mode + allow/deny lists are the *only* gate -- otherwise a
-        # global allow rule would silently override (or block) the UI choice.
-        # Trade-off: no project CLAUDE.md auto-load. Skills are re-enabled below.
-        setting_sources=[],
-        skills="all",
-    )
+    queue: asyncio.Queue = asyncio.Queue(maxsize=2000)
+    sess.subscribers.add(queue)
 
-    await websocket.send_json({"type": "started", "cwd": cwd, "permission_mode": mode})
+    # Replay the buffer so the reattaching terminal lands on the live screen.
+    if sess.buffer:
+        await websocket.send_json({"type": "output", "data": _b64(sess.buffer)})
+    if not sess.alive:
+        await websocket.send_json({"type": "exit", "code": sess.exit_code})
 
-    async def consume() -> dict:
-        """Iterate the query stream; return a terminal ``done`` payload."""
-        try:
-            async for message in _sdk.query(prompt=prompt, options=options):
-                await websocket.send_json({"type": "event", "data": _serialize_message(message)})
-            return {"type": "done", "status": "completed"}
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:  # surface SDK/CLI failures to the UI
-            return {"type": "done", "status": "error", "error": str(exc)}
+    async def pump_out() -> None:
+        while True:
+            kind, payload = await queue.get()
+            if kind == "output":
+                await websocket.send_json({"type": "output", "data": _b64(payload)})
+            elif kind == "exit":
+                await websocket.send_json({"type": "exit", "code": payload})
 
-    async def read_commands() -> None:
-        """Wait for a stop command (or a disconnect, which raises)."""
+    out_task = asyncio.create_task(pump_out())
+    try:
         while True:
             msg = await websocket.receive_json()
-            if msg.get("type") == "stop":
-                return
-
-    consumer_task = asyncio.create_task(consume())
-    reader_task = asyncio.create_task(read_commands())
-    done_payload: dict = {"type": "done", "status": "stopped"}
-    try:
-        finished, _pending = await asyncio.wait(
-            {consumer_task, reader_task}, return_when=asyncio.FIRST_COMPLETED
-        )
-        if consumer_task in finished:
-            done_payload = consumer_task.result()
+            kind = msg.get("type")
+            if kind == "input" and sess.alive:
+                with contextlib.suppress(OSError):
+                    os.write(sess.master_fd, str(msg.get("data", "")).encode("utf-8", "ignore"))
+            elif kind == "resize":
+                _resize(sess, msg.get("rows", 24), msg.get("cols", 80))
+            elif kind == "stop":
+                _stop(sess)
     except WebSocketDisconnect:
-        done_payload = {"type": "done", "status": "disconnected"}
+        pass
     finally:
-        for t in (consumer_task, reader_task):
-            t.cancel()
-        await asyncio.gather(consumer_task, reader_task, return_exceptions=True)
-
-    with contextlib.suppress(WebSocketDisconnect, RuntimeError):
-        await websocket.send_json(done_payload)
+        out_task.cancel()
+        sess.subscribers.discard(queue)
+        # A finished session with nobody watching is no longer reattachable
+        # in any useful way -- drop it so it stops lingering in the registry.
+        if not sess.alive and not sess.subscribers:
+            SESSIONS.pop(task_id, None)

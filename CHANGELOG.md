@@ -4,6 +4,10 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [2.7.0] — 2026-06-27
+Run with Claude: a per-task button opens the real interactive Claude Code TUI (PTY + xterm.js) right in the web UI.
+Sessions run in the background and reattach; marking a task done ends its session.
+
 ## [2.6.0] — 2026-06-26
 Projects sidebar hides projects with no open tasks by default; a "Show empty projects" switch brings them back.
 

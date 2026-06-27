@@ -120,6 +120,27 @@ MANIFEST: tuple[AssetSpec, ...] = (
         sri="sha384-iZD2X8o1Zdq0HR5H/7oa8W30WS4No+zWCKUPD7fHRay9I1Gf+C4F8sVmw7zec1wW",
         local_path="alpine/alpine.min.js",
     ),
+    # xterm.js -- terminal emulator for the interactive "Run with Claude" view.
+    # The classic ``xterm`` package exposes ``window.Terminal`` /
+    # ``window.FitAddon`` for plain <script> use (no bundler).
+    AssetSpec(
+        name="xterm-css",
+        cdn_url="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css",
+        sri="sha384-LJcOxlx9IMbNXDqJ2axpfEQKkAYbFjJfhXexLfiRJhjDU81mzgkiQq8rkV0j6dVh",
+        local_path="xterm/xterm.css",
+    ),
+    AssetSpec(
+        name="xterm-js",
+        cdn_url="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js",
+        sri="sha384-/nfmYPUzWMS6v2atn8hbljz7NE0EI1iGx34lJaNzyVjWGDzMv+ciUZUeJpKA3Glc",
+        local_path="xterm/xterm.js",
+    ),
+    AssetSpec(
+        name="xterm-addon-fit",
+        cdn_url="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js",
+        sri="sha384-AQLWHRKAgdTxkolJcLOELg4E9rE89CPE2xMy3tIRFn08NcGKPTsELdvKomqji+DL",
+        local_path="xterm/xterm-addon-fit.js",
+    ),
 )
 
 _MANIFEST_BY_NAME: dict[str, AssetSpec] = {spec.name: spec for spec in MANIFEST}

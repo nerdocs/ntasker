@@ -29,11 +29,13 @@ from ntasker.assets import (
 )
 from ntasker.claude_assets import resolve_claude_home, scan_status
 from ntasker.claude_runner import (
+    active_session_ids,
     default_cwd_for_project,
-    default_prompt_for_task,
-    run_session,
-    runner_available,
+    seed_command_for_task,
+    stop_session,
+    terminal_available,
 )
+from ntasker.claude_runner import serve as claude_serve
 from ntasker.projects import discover_claude_projects
 from ntasker import db as _db_module
 from ntasker.db import (
@@ -407,56 +409,13 @@ def build_js_strings() -> dict[str, str]:
         "no_settings_hint_prefix": _(
             "Configure a known key above, or set one via CLI:"
         ),
-        # Claude run -- "Run with Claude" feature
+        # Claude run -- interactive "Run with Claude" terminal
         "claude_run": _("Run with Claude"),
-        "claude_run_title": _("Run task with Claude"),
-        "claude_unavailable": _("Claude integration unavailable"),
-        "claude_prompt_label": _("Prompt"),
-        "claude_cwd_label": _("Working directory"),
-        "claude_cwd_placeholder": _("Absolute path (leave empty for none)"),
-        "claude_permission_mode": _("Permissions"),
-        "claude_mode_default": _("Only allowed tools (others denied)"),
-        "claude_mode_acceptEdits": _("Auto-approve file edits"),
-        "claude_mode_plan": _("Plan only (read-only)"),
-        "claude_mode_bypassPermissions": _("Allow everything"),
-        "claude_bypass_warning": _(
-            "Claude may run any tool -- including shell commands -- without asking."
-        ),
-        "claude_allowed_tools_label": _("Allowed tools"),
-        "claude_denied_tools_label": _("Denied tools"),
-        "claude_tools_placeholder": _("comma-separated, e.g. Read, Edit, Bash"),
-        "claude_tools_hint": _(
-            "Tool names to allow or deny for this run. Leave empty to rely on the "
-            "permission mode alone."
-        ),
-        "claude_start": _("Start"),
-        "claude_stop": _("Stop"),
         "claude_back": _("Back"),
-        "claude_discard": _("Discard"),
-        "claude_running": _("Running..."),
+        "claude_stop": _("Stop"),
         "claude_connecting": _("Connecting..."),
-        "claude_mode_label": _("Mode"),
-        "claude_thinking": _("Thinking"),
-        "claude_tool_use": _("Tool"),
-        "claude_tool_result": _("Output"),
-        "claude_error": _("Error"),
-        # Friendly tool-call labels (the raw tool input is shown as the detail).
-        "claude_t_read": _("Reads file"),
-        "claude_t_write": _("Writes file"),
-        "claude_t_edit": _("Edits file"),
-        "claude_t_bash": _("Runs command"),
-        "claude_t_search": _("Searches"),
-        "claude_t_web": _("Web access"),
-        "claude_t_task": _("Starts sub-agent"),
-        "claude_t_todo": _("Updates to-dos"),
-        "claude_run_finished": _("Run finished"),
-        "claude_status_completed": _("completed"),
-        "claude_status_error": _("error"),
-        "claude_status_stopped": _("stopped"),
-        "claude_status_disconnected": _("connection closed"),
-        "claude_security_note": _(
-            "Runs execute locally with your full user permissions."
-        ),
+        "claude_running": _("Running..."),
+        "claude_run_finished": _("Session ended"),
     }
 
 # Mount the user-data vendor cache at ``/static/vendor`` *before* the
@@ -671,14 +630,20 @@ def api_claude_assets_status() -> JSONResponse:
 
 @app.get("/api/claude/status")
 def api_claude_status() -> JSONResponse:
-    """Whether a Claude run can be launched (SDK + ``claude`` CLI present)."""
-    available, reason = runner_available()
+    """Whether an interactive Claude session can be launched (CLI + PTY)."""
+    available, reason = terminal_available()
     return JSONResponse({"available": available, "reason": reason})
+
+
+@app.get("/api/claude/sessions")
+def api_claude_sessions() -> JSONResponse:
+    """Task ids with a live interactive session -- feeds the busy indicators."""
+    return JSONResponse({"active": active_session_ids()})
 
 
 @app.get("/api/tasks/{task_id}/claude-run/defaults")
 def api_claude_run_defaults(task_id: int) -> JSONResponse:
-    """Pre-fill values for the run dialog: a starter prompt + a guessed cwd."""
+    """Pre-fill the run launch: a guessed cwd + the ``/task <id>`` seed input."""
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
     if row is None:
@@ -686,7 +651,7 @@ def api_claude_run_defaults(task_id: int) -> JSONResponse:
     task = dict(row)
     return JSONResponse(
         {
-            "prompt": default_prompt_for_task(task),
+            "seed": seed_command_for_task(task),
             "cwd": default_cwd_for_project(task["project"]) or "",
         }
     )
@@ -694,25 +659,14 @@ def api_claude_run_defaults(task_id: int) -> JSONResponse:
 
 @app.websocket("/ws/claude/{task_id}")
 async def ws_claude_run(websocket: WebSocket, task_id: int) -> None:
-    """Bidirectional channel driving one Claude run for ``task_id``.
+    """Bridge the browser terminal to task ``task_id``'s interactive ``claude``.
 
     Bound to 127.0.0.1 like the rest of ntasker; there is no auth layer, so the
-    run inherits the local user's full filesystem reach -- the permission policy
-    negotiated over this socket is the only gate. See :mod:`ntasker.claude_runner`.
+    session is the local user's full interactive Claude Code -- shell included.
+    See :mod:`ntasker.claude_runner`.
     """
     await websocket.accept()
-    available, reason = runner_available()
-    if not available:
-        await websocket.send_json({"type": "error", "error": reason})
-        await websocket.close()
-        return
-    with get_conn() as conn:
-        row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
-    if row is None:
-        await websocket.send_json({"type": "error", "error": "task not found"})
-        await websocket.close()
-        return
-    await run_session(websocket, dict(row))
+    await claude_serve(websocket, task_id)
 
 
 # ---------------------------------------------------------------------------
@@ -1225,6 +1179,11 @@ def api_update_task(task_id: int, payload: TaskUpdate) -> JSONResponse:
         row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         tags = load_tags_for(conn, task_id)
         depends = load_deps_for(conn, task_id)
+
+    # The task is finished -- tear down its interactive Claude session, if any.
+    if fields.get("status") == "done":
+        stop_session(task_id)
+
     return JSONResponse(row_to_task(row, tags, depends))
 
 

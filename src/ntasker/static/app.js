@@ -71,6 +71,22 @@ const PRIORITY_VALUES = ['critical', 'high', 'normal', 'low'];
 // `default_view` validator.
 const VIEW_MODES = ['list', 'kanban'];
 
+// The one on-screen Claude terminal: {ws, term, fit, taskId, onResize} or null.
+// Kept at module scope (not in Alpine state) so the xterm Terminal instance
+// never lands inside Alpine's reactive proxy. Only one run view is open at a
+// time; the server-side PTY sessions are what persist in the background.
+let _claudeTermState = null;
+
+// Decode a base64 string (PTY bytes from the server) into a Uint8Array that
+// xterm's write() accepts -- avoids UTF-8 corruption when multibyte sequences
+// are split across PTY reads.
+function _b64ToBytes(b64) {
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+}
+
 function tracker(serverDefaultView) {
     // Resolve initial viewMode: localStorage > server-supplied default > 'list'.
     // The server value comes from the `default_view` setting and is injected
@@ -107,15 +123,17 @@ function tracker(serverDefaultView) {
         theme: localStorage.getItem(LS_KEY_THEME) || 'light',
 
         // ---- Claude run ("Run with Claude") ----
-        // claudeAvailable gates the per-task run button; set from
-        // GET /api/claude/status on init. Runs are background-capable: each
-        // lives in claudeRuns[taskId] with its own WebSocket and keeps
-        // streaming even when the user navigates back to the list/kanban.
-        // claudeView is the taskId currently shown full-page (or null).
+        // claudeAvailable gates the per-task run button (GET /api/claude/status).
+        // claudeView = taskId currently shown full-page (or null); claudeMeta
+        // holds {taskId, taskTitle, status} for that view's header. claudeSessions
+        // is the set of task ids with a live server-side session (busy spinners).
+        // The xterm Terminal + WebSocket themselves live in the module-level
+        // _claudeTermState (kept out of Alpine's reactive proxy).
         claudeAvailable: false,
         claudeReason: null,
-        claudeRuns: {},
         claudeView: null,
+        claudeMeta: null,
+        claudeSessions: [],
 
         // Multi-value project filter. Empty list = no filter (all tasks).
         // Special value '__none__' = include cross-project tasks (project IS NULL).
@@ -168,6 +186,7 @@ function tracker(serverDefaultView) {
                 this.loadPhases(),
                 this.loadPriorities(),
                 this.loadClaudeStatus(),
+                this.loadClaudeSessions(),
             ]);
             // After loading projects/tags, drop stale entries silently.
             this.pruneStaleProjectFilter();
@@ -1068,9 +1087,13 @@ function tracker(serverDefaultView) {
         },
 
         // ---- Claude run ("Run with Claude") ----
+        // The run view embeds the *real* interactive `claude` TUI via xterm.js
+        // over a WebSocket. The PTY process lives server-side and is persistent:
+        // it keeps running when you go Back (or reload), and reattaching replays
+        // the recent output to reconstruct the screen. See claude_runner.py.
 
-        // Probe feature availability (SDK + `claude` CLI). Failures are
-        // non-fatal: the run button just stays hidden.
+        // Probe feature availability (`claude` CLI + a POSIX PTY). Non-fatal:
+        // the run button just stays hidden when unavailable.
         async loadClaudeStatus() {
             try {
                 const r = await fetch('/api/claude/status');
@@ -1083,213 +1106,108 @@ function tracker(serverDefaultView) {
             }
         },
 
-        // The run object shown in the full-page view (or null).
-        currentRun() {
-            return this.claudeView != null ? (this.claudeRuns[this.claudeView] || null) : null;
+        // Refresh the set of task ids with a live session (busy indicators).
+        async loadClaudeSessions() {
+            try {
+                const r = await fetch('/api/claude/sessions');
+                if (r.ok) { const d = await r.json(); this.claudeSessions = d.active || []; }
+            } catch (_e) { /* leave the last known set */ }
         },
 
-        // Phase of a task's background run, for the per-task busy indicator:
-        // 'config' | 'running' | 'done' | null (no run).
+        // 'running' if the task has a live server-side session, else null.
         taskRunPhase(taskId) {
-            const r = this.claudeRuns[taskId];
-            return r ? r.phase : null;
+            return this.claudeSessions.includes(taskId) ? 'running' : null;
         },
 
-        // Open -- or re-enter -- the full-page run view for a task. An existing
-        // run is simply re-shown (it kept running in the background); otherwise
-        // we fetch a starter prompt + guessed cwd and create one in 'config'.
+        // Open the full-page terminal for a task. Fetches the guessed cwd + the
+        // `/task <id>` seed, then opens the terminal and attaches the socket --
+        // which starts the session server-side if one isn't already running.
         async openClaudeRun(task) {
-            if (!this.claudeRuns[task.id]) {
-                let prompt = '', cwd = '';
-                try {
-                    const r = await fetch(`/api/tasks/${task.id}/claude-run/defaults`);
-                    if (r.ok) { const d = await r.json(); prompt = d.prompt || ''; cwd = d.cwd || ''; }
-                } catch (_e) { /* fall back to empty defaults */ }
-                this.claudeRuns[task.id] = {
-                    taskId: task.id,
-                    taskTitle: task.title || '',
-                    prompt, cwd,
-                    permissionMode: 'default',
-                    allowedTools: '',   // comma-separated tool whitelist (config phase)
-                    deniedTools: '',    // comma-separated tool blacklist (config phase)
-                    phase: 'config',    // 'config' | 'running' | 'done'
-                    status: null,       // 'connecting' | 'running' | 'completed' | 'error' | ...
-                    items: [],          // rendered event stream
-                    ws: null,
-                };
-            }
+            let cwd = '', seed = '';
+            try {
+                const r = await fetch(`/api/tasks/${task.id}/claude-run/defaults`);
+                if (r.ok) { const d = await r.json(); cwd = d.cwd || ''; seed = d.seed || ''; }
+            } catch (_e) { /* defaults are best-effort */ }
             this.claudeView = task.id;
+            this.claudeMeta = { taskId: task.id, taskTitle: task.title || '', status: 'connecting' };
+            this.$nextTick(() => this._claudeConnect(task.id, cwd, seed));
         },
 
-        // Back to the list/kanban -- the run keeps streaming in the background.
-        backFromClaudeRun() {
-            this.claudeView = null;
-        },
+        // Create the xterm terminal + WebSocket bridge for a task.
+        _claudeConnect(taskId, cwd, seed) {
+            const el = this.$refs.claudeTerm;
+            if (!el || typeof Terminal === 'undefined') return;
+            const term = new Terminal({
+                cursorBlink: true,
+                fontSize: 13,
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+                scrollback: 8000,
+                theme: { background: '#161616' },
+            });
+            const fit = new FitAddon.FitAddon();
+            term.loadAddon(fit);
+            term.open(el);
+            fit.fit();
 
-        // Tear down a run's socket and forget it (the "discard" action).
-        discardClaudeRun(taskId) {
-            const r = this.claudeRuns[taskId];
-            if (r && r.ws) { try { r.ws.close(); } catch (_e) { /* already closing */ } }
-            delete this.claudeRuns[taskId];
-            if (this.claudeView === taskId) this.claudeView = null;
-        },
-
-        // Launch the run currently shown in the view.
-        startClaudeRun() {
-            const run = this.currentRun();
-            if (!run || run.phase !== 'config') return;
-            const taskId = run.taskId;
-            run.phase = 'running';
-            run.status = 'connecting';
             const proto = location.protocol === 'https:' ? 'wss' : 'ws';
             const ws = new WebSocket(`${proto}://${location.host}/ws/claude/${taskId}`);
-            run.ws = ws;
-            const splitTools = (s) => (s || '').split(',').map(t => t.trim()).filter(Boolean);
-            ws.onopen = () => ws.send(JSON.stringify({
-                type: 'start',
-                prompt: run.prompt,
-                cwd: run.cwd,
-                permission_mode: run.permissionMode,
-                allowed_tools: splitTools(run.allowedTools),
-                disallowed_tools: splitTools(run.deniedTools),
-            }));
-            // Handlers key off taskId, not the current view, so a backgrounded
-            // run keeps updating its own object after the user navigates away.
-            ws.onmessage = (ev) => this._onClaudeMessage(taskId, JSON.parse(ev.data));
-            ws.onerror = () => { const r = this.claudeRuns[taskId]; if (r) r.status = 'error'; };
-            ws.onclose = () => {
-                const r = this.claudeRuns[taskId];
-                if (r && r.phase === 'running') {
-                    r.phase = 'done';
-                    if (r.status === 'connecting' || r.status === null) r.status = 'disconnected';
+            const onResize = () => {
+                try { fit.fit(); } catch (_e) { return; }
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
                 }
             };
-        },
+            _claudeTermState = { ws, term, fit, taskId, onResize };
 
-        // Ask the server to stop the run shown in the view.
-        stopClaudeRun() {
-            const run = this.currentRun();
-            if (run && run.ws) run.ws.send(JSON.stringify({ type: 'stop' }));
-        },
-
-        // Dispatch one server frame to its run (by taskId).
-        _onClaudeMessage(taskId, msg) {
-            const run = this.claudeRuns[taskId];
-            if (!run) return;
-            switch (msg.type) {
-                case 'started':
-                    run.status = 'running';
-                    break;
-                case 'event':
-                    this._pushClaudeItems(run, msg.data);
-                    break;
-                case 'done':
-                    run.phase = 'done';
-                    run.status = msg.status || 'completed';
-                    if (msg.error) this._pushClaudeItem(run, { type: 'error', text: msg.error });
-                    break;
-                case 'error':
-                    run.phase = 'done';
-                    run.status = 'error';
-                    this._pushClaudeItem(run, { type: 'error', text: msg.error || '' });
-                    break;
-            }
-        },
-
-        // ---- Claude run: friendly rendering ----
-
-        // Flatten one serialized SDK message into renderable stream items.
-        _pushClaudeItems(run, data) {
-            if (!data) return;
-            const kind = data.kind;
-            if (kind === 'assistant' || kind === 'user') {
-                for (const b of (data.blocks || [])) this._pushClaudeBlock(run, b);
-            } else if (kind === 'result') {
-                const txt = (data.result || '').toString().trim();
-                if (txt) this._pushClaudeItem(run, { type: 'result', text: txt, is_error: !!data.is_error });
-            }
-            // 'system' frames carry no user-facing value -- dropped on purpose.
-        },
-
-        _pushClaudeBlock(run, b) {
-            if (!b) return;
-            if (b.type === 'text') {
-                const t = (b.text || '').trim();
-                if (t) this._pushClaudeItem(run, { type: 'text', text: t });
-            } else if (b.type === 'thinking') {
-                const t = (b.text || '').trim();
-                if (t) this._pushClaudeItem(run, { type: 'thinking', text: t, _open: false });
-            } else if (b.type === 'tool_use') {
-                const meta = this._claudeToolMeta(b.name, b.input || {});
-                this._pushClaudeItem(run, { type: 'tool_use', icon: meta.icon, title: meta.title, detail: meta.detail });
-            } else if (b.type === 'tool_result') {
-                let t = (typeof b.content === 'string') ? b.content : this._claudeText(b.content);
-                this._pushClaudeItem(run, { type: 'tool_result', text: (t || '').toString().trim(),
-                                            is_error: !!b.is_error, _open: false });
-            }
-        },
-
-        _pushClaudeItem(run, item) {
-            run.items.push(item);
-            // Autoscroll to the newest item after Alpine renders it (only when
-            // this run is the one on screen -- $refs.claudeStream is else absent).
-            this.$nextTick(() => {
-                const el = this.$refs.claudeStream;
-                if (el) el.scrollTop = el.scrollHeight;
+            ws.onopen = () => {
+                ws.send(JSON.stringify({ type: 'attach', cwd, seed }));
+                onResize();
+                window.addEventListener('resize', onResize);
+                if (this.claudeMeta && this.claudeMeta.taskId === taskId) this.claudeMeta.status = 'running';
+                this.loadClaudeSessions();
+            };
+            ws.onmessage = (ev) => {
+                const msg = JSON.parse(ev.data);
+                if (msg.type === 'output') {
+                    term.write(_b64ToBytes(msg.data));
+                } else if (msg.type === 'exit') {
+                    if (this.claudeMeta && this.claudeMeta.taskId === taskId) this.claudeMeta.status = 'exited';
+                    this.loadClaudeSessions();
+                } else if (msg.type === 'error') {
+                    term.write(`\r\n\x1b[31m[ntasker] ${msg.error}\x1b[0m\r\n`);
+                    if (this.claudeMeta && this.claudeMeta.taskId === taskId) this.claudeMeta.status = 'exited';
+                }
+            };
+            ws.onclose = () => { this.loadClaudeSessions(); };
+            term.onData((data) => {
+                if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'input', data }));
             });
+            term.focus();
         },
 
-        _claudeText(value) {
-            if (value === null || value === undefined) return '';
-            if (typeof value === 'string') return value;
-            try { return JSON.stringify(value); } catch (_e) { return String(value); }
+        // Drop the on-screen terminal + socket. The *server* PTY keeps running,
+        // so reopening reattaches (or a stopped/exited one is cleaned up).
+        _claudeTeardown() {
+            if (!_claudeTermState) return;
+            window.removeEventListener('resize', _claudeTermState.onResize);
+            try { _claudeTermState.ws.close(); } catch (_e) { /* already closing */ }
+            try { _claudeTermState.term.dispose(); } catch (_e) { /* already disposed */ }
+            _claudeTermState = null;
         },
 
-        // Map a tool call to {icon, title, detail} -- human-friendly, no JSON.
-        _claudeToolMeta(name, input) {
-            const map = {
-                Read:        { icon: 'ti-file-text',    key: 'claude_t_read',   arg: 'file_path' },
-                Write:       { icon: 'ti-file-plus',    key: 'claude_t_write',  arg: 'file_path' },
-                Edit:        { icon: 'ti-edit',         key: 'claude_t_edit',   arg: 'file_path' },
-                MultiEdit:   { icon: 'ti-edit',         key: 'claude_t_edit',   arg: 'file_path' },
-                NotebookEdit:{ icon: 'ti-edit',         key: 'claude_t_edit',   arg: 'notebook_path' },
-                Bash:        { icon: 'ti-terminal-2',   key: 'claude_t_bash',   arg: 'command' },
-                Glob:        { icon: 'ti-search',       key: 'claude_t_search', arg: 'pattern' },
-                Grep:        { icon: 'ti-search',       key: 'claude_t_search', arg: 'pattern' },
-                WebFetch:    { icon: 'ti-world',        key: 'claude_t_web',    arg: 'url' },
-                WebSearch:   { icon: 'ti-world-search', key: 'claude_t_web',    arg: 'query' },
-                Task:        { icon: 'ti-robot',        key: 'claude_t_task',   arg: 'description' },
-                TodoWrite:   { icon: 'ti-checklist',    key: 'claude_t_todo',   arg: null },
-                ToolSearch:  { icon: 'ti-search',       key: 'claude_t_search', arg: 'query' },
-            };
-            const m = map[name];
-            if (!m) return { icon: 'ti-tool', title: `${_i('claude_tool_use')}: ${name}`, detail: '' };
-            let detail = m.arg ? (input[m.arg] || '') : '';
-            detail = (detail || '').toString().replace(/\s+/g, ' ').trim();
-            if (detail.length > 200) detail = detail.slice(0, 200) + '…';
-            return { icon: m.icon, title: _i(m.key), detail };
+        // Back to the list/kanban. The session keeps running in the background.
+        backFromClaudeRun() {
+            this._claudeTeardown();
+            this.claudeView = null;
+            this.claudeMeta = null;
+            this.loadClaudeSessions();
         },
 
-        toggleClaudeItem(item) { item._open = !item._open; },
-
-        claudeStatusLabel(status) {
-            const keys = {
-                completed: 'claude_status_completed',
-                error: 'claude_status_error',
-                stopped: 'claude_status_stopped',
-                disconnected: 'claude_status_disconnected',
-            };
-            return keys[status] ? _i(keys[status]) : (status || '');
-        },
-
-        claudeModeLabel(mode) {
-            const keys = {
-                plan: 'claude_mode_plan',
-                default: 'claude_mode_default',
-                acceptEdits: 'claude_mode_acceptEdits',
-                bypassPermissions: 'claude_mode_bypassPermissions',
-            };
-            return keys[mode] ? _i(keys[mode]) : (mode || '');
+        // Ask the server to terminate the session (kills the process group).
+        stopClaudeRun() {
+            if (_claudeTermState && _claudeTermState.ws.readyState === WebSocket.OPEN) {
+                _claudeTermState.ws.send(JSON.stringify({ type: 'stop' }));
+            }
         },
     };
 }

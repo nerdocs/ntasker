@@ -9,19 +9,27 @@ rest of ntasker is untouched.
 
 ## The flow
 
-1. Click the robot on a task (list or kanban view). A dialog opens, pre-filled with:
+1. Click the robot on a task (list or kanban view). A full-page **run view** opens (with a **Back** button to the
+   list/kanban), pre-filled with:
    - a **prompt** (`Please work on ntasker task #<id>: <title>` -- the `#<id>` makes Claude auto-load the ntasker
      skill, which knows the tracker workflow). Editable.
    - a guessed **working directory** (`projects_base`/`<project>`, else `~`/`<project>`). Editable -- it is only a
      guess from the task's free-form project name.
    - a **permission mode** and optional tool allow/deny lists (see below).
-2. Hit **Start**. The browser opens a WebSocket; Claude starts and its messages stream into the panel (assistant
-   text, thinking, tool calls, tool results, the final result), auto-scrolling as they arrive.
-3. **Stop** ends the run; closing the dialog tears down the socket.
+2. Hit **Start**. Claude's progress streams into the view -- rendered for humans, not as raw JSON: narration as text,
+   each tool call as a one-line summary (`Reads file …`, `Runs command …`), tool output and thinking collapsed behind
+   a toggle, and the final result set apart.
+3. **Stop** ends the run; **Discard** (after it finishes) forgets it.
+
+### Background runs
+
+A run keeps going when you press **Back** -- it does not need the view to stay open. The task's robot button turns
+into a **spinner** while its run is active; clicking it again re-enters the run view with the accumulated output.
+Several tasks can run at once, each with its own button state.
 
 Run state is purely in-memory and lives exactly as long as its socket (`/ws/claude/<task_id>`) -- there is no
-`claude_runs` table and no run history. This is ntasker's one and only WebSocket: Claude's events flow down, a stop
-flows up.
+`claude_runs` table, and a full page reload drops in-flight runs. This is ntasker's one and only WebSocket: Claude's
+events flow down, stop flows up.
 
 ## Permissions -- fixed at start
 

@@ -256,7 +256,7 @@
         {# The two pseudo-tabs (Task list / Kanban) drive ``viewMode`` -- #}
         {# they are NOT bootstrap nav-tabs because the page wrappers below #}
         {# swap their entire layout, not just a tab-pane. #}
-        <div class="page-header d-print-none">
+        <div class="page-header d-print-none" x-show="claudeView === null">
             <div class="container-fluid">
                 <div class="row g-2 align-items-center">
                     <div class="col-auto">
@@ -283,7 +283,7 @@
             </div>
         </div>
 
-        <div class="page-body">
+        <div class="page-body" x-show="claudeView === null">
             <div class="container-fluid">
 
                 {# v2.0: projects_dir-Banner is gone -- projects emerge #}
@@ -632,7 +632,7 @@
                                             <template x-if="claudeAvailable">
                                                 <button class="btn btn-sm btn-claude" @click="openClaudeRun(task)"
                                                         :aria-label="$i18n('claude_run')" :title="$i18n('claude_run')">
-                                                    <i class="ti ti-robot fs-3"></i>
+                                                    <template x-if="taskRunPhase(task.id) === 'running'"><span class="spinner-border spinner-border-sm"></span></template><template x-if="taskRunPhase(task.id) !== 'running'"><i class="ti ti-robot fs-3"></i></template>
                                                 </button>
                                             </template>
                                             <button class="btn btn-sm btn-ghost-secondary" @click="startEdit(task)"
@@ -741,7 +741,7 @@
                                                     <button class="btn btn-sm btn-claude px-1 py-0"
                                                             @click.stop="openClaudeRun(task)"
                                                             :aria-label="$i18n('claude_run')" :title="$i18n('claude_run')">
-                                                        <i class="ti ti-robot fs-3"></i>
+                                                        <template x-if="taskRunPhase(task.id) === 'running'"><span class="spinner-border spinner-border-sm"></span></template><template x-if="taskRunPhase(task.id) !== 'running'"><i class="ti ti-robot fs-3"></i></template>
                                                     </button>
                                                 </template>
                                                 <button class="btn btn-sm btn-ghost-secondary px-1 py-0"
@@ -810,6 +810,185 @@
                     </div>
                 </div>
 
+            </div>
+        </div>
+
+        {# === Claude run view -- full-page; replaces list/kanban while open. #}
+        {# The run keeps streaming in the background when you go Back. === #}
+        <div class="page-body" x-show="claudeView !== null" x-cloak>
+            <div class="container-fluid">
+                <template x-if="currentRun()">
+                <div>
+                    {# Header: back, title, status, stop/discard. #}
+                    <div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
+                        <button type="button" class="btn btn-ghost-secondary" @click="backFromClaudeRun()">
+                            <i class="ti ti-arrow-left me-1 fs-2"></i><span x-text="$i18n('claude_back')"></span>
+                        </button>
+                        <h2 class="page-title mb-0 text-truncate">
+                            <i class="ti ti-robot me-1"></i>
+                            <span class="font-monospace text-muted" x-text="`#${currentRun().taskId}`"></span>
+                            <span class="ms-1" x-text="currentRun().taskTitle"></span>
+                        </h2>
+                        <span class="ms-auto d-flex align-items-center gap-2">
+                            <template x-if="currentRun().phase === 'running'">
+                                <span class="badge bg-azure-lt">
+                                    <span class="spinner-border spinner-border-sm me-1"></span>
+                                    <span x-text="currentRun().status === 'connecting' ? $i18n('claude_connecting') : $i18n('claude_running')"></span>
+                                </span>
+                            </template>
+                            <template x-if="currentRun().phase === 'done'">
+                                <span class="badge"
+                                      :class="currentRun().status === 'completed' ? 'bg-success-lt' : 'bg-danger-lt'">
+                                    <span x-text="$i18n('claude_run_finished')"></span>:
+                                    <span class="ms-1" x-text="claudeStatusLabel(currentRun().status)"></span>
+                                </span>
+                            </template>
+                            <template x-if="currentRun().phase === 'running'">
+                                <button type="button" class="btn btn-sm btn-ghost-danger" @click="stopClaudeRun()">
+                                    <i class="ti ti-player-stop me-1 fs-3"></i><span x-text="$i18n('claude_stop')"></span>
+                                </button>
+                            </template>
+                            <template x-if="currentRun().phase === 'done'">
+                                <button type="button" class="btn btn-sm btn-ghost-secondary"
+                                        @click="discardClaudeRun(currentRun().taskId)">
+                                    <i class="ti ti-trash me-1 fs-3"></i><span x-text="$i18n('claude_discard')"></span>
+                                </button>
+                            </template>
+                        </span>
+                    </div>
+
+                    {# ===== Config phase ===== #}
+                    <template x-if="currentRun().phase === 'config'">
+                        <div class="row">
+                            <div class="col-lg-9 col-xl-7">
+                                <div class="card">
+                                    <div class="card-body">
+                                        <div class="mb-2">
+                                            <label class="form-label" x-text="$i18n('claude_prompt_label')"></label>
+                                            <textarea class="form-control" rows="5" x-model="currentRun().prompt"></textarea>
+                                        </div>
+                                        <div class="mb-2">
+                                            <label class="form-label" x-text="$i18n('claude_cwd_label')"></label>
+                                            <input type="text" class="form-control font-monospace" x-model="currentRun().cwd"
+                                                   :placeholder="$i18n('claude_cwd_placeholder')">
+                                        </div>
+                                        <div class="mb-2">
+                                            <label class="form-label" x-text="$i18n('claude_permission_mode')"></label>
+                                            <select class="form-select" x-model="currentRun().permissionMode">
+                                                <option value="plan" x-text="$i18n('claude_mode_plan')"></option>
+                                                <option value="default" x-text="$i18n('claude_mode_default')"></option>
+                                                <option value="acceptEdits" x-text="$i18n('claude_mode_acceptEdits')"></option>
+                                                <option value="bypassPermissions" x-text="$i18n('claude_mode_bypassPermissions')"></option>
+                                            </select>
+                                        </div>
+                                        <template x-if="currentRun().permissionMode === 'bypassPermissions'">
+                                            <div class="alert alert-warning py-2 mb-2">
+                                                <i class="ti ti-alert-triangle me-1"></i>
+                                                <span x-text="$i18n('claude_bypass_warning')"></span>
+                                            </div>
+                                        </template>
+                                        <div class="row g-2 mb-2">
+                                            <div class="col-sm-6">
+                                                <label class="form-label" x-text="$i18n('claude_allowed_tools_label')"></label>
+                                                <input type="text" class="form-control font-monospace" x-model="currentRun().allowedTools"
+                                                       :placeholder="$i18n('claude_tools_placeholder')">
+                                            </div>
+                                            <div class="col-sm-6">
+                                                <label class="form-label" x-text="$i18n('claude_denied_tools_label')"></label>
+                                                <input type="text" class="form-control font-monospace" x-model="currentRun().deniedTools"
+                                                       :placeholder="$i18n('claude_tools_placeholder')">
+                                            </div>
+                                            <div class="col-12 text-muted small" x-text="$i18n('claude_tools_hint')"></div>
+                                        </div>
+                                        <div class="text-muted small">
+                                            <i class="ti ti-shield-lock me-1"></i>
+                                            <span x-text="$i18n('claude_security_note')"></span>
+                                        </div>
+                                    </div>
+                                    <div class="card-footer text-end">
+                                        <button type="button" class="btn btn-claude" @click="startClaudeRun()">
+                                            <i class="ti ti-player-play me-1 fs-3"></i><span x-text="$i18n('claude_start')"></span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+
+                    {# ===== Running / done phase: friendly stream ===== #}
+                    <template x-if="currentRun().phase !== 'config'">
+                        <div>
+                            <div class="mb-2">
+                                <span class="badge bg-secondary-lt">
+                                    <span x-text="$i18n('claude_mode_label')"></span>:
+                                    <span class="ms-1" x-text="claudeModeLabel(currentRun().permissionMode)"></span>
+                                </span>
+                            </div>
+                            <div class="claude-stream-full" x-ref="claudeStream">
+                                <template x-for="(item, idx) in currentRun().items" :key="idx">
+                                    <div class="claude-msg" :class="`claude-msg-${item.type}`">
+                                        {# Assistant narration. #}
+                                        <template x-if="item.type === 'text'">
+                                            <div class="claude-text" x-text="item.text"></div>
+                                        </template>
+                                        {# Thinking -- collapsed, de-emphasized. #}
+                                        <template x-if="item.type === 'thinking'">
+                                            <div>
+                                                <a href="#" class="text-muted small text-decoration-none"
+                                                   @click.prevent="toggleClaudeItem(item)">
+                                                    <i class="ti ti-bulb me-1"></i><span x-text="$i18n('claude_thinking')"></span>
+                                                    <i class="ti" :class="item._open ? 'ti-chevron-up' : 'ti-chevron-down'"></i>
+                                                </a>
+                                                <div class="claude-text text-muted fst-italic small mt-1"
+                                                     x-show="item._open" x-text="item.text"></div>
+                                            </div>
+                                        </template>
+                                        {# Tool call -- friendly line, raw arg as detail. #}
+                                        <template x-if="item.type === 'tool_use'">
+                                            <div class="claude-tool">
+                                                <i class="ti me-1" :class="item.icon"></i>
+                                                <span class="fw-bold" x-text="item.title"></span>
+                                                <code class="ms-1" x-show="item.detail" x-text="item.detail"></code>
+                                            </div>
+                                        </template>
+                                        {# Tool output -- collapsed by default. #}
+                                        <template x-if="item.type === 'tool_result'">
+                                            <div>
+                                                <a href="#" class="small text-decoration-none"
+                                                   :class="item.is_error ? 'text-danger' : 'text-muted'"
+                                                   @click.prevent="toggleClaudeItem(item)" x-show="item.text">
+                                                    <i class="ti me-1" :class="item.is_error ? 'ti-alert-triangle' : 'ti-corner-down-right'"></i>
+                                                    <span x-text="$i18n('claude_tool_result')"></span>
+                                                    <i class="ti" :class="item._open ? 'ti-chevron-up' : 'ti-chevron-down'"></i>
+                                                </a>
+                                                <pre class="claude-output small mt-1" x-show="item._open" x-text="item.text"></pre>
+                                            </div>
+                                        </template>
+                                        {# Final result -- highlighted box. #}
+                                        <template x-if="item.type === 'result'">
+                                            <div class="claude-final" :class="item.is_error ? 'claude-final-error' : ''">
+                                                <div class="claude-text" x-text="item.text"></div>
+                                            </div>
+                                        </template>
+                                        {# Error line. #}
+                                        <template x-if="item.type === 'error'">
+                                            <div class="text-danger">
+                                                <i class="ti ti-alert-triangle me-1"></i><span x-text="item.text"></span>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </template>
+
+                                <div class="text-muted text-center py-4"
+                                     x-show="currentRun().items.length === 0 && currentRun().phase === 'running'">
+                                    <span class="spinner-border spinner-border-sm me-1"></span>
+                                    <span x-text="$i18n('claude_running')"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+                </template>
             </div>
         </div>
     </div>
@@ -972,128 +1151,6 @@
 
 </div>
 
-{# Claude run modal -- config (prompt/cwd/permissions) then the live stream. #}
-<div class="modal modal-blur fade" tabindex="-1" x-show="claudeRun" x-cloak
-     :class="claudeRun ? 'show d-block' : ''"
-     :style="claudeRun ? 'background-color: rgba(0,0,0,0.4)' : ''"
-     @keydown.escape.window="closeClaudeRun()">
-    <div class="modal-dialog modal-lg modal-dialog-scrollable" role="document">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">
-                    <i class="ti ti-robot me-1"></i>
-                    <span x-text="$i18n('claude_run_title')"></span>
-                    <template x-if="claudeRun">
-                        <span class="font-monospace ms-1 text-muted" x-text="`#${claudeRun.taskId}`"></span>
-                    </template>
-                </h5>
-                <button type="button" class="btn-close" @click="closeClaudeRun()" :aria-label="$i18n('close')"></button>
-            </div>
-            <template x-if="claudeRun">
-            <div class="modal-body">
-                {# ===== Config phase ===== #}
-                <template x-if="claudeRun.phase === 'config'">
-                    <div>
-                        <div class="mb-2">
-                            <label class="form-label" x-text="$i18n('claude_prompt_label')"></label>
-                            <textarea class="form-control" rows="4" x-model="claudeRun.prompt"></textarea>
-                        </div>
-                        <div class="mb-2">
-                            <label class="form-label" x-text="$i18n('claude_cwd_label')"></label>
-                            <input type="text" class="form-control font-monospace" x-model="claudeRun.cwd"
-                                   :placeholder="$i18n('claude_cwd_placeholder')">
-                        </div>
-                        <div class="mb-2">
-                            <label class="form-label" x-text="$i18n('claude_permission_mode')"></label>
-                            <select class="form-select" x-model="claudeRun.permissionMode">
-                                <option value="plan" x-text="$i18n('claude_mode_plan')"></option>
-                                <option value="default" x-text="$i18n('claude_mode_default')"></option>
-                                <option value="acceptEdits" x-text="$i18n('claude_mode_acceptEdits')"></option>
-                                <option value="bypassPermissions" x-text="$i18n('claude_mode_bypassPermissions')"></option>
-                            </select>
-                        </div>
-                        <template x-if="claudeRun.permissionMode === 'bypassPermissions'">
-                            <div class="alert alert-warning py-2 mb-2">
-                                <i class="ti ti-alert-triangle me-1"></i>
-                                <span x-text="$i18n('claude_bypass_warning')"></span>
-                            </div>
-                        </template>
-                        <div class="row g-2 mb-2">
-                            <div class="col-sm-6">
-                                <label class="form-label" x-text="$i18n('claude_allowed_tools_label')"></label>
-                                <input type="text" class="form-control font-monospace" x-model="claudeRun.allowedTools"
-                                       :placeholder="$i18n('claude_tools_placeholder')">
-                            </div>
-                            <div class="col-sm-6">
-                                <label class="form-label" x-text="$i18n('claude_denied_tools_label')"></label>
-                                <input type="text" class="form-control font-monospace" x-model="claudeRun.deniedTools"
-                                       :placeholder="$i18n('claude_tools_placeholder')">
-                            </div>
-                            <div class="col-12 text-muted small" x-text="$i18n('claude_tools_hint')"></div>
-                        </div>
-                        <div class="text-muted small">
-                            <i class="ti ti-shield-lock me-1"></i>
-                            <span x-text="$i18n('claude_security_note')"></span>
-                        </div>
-                    </div>
-                </template>
-
-                {# ===== Running / done phase ===== #}
-                <template x-if="claudeRun.phase !== 'config'">
-                    <div>
-                        <div class="mb-2 d-flex align-items-center gap-2">
-                            <template x-if="claudeRun.phase === 'running'">
-                                <span class="badge bg-azure-lt">
-                                    <span class="spinner-border spinner-border-sm me-1"></span>
-                                    <span x-text="claudeRun.status === 'connecting' ? $i18n('claude_connecting') : $i18n('claude_running')"></span>
-                                </span>
-                            </template>
-                            <template x-if="claudeRun.phase === 'done'">
-                                <span class="badge"
-                                      :class="claudeRun.status === 'completed' ? 'bg-success-lt' : 'bg-danger-lt'">
-                                    <span x-text="$i18n('claude_run_finished')"></span>:
-                                    <span x-text="claudeStatusLabel(claudeRun.status)"></span>
-                                </span>
-                            </template>
-                            <span class="badge bg-secondary-lt">
-                                <span x-text="$i18n('claude_mode_label')"></span>:
-                                <span class="ms-1" x-text="claudeModeLabel(claudeRun.permissionMode)"></span>
-                            </span>
-                        </div>
-
-                        {# Event stream. #}
-                        <div class="claude-stream" x-ref="claudeStream">
-                            <template x-for="(item, idx) in claudeRun.items" :key="idx">
-                                <div class="claude-item" :class="`claude-item-${item.type}`">
-                                    <div class="claude-item-head">
-                                        <i class="ti me-1" :class="claudeItemIcon(item.type)"></i>
-                                        <span class="claude-item-label" x-text="claudeItemLabel(item)"></span>
-                                    </div>
-                                    <pre class="claude-item-text" x-show="item.text" x-text="item.text"></pre>
-                                </div>
-                            </template>
-                        </div>
-                    </div>
-                </template>
-            </div>
-            </template>
-            <div class="modal-footer">
-                <template x-if="claudeRun && claudeRun.phase === 'config'">
-                    <button type="button" class="btn btn-sm btn-primary" @click="startClaudeRun()">
-                        <i class="ti ti-player-play me-1 fs-3"></i><span x-text="$i18n('claude_start')"></span>
-                    </button>
-                </template>
-                <template x-if="claudeRun && claudeRun.phase === 'running'">
-                    <button type="button" class="btn btn-sm btn-ghost-danger" @click="stopClaudeRun()">
-                        <i class="ti ti-player-stop me-1 fs-3"></i><span x-text="$i18n('claude_stop')"></span>
-                    </button>
-                </template>
-                <button type="button" class="btn btn-sm btn-ghost-secondary" @click="closeClaudeRun()"
-                        x-text="$i18n('close')"></button>
-            </div>
-        </div>
-    </div>
-</div>
 
 {# Toast container (Tabler/Bootstrap-compatible). Toasts injected by app.js. #}
 <div id="toast-container"

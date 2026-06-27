@@ -808,7 +808,7 @@ function tracker(serverDefaultView) {
         // bumps /api/changes (the DB file's mtime). We poll it on an interval
         // and refetch only when the token changed, so phase transitions
         // (planned -> wip -> review -> done) and every other change reflect
-        // within ~1.5s without a manual reload and without repeatedly pulling
+        // within ~5s without a manual reload and without repeatedly pulling
         // the full task list. Own actions still refresh eagerly (see refreshAll).
         startChangePolling() {
             this._changeToken = null;
@@ -820,9 +820,9 @@ function tracker(serverDefaultView) {
                 // registry without touching the DB, so the change token never
                 // bumps -- _pollChanges alone would never notice. Re-poll the
                 // live-session set on its own cadence so a spinner for a
-                // vanished session clears within ~1.5s instead of forever.
+                // vanished session clears within ~5s instead of forever.
                 if (this.claudeAvailable) this.loadClaudeSessions();
-            }, 1500);
+            }, 5000);
         },
 
         async _pollChanges() {

@@ -29,9 +29,9 @@ from ntasker.assets import (
 )
 from ntasker.claude_assets import resolve_claude_home, scan_status
 from ntasker.claude_runner import (
-    active_session_ids,
     default_cwd_for_project,
     seed_command_for_task,
+    session_states,
     stop_session,
     terminal_available,
 )
@@ -411,6 +411,7 @@ def build_js_strings() -> dict[str, str]:
         ),
         # Claude run -- interactive "Run with Claude" terminal
         "claude_run": _("Run with Claude"),
+        "claude_waiting": _("Claude is waiting for your input"),
         "claude_back": _("Back"),
         "claude_stop": _("Stop"),
         "claude_connecting": _("Connecting..."),
@@ -637,8 +638,19 @@ def api_claude_status() -> JSONResponse:
 
 @app.get("/api/claude/sessions")
 def api_claude_sessions() -> JSONResponse:
-    """Task ids with a live interactive session -- feeds the busy indicators."""
-    return JSONResponse({"active": active_session_ids()})
+    """Live sessions per task -- feeds the busy + "waiting for input" indicators.
+
+    ``active``: every task id with a live session. ``waiting``: the subset that
+    has gone silent long enough to look blocked on a prompt (see
+    :func:`ntasker.claude_runner.session_states`).
+    """
+    states = session_states()
+    return JSONResponse(
+        {
+            "active": list(states.keys()),
+            "waiting": [tid for tid, st in states.items() if st == "waiting"],
+        }
+    )
 
 
 @app.get("/api/tasks/{task_id}/claude-run/defaults")

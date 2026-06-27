@@ -487,7 +487,9 @@
                 <div class="card" x-show="viewMode === 'list'" x-cloak>
                     <div class="list-group list-group-flush" x-show="tasks.length > 0">
                         <template x-for="task in tasks" :key="task.id">
-                            <div class="list-group-item">
+                            <div class="list-group-item"
+                                 :class="{'task-session-running': taskRunPhase(task.id) === 'running',
+                                          'task-session-waiting': taskRunPhase(task.id) === 'waiting'}">
                                 <div class="row align-items-start">
                                     <div class="col-auto">
                                         {# Disabled while blocked: a task with open dependencies #}
@@ -631,10 +633,12 @@
                                     <div class="col-auto">
                                         <div class="btn-list">
                                             {# Run with Claude -- only when the `claude` CLI + a PTY are available. #}
-                                            <template x-if="claudeAvailable">
+                                            <template x-if="claudeAvailable && task.status !== 'done'">
                                                 <button class="btn btn-sm btn-claude" @click="openClaudeRun(task)"
-                                                        :aria-label="$i18n('claude_run')" :title="$i18n('claude_run')">
-                                                    <template x-if="taskRunPhase(task.id) === 'running'"><span class="spinner-border spinner-border-sm"></span></template><template x-if="taskRunPhase(task.id) !== 'running'"><i class="ti ti-robot fs-3"></i></template>
+                                                        :class="{'btn-claude-waiting': taskRunPhase(task.id) === 'waiting'}"
+                                                        :aria-label="taskRunPhase(task.id) === 'waiting' ? $i18n('claude_waiting') : $i18n('claude_run')"
+                                                        :title="taskRunPhase(task.id) === 'waiting' ? $i18n('claude_waiting') : $i18n('claude_run')">
+                                                    <template x-if="taskRunPhase(task.id) === 'waiting'"><i class="ti ti-help fs-3"></i></template><template x-if="taskRunPhase(task.id) === 'running'"><span class="spinner-border spinner-border-sm"></span></template><template x-if="!taskRunPhase(task.id)"><i class="ti ti-robot fs-3"></i></template>
                                                 </button>
                                             </template>
                                             <button class="btn btn-sm btn-ghost-secondary" @click="startEdit(task)"
@@ -719,7 +723,9 @@
                                      x-show="!(col.key === 'done' && doneCollapsed)">
                                     <template x-for="task in kanbanTasksFor(col.key)" :key="task.id">
                                         <div class="kanban-card"
-                                             :class="{'kanban-card-dragging': draggedTaskId === task.id}"
+                                             :class="{'kanban-card-dragging': draggedTaskId === task.id,
+                                                      'task-session-running': taskRunPhase(task.id) === 'running',
+                                                      'task-session-waiting': taskRunPhase(task.id) === 'waiting'}"
                                              draggable="true"
                                              @dragstart="onCardDragStart($event, task)"
                                              @dragend="onCardDragEnd($event)">
@@ -739,11 +745,13 @@
                                                         @click.stop="task._expanded = !task._expanded"
                                                         x-text="task.title"></strong>
                                                 {# Run with Claude -- only when the `claude` CLI + a PTY are available. #}
-                                                <template x-if="claudeAvailable">
+                                                <template x-if="claudeAvailable && task.status !== 'done'">
                                                     <button class="btn btn-sm btn-claude px-1 py-0"
                                                             @click.stop="openClaudeRun(task)"
-                                                            :aria-label="$i18n('claude_run')" :title="$i18n('claude_run')">
-                                                        <template x-if="taskRunPhase(task.id) === 'running'"><span class="spinner-border spinner-border-sm"></span></template><template x-if="taskRunPhase(task.id) !== 'running'"><i class="ti ti-robot fs-3"></i></template>
+                                                            :class="{'btn-claude-waiting': taskRunPhase(task.id) === 'waiting'}"
+                                                            :aria-label="taskRunPhase(task.id) === 'waiting' ? $i18n('claude_waiting') : $i18n('claude_run')"
+                                                            :title="taskRunPhase(task.id) === 'waiting' ? $i18n('claude_waiting') : $i18n('claude_run')">
+                                                        <template x-if="taskRunPhase(task.id) === 'waiting'"><i class="ti ti-help fs-3"></i></template><template x-if="taskRunPhase(task.id) === 'running'"><span class="spinner-border spinner-border-sm"></span></template><template x-if="!taskRunPhase(task.id)"><i class="ti ti-robot fs-3"></i></template>
                                                     </button>
                                                 </template>
                                                 <button class="btn btn-sm btn-ghost-secondary px-1 py-0"

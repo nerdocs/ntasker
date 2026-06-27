@@ -103,11 +103,39 @@ def validate_projects_base(value: str) -> str:
     return norm
 
 
+# Default idle window (seconds): a live Claude session that produced no output
+# for at least this long is treated as "waiting for input" (see
+# :func:`ntasker.claude_runner.session_states`). The CLI emits no explicit
+# "I have a question" signal, so this silence heuristic stands in for it.
+CLAUDE_IDLE_SECONDS_DEFAULT = 8.0
+
+
+def validate_claude_idle_seconds(value: str) -> str:
+    """Validator for the ``claude_idle_seconds`` setting.
+
+    A positive number of seconds. Rejects non-numeric or non-positive values so
+    a typo can't disable the "waiting" detection by storing garbage.
+    """
+    norm = (value or "").strip()
+    try:
+        secs = float(norm)
+    except ValueError:
+        raise ValueError(
+            _("claude_idle_seconds must be a number of seconds (got {value!r}).").format(
+                value=value
+            )
+        ) from None
+    if secs <= 0:
+        raise ValueError(_("claude_idle_seconds must be greater than 0."))
+    return norm
+
+
 VALIDATORS: dict[str, Validator] = {
     "assets_mode": validate_assets_mode,
     "language": validate_language,
     "default_view": validate_default_view,
     "projects_base": validate_projects_base,
+    "claude_idle_seconds": validate_claude_idle_seconds,
 }
 """Registry of known settings keys with their validators.
 

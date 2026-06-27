@@ -24,6 +24,7 @@ import contextlib
 import os
 import shutil
 import signal
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -119,6 +120,10 @@ class TermSession:
     subscribers: set = field(default_factory=set)  # set[asyncio.Queue]
     alive: bool = True
     exit_code: int | None = None
+    # Monotonic timestamp of the last PTY output. Drives the "waiting for input"
+    # heuristic (see :func:`session_states`): a long-silent terminal means
+    # Claude is parked at a prompt rather than working.
+    last_output: float = field(default_factory=time.monotonic)
 
 
 SESSIONS: dict[int, TermSession] = {}
@@ -127,6 +132,33 @@ SESSIONS: dict[int, TermSession] = {}
 def active_session_ids() -> list[int]:
     """Task ids with a *live* session -- drives the per-task busy indicator."""
     return [tid for tid, s in SESSIONS.items() if s.alive]
+
+
+def session_states() -> dict[int, str]:
+    """Map each live session's task id to ``"waiting"`` or ``"running"``.
+
+    ``"waiting"``: the PTY produced no output for at least the configured idle
+    window, which we read as "Claude is parked at a prompt and wants the user".
+    The CLI emits no explicit "I have a question" event, so output-silence is
+    the stand-in -- while Claude works its TUI keeps repainting (the spinner),
+    so a quiet terminal means it is blocked on input. Everything else is
+    ``"running"``. The window comes from the ``claude_idle_seconds`` setting.
+    """
+    from ntasker.settings import CLAUDE_IDLE_SECONDS_DEFAULT, get_setting  # noqa: PLC0415
+
+    # Never let a settings read break the busy-indicator poll: any failure
+    # (DB hiccup, bad value) falls back to the default window.
+    try:
+        raw = get_setting("claude_idle_seconds")
+        idle = float(raw) if raw else CLAUDE_IDLE_SECONDS_DEFAULT
+    except Exception:  # noqa: BLE001 -- bad value or DB hiccup both fall back
+        idle = CLAUDE_IDLE_SECONDS_DEFAULT
+    now = time.monotonic()
+    return {
+        tid: ("waiting" if now - s.last_output >= idle else "running")
+        for tid, s in SESSIONS.items()
+        if s.alive
+    }
 
 
 def _clean_env() -> dict:
@@ -176,6 +208,7 @@ def _attach_reader(sess: TermSession) -> None:
         if not data:  # EOF / EIO -> the process exited
             _reap(sess)
             return
+        sess.last_output = time.monotonic()
         sess.buffer.extend(data)
         if len(sess.buffer) > BUFFER_LIMIT:
             del sess.buffer[: len(sess.buffer) - BUFFER_LIMIT]

@@ -61,7 +61,10 @@
     display: grid;
     grid-template-columns: 1fr 1fr 1fr 1fr;
     gap: 0.75rem;
-    align-items: start;
+    /* Stretch every column to the height of the tallest one so the whole
+     * column (which is the drop target) stays a big, easy-to-hit area --
+     * no need to scroll back up to hit a short column when dropping. */
+    align-items: stretch;
 }
 .kanban-board.kanban-done-collapsed {
     grid-template-columns: 1fr 1fr 1fr auto;
@@ -174,4 +177,35 @@
     background-color: #c25e3f;
     border-color: #c25e3f;
     color: #fff;
+}
+/* Claude is blocked on a prompt: the run button turns amber and pulses so the
+ * waiting task is easy to spot among the others. */
+.btn-claude-waiting,
+.btn-claude-waiting:focus {
+    background-color: var(--tblr-warning);
+    border-color: var(--tblr-warning);
+    color: #000;
+    animation: claude-waiting-pulse 1.4s ease-in-out infinite;
+}
+.btn-claude-waiting:hover,
+.btn-claude-waiting:active {
+    background-color: var(--tblr-warning);
+    border-color: var(--tblr-warning);
+    color: #000;
+}
+@keyframes claude-waiting-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.55; }
+}
+
+/* Task rows / cards with a live Claude session get a tinted background + left
+ * accent so running and (more loudly) waiting sessions stand out at a glance.
+ * Applies to both the list view (.list-group-item) and the kanban (.kanban-card). */
+.task-session-running {
+    background-color: rgba(var(--tblr-primary-rgb), 0.07);
+    border-left: 3px solid var(--tblr-primary);
+}
+.task-session-waiting {
+    background-color: rgba(var(--tblr-warning-rgb), 0.16);
+    border-left: 3px solid var(--tblr-warning);
 }

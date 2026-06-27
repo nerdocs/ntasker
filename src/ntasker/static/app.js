@@ -134,6 +134,9 @@ function tracker(serverDefaultView) {
         claudeView: null,
         claudeMeta: null,
         claudeSessions: [],
+        // Subset of claudeSessions that has gone silent long enough to look
+        // blocked on a prompt -- drives the "waiting for input" highlight.
+        claudeWaiting: [],
 
         // Multi-value project filter. Empty list = no filter (all tasks).
         // Special value '__none__' = include cross-project tasks (project IS NULL).
@@ -1119,12 +1122,17 @@ function tracker(serverDefaultView) {
         async loadClaudeSessions() {
             try {
                 const r = await fetch('/api/claude/sessions');
-                if (r.ok) { const d = await r.json(); this.claudeSessions = d.active || []; }
+                if (r.ok) {
+                    const d = await r.json();
+                    this.claudeSessions = d.active || [];
+                    this.claudeWaiting = d.waiting || [];
+                }
             } catch (_e) { /* leave the last known set */ }
         },
 
-        // 'running' if the task has a live server-side session, else null.
+        // 'waiting' (blocked on a prompt) > 'running' (live session) > null.
         taskRunPhase(taskId) {
+            if (this.claudeWaiting.includes(taskId)) return 'waiting';
             return this.claudeSessions.includes(taskId) ? 'running' : null;
         },
 

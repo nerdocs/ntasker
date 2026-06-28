@@ -897,11 +897,11 @@
                             <template x-if="claudeMeta.status === 'exited'">
                                 <span class="badge bg-secondary-lt" x-text="$i18n('claude_run_finished')"></span>
                             </template>
-                            <button type="button" class="btn btn-sm btn-ghost-success" @click="markDoneFromClaudeRun()">
+                            <button type="button" class="btn btn-ghost-success" @click="markDoneFromClaudeRun()">
                                 <i class="ti ti-check me-1 fs-3"></i><span x-text="$i18n('claude_mark_done')"></span>
                             </button>
                             <template x-if="claudeMeta.status !== 'exited'">
-                                <button type="button" class="btn btn-sm btn-ghost-danger" @click="stopClaudeRun()">
+                                <button type="button" class="btn btn-ghost-danger" @click="stopClaudeRun()">
                                     <i class="ti ti-player-stop me-1 fs-3"></i><span x-text="$i18n('claude_stop')"></span>
                                 </button>
                             </template>

@@ -39,6 +39,7 @@
                     <span class="badge bg-secondary-lt ms-2 font-monospace small align-middle">v{{ version }}</span>
                 </a>
             </h1>
+            {% include "_topnav.html" %}
         </div>
     </header>
 
@@ -333,6 +334,7 @@
 
 </div>
 
+<script src="/static/topnav.js?v={{ static_bust('topnav.js') }}"></script>
 <script src="{{ asset('alpine-js') }}"
         integrity="{{ asset_sri('alpine-js') }}" crossorigin="anonymous" defer></script>
 <script>

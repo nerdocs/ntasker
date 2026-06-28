@@ -120,7 +120,6 @@ function tracker(serverDefaultView) {
         // drives the column-highlight CSS class.
         draggedTaskId: null,
         dragOverColumn: null,
-        theme: localStorage.getItem(LS_KEY_THEME) || 'light',
 
         // ---- Claude run ("Run with Claude") ----
         // claudeAvailable gates the per-task run button (GET /api/claude/status).
@@ -184,12 +183,7 @@ function tracker(serverDefaultView) {
         editing: null,               // task object or null
         counts: { open: 0, done: 0, archive: 0 },
 
-        // True once /api/update-check reports a newer release on PyPI; drives
-        // the red dot on the topbar info icon. Stays false offline / on error.
-        updateAvailable: false,
-
         async init() {
-            this.applyTheme();
             this.restoreProjectFilter();
             this.restoreTagFilter();
             this.restorePhaseFilter();
@@ -201,7 +195,6 @@ function tracker(serverDefaultView) {
                 this.loadPriorities(),
                 this.loadClaudeStatus(),
                 this.loadClaudeSessions(),
-                this.loadUpdateInfo(),
             ]);
             // After loading projects/tags, drop stale entries silently.
             this.pruneStaleProjectFilter();
@@ -260,16 +253,6 @@ function tracker(serverDefaultView) {
             const q = this.tagSearch.trim().toLowerCase();
             const list = q ? this.tags.filter(t => t.name.includes(q)) : this.tags;
             return [...list].sort((a, b) => a.name.localeCompare(b.name));
-        },
-
-        // ---- Theme ----
-        applyTheme() {
-            document.documentElement.setAttribute('data-bs-theme', this.theme);
-        },
-        toggleTheme() {
-            this.theme = this.theme === 'dark' ? 'light' : 'dark';
-            localStorage.setItem(LS_KEY_THEME, this.theme);
-            this.applyTheme();
         },
 
         // ---- Project filter ----
@@ -610,18 +593,6 @@ function tracker(serverDefaultView) {
         async loadPriorities() {
             const r = await fetch('/api/priorities');
             this.priorities = await r.json();
-        },
-
-        // Poll the server-side (cached) PyPI check. Failures stay silent --
-        // no badge is strictly better than a misleading one.
-        async loadUpdateInfo() {
-            try {
-                const r = await fetch('/api/update-check');
-                const data = await r.json();
-                this.updateAvailable = !!data.update_available;
-            } catch (e) {
-                this.updateAvailable = false;
-            }
         },
 
         // ---- Tasks ----

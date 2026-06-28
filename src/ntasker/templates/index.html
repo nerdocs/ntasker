@@ -230,31 +230,7 @@
                 ntasker
                 <span class="badge bg-secondary-lt ms-2 font-monospace small align-middle">v{{ version }}</span>
             </h1>
-            <div class="navbar-nav flex-row order-md-last ms-auto align-items-center">
-                <a href="{{ links.coffee }}" target="_blank" rel="noopener"
-                   class="d-inline-flex align-items-center me-4" :title="$i18n('buy_me_a_coffee')">
-                    <img src="/static/buymeacoffee.png?v={{ static_bust('buymeacoffee.png') }}"
-                         alt="Buy me a coffee" height="32">
-                </a>
-                <a href="/info" class="btn btn-icon btn-sm btn-ghost-secondary position-relative me-1"
-                   :title="updateAvailable ? $i18n('update_available_short') : $i18n('info')">
-                    <i class="ti ti-info-circle fs-2"></i>
-                    {# Empty badge -> Tabler renders a round dot (.badge:empty); badge-notification corners it. #}
-                    <span class="badge badge-notification bg-red" aria-hidden="true"
-                          x-show="updateAvailable" x-cloak></span>
-                </a>
-                <a href="{{ links.github }}" target="_blank" rel="noopener"
-                   class="btn btn-icon btn-sm btn-ghost-secondary me-1" :title="$i18n('github')">
-                    <i class="ti ti-brand-github fs-2"></i>
-                </a>
-                <button class="btn btn-icon btn-sm btn-ghost-secondary me-1" @click="toggleTheme()"
-                        :aria-label="theme === 'dark' ? $i18n('light_mode') : $i18n('dark_mode')">
-                    <i class="ti fs-2" :class="theme === 'dark' ? 'ti-sun' : 'ti-moon'"></i>
-                </button>
-                <a href="/settings" class="btn btn-icon btn-sm btn-ghost-secondary" :title="$i18n('settings')">
-                    <i class="ti ti-settings fs-2"></i>
-                </a>
-            </div>
+            {% include "_topnav.html" %}
         </div>
     </header>
 
@@ -1111,6 +1087,7 @@
         integrity="{{ asset_sri('xterm-addon-fit') }}" crossorigin="anonymous"></script>
 <script src="{{ asset('alpine-js') }}"
         integrity="{{ asset_sri('alpine-js') }}" crossorigin="anonymous" defer></script>
+<script src="/static/topnav.js?v={{ static_bust('topnav.js') }}"></script>
 <script src="/static/app.js?v={{ static_bust('app.js') }}"></script>
 </body>
 </html>

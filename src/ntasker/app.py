@@ -783,6 +783,7 @@ def settings_page(request: Request) -> HTMLResponse:
             "language": get_active_language(),
             "js_strings": build_js_strings(),
             "can_restart": service.service_installed(),
+            "links": LINKS,
         },
     )
     response.headers["Cache-Control"] = "no-store"
@@ -799,6 +800,7 @@ def tags_page(request: Request) -> HTMLResponse:
             "version": VERSION,
             "language": get_active_language(),
             "js_strings": build_js_strings(),
+            "links": LINKS,
         },
     )
     response.headers["Cache-Control"] = "no-store"

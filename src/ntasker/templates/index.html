@@ -388,6 +388,7 @@
                                                    @blur="setTimeout(() => focused = false, 150)"
                                                    @input="tagHighlight.form = -1"
                                                    @keydown.enter="onTagEnter($event, 'form')"
+                                                   @keydown.tab="onTagTab($event, 'form')"
                                                    @keydown.arrow-down.prevent="onTagArrow('form', 1)"
                                                    @keydown.arrow-up.prevent="onTagArrow('form', -1)"
                                                    @keydown.escape="focused = false; tagHighlight.form = -1"
@@ -808,6 +809,16 @@
                                                         <span class="ms-1" x-text="blockingDeps(task).map(d => '#' + d.id).join(', ')"></span>
                                                     </span>
                                                 </template>
+
+                                                {# Mark-done shortcut, bottom-right of the card -- same #}
+                                                {# affordance as the terminal header. Open tasks only. #}
+                                                <template x-if="task.status !== 'done'">
+                                                    <button class="btn btn-sm btn-ghost-success px-1 py-0 ms-auto"
+                                                            @click.stop="toggleStatus(task)"
+                                                            :aria-label="$i18n('claude_mark_done')" :title="$i18n('claude_mark_done')">
+                                                        <i class="ti ti-check fs-3"></i>
+                                                    </button>
+                                                </template>
                                             </div>
                                         </div>
                                     </template>
@@ -952,6 +963,7 @@
                                        @blur="setTimeout(() => focused = false, 150)"
                                        @input="tagHighlight.edit = -1"
                                        @keydown.enter="onTagEnter($event, 'edit')"
+                                       @keydown.tab="onTagTab($event, 'edit')"
                                        @keydown.arrow-down.prevent="onTagArrow('edit', 1)"
                                        @keydown.arrow-up.prevent="onTagArrow('edit', -1)"
                                        @keydown.escape="focused = false; tagHighlight.edit = -1"

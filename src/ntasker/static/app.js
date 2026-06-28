@@ -968,6 +968,18 @@ function tracker(serverDefaultView) {
             }
         },
 
+        // Tab in a tag-input with a partial query: complete to a suggestion and
+        // add it straight away (highlighted one if any, else the first match),
+        // instead of letting Tab move focus out of the field.
+        onTagTab(event, which) {
+            const sugg = this.tagSuggestions(which);
+            if (!sugg.length) return;
+            const hi = this.tagHighlight[which];
+            const pick = (hi >= 0 && hi < sugg.length) ? sugg[hi] : sugg[0];
+            event.preventDefault();
+            this.selectSuggestion(which, pick);
+        },
+
         // ---- Dependency input helpers (shared by new-task form & edit-modal) ----
         // `which` = 'form' | 'edit'. Deps are stored as [{id, title, done}].
         _depBucket(which) {

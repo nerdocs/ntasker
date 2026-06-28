@@ -12,9 +12,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import functools
 import sqlite3
+import subprocess
 from datetime import datetime
 from importlib.resources import files
+from pathlib import Path
 from typing import Literal
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request, WebSocket
@@ -267,6 +270,28 @@ def _static_bust(name: str) -> str:
         # zip is immutable so the cache is fine.
         return VERSION
     return f"{VERSION}-{mtime}"
+
+
+@functools.lru_cache(maxsize=1)
+def get_git_commit() -> str | None:
+    """Short git commit hash of the running source tree, or ``None`` when
+    not run from a checkout (installed wheel, no git available).
+
+    Shown only on the info page so a dev build reads ``v2.12.0.abc1234``;
+    the result never changes without a restart, hence the cache.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=Path(__file__).resolve().parent,
+            capture_output=True,
+            text=True,
+            timeout=1,
+            check=True,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return out.stdout.strip() or None
 
 
 templates.env.globals["asset"] = _asset
@@ -788,6 +813,7 @@ def info_page(request: Request) -> HTMLResponse:
         "info.html",
         context={
             "version": VERSION,
+            "commit": get_git_commit(),
             "language": get_active_language(),
             "js_strings": build_js_strings(),
             "links": LINKS,

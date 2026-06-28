@@ -118,7 +118,7 @@
                             <i class="ti ti-checkbox fs-1 me-3 text-primary"></i>
                             <div>
                                 <div class="h2 mb-0">ntasker
-                                    <span class="badge bg-secondary-lt ms-1 font-monospace small align-middle">v{{ version }}</span>
+                                    <span class="badge bg-secondary-lt ms-1 font-monospace small align-middle">v{{ version }}{% if commit %}.{{ commit }}{% endif %}</span>
                                 </div>
                                 <div class="text-secondary">{{ t('ntasker is a lightweight, single-user tracker for your Claude Code tasks -- FastAPI + SQLite, Tabler.io UI, no build step.') }}</div>
                             </div>

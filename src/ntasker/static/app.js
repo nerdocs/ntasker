@@ -1217,7 +1217,10 @@ function tracker(serverDefaultView) {
             term.onData((data) => {
                 if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'input', data }));
             });
-            term.focus();
+            // Focus once the browser has painted the just-shown terminal, so
+            // keystrokes land in the PTY immediately. A bare focus() right after
+            // open() can be dropped while the view is still being revealed.
+            requestAnimationFrame(() => term.focus());
         },
 
         // Drop the on-screen terminal + socket. The *server* PTY keeps running,

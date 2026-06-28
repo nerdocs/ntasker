@@ -1277,6 +1277,34 @@ def cmd_service_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_service_start(args: argparse.Namespace) -> int:
+    """Start the installed OS service."""
+    from ntasker import service  # noqa: PLC0415
+
+    if service.start_service():
+        print(_("ntasker: service started."))
+        return 0
+    print(
+        _("ntasker: no service installed -- run `ntasker service install` first."),
+        file=sys.stderr,
+    )
+    return 1
+
+
+def cmd_service_stop(args: argparse.Namespace) -> int:
+    """Stop the installed OS service."""
+    from ntasker import service  # noqa: PLC0415
+
+    if service.stop_service():
+        print(_("ntasker: service stopped."))
+        return 0
+    print(
+        _("ntasker: no service installed -- run `ntasker service install` first."),
+        file=sys.stderr,
+    )
+    return 1
+
+
 # ---------------------------------------------------------------------------
 # Argparse construction
 # ---------------------------------------------------------------------------
@@ -1554,6 +1582,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     svc_status = svc_sub.add_parser("status", help=_("Show service install / active state."))
     svc_status.set_defaults(func=cmd_service_status)
+
+    svc_start = svc_sub.add_parser("start", help=_("Start the installed service."))
+    svc_start.set_defaults(func=cmd_service_start)
+
+    svc_stop = svc_sub.add_parser("stop", help=_("Stop the running service."))
+    svc_stop.set_defaults(func=cmd_service_stop)
 
     # self-update ---------------------------------------------------------
     sp_su = sub.add_parser(

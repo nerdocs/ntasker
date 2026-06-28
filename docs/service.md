@@ -33,12 +33,18 @@ once with:
 loginctl enable-linger $USER
 ```
 
-## Status / uninstall
+## Start / stop / status / uninstall
 
 ```bash
+ntasker service start       # start the installed service
+ntasker service stop        # stop it for this session (next login still starts it)
 ntasker service status      # install + active state of the units
 ntasker service uninstall   # disable + remove all ntasker units (idempotent)
 ```
+
+`start` / `stop` act on the installed unit (systemd `--user` / launchd agent). They are distinct from the top-level
+`ntasker stop`, which shuts down any running `ntasker serve` over HTTP regardless of how it was launched. To stop the
+service permanently (so it does not restart at login), use `service uninstall`.
 
 ## Auto-update
 

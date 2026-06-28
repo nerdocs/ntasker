@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: ntasker 1.3.0\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-06-28 20:24+0200\n"
+"POT-Creation-Date: 2026-06-28 20:54+0200\n"
 "PO-Revision-Date: 2026-05-02 09:19+0200\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: de\n"
@@ -124,8 +124,7 @@ msgid "Manage tags"
 msgstr "Tags verwalten"
 
 #: src/ntasker/app.py:317 src/ntasker/app.py:414
-#: src/ntasker/templates/index.html:254 src/ntasker/templates/settings.html:6
-#: src/ntasker/templates/settings.html:52
+#: src/ntasker/templates/settings.html:6 src/ntasker/templates/settings.html:52
 msgid "Settings"
 msgstr "Einstellungen"
 
@@ -150,7 +149,7 @@ msgstr "Update verfügbar"
 msgid "Source on GitHub"
 msgstr "Quellcode auf GitHub"
 
-#: src/ntasker/app.py:323 src/ntasker/templates/info.html:152
+#: src/ntasker/app.py:323 src/ntasker/templates/info.html:150
 msgid "Buy me a coffee"
 msgstr "Spendier mir einen Kaffee"
 
@@ -679,7 +678,9 @@ msgstr "Eine neue Version ist verfügbar"
 #: src/ntasker/app.py:489
 #, python-brace-format
 msgid "You are running {current}, but {latest} is available on PyPI. Update with:"
-msgstr "Du verwendest {current}, auf PyPI ist {latest} verfügbar. Aktualisieren mit:"
+msgstr ""
+"Du verwendest {current}, auf PyPI ist {latest} verfügbar. Aktualisieren "
+"mit:"
 
 #: src/ntasker/app.py:492
 msgid "ntasker is up to date."
@@ -698,8 +699,12 @@ msgid "About"
 msgstr "Über"
 
 #: src/ntasker/app.py:497 src/ntasker/templates/info.html:123
-msgid "ntasker is a lightweight, single-user local task tracker -- FastAPI + SQLite, Tabler.io UI, no build step."
-msgstr "ntasker ist ein schlanker, lokaler Single-User-Aufgaben-Tracker -- FastAPI + SQLite, Tabler.io-UI, ohne Build-Schritt."
+msgid ""
+"ntasker is a lightweight, single-user local task tracker -- FastAPI + "
+"SQLite, Tabler.io UI, no build step."
+msgstr ""
+"ntasker ist ein schlanker, lokaler Single-User-Aufgaben-Tracker -- "
+"FastAPI + SQLite, Tabler.io-UI, ohne Build-Schritt."
 
 #: src/ntasker/app.py:500 src/ntasker/templates/info.html:130
 msgid "Made by"
@@ -710,8 +715,12 @@ msgid "License"
 msgstr "Lizenz"
 
 #: src/ntasker/app.py:503 src/ntasker/templates/info.html:136
-msgid "Built and maintained by nerdoc. If ntasker saves you time, a coffee keeps it going."
-msgstr "Entwickelt und gepflegt von nerdoc. Wenn ntasker dir Zeit spart, hält ein Kaffee es am Laufen."
+msgid ""
+"Built and maintained by nerdoc. If ntasker saves you time, a coffee keeps"
+" it going."
+msgstr ""
+"Entwickelt und gepflegt von nerdoc. Wenn ntasker dir Zeit spart, hält ein"
+" Kaffee es am Laufen."
 
 #: src/ntasker/app.py:506 src/ntasker/templates/info.html:142
 msgid "View on GitHub"
@@ -1107,23 +1116,35 @@ msgstr "ntasker: jetzt {ver} (vorher {old})"
 msgid "ntasker: service restarted."
 msgstr "ntasker: Dienst neu gestartet."
 
-#: src/ntasker/cli.py:1301
+#: src/ntasker/cli.py:1285
+msgid "ntasker: service started."
+msgstr "ntasker: Dienst gestartet."
+
+#: src/ntasker/cli.py:1288 src/ntasker/cli.py:1302
+msgid "ntasker: no service installed -- run `ntasker service install` first."
+msgstr "ntasker: Kein Dienst installiert -- zuerst `ntasker service install` ausführen."
+
+#: src/ntasker/cli.py:1299
+msgid "ntasker: service stopped."
+msgstr "ntasker: Dienst gestoppt."
+
+#: src/ntasker/cli.py:1329
 msgid "Lightweight local task tracker. Single-user, FastAPI + SQLite."
 msgstr "Leichter lokaler Aufgaben-Tracker. Einzelnutzer, FastAPI + SQLite."
 
-#: src/ntasker/cli.py:1307
+#: src/ntasker/cli.py:1335
 msgid "DB path (overrides NTASKER_DB and the default)."
 msgstr "DB-Pfad (überschreibt NTASKER_DB und Default)."
 
-#: src/ntasker/cli.py:1312
+#: src/ntasker/cli.py:1340
 msgid "Create / migrate the schema"
 msgstr "Schema anlegen / migrieren"
 
-#: src/ntasker/cli.py:1314
+#: src/ntasker/cli.py:1342
 msgid "Run the FastAPI server"
 msgstr "FastAPI-Server starten"
 
-#: src/ntasker/cli.py:1322
+#: src/ntasker/cli.py:1350
 msgid ""
 "Start the server as a detached background process. Idempotent: returns 0 "
 "if a server is already answering /healthz."
@@ -1131,175 +1152,183 @@ msgstr ""
 "Server als detached Hintergrundprozess starten. Idempotent: liefert 0, "
 "wenn bereits ein Server auf /healthz antwortet."
 
-#: src/ntasker/cli.py:1331
+#: src/ntasker/cli.py:1359
 msgid "Ask a running ntasker server to shut down (POST /shutdown)."
 msgstr "Laufenden ntasker-Server beenden (POST /shutdown)."
 
-#: src/ntasker/cli.py:1338
+#: src/ntasker/cli.py:1366
 msgid "List tasks"
 msgstr "Tasks listen"
 
-#: src/ntasker/cli.py:1354
+#: src/ntasker/cli.py:1382
 msgid "Show task detail"
 msgstr "Task-Detail anzeigen"
 
-#: src/ntasker/cli.py:1360
+#: src/ntasker/cli.py:1388
 msgid "Create a task"
 msgstr "Task anlegen"
 
-#: src/ntasker/cli.py:1369
+#: src/ntasker/cli.py:1397
 msgid "Comma-separated task ids this task depends on, e.g. 12,15."
 msgstr "Kommagetrennte Aufgaben-IDs, von denen diese Aufgabe abhängt, z.B. 12,15."
 
-#: src/ntasker/cli.py:1374
+#: src/ntasker/cli.py:1402
 msgid "Mark a task as done"
 msgstr "Task auf done setzen"
 
-#: src/ntasker/cli.py:1384
+#: src/ntasker/cli.py:1412
 msgid "Delete a task permanently (use with care)."
 msgstr "Task endgültig löschen (mit Bedacht verwenden)."
 
-#: src/ntasker/cli.py:1390
+#: src/ntasker/cli.py:1418
 msgid "Skip the confirmation prompt (for scripts)."
 msgstr "Bestätigungs-Prompt überspringen (für Skripte)."
 
-#: src/ntasker/cli.py:1395
+#: src/ntasker/cli.py:1423
 msgid "Edit task fields"
 msgstr "Task-Felder ändern"
 
-#: src/ntasker/cli.py:1410
+#: src/ntasker/cli.py:1438
 msgid "Comma-separated task ids to depend on (replaces the set; '' clears)."
 msgstr ""
 "Kommagetrennte Aufgaben-IDs als Abhängigkeiten (ersetzt die Menge; '' "
 "löscht)."
 
-#: src/ntasker/cli.py:1415
+#: src/ntasker/cli.py:1443
 msgid "Add a tag"
 msgstr "Tag hinzufügen"
 
-#: src/ntasker/cli.py:1420
+#: src/ntasker/cli.py:1448
 msgid "Remove a tag"
 msgstr "Tag entfernen"
 
-#: src/ntasker/cli.py:1426
+#: src/ntasker/cli.py:1454
 msgid "Counts (open/done/archive)"
 msgstr "Zähler (offen/erledigt/archiviert)"
 
-#: src/ntasker/cli.py:1436
+#: src/ntasker/cli.py:1464
 msgid "Settings (KV store)"
 msgstr "Settings (KV-Store)"
 
-#: src/ntasker/cli.py:1439
+#: src/ntasker/cli.py:1467
 msgid "List all settings"
 msgstr "Alle Settings"
 
-#: src/ntasker/cli.py:1443
+#: src/ntasker/cli.py:1471
 msgid "Read one key"
 msgstr "Einen Key lesen"
 
-#: src/ntasker/cli.py:1448
+#: src/ntasker/cli.py:1476
 msgid "Write one key (validated)"
 msgstr "Einen Key setzen (mit Validator)"
 
-#: src/ntasker/cli.py:1453
+#: src/ntasker/cli.py:1481
 msgid "Remove one key"
 msgstr "Einen Key entfernen"
 
-#: src/ntasker/cli.py:1458
+#: src/ntasker/cli.py:1486
 msgid "Claude Code projects"
 msgstr "Claude-Code-Projekte"
 
-#: src/ntasker/cli.py:1461
+#: src/ntasker/cli.py:1489
 msgid "List discovered Claude projects"
 msgstr "Erkannte Claude-Projekte auflisten"
 
-#: src/ntasker/cli.py:1466
+#: src/ntasker/cli.py:1494
 msgid "Rename task projects to their Claude-project path form"
 msgstr "Task-Projekte in die Claude-Projekt-Pfadform umbenennen"
 
-#: src/ntasker/cli.py:1469
+#: src/ntasker/cli.py:1497
 msgid "Show planned renames without writing."
 msgstr "Geplante Umbenennungen anzeigen ohne zu schreiben."
 
-#: src/ntasker/cli.py:1476
+#: src/ntasker/cli.py:1504
 msgid "Install / check the Claude Code skill + slash command"
 msgstr "Claude-Code-Skill + Slash-Command installieren / prüfen"
 
-#: src/ntasker/cli.py:1481
+#: src/ntasker/cli.py:1509
 msgid "Slash command file name (default: task -> /task <id>)."
 msgstr "Slash-Command-Dateiname (Default: task -> /task <id>)."
 
-#: src/ntasker/cli.py:1486
+#: src/ntasker/cli.py:1514
 msgid "Overwrite divergent files (timestamped backup is created)."
 msgstr "Abweichende Dateien überschreiben (Zeitstempel-Backup wird angelegt)."
 
-#: src/ntasker/cli.py:1491
+#: src/ntasker/cli.py:1519
 msgid "Show planned actions without writing."
 msgstr "Geplante Aktionen anzeigen ohne zu schreiben."
 
-#: src/ntasker/cli.py:1496
+#: src/ntasker/cli.py:1524
 msgid "Read-only status check. Exit 0=identical, 1=drift, 2=not installed."
 msgstr "Read-only-Status-Check. Exit 0=identisch, 1=Drift, 2=nicht installiert."
 
-#: src/ntasker/cli.py:1501
+#: src/ntasker/cli.py:1529
 msgid "Override ~/.claude (also via NTASKER_CLAUDE_HOME env var)."
 msgstr "~/.claude überschreiben (auch via NTASKER_CLAUDE_HOME)."
 
-#: src/ntasker/cli.py:1508
+#: src/ntasker/cli.py:1536
 msgid "Manage vendor assets (CDN by default, opt-in local cache)."
 msgstr "Vendor-Assets verwalten (CDN-Default, opt-in lokal)."
 
-#: src/ntasker/cli.py:1514
+#: src/ntasker/cli.py:1542
 msgid "Fetch vendor assets via HTTP into the user-data cache (SRI-verified)."
 msgstr "Vendor-Assets via HTTP in den User-Data-Cache laden (mit SRI-Verify)."
 
-#: src/ntasker/cli.py:1519
+#: src/ntasker/cli.py:1547
 msgid "Re-fetch existing files even when their SRI already matches."
 msgstr "Vorhandene Files neu laden, auch wenn SRI bereits passt."
 
-#: src/ntasker/cli.py:1523
+#: src/ntasker/cli.py:1551
 msgid "Delete the user-data asset cache."
 msgstr "User-Data-Asset-Cache löschen."
 
-#: src/ntasker/cli.py:1527
+#: src/ntasker/cli.py:1555
 msgid "Skip the confirmation prompt."
 msgstr "Bestätigungs-Prompt überspringen."
 
-#: src/ntasker/cli.py:1531
+#: src/ntasker/cli.py:1559
 msgid "Show cache state + active mode."
 msgstr "Cache-Zustand + Modus anzeigen."
 
-#: src/ntasker/cli.py:1538
+#: src/ntasker/cli.py:1566
 msgid "Install ntasker as an OS service (systemd / launchd)."
 msgstr "ntasker als Systemdienst einrichten (systemd / launchd)."
 
-#: src/ntasker/cli.py:1542
+#: src/ntasker/cli.py:1570
 msgid "Install + enable the service."
 msgstr "Dienst installieren + aktivieren."
 
-#: src/ntasker/cli.py:1548
+#: src/ntasker/cli.py:1576
 msgid "Also install a daily timer that runs `ntasker self-update`."
 msgstr ""
 "Zusätzlich einen täglichen Timer einrichten, der `ntasker self-update` "
 "ausführt."
 
-#: src/ntasker/cli.py:1552
+#: src/ntasker/cli.py:1580
 msgid "Disable + remove the service."
 msgstr "Dienst deaktivieren + entfernen."
 
-#: src/ntasker/cli.py:1555
+#: src/ntasker/cli.py:1583
 msgid "Show service install / active state."
 msgstr "Installations- / Aktiv-Status des Dienstes anzeigen."
 
-#: src/ntasker/cli.py:1561
+#: src/ntasker/cli.py:1586
+msgid "Start the installed service."
+msgstr "Den installierten Dienst starten."
+
+#: src/ntasker/cli.py:1589
+msgid "Stop the running service."
+msgstr "Den laufenden Dienst stoppen."
+
+#: src/ntasker/cli.py:1595
 msgid "Upgrade ntasker from PyPI, then restart the service."
 msgstr "ntasker von PyPI aktualisieren, dann den Dienst neu starten."
 
-#: src/ntasker/cli.py:1566
+#: src/ntasker/cli.py:1600
 msgid "Upgrade only; do not restart the running service."
 msgstr "Nur aktualisieren; den laufenden Dienst nicht neu starten."
 
-#: src/ntasker/cli.py:1624
+#: src/ntasker/cli.py:1658
 #, python-brace-format
 msgid "ntasker: creating DB at {path}"
 msgstr "ntasker: erstelle DB bei {path}"
@@ -1335,7 +1364,7 @@ msgstr ""
 msgid "loaded launchd agents"
 msgstr "launchd-Agenten geladen"
 
-#: src/ntasker/service.py:263 src/ntasker/service.py:307
+#: src/ntasker/service.py:263 src/ntasker/service.py:350
 msgid "Unsupported platform."
 msgstr "Nicht unterstützte Plattform."
 
@@ -1348,26 +1377,26 @@ msgstr "{path} entfernt"
 msgid "nothing to remove -- no ntasker units installed."
 msgstr "nichts zu entfernen -- keine ntasker-Units installiert."
 
-#: src/ntasker/service.py:308
+#: src/ntasker/service.py:351
 #, python-brace-format
 msgid "manager: {mgr}"
 msgstr "Manager: {mgr}"
 
-#: src/ntasker/service.py:313
+#: src/ntasker/service.py:356
 #, python-brace-format
 msgid "{name}: not installed"
 msgstr "{name}: nicht installiert"
 
-#: src/ntasker/service.py:318
+#: src/ntasker/service.py:361
 #, python-brace-format
 msgid "{name}: {active} ({enabled})"
 msgstr "{name}: {active} ({enabled})"
 
-#: src/ntasker/service.py:323
+#: src/ntasker/service.py:366
 msgid "installed"
 msgstr "installiert"
 
-#: src/ntasker/service.py:323
+#: src/ntasker/service.py:366
 msgid "not installed"
 msgstr "nicht installiert"
 

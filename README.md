@@ -99,6 +99,7 @@ it on crash -- `systemd --user` on Linux, `launchd` on macOS. User-scoped, no ro
 ```bash
 ntasker service install --auto-update   # install + enable the service AND a daily auto-update
 ntasker service status                  # install + active state
+ntasker service start / stop            # start / stop the installed service
 ntasker self-update                     # upgrade from PyPI now, then restart the service
 ```
 
@@ -247,7 +248,7 @@ surface).
 | `ntasker config unset <k>`  | Remove a setting                                              |
 | `ntasker install-claude-assets` | Install / check the Claude Code skill + `/task` slash-command |
 | `ntasker assets fetch / status / remove` | Manage the optional local vendor-asset cache |
-| `ntasker service install / uninstall / status` | Run ntasker as an OS service (systemd / launchd) |
+| `ntasker service install / uninstall / status / start / stop` | Run ntasker as an OS service (systemd / launchd) |
 | `ntasker self-update`       | Upgrade the package from PyPI, then restart the service        |
 
 Global flags:

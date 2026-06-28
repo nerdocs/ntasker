@@ -300,6 +300,49 @@ def restart_service() -> bool:
     return False
 
 
+def start_service() -> bool:
+    """Start the supervised server if its unit is installed. Best-effort.
+
+    Returns ``False`` when no unit is installed (so the caller can hint at
+    ``service install``) or the platform is unsupported.
+    """
+    mgr = detect_manager()
+    if mgr == "systemd":
+        if not (systemd_user_dir() / SYSTEMD_SERVICE).exists():
+            return False
+        _systemctl("start", SYSTEMD_SERVICE)
+        return True
+    if mgr == "launchd":
+        p = launchd_dir() / f"{LAUNCHD_LABEL}.plist"
+        if not p.exists():
+            return False
+        _launchctl("start", LAUNCHD_LABEL)
+        return True
+    return False
+
+
+def stop_service() -> bool:
+    """Stop the supervised server if its unit is installed. Best-effort.
+
+    Mirrors :func:`start_service`. On systemd this stops the unit for this
+    session; the next login still starts it (use ``service uninstall`` to
+    disable permanently).
+    """
+    mgr = detect_manager()
+    if mgr == "systemd":
+        if not (systemd_user_dir() / SYSTEMD_SERVICE).exists():
+            return False
+        _systemctl("stop", SYSTEMD_SERVICE)
+        return True
+    if mgr == "launchd":
+        p = launchd_dir() / f"{LAUNCHD_LABEL}.plist"
+        if not p.exists():
+            return False
+        _launchctl("stop", LAUNCHD_LABEL)
+        return True
+    return False
+
+
 def status() -> list[str]:
     """Return human-readable status lines for installed units."""
     mgr = detect_manager()

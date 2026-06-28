@@ -4,6 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [2.10.0] — 2026-06-28
+Tag management page + chip caret-nav, card mark-done icon, Tab tag-complete; fixes: kill Claude on done, tag pane layout.
+
 ## [2.9.0] — 2026-06-28
 Search box moved to the top-right of the page-header (page-actions), compact width.
 

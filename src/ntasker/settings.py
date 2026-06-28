@@ -82,6 +82,29 @@ def validate_default_view(value: str) -> str:
     return norm
 
 
+def validate_update_command(value: str) -> str:
+    """Validator for the ``update_command`` setting.
+
+    The shell command ``self-update`` runs to upgrade the package (e.g.
+    ``uv tool upgrade ntasker``). Must be non-empty and parseable as an
+    argument vector; unset/DELETE the key to fall back to auto-detection.
+    """
+    import shlex  # noqa: PLC0415
+
+    norm = (value or "").strip()
+    if not norm:
+        raise ValueError(_("update_command must not be empty -- unset it to auto-detect."))
+    try:
+        parts = shlex.split(norm)
+    except ValueError as exc:
+        raise ValueError(
+            _("update_command is not a valid command line: {value!r}").format(value=value)
+        ) from exc
+    if not parts:
+        raise ValueError(_("update_command must not be empty -- unset it to auto-detect."))
+    return norm
+
+
 def validate_projects_base(value: str) -> str:
     """Validator for the ``projects_base`` setting.
 
@@ -190,6 +213,7 @@ VALIDATORS: dict[str, Validator] = {
     "claude_idle_seconds": validate_claude_idle_seconds,
     "claude_auto_mode": validate_claude_auto_mode,
     "claude_permission_mode": validate_claude_permission_mode,
+    "update_command": validate_update_command,
 }
 """Registry of known settings keys with their validators.
 

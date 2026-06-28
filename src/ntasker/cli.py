@@ -1189,6 +1189,87 @@ def cmd_assets_status(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Service integration + self-update
+# ---------------------------------------------------------------------------
+
+
+def cmd_self_update(args: argparse.Namespace) -> int:
+    """Upgrade the ntasker package from PyPI, then restart the service.
+
+    The package-upgrade command is the ``update_command`` setting, or an
+    auto-detected default (``uv tool upgrade`` / ``pip install -U``). On a
+    successful upgrade and unless ``--no-restart`` is given, the supervised
+    service is restarted so the new code takes effect for the running daemon.
+    """
+    import subprocess  # noqa: PLC0415
+
+    from ntasker import service  # noqa: PLC0415
+    from ntasker.settings import get_setting  # noqa: PLC0415
+
+    cmd = service.resolve_update_command(get_setting("update_command"))
+    print(_("ntasker: running `{cmd}`").format(cmd=" ".join(cmd)))
+    proc = subprocess.run(cmd)  # noqa: S603 -- user-configured / auto-detected
+    if proc.returncode != 0:
+        print(_("ntasker: update command failed (exit {rc})").format(rc=proc.returncode))
+        return proc.returncode
+
+    # Report the now-installed version by asking the freshly upgraded CLI.
+    ver = subprocess.run(  # noqa: S603
+        [sys.executable, "-m", "ntasker", "--version"],
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    print(_("ntasker: now at {ver} (was {old})").format(ver=ver or "?", old=f"ntasker {__version__}"))
+
+    if not getattr(args, "no_restart", False):
+        if service.restart_service():
+            print(_("ntasker: service restarted."))
+    return 0
+
+
+def cmd_service_install(args: argparse.Namespace) -> int:
+    """Install + enable the OS service (and optional auto-update timer)."""
+    import os  # noqa: PLC0415
+
+    from ntasker import service  # noqa: PLC0415
+
+    # Embed ``--db`` in the unit only when explicitly chosen -- otherwise let
+    # the daemon resolve the platform default at runtime (cleaner unit file).
+    db_path = args.db or os.environ.get("NTASKER_DB")
+    try:
+        log = service.install(args.host, args.port, db_path, args.auto_update)
+    except RuntimeError as exc:
+        print(f"ntasker: {exc}", file=sys.stderr)
+        return 2
+    for line in log:
+        print(f"ntasker: {line}")
+    return 0
+
+
+def cmd_service_uninstall(args: argparse.Namespace) -> int:
+    """Disable + remove all ntasker units."""
+    from ntasker import service  # noqa: PLC0415
+
+    try:
+        log = service.uninstall()
+    except RuntimeError as exc:
+        print(f"ntasker: {exc}", file=sys.stderr)
+        return 2
+    for line in log:
+        print(f"ntasker: {line}")
+    return 0
+
+
+def cmd_service_status(args: argparse.Namespace) -> int:
+    """Print the install/active state of the ntasker units."""
+    from ntasker import service  # noqa: PLC0415
+
+    for line in service.status():
+        print(f"ntasker: {line}")
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # Argparse construction
 # ---------------------------------------------------------------------------
 
@@ -1443,6 +1524,41 @@ def build_parser() -> argparse.ArgumentParser:
     sp_as.add_argument("--json", action="store_true")
     sp_as.set_defaults(func=cmd_assets_status)
 
+    # service -------------------------------------------------------------
+    sp_svc = sub.add_parser(
+        "service",
+        help=_("Install ntasker as an OS service (systemd / launchd)."),
+    )
+    svc_sub = sp_svc.add_subparsers(dest="service_cmd", required=True)
+
+    svc_install = svc_sub.add_parser("install", help=_("Install + enable the service."))
+    svc_install.add_argument("--host", default="127.0.0.1")
+    svc_install.add_argument("--port", type=int, default=8766)
+    svc_install.add_argument(
+        "--auto-update",
+        action="store_true",
+        help=_("Also install a daily timer that runs `ntasker self-update`."),
+    )
+    svc_install.set_defaults(func=cmd_service_install)
+
+    svc_uninstall = svc_sub.add_parser("uninstall", help=_("Disable + remove the service."))
+    svc_uninstall.set_defaults(func=cmd_service_uninstall)
+
+    svc_status = svc_sub.add_parser("status", help=_("Show service install / active state."))
+    svc_status.set_defaults(func=cmd_service_status)
+
+    # self-update ---------------------------------------------------------
+    sp_su = sub.add_parser(
+        "self-update",
+        help=_("Upgrade ntasker from PyPI, then restart the service."),
+    )
+    sp_su.add_argument(
+        "--no-restart",
+        action="store_true",
+        help=_("Upgrade only; do not restart the running service."),
+    )
+    sp_su.set_defaults(func=cmd_self_update)
+
     return p
 
 
@@ -1473,6 +1589,11 @@ def main(argv: list[str] | None = None) -> int:
     # `stop` is a pure HTTP request to a running server -- never create
     # a DB just to send a shutdown.
     if args.command == "stop":
+        set_active_language(resolve_for_cli())
+        return args.func(args)
+    # `service` (install/uninstall/status) and `self-update` manage OS units
+    # and package upgrades -- never touch or create the task DB.
+    if args.command in {"service", "self-update"}:
         set_active_language(resolve_for_cli())
         return args.func(args)
 

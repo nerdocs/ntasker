@@ -4,6 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [2.11.0] — 2026-06-28
+`ntasker service install/uninstall/status` (systemd + launchd) and `ntasker self-update`; `update_command` setting.
+
 ## [2.10.0] — 2026-06-28
 Tag management page + chip caret-nav, card mark-done icon, Tab tag-complete; fixes: kill Claude on done, tag pane layout.
 

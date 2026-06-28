@@ -89,6 +89,22 @@ make init      # uv run ntasker init
 make run       # uv run ntasker serve --reload
 ```
 
+### Run as a service + keep it updated
+
+`ntasker serve` is a long-running daemon, so install it under a process supervisor that starts it at login and restarts
+it on crash -- `systemd --user` on Linux, `launchd` on macOS. User-scoped, no root:
+
+```bash
+ntasker service install --auto-update   # install + enable the service AND a daily auto-update
+ntasker service status                  # install + active state
+ntasker self-update                     # upgrade from PyPI now, then restart the service
+```
+
+`--auto-update` adds a daily timer/agent that runs `ntasker self-update` (upgrade from PyPI, then restart). On Linux,
+enable lingering once so the service survives logout: `loginctl enable-linger $USER`.
+
+Full reference (uninstall, `update_command` override, scheduling details): [docs/service.md](docs/service.md).
+
 ## Settings
 
 Required for the project sidebar to populate: configure where your project
@@ -229,6 +245,8 @@ surface).
 | `ntasker config unset <k>`  | Remove a setting                                              |
 | `ntasker install-claude-assets` | Install / check the Claude Code skill + `/task` slash-command |
 | `ntasker assets fetch / status / remove` | Manage the optional local vendor-asset cache |
+| `ntasker service install / uninstall / status` | Run ntasker as an OS service (systemd / launchd) |
+| `ntasker self-update`       | Upgrade the package from PyPI, then restart the service        |
 
 Global flags:
 

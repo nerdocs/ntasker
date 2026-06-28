@@ -43,18 +43,21 @@ from ntasker.projects import discover_claude_projects
 from ntasker import db as _db_module
 from ntasker.db import (
     DepError,
+    delete_tags,
     get_conn,
     init_db,
     load_deps_bulk,
     load_deps_for,
     load_tags_bulk,
     load_tags_for,
+    merge_tags,
     normalize_dep_ids,
     normalize_tags,
     row_to_task,
     set_db_path,
     set_task_deps,
     set_task_tags,
+    tasks_for_tag,
     validate_deps,
 )
 from ntasker.i18n import (
@@ -174,6 +177,17 @@ class SettingUpdate(BaseModel):
     value: str
 
 
+class TagMerge(BaseModel):
+    # Source tags to fold into ``target``. ``target`` is created if new
+    # (rename) or reused if it already exists (merge).
+    sources: list[str] = Field(..., min_length=1)
+    target: str = Field(..., min_length=1)
+
+
+class TagDelete(BaseModel):
+    names: list[str] = Field(..., min_length=1)
+
+
 # ---------------------------------------------------------------------------
 # FastAPI app
 # ---------------------------------------------------------------------------
@@ -288,6 +302,7 @@ def build_js_strings() -> dict[str, str]:
         "clear_tag_filter": _("Clear tag filter"),
         "cleanup_tags": _("Clean up tags"),
         "cleanup_tags_title": _("Remove unused tags"),
+        "manage_tags": _("Manage tags"),
         # Top bar
         "settings": _("Settings"),
         "light_mode": _("Light mode"),
@@ -421,6 +436,37 @@ def build_js_strings() -> dict[str, str]:
         "claude_connecting": _("Connecting..."),
         "claude_running": _("Running..."),
         "claude_run_finished": _("Session ended"),
+        # Tag-management page
+        "tags_manage_title": _("Manage tags"),
+        "tags_table_intro": _(
+            "Rename, merge or delete tags. Renaming a tag to an existing name "
+            "merges the two; deleting strips the tag from every task."
+        ),
+        "tag_name": _("Tag"),
+        "tag_open_count": _("Open"),
+        "tag_total_count": _("Total"),
+        "actions": _("Actions"),
+        "rename_merge": _("Rename / merge"),
+        "rename_merge_title": _("Rename or merge “#{name}”"),
+        "rename_merge_hint": _(
+            "Type a new name. If it already exists, the two tags are merged "
+            "and every task is updated."
+        ),
+        "new_tag_name": _("New tag name"),
+        "merge_into_existing": _("“#{name}” already exists -- the tags will be merged."),
+        "merge_done": _("{n} task(s) updated to #{name}."),
+        "merge_failed": _("Rename/merge failed."),
+        "delete_tag": _("Delete tag"),
+        "delete_tag_title": _("Delete “#{name}”?"),
+        "delete_tag_unused": _("This tag is not used by any task."),
+        "delete_tag_attached": _("The following tasks still use this tag:"),
+        "delete_tag_warning": _("This removes the tag from those tasks. It cannot be undone."),
+        "delete_tag_done": _("Tag #{name} deleted."),
+        "delete_tag_failed": _("Delete failed."),
+        "tags_empty": _("No tags yet."),
+        "tags_filter_placeholder": _("Filter tags..."),
+        "confirm": _("Delete"),
+        "loading": _("Loading..."),
     }
 
 # Mount the user-data vendor cache at ``/static/vendor`` *before* the
@@ -621,6 +667,22 @@ def settings_page(request: Request) -> HTMLResponse:
     return response
 
 
+@app.get("/tags", response_class=HTMLResponse)
+def tags_page(request: Request) -> HTMLResponse:
+    """Tag-management UI: list, rename/merge, delete, clean up unused tags."""
+    response = templates.TemplateResponse(
+        request,
+        "tags.html",
+        context={
+            "version": VERSION,
+            "language": get_active_language(),
+            "js_strings": build_js_strings(),
+        },
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 # ---------------------------------------------------------------------------
 # Routes -- API: settings
 # ---------------------------------------------------------------------------
@@ -797,13 +859,16 @@ def api_projects() -> JSONResponse:
 
 @app.get("/api/tags")
 def api_tags() -> JSONResponse:
-    """All known tags with open-counts, sorted by ``open_count DESC, name ASC``."""
+    """All known tags with open- and total-counts, sorted by
+    ``open_count DESC, name ASC``. ``total_count`` covers every task (archived
+    and done included) and drives the tag-management page."""
     with get_conn() as conn:
         rows = conn.execute(
             """
             SELECT t.name AS name,
                    COALESCE(SUM(CASE WHEN tasks.status = 'open' AND tasks.archived = 0
-                                     THEN 1 ELSE 0 END), 0) AS open_count
+                                     THEN 1 ELSE 0 END), 0) AS open_count,
+                   COUNT(tasks.id) AS total_count
             FROM tags t
             LEFT JOIN task_tags tt ON tt.tag_id = t.id
             LEFT JOIN tasks ON tasks.id = tt.task_id
@@ -811,7 +876,16 @@ def api_tags() -> JSONResponse:
             ORDER BY open_count DESC, name ASC
             """
         ).fetchall()
-    return JSONResponse([{"name": r["name"], "open_count": int(r["open_count"])} for r in rows])
+    return JSONResponse(
+        [
+            {
+                "name": r["name"],
+                "open_count": int(r["open_count"]),
+                "total_count": int(r["total_count"]),
+            }
+            for r in rows
+        ]
+    )
 
 
 @app.post("/api/tags/cleanup")
@@ -831,6 +905,45 @@ def api_tags_cleanup() -> JSONResponse:
                 "DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM task_tags)"
             )
     return JSONResponse({"removed": len(names), "removed_names": names})
+
+
+@app.get("/api/tags/{name}/tasks")
+def api_tag_tasks(name: str) -> JSONResponse:
+    """Tasks carrying *name* -- powers the delete confirmation ("the following
+    tasks still use this tag")."""
+    with get_conn() as conn:
+        rows = tasks_for_tag(conn, name)
+    return JSONResponse(
+        [
+            {
+                "id": int(r["id"]),
+                "title": r["title"],
+                "status": r["status"],
+                "archived": bool(r["archived"]),
+            }
+            for r in rows
+        ]
+    )
+
+
+@app.post("/api/tags/merge")
+def api_tags_merge(payload: TagMerge) -> JSONResponse:
+    """Rename or merge tags: re-point every task on a source tag onto the
+    target, then drop the sources. Idempotent for already-merged sets."""
+    norm_target = normalize_tags([payload.target])
+    if not norm_target:
+        raise HTTPException(status_code=400, detail=_("Target tag is empty."))
+    with get_conn() as conn:
+        affected = merge_tags(conn, payload.sources, norm_target[0])
+    return JSONResponse({"target": norm_target[0], "affected": affected})
+
+
+@app.post("/api/tags/delete")
+def api_tags_delete(payload: TagDelete) -> JSONResponse:
+    """Delete tags outright, stripping them from every task they touch."""
+    with get_conn() as conn:
+        removed = delete_tags(conn, payload.names)
+    return JSONResponse({"removed": removed})
 
 
 @app.get("/api/priorities")

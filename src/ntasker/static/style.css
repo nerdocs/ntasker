@@ -56,6 +56,20 @@
     filter: brightness(1.2);
 }
 
+/* ---------------- Tag chips (keyboard caret nav) ----------------
+ * Chips in the tag inputs are focusable. When a chip holds focus the caret
+ * conceptually sits to its LEFT -- shown as a vertical bar via a left border --
+ * so Backspace (delete left) / Delete (delete right) read intuitively.
+ */
+.tag-chip {
+    cursor: default;
+    outline: none;
+}
+.tag-chip-caret {
+    box-shadow: 0 0 0 2px var(--tblr-purple, #ae3ec9);
+    border-left: 2px solid var(--tblr-purple, #ae3ec9);
+}
+
 /* ---------------- Kanban board ----------------
  * 4 columns side-by-side; Done column collapses to a narrow rail.
  * Each column is its own drop target (see onColumnDrop in app.js).

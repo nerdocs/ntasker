@@ -247,6 +247,78 @@ def load_tags_bulk(conn: sqlite3.Connection, task_ids: list[int]) -> dict[int, l
     return out
 
 
+def merge_tags(conn: sqlite3.Connection, sources: list[str], target: str) -> int:
+    """Re-point every task carrying a *source* tag onto *target*, then drop the
+    source tags. Covers both rename (one source, new target) and merge
+    (several sources -> one existing target). The target is created on demand.
+
+    Sources equal to the target are ignored. Returns the number of distinct
+    tasks that ended up carrying the target tag because of this operation
+    (i.e. tasks that gained the tag or already had a now-merged source).
+    """
+    target = normalize_tag(target)
+    if not target:
+        raise ValueError("empty target tag")
+    src = [s for s in normalize_tags(sources) if s != target]
+    if not src:
+        return 0
+
+    target_id = ensure_tags(conn, [target])[0]
+    placeholders = ", ".join("?" for _ in src)
+    # Tasks that carry any source tag -- the set we are about to migrate.
+    affected = conn.execute(
+        f"""
+        SELECT COUNT(DISTINCT tt.task_id) AS c
+        FROM task_tags tt JOIN tags t ON t.id = tt.tag_id
+        WHERE t.name IN ({placeholders})
+        """,
+        src,
+    ).fetchone()
+    # Add the target to every such task (INSERT OR IGNORE keeps existing links).
+    conn.execute(
+        f"""
+        INSERT OR IGNORE INTO task_tags (task_id, tag_id)
+        SELECT DISTINCT tt.task_id, ?
+        FROM task_tags tt JOIN tags t ON t.id = tt.tag_id
+        WHERE t.name IN ({placeholders})
+        """,
+        [target_id, *src],
+    )
+    # Drop the source tags -- ON DELETE CASCADE clears their task_tags rows.
+    conn.execute(f"DELETE FROM tags WHERE name IN ({placeholders})", src)
+    return int(affected["c"]) if affected else 0
+
+
+def delete_tags(conn: sqlite3.Connection, names: list[str]) -> int:
+    """Delete tags entirely, removing them from every task (CASCADE). Returns
+    the number of tag rows deleted."""
+    norm = normalize_tags(names)
+    if not norm:
+        return 0
+    placeholders = ", ".join("?" for _ in norm)
+    cur = conn.execute(f"DELETE FROM tags WHERE name IN ({placeholders})", norm)
+    return int(cur.rowcount)
+
+
+def tasks_for_tag(conn: sqlite3.Connection, name: str) -> list[sqlite3.Row]:
+    """Rows of every task carrying *name* (archived included), newest first.
+    Used by the management UI to show what a delete would touch."""
+    norm = normalize_tag(name)
+    if not norm:
+        return []
+    return conn.execute(
+        """
+        SELECT tasks.id, tasks.title, tasks.status, tasks.archived
+        FROM tasks
+        JOIN task_tags tt ON tt.task_id = tasks.id
+        JOIN tags t ON t.id = tt.tag_id
+        WHERE t.name = ?
+        ORDER BY tasks.id DESC
+        """,
+        (norm,),
+    ).fetchall()
+
+
 # ---------------------------------------------------------------------------
 # Dependency helpers (task -> task, M2M, kept acyclic)
 # ---------------------------------------------------------------------------

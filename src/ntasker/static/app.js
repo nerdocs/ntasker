@@ -176,6 +176,11 @@ function tracker(serverDefaultView) {
         depSuggest: [],
         // Highlighted suggestion index per tag-input ('form' | 'edit'); -1 = none.
         tagHighlight: { form: -1, edit: -1 },
+        // Caret position among the tag chips per input. -1 = the text input
+        // (caret after the last chip); 0..len-1 = a chip has focus and the
+        // caret sits to its LEFT. Backspace removes the chip left of the
+        // caret, Delete the chip right of it. See the chip-nav helpers below.
+        tagCaret: { form: -1, edit: -1 },
         editing: null,               // task object or null
         counts: { open: 0, done: 0, archive: 0 },
 
@@ -903,18 +908,93 @@ function tracker(serverDefaultView) {
                 this.commitTagInput(which);
                 return;
             }
-            // Backspace on empty input removes the last tag.
+            // Left arrow at the very start of an empty/anchored input steps the
+            // caret into the chip row (focus the last chip).
+            if (event.key === 'ArrowLeft'
+                && event.target.selectionStart === 0
+                && event.target.selectionEnd === 0
+                && bucket.tags.length > 0) {
+                event.preventDefault();
+                this._setTagCaret(which, bucket.tags.length - 1);
+                return;
+            }
+            // Backspace on empty input removes the last tag (caret stays at input).
             if (event.key === 'Backspace' && !bucket[key]) {
                 if (bucket.tags.length > 0) bucket.tags.pop();
             }
         },
 
+        // ---- Chip caret navigation (keyboard tag editing) ----
+        // Move the caret and pull DOM focus onto the matching element. idx = -1
+        // focuses the text input; otherwise the chip at idx (caret to its left).
+        _setTagCaret(which, idx) {
+            this.tagCaret[which] = idx;
+            this.$nextTick(() => this._focusTagCaret(which));
+        },
+
+        _focusTagCaret(which) {
+            const idx = this.tagCaret[which];
+            if (idx === -1) {
+                const inp = document.getElementById('taginput-' + which);
+                if (inp) inp.focus();
+                return;
+            }
+            const chips = document.querySelectorAll(
+                '[data-chips="' + which + '"] [data-chip]');
+            const el = chips[idx];
+            if (el) {
+                el.focus();
+            } else {
+                // Caret ran past the last chip -> fall back to the input.
+                this.tagCaret[which] = -1;
+                const inp = document.getElementById('taginput-' + which);
+                if (inp) inp.focus();
+            }
+        },
+
+        // Keydown on a focused chip (idx = the chip right of the caret).
+        onChipKeydown(event, which, idx) {
+            const bucket = this._tagBucket(which);
+            if (!bucket) return;
+            const len = bucket.tags.length;
+            const k = event.key;
+            if (k === 'ArrowLeft') {
+                event.preventDefault();
+                this._setTagCaret(which, Math.max(0, idx - 1));
+            } else if (k === 'ArrowRight') {
+                event.preventDefault();
+                this._setTagCaret(which, idx + 1 >= len ? -1 : idx + 1);
+            } else if (k === 'Backspace') {
+                // Remove the chip LEFT of the caret.
+                event.preventDefault();
+                if (idx > 0) {
+                    bucket.tags.splice(idx - 1, 1);
+                    this._setTagCaret(which, idx - 1);
+                }
+            } else if (k === 'Delete') {
+                // Remove the chip RIGHT of the caret (the focused one).
+                event.preventDefault();
+                bucket.tags.splice(idx, 1);
+                this._setTagCaret(which, idx >= bucket.tags.length ? -1 : idx);
+            } else if (k === 'Escape') {
+                event.preventDefault();
+                this._setTagCaret(which, -1);
+            } else if (k.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+                // Any printable key resumes typing in the text input.
+                event.preventDefault();
+                bucket[this._tagInputProp(which)] += k;
+                this._setTagCaret(which, -1);
+            }
+        },
+
         removeTagFromForm(idx) {
             this.form.tags.splice(idx, 1);
+            this.tagCaret.form = -1;
         },
 
         removeTagFromEditing(idx) {
             if (this.editing) this.editing.tags.splice(idx, 1);
+            this.tagCaret.edit = -1;
         },
 
         tagSuggestions(which) {
@@ -1133,33 +1213,6 @@ function tracker(serverDefaultView) {
         // ---- Tag cleanup (header action) ----
         // POSTs to /api/tags/cleanup, then refreshes the tag list and shows a toast.
         // Idempotent: clicking again on a clean DB just toasts "Keine ungenutzten Tags."
-        async cleanupTags() {
-            const r = await fetch('/api/tags/cleanup', { method: 'POST' });
-            if (!r.ok) {
-                this.showToast(_i('cleanup_failed'), 'danger');
-                return;
-            }
-            const data = await r.json();
-            const removed = data.removed || 0;
-            const names = Array.isArray(data.removed_names) ? data.removed_names : [];
-            if (removed === 0) {
-                this.showToast(_i('cleanup_none'), 'info');
-            } else {
-                // Render at most 5 names, append ", +N more" tail.
-                const head = names.slice(0, 5).join(', ');
-                const tail = names.length > 5
-                    ? _i('cleanup_more', {n: names.length - 5})
-                    : '';
-                this.showToast(
-                    _i('cleanup_removed', {n: removed, head: head, tail: tail}),
-                    'success'
-                );
-            }
-            // Tag-list may have shrunk -> refresh sidebar feed and prune stale filter.
-            await this.loadTags();
-            this.pruneStaleTagFilter();
-        },
-
         // ---- Claude run ("Run with Claude") ----
         // The run view embeds the *real* interactive `claude` TUI via xterm.js
         // over a WebSocket. The PTY process lives server-side and is persistent:

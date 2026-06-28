@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="{{ language }}" data-bs-theme="light">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ntasker — {{ t('Manage tags') }}</title>
+    {# Vendor-Assets über asset()-Helper -- siehe index.html für Details. #}
+    <link rel="stylesheet" href="{{ asset('tabler-css') }}"
+          integrity="{{ asset_sri('tabler-css') }}" crossorigin="anonymous">
+    <link rel="stylesheet" href="{{ asset('tabler-icons-css') }}"
+          integrity="{{ asset_sri('tabler-icons-css') }}" crossorigin="anonymous">
+    <link rel="stylesheet" href="/static/style.css?v={{ static_bust('style.css') }}">
+
+    {# Frontend i18n data bridge -- the registration + page logic live in #}
+    {# tags.js (no inline logic). Only the templated dict is injected here. #}
+    <script>
+        window.__i18n = {{ js_strings | tojson }};
+    </script>
+</head>
+<body>
+<div class="page" x-data="tagsPage()" x-init="init()">
+
+    <header class="navbar navbar-expand-md d-print-none">
+        <div class="container-xl">
+            <h1 class="navbar-brand navbar-brand-autodark d-flex align-items-center mb-0">
+                <a href="/" class="text-reset text-decoration-none d-flex align-items-center">
+                    <i class="ti ti-checkbox me-2 fs-2"></i>
+                    ntasker
+                    <span class="badge bg-secondary-lt ms-2 font-monospace small align-middle">v{{ version }}</span>
+                </a>
+            </h1>
+        </div>
+    </header>
+
+    <div class="page-wrapper">
+        <div class="page-header d-print-none">
+            <div class="container-xl">
+                <div class="row g-2 align-items-center">
+                    <div class="col">
+                        <h2 class="page-title">
+                            <i class="ti ti-tags me-2 fs-2"></i>
+                            {{ t('Manage tags') }}
+                        </h2>
+                    </div>
+                    <div class="col-auto">
+                        <a href="/" class="btn btn-sm btn-ghost-secondary">
+                            <i class="ti ti-arrow-left me-1 fs-3"></i>
+                            {{ t('back to tasks') }}
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="page-body">
+            <div class="container-xl">
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="ti ti-tags me-1"></i>
+                            {{ t('Tags') }}
+                        </h3>
+                        <div class="card-actions">
+                            <button type="button" class="btn btn-ghost-secondary btn-sm"
+                                    @click="cleanup()"
+                                    :title="$i18n('cleanup_tags_title')">
+                                <i class="ti ti-sparkles me-1 fs-3"></i>
+                                {{ t('Clean up tags') }}
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small">{{ t('Rename, merge or delete tags. Renaming a tag to an existing name merges the two; deleting strips the tag from every task.') }}</p>
+
+                        {# Display-only filter over the tag list. #}
+                        <div class="input-icon search-box mb-3" x-show="tags.length > 0" x-cloak>
+                            <span class="input-icon-addon"><i class="ti ti-search"></i></span>
+                            <input type="text" class="form-control form-control-sm" x-model="filter"
+                                   placeholder="{{ t('Filter tags...') }}">
+                            <button type="button" class="search-clear" x-show="filter" x-cloak
+                                    @click="filter = ''"
+                                    title="{{ t('Clear search') }}" aria-label="{{ t('Clear search') }}">
+                                <i class="ti ti-x"></i>
+                            </button>
+                        </div>
+
+                        <table class="table table-sm table-vcenter" x-show="filtered.length > 0">
+                            <thead>
+                                <tr>
+                                    <th>{{ t('Tag') }}</th>
+                                    <th class="text-end">{{ t('Open') }}</th>
+                                    <th class="text-end">{{ t('Total') }}</th>
+                                    <th class="text-end">{{ t('Actions') }}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="t in filtered" :key="t.name">
+                                    <tr>
+                                        <td>
+                                            <span class="badge bg-purple-lt">#<span x-text="t.name"></span></span>
+                                        </td>
+                                        <td class="text-end">
+                                            <span class="badge bg-secondary-lt" x-text="t.open_count"></span>
+                                        </td>
+                                        <td class="text-end">
+                                            <span class="badge bg-secondary-lt" x-text="t.total_count"></span>
+                                        </td>
+                                        <td class="text-end">
+                                            {# .stop: keep the opening click from bubbling to the modal's #}
+                                            {# @click.outside, which would otherwise close it immediately. #}
+                                            <button type="button" class="btn btn-sm btn-ghost-secondary"
+                                                    @click.stop="openRename(t.name)"
+                                                    :title="$i18n('rename_merge')">
+                                                <i class="ti ti-pencil fs-3"></i>
+                                            </button>
+                                            <button type="button" class="btn btn-sm btn-ghost-danger"
+                                                    @click.stop="openDelete(t.name)"
+                                                    :title="$i18n('delete_tag')">
+                                                <i class="ti ti-trash fs-3"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+
+                        <div x-show="tags.length === 0" class="empty">
+                            <p class="empty-title">{{ t('No tags yet.') }}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# Rename / merge modal -- Alpine-driven, same pattern as the edit modal. #}
+    <div class="modal modal-blur fade" tabindex="-1" x-show="renameTarget !== null" x-cloak
+         :class="renameTarget !== null ? 'show d-block' : ''"
+         :style="renameTarget !== null ? 'background-color: rgba(0,0,0,0.4)' : ''"
+         @keydown.escape.window="closeRename()">
+        <div class="modal-dialog" role="document" @click.outside="closeRename()">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="ti ti-pencil me-1"></i>
+                        <span x-text="$i18n('rename_merge_title', { name: renameTarget })"></span>
+                    </h5>
+                    <button type="button" class="btn-close" @click="closeRename()" :aria-label="$i18n('close')"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small">{{ t('Type a new name. If it already exists, the two tags are merged and every task is updated.') }}</p>
+                    <label class="form-label">{{ t('New tag name') }}</label>
+                    <input type="text" class="form-control" x-model="renameValue"
+                           x-ref="renameInput"
+                           @keydown.enter="doRename()">
+                    <div class="text-warning small mt-2" x-show="renameIsMerge" x-cloak
+                         x-text="$i18n('merge_into_existing', { name: renameValueNorm })"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-link link-secondary" @click="closeRename()">{{ t('Cancel') }}</button>
+                    <button type="button" class="btn btn-primary"
+                            :disabled="!renameValueNorm || renameValueNorm === renameTarget"
+                            @click="doRename()">
+                        <i class="ti ti-device-floppy me-1 fs-3"></i>
+                        {{ t('Save') }}
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# Delete confirmation modal -- lists the tasks still carrying the tag. #}
+    <div class="modal modal-blur fade" tabindex="-1" x-show="deleteTarget !== null" x-cloak
+         :class="deleteTarget !== null ? 'show d-block' : ''"
+         :style="deleteTarget !== null ? 'background-color: rgba(0,0,0,0.4)' : ''"
+         @keydown.escape.window="closeDelete()">
+        <div class="modal-dialog" role="document" @click.outside="closeDelete()">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title text-danger">
+                        <i class="ti ti-trash me-1"></i>
+                        <span x-text="$i18n('delete_tag_title', { name: deleteTarget })"></span>
+                    </h5>
+                    <button type="button" class="btn-close" @click="closeDelete()" :aria-label="$i18n('close')"></button>
+                </div>
+                <div class="modal-body">
+                    <div x-show="deleteLoading" class="text-muted" x-text="$i18n('loading')"></div>
+                    <template x-if="!deleteLoading">
+                        <div>
+                            <p x-show="deleteTasks.length === 0" class="text-muted"
+                               x-text="$i18n('delete_tag_unused')"></p>
+                            <template x-if="deleteTasks.length > 0">
+                                <div>
+                                    <p class="mb-1" x-text="$i18n('delete_tag_attached')"></p>
+                                    <ul class="list-unstyled mb-2" style="max-height: 14rem; overflow-y: auto;">
+                                        <template x-for="task in deleteTasks" :key="task.id">
+                                            <li class="text-truncate">
+                                                <span class="font-monospace text-muted" x-text="`#${task.id}`"></span>
+                                                <span x-text="task.title"></span>
+                                            </li>
+                                        </template>
+                                    </ul>
+                                    <div class="text-danger small" x-text="$i18n('delete_tag_warning')"></div>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-link link-secondary" @click="closeDelete()">{{ t('Cancel') }}</button>
+                    <button type="button" class="btn btn-danger" @click="doDelete()">
+                        <i class="ti ti-trash me-1 fs-3"></i>
+                        <span x-text="$i18n('confirm')"></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# Toast container -- reuses Tabler toast styling. #}
+    <div id="toast-container"
+         class="toast-container position-fixed bottom-0 end-0 p-3"
+         style="z-index: 1100"
+         aria-live="polite" aria-atomic="true"></div>
+
+</div>
+
+{# tags.js must define tagsPage() + register the $i18n magic BEFORE Alpine #}
+{# boots. Alpine is deferred; a non-deferred script placed first runs during #}
+{# parsing, i.e. ahead of it -- same ordering as index.html / app.js. #}
+<script src="/static/tags.js?v={{ static_bust('tags.js') }}"></script>
+<script src="{{ asset('alpine-js') }}"
+        integrity="{{ asset_sri('alpine-js') }}" crossorigin="anonymous" defer></script>
+</body>
+</html>

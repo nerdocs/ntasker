@@ -178,29 +178,19 @@
                         <i class="ti ti-tags me-1"></i>
                         {{ t('Tags') }}
                     </span>
-                    <button type="button" class="btn btn-sm btn-ghost-secondary px-2 py-0"
-                            x-show="tagFilter.length > 0"
-                            @click="clearTagFilter()"
-                            :title="$i18n('clear_tag_filter')">
-                        <i class="ti ti-x fs-3"></i>
-                    </button>
-                </div>
-
-                <div class="text-muted small mb-2">
-                    <div class="col-auto ms-auto d-print-none">
-                        <div class="btn-list">
-                            <button type="button"
-                                    class="btn btn-ghost-secondary btn-sm"
-                                    @click="cleanupTags()"
-                                    :title="$i18n('cleanup_tags_title')">
-                                {# `ti-broom` is not in the vendored tabler-icons webfont (v3.19.0). #}
-                                {# The webfont ships a limited subset of the full SVG icon set; #}
-                                {# `ti-sparkles` is the closest available "cleanup" glyph. #}
-                                <i class="ti ti-sparkles me-1 fs-3"></i>
-                                {{ t('Clean up tags') }}
-                            </button>
-                        </div>
-                    </div>
+                    <span class="d-flex align-items-center">
+                        <button type="button" class="btn btn-sm btn-ghost-secondary px-2 py-0"
+                                x-show="tagFilter.length > 0"
+                                @click="clearTagFilter()"
+                                :title="$i18n('clear_tag_filter')">
+                            <i class="ti ti-x fs-3"></i>
+                        </button>
+                        {# Cog -> dedicated tag-management page (rename/merge/delete/cleanup). #}
+                        <a href="/tags" class="btn btn-sm btn-ghost-secondary px-2 py-0"
+                           :title="$i18n('manage_tags')">
+                            <i class="ti ti-settings fs-3"></i>
+                        </a>
+                    </span>
                 </div>
 
                 {# Type-ahead filter over the tag list (display-only; does not filter tasks). #}
@@ -370,9 +360,15 @@
                                     <div class="position-relative" x-data="{ focused: false }">
                                         <div class="form-control d-flex flex-wrap align-items-center gap-1"
                                              style="cursor: text; min-height: calc(1.5em + 0.75rem + 2px);"
+                                             data-chips="form"
                                              @click="$refs.formTagInput.focus()">
                                             <template x-for="(tg, idx) in form.tags" :key="tg + idx">
-                                                <span class="badge bg-purple-lt d-inline-flex align-items-center">
+                                                <span class="badge bg-purple-lt d-inline-flex align-items-center tag-chip"
+                                                      :class="{ 'tag-chip-caret': tagCaret.form === idx }"
+                                                      data-chip tabindex="0"
+                                                      @focus="tagCaret.form = idx"
+                                                      @click.stop="_setTagCaret('form', idx)"
+                                                      @keydown="onChipKeydown($event, 'form', idx)">
                                                     #<span x-text="tg" class="ms-1"></span>
                                                     <button type="button" class="btn-close btn-close-sm ms-1"
                                                             style="font-size: 0.6rem;"
@@ -381,10 +377,11 @@
                                                 </span>
                                             </template>
                                             <input type="text" class="border-0 flex-fill p-0"
+                                                   id="taginput-form"
                                                    style="outline: none; background: transparent; min-width: 6rem;"
                                                    x-model="form.tagInput"
                                                    x-ref="formTagInput"
-                                                   @focus="focused = true"
+                                                   @focus="focused = true; tagCaret.form = -1"
                                                    @blur="setTimeout(() => focused = false, 150)"
                                                    @input="tagHighlight.form = -1"
                                                    @keydown.enter="onTagEnter($event, 'form')"
@@ -945,9 +942,15 @@
                         <div class="position-relative" x-data="{ focused: false }">
                             <div class="form-control d-flex flex-wrap align-items-center gap-1"
                                  style="cursor: text; min-height: calc(1.5em + 0.75rem + 2px);"
+                                 data-chips="edit"
                                  @click="$refs.editTagInput.focus()">
                                 <template x-for="(tg, idx) in editing.tags" :key="tg + idx">
-                                    <span class="badge bg-purple-lt d-inline-flex align-items-center">
+                                    <span class="badge bg-purple-lt d-inline-flex align-items-center tag-chip"
+                                          :class="{ 'tag-chip-caret': tagCaret.edit === idx }"
+                                          data-chip tabindex="0"
+                                          @focus="tagCaret.edit = idx"
+                                          @click.stop="_setTagCaret('edit', idx)"
+                                          @keydown="onChipKeydown($event, 'edit', idx)">
                                         #<span x-text="tg" class="ms-1"></span>
                                         <button type="button" class="btn-close btn-close-sm ms-1"
                                                 style="font-size: 0.6rem;"
@@ -956,10 +959,11 @@
                                     </span>
                                 </template>
                                 <input type="text" class="border-0 flex-fill p-0"
+                                       id="taginput-edit"
                                        style="outline: none; background: transparent; min-width: 6rem;"
                                        x-model="editing._tagInput"
                                        x-ref="editTagInput"
-                                       @focus="focused = true"
+                                       @focus="focused = true; tagCaret.edit = -1"
                                        @blur="setTimeout(() => focused = false, 150)"
                                        @input="tagHighlight.edit = -1"
                                        @keydown.enter="onTagEnter($event, 'edit')"

@@ -119,7 +119,11 @@ Additional endpoints:
   task-derived project disappears once its last task is gone.
 - `GET /api/phases` -> 3 fixed entries (`planned` / `wip` / `review`)
 - `GET /api/priorities` -> 4 fixed entries (`critical` / `high` / `normal` / `low`)
-- `GET /api/tags` -> `[{name, open_count}, ...]`
+- `GET /api/tags` -> `[{name, open_count, total_count}, ...]`
+- `GET /api/tags/<name>/tasks` -> `[{id, title, status, archived}, ...]` (tasks carrying the tag)
+- `POST /api/tags/cleanup` -> deletes dangling tags; `{removed, removed_names}`
+- `POST /api/tags/merge` body `{sources: [..], target}` -> rename/merge; `{target, affected}`
+- `POST /api/tags/delete` body `{names: [..]}` -> strips tags from all tasks; `{removed}`
 
 ### 3.1 Suggesting the next task (current project)
 

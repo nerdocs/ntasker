@@ -327,7 +327,7 @@
                         <button type="button" class="btn btn-outline-secondary"
                                 @click="cleanupDatabase()" :disabled="cleaning">
                             <i class="ti ti-database-cog me-1"></i>
-                            <span x-text="cleaning ? $i18n('cleanup_running') : $i18n('cleanup_db')"></span>
+                            <span x-text="cleaning ? $i18n('db_cleanup_running') : $i18n('db_cleanup')"></span>
                         </button>
                     </div>
                 </div>
@@ -525,15 +525,15 @@ function settingsPage() {
             this.cleaning = true;
             try {
                 const r = await fetch('/api/maintenance/cleanup', {method: 'POST'});
-                if (!r.ok) { this.toast(this.i18n('cleanup_failed')); return; }
+                if (!r.ok) { this.toast(this.i18n('db_cleanup_failed')); return; }
                 const body = await r.json();
                 if (body.bytes_freed > 0) {
-                    this.toast(this.i18n('cleanup_done', {freed: this.fmtBytes(body.bytes_freed)}));
+                    this.toast(this.i18n('db_cleanup_done', {freed: this.fmtBytes(body.bytes_freed)}));
                 } else {
-                    this.toast(this.i18n('cleanup_done_nofree'));
+                    this.toast(this.i18n('db_cleanup_compact'));
                 }
             } catch (e) {
-                this.toast(this.i18n('cleanup_failed'));
+                this.toast(this.i18n('db_cleanup_failed'));
             } finally {
                 this.cleaning = false;
             }

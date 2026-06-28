@@ -402,11 +402,11 @@ def build_js_strings() -> dict[str, str]:
             "A restart would interrupt them; wait until they finish."
         ),
         # Settings -- database cleanup
-        "cleanup_db": _("Clean up database"),
-        "cleanup_running": _("Cleaning up..."),
-        "cleanup_done": _("Database cleaned up -- {freed} freed."),
-        "cleanup_done_nofree": _("Database cleaned up -- already compact."),
-        "cleanup_failed": _("Cleanup failed -- try again."),
+        "db_cleanup": _("Clean up database"),
+        "db_cleanup_running": _("Cleaning up..."),
+        "db_cleanup_done": _("Database cleaned up -- {freed} freed."),
+        "db_cleanup_compact": _("Database cleaned up -- already compact."),
+        "db_cleanup_failed": _("Cleanup failed -- try again."),
         # Tabs
         "tab_open": _("Open"),
         "tab_done": _("Done"),

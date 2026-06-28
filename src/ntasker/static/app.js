@@ -657,9 +657,10 @@ function tracker(serverDefaultView) {
         },
 
         // ---- Task CRUD ----
-        async createTask() {
+        async createTask(run = false) {
             // Commit any pending tag input before submit.
             this.commitTagInput('form');
+            if (!this.form.title.trim()) return;
             const body = {
                 project: this.form.project || null,
                 title: this.form.title.trim(),
@@ -689,6 +690,12 @@ function tracker(serverDefaultView) {
             this.form.depInput = '';
             // Keep project selection for rapid same-project entry.
             await this.refreshAll();
+            // Create + Run: hand the fresh task straight to Claude. The run
+            // view replaces the page, so skip the create toast below.
+            if (run && this.claudeAvailable) {
+                this.openClaudeRun(created);
+                return;
+            }
             // The task is saved, but an active filter (project/phase/tag/
             // priority/status tab) may exclude it from the refreshed list --
             // without feedback that looks like a silent failure. Confirm the
@@ -1313,6 +1320,17 @@ function tracker(serverDefaultView) {
             ws.onclose = () => { this.loadClaudeSessions(); };
             term.onData((data) => {
                 if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'input', data }));
+            });
+            // Auto-copy on selection: mimics the Linux terminal habit of
+            // "select = copied". Lets the user paste back via middle-click
+            // without ever pressing Ctrl+C (which stays the Claude interrupt).
+            // Writes to the CLIPBOARD (the X11 PRIMARY selection is not
+            // reachable from browser JS), best-effort and silent on failure.
+            term.onSelectionChange(() => {
+                const sel = term.getSelection();
+                if (sel && navigator.clipboard) {
+                    navigator.clipboard.writeText(sel).catch(() => { /* ignore */ });
+                }
             });
             // Focus once the browser has painted the just-shown terminal, so
             // keystrokes land in the PTY immediately. A bare focus() right after

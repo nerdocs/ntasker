@@ -449,9 +449,17 @@
                                     </div>
                                 </div>
                                 <div class="col-12 text-end">
-                                    <button type="submit" class="btn btn-sm btn-primary" :disabled="!form.title">
+                                    <button type="submit" class="btn btn-sm btn-primary" :disabled="!form.title.trim()">
                                         <i class="ti ti-plus me-1 fs-3"></i>
                                         {{ t('Create') }}
+                                    </button>
+                                    {# Create + immediately hand the task to Claude -- only when the `claude` CLI + a PTY are available. #}
+                                    <button type="button" class="btn btn-sm btn-claude ms-2" x-show="claudeAvailable"
+                                            :disabled="!form.title.trim()"
+                                            @click="createTask(true)"
+                                            :title="$i18n('claude_run')">
+                                        <img src="/static/claude.webp?v={{ static_bust('claude.webp') }}" class="claude-logo-icon me-1" alt="">
+                                        {{ t('Create + Run') }}
                                     </button>
                                 </div>
                             </div>

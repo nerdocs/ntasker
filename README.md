@@ -69,10 +69,10 @@ Only the Linux path is regularly tested; the others are derived via `platformdir
 ## Setup
 
 ```bash
-# As a tool (recommended), from a local checkout:
-uv tool install /path/to/ntasker
-# ...or once published to PyPI:
+# As a tool (recommended), from PyPI:
 uv tool install ntasker
+# ...or from a local checkout:
+uv tool install /path/to/ntasker
 
 ntasker init           # create DB at the default platformdirs path
 ntasker serve          # start server on http://127.0.0.1:8766

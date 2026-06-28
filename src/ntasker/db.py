@@ -135,6 +135,36 @@ def get_conn() -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
+def cleanup_database() -> dict[str, int]:
+    """Reclaim free space and refresh planner stats on the active DB.
+
+    ``VACUUM`` rebuilds the file, dropping the free pages left behind by
+    deleted/archived task rows (SQLite never shrinks the file on its own),
+    while ``PRAGMA optimize`` updates the query-planner statistics.
+
+    ``VACUUM`` cannot run inside a transaction, so this opens its own
+    autocommit connection (``isolation_level=None``) instead of reusing
+    :func:`get_conn`, which auto-commits DML in a deferred transaction.
+
+    Returns the on-disk size before/after and the bytes reclaimed.
+    """
+    if DB_PATH is None:
+        raise RuntimeError("cleanup_database called without DB_PATH set")
+    bytes_before = DB_PATH.stat().st_size
+    conn = sqlite3.connect(DB_PATH, isolation_level=None)
+    try:
+        conn.execute("VACUUM")
+        conn.execute("PRAGMA optimize")
+    finally:
+        conn.close()
+    bytes_after = DB_PATH.stat().st_size
+    return {
+        "bytes_before": bytes_before,
+        "bytes_after": bytes_after,
+        "bytes_freed": max(0, bytes_before - bytes_after),
+    }
+
+
 def row_to_task(
     row: sqlite3.Row,
     tags: list[str] | None = None,

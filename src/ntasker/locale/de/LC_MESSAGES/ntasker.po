@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: ntasker 1.3.0\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-06-28 21:41+0200\n"
+"POT-Creation-Date: 2026-06-28 22:17+0200\n"
 "PO-Revision-Date: 2026-05-02 09:19+0200\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: de\n"
@@ -18,167 +18,167 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Generated-By: Babel 2.18.0\n"
 
-#: src/ntasker/app.py:107 src/ntasker/app.py:346
-#: src/ntasker/templates/index.html:356 src/ntasker/templates/index.html:948
+#: src/ntasker/app.py:111 src/ntasker/app.py:372
+#: src/ntasker/templates/index.html:332 src/ntasker/templates/index.html:924
 msgid "Planned"
 msgstr "Geplant"
 
-#: src/ntasker/app.py:108 src/ntasker/app.py:345
-#: src/ntasker/templates/index.html:357 src/ntasker/templates/index.html:949
+#: src/ntasker/app.py:112 src/ntasker/app.py:371
+#: src/ntasker/templates/index.html:333 src/ntasker/templates/index.html:925
 msgid "In Progress"
 msgstr "In Arbeit"
 
-#: src/ntasker/app.py:109 src/ntasker/app.py:347
-#: src/ntasker/templates/index.html:358 src/ntasker/templates/index.html:950
+#: src/ntasker/app.py:113 src/ntasker/app.py:373
+#: src/ntasker/templates/index.html:334 src/ntasker/templates/index.html:926
 msgid "Review"
 msgstr "Zu prüfen"
 
-#: src/ntasker/app.py:116 src/ntasker/app.py:348
-#: src/ntasker/templates/index.html:364 src/ntasker/templates/index.html:956
+#: src/ntasker/app.py:120 src/ntasker/app.py:374
+#: src/ntasker/templates/index.html:340 src/ntasker/templates/index.html:932
 msgid "Critical"
 msgstr "Kritisch"
 
-#: src/ntasker/app.py:117 src/ntasker/app.py:349
-#: src/ntasker/templates/index.html:365 src/ntasker/templates/index.html:957
+#: src/ntasker/app.py:121 src/ntasker/app.py:375
+#: src/ntasker/templates/index.html:341 src/ntasker/templates/index.html:933
 msgid "High"
 msgstr "Hoch"
 
-#: src/ntasker/app.py:118 src/ntasker/app.py:350
-#: src/ntasker/templates/index.html:366 src/ntasker/templates/index.html:958
-#: src/ntasker/templates/settings.html:138
+#: src/ntasker/app.py:122 src/ntasker/app.py:376
+#: src/ntasker/templates/index.html:342 src/ntasker/templates/index.html:934
+#: src/ntasker/templates/settings.html:139
 msgid "Normal"
 msgstr "Normal"
 
-#: src/ntasker/app.py:119 src/ntasker/app.py:351
-#: src/ntasker/templates/index.html:367 src/ntasker/templates/index.html:959
+#: src/ntasker/app.py:123 src/ntasker/app.py:377
+#: src/ntasker/templates/index.html:343 src/ntasker/templates/index.html:935
 msgid "Low"
 msgstr "Niedrig"
 
-#: src/ntasker/app.py:298 src/ntasker/templates/index.html:56
+#: src/ntasker/app.py:324 src/ntasker/templates/index.html:56
 msgid "Projects"
 msgstr "Projekte"
 
-#: src/ntasker/app.py:299
+#: src/ntasker/app.py:325
 msgid "Select all"
 msgstr "Alle markieren"
 
-#: src/ntasker/app.py:300
+#: src/ntasker/app.py:326
 msgid "Deselect all"
 msgstr "Alle demarkieren"
 
-#: src/ntasker/app.py:301 src/ntasker/templates/index.html:76
+#: src/ntasker/app.py:327 src/ntasker/templates/index.html:76
 msgid "No filter active -- all tasks visible."
 msgstr "Kein Filter aktiv -- alle Aufgaben sichtbar."
 
-#: src/ntasker/app.py:302
+#: src/ntasker/app.py:328
 msgid "Cross-project"
 msgstr "Projektübergreifend"
 
-#: src/ntasker/app.py:303 src/ntasker/templates/index.html:102
+#: src/ntasker/app.py:329 src/ntasker/templates/index.html:102
 msgid "No project symlinks found."
 msgstr "Keine Projekt-Symlinks gefunden."
 
-#: src/ntasker/app.py:305 src/ntasker/templates/index.html:110
+#: src/ntasker/app.py:331 src/ntasker/templates/index.html:110
 msgid "Phases"
 msgstr "Phasen"
 
-#: src/ntasker/app.py:306
+#: src/ntasker/app.py:332
 msgid "Clear phase filter"
 msgstr "Phasen-Filter leeren"
 
-#: src/ntasker/app.py:307
+#: src/ntasker/app.py:333
 msgid "Tasks without a project"
 msgstr "Aufgaben ohne Projekt"
 
-#: src/ntasker/app.py:309 src/ntasker/cli.py:115
-#: src/ntasker/templates/index.html:143 src/ntasker/templates/index.html:362
-#: src/ntasker/templates/index.html:954
+#: src/ntasker/app.py:335 src/ntasker/cli.py:115
+#: src/ntasker/templates/index.html:143 src/ntasker/templates/index.html:338
+#: src/ntasker/templates/index.html:930
 msgid "Priority"
 msgstr "Priorität"
 
-#: src/ntasker/app.py:310
+#: src/ntasker/app.py:336
 msgid "Clear priority filter"
 msgstr "Prioritäts-Filter leeren"
 
-#: src/ntasker/app.py:312 src/ntasker/cli.py:116
-#: src/ntasker/templates/index.html:180 src/ntasker/templates/index.html:381
-#: src/ntasker/templates/index.html:971 src/ntasker/templates/tags.html:61
+#: src/ntasker/app.py:338 src/ntasker/cli.py:116
+#: src/ntasker/templates/index.html:180 src/ntasker/templates/index.html:357
+#: src/ntasker/templates/index.html:947 src/ntasker/templates/tags.html:62
 msgid "Tags"
 msgstr "Tags"
 
-#: src/ntasker/app.py:313
+#: src/ntasker/app.py:339
 msgid "Clear tag filter"
 msgstr "Tag-Filter leeren"
 
-#: src/ntasker/app.py:314 src/ntasker/templates/tags.html:68
+#: src/ntasker/app.py:340 src/ntasker/templates/tags.html:69
 msgid "Clean up tags"
 msgstr "Tags aufräumen"
 
-#: src/ntasker/app.py:315
+#: src/ntasker/app.py:341
 msgid "Remove unused tags"
 msgstr "Ungenutzte Tags löschen"
 
-#: src/ntasker/app.py:316 src/ntasker/app.py:466
-#: src/ntasker/templates/tags.html:6 src/ntasker/templates/tags.html:42
+#: src/ntasker/app.py:342 src/ntasker/app.py:498
+#: src/ntasker/templates/tags.html:6 src/ntasker/templates/tags.html:43
 msgid "Manage tags"
 msgstr "Tags verwalten"
 
-#: src/ntasker/app.py:318 src/ntasker/app.py:426
-#: src/ntasker/templates/settings.html:6 src/ntasker/templates/settings.html:52
+#: src/ntasker/app.py:344 src/ntasker/app.py:458
+#: src/ntasker/templates/settings.html:6 src/ntasker/templates/settings.html:53
 msgid "Settings"
 msgstr "Einstellungen"
 
-#: src/ntasker/app.py:319
+#: src/ntasker/app.py:345
 msgid "Light mode"
 msgstr "Hellmodus"
 
-#: src/ntasker/app.py:320
+#: src/ntasker/app.py:346
 msgid "Dark mode"
 msgstr "Dunkelmodus"
 
-#: src/ntasker/app.py:321 src/ntasker/app.py:497
-#: src/ntasker/templates/info.html:6 src/ntasker/templates/info.html:41
+#: src/ntasker/app.py:347 src/ntasker/app.py:529
+#: src/ntasker/templates/info.html:6 src/ntasker/templates/info.html:42
 msgid "Info"
 msgstr "Info"
 
-#: src/ntasker/app.py:322
+#: src/ntasker/app.py:348
 msgid "Update available"
 msgstr "Update verfügbar"
 
-#: src/ntasker/app.py:323
+#: src/ntasker/app.py:349
 msgid "Source on GitHub"
 msgstr "Quellcode auf GitHub"
 
-#: src/ntasker/app.py:324 src/ntasker/templates/info.html:150
+#: src/ntasker/app.py:350 src/ntasker/templates/info.html:151
 msgid "Buy me a coffee"
 msgstr "Spendier mir einen Kaffee"
 
-#: src/ntasker/app.py:326 src/ntasker/app.py:327
+#: src/ntasker/app.py:352 src/ntasker/app.py:353
 msgid "Task list"
 msgstr "Aufgabenliste"
 
-#: src/ntasker/app.py:328
+#: src/ntasker/app.py:354
 msgid "Kanban"
 msgstr "Kanban"
 
-#: src/ntasker/app.py:330 src/ntasker/app.py:380
-#: src/ntasker/templates/index.html:505
+#: src/ntasker/app.py:356 src/ntasker/app.py:412
+#: src/ntasker/templates/index.html:481
 msgid "Done"
 msgstr "Erledigt"
 
-#: src/ntasker/app.py:331
+#: src/ntasker/app.py:357
 msgid "(empty)"
 msgstr "(leer)"
 
-#: src/ntasker/app.py:332
+#: src/ntasker/app.py:358
 msgid "Expand done column"
 msgstr "Spalte 'Erledigt' ausklappen"
 
-#: src/ntasker/app.py:333
+#: src/ntasker/app.py:359
 msgid "Collapse done column"
 msgstr "Spalte 'Erledigt' einklappen"
 
-#: src/ntasker/app.py:336
+#: src/ntasker/app.py:362
 msgid ""
 "Please configure the projects directory -- otherwise the project list "
 "stays empty."
@@ -186,326 +186,347 @@ msgstr ""
 "Bitte Projekte-Verzeichnis konfigurieren — sonst bleibt die Projekt-Liste"
 " leer."
 
-#: src/ntasker/app.py:338
+#: src/ntasker/app.py:364
 msgid "Go to settings"
 msgstr "zu den Einstellungen"
 
-#: src/ntasker/app.py:340 src/ntasker/templates/index.html:333
+#: src/ntasker/app.py:366 src/ntasker/templates/index.html:309
 msgid "New task"
 msgstr "Neue Aufgabe"
 
-#: src/ntasker/app.py:341 src/ntasker/cli.py:112
-#: src/ntasker/templates/index.html:342 src/ntasker/templates/index.html:938
+#: src/ntasker/app.py:367 src/ntasker/cli.py:112
+#: src/ntasker/templates/index.html:318 src/ntasker/templates/index.html:914
 msgid "Project"
 msgstr "Projekt"
 
-#: src/ntasker/app.py:342
+#: src/ntasker/app.py:368
 msgid "Project name (leave empty for cross-project)"
 msgstr "Projektname (leer = projektübergreifend)"
 
-#: src/ntasker/app.py:343 src/ntasker/cli.py:114
-#: src/ntasker/templates/index.html:354 src/ntasker/templates/index.html:946
+#: src/ntasker/app.py:369 src/ntasker/cli.py:114
+#: src/ntasker/templates/index.html:330 src/ntasker/templates/index.html:922
 msgid "Phase"
 msgstr "Phase"
 
-#: src/ntasker/app.py:344
+#: src/ntasker/app.py:370
 msgid "--"
 msgstr "—"
 
-#: src/ntasker/app.py:352 src/ntasker/templates/index.html:371
-#: src/ntasker/templates/index.html:963
+#: src/ntasker/app.py:378 src/ntasker/templates/index.html:347
+#: src/ntasker/templates/index.html:939
 msgid "Title"
 msgstr "Titel"
 
-#: src/ntasker/app.py:353
+#: src/ntasker/app.py:379
 msgid "What needs to be done?"
 msgstr "Was ist zu tun?"
 
-#: src/ntasker/app.py:354 src/ntasker/cli.py:126
-#: src/ntasker/templates/index.html:376 src/ntasker/templates/index.html:967
+#: src/ntasker/app.py:380 src/ntasker/cli.py:126
+#: src/ntasker/templates/index.html:352 src/ntasker/templates/index.html:943
 msgid "Description"
 msgstr "Beschreibung"
 
-#: src/ntasker/app.py:355
+#: src/ntasker/app.py:381
 msgid "Optional"
 msgstr "Optional"
 
-#: src/ntasker/app.py:356
+#: src/ntasker/app.py:382
 msgid "Type a tag, Enter to add"
 msgstr "Tag eingeben, Enter zum Hinzufügen"
 
-#: src/ntasker/app.py:357
+#: src/ntasker/app.py:383
 msgid "Remove tag"
 msgstr "Tag entfernen"
 
-#: src/ntasker/app.py:358
+#: src/ntasker/app.py:384
 msgid "Type a task title or #id"
 msgstr "Aufgabentitel oder #id eingeben"
 
-#: src/ntasker/app.py:359
+#: src/ntasker/app.py:385
 msgid "Remove dependency"
 msgstr "Abhängigkeit entfernen"
 
-#: src/ntasker/app.py:360
+#: src/ntasker/app.py:386
 msgid "Blocked"
 msgstr "Blockiert"
 
-#: src/ntasker/app.py:361
+#: src/ntasker/app.py:387
 msgid "Blocked: a dependency is not done yet."
 msgstr "Blockiert: eine Abhängigkeit ist noch nicht erledigt."
 
-#: src/ntasker/app.py:362
+#: src/ntasker/app.py:388
 msgid "blocked by:"
 msgstr "blockiert durch:"
 
-#: src/ntasker/app.py:363 src/ntasker/templates/index.html:477
+#: src/ntasker/app.py:389 src/ntasker/templates/index.html:453
 msgid "Create"
 msgstr "Anlegen"
 
-#: src/ntasker/app.py:365
+#: src/ntasker/app.py:391
 msgid "Search in title and description..."
 msgstr "Suchen in Titel und Beschreibung…"
 
-#: src/ntasker/app.py:366 src/ntasker/templates/index.html:203
-#: src/ntasker/templates/tags.html:82
+#: src/ntasker/app.py:392 src/ntasker/templates/index.html:203
+#: src/ntasker/templates/tags.html:83
 msgid "Clear search"
 msgstr "Suche leeren"
 
-#: src/ntasker/app.py:367
+#: src/ntasker/app.py:393
 msgid "Show all tasks"
 msgstr "Alle Aufgaben anzeigen"
 
-#: src/ntasker/app.py:368
+#: src/ntasker/app.py:394
 msgid "Clear search and all filters -- show every task"
 msgstr "Suche und alle Filter zurücksetzen -- jede Aufgabe anzeigen"
 
-#: src/ntasker/app.py:370
+#: src/ntasker/app.py:396
 msgid "Restart server"
 msgstr "Server neu starten"
 
-#: src/ntasker/app.py:371
+#: src/ntasker/app.py:397
 msgid "Restarting server..."
 msgstr "Server wird neu gestartet …"
 
-#: src/ntasker/app.py:372
+#: src/ntasker/app.py:398
 msgid "Restart failed -- the server is not running as a service."
 msgstr "Neustart fehlgeschlagen -- der Server läuft nicht als Dienst."
 
-#: src/ntasker/app.py:373
+#: src/ntasker/app.py:399
 msgid "Server did not come back in time -- reload manually."
 msgstr "Server ist nicht rechtzeitig wieder erreichbar -- bitte manuell neu laden."
 
-#: src/ntasker/app.py:375
+#: src/ntasker/app.py:401
 #, python-brace-format
 msgid ""
 "Restart blocked -- {n} task session(s) still running. A restart would "
 "interrupt them; wait until they finish."
 msgstr ""
-"Neustart blockiert -- {n} Task-Sitzung(en) laufen noch. Ein Neustart würde "
-"sie unterbrechen; warte, bis sie fertig sind."
+"Neustart blockiert -- {n} Task-Sitzung(en) laufen noch. Ein Neustart "
+"würde sie unterbrechen; warte, bis sie fertig sind."
 
-#: src/ntasker/app.py:379 src/ntasker/app.py:472
-#: src/ntasker/templates/index.html:498 src/ntasker/templates/tags.html:91
+#: src/ntasker/app.py:405
+msgid "Clean up database"
+msgstr "Datenbank aufräumen"
+
+#: src/ntasker/app.py:406
+msgid "Cleaning up..."
+msgstr "Räume auf …"
+
+#: src/ntasker/app.py:407
+#, python-brace-format
+msgid "Database cleaned up -- {freed} freed."
+msgstr "Datenbank aufgeräumt -- {freed} freigegeben."
+
+#: src/ntasker/app.py:408
+msgid "Database cleaned up -- already compact."
+msgstr "Datenbank aufgeräumt -- bereits kompakt."
+
+#: src/ntasker/app.py:409
+msgid "Cleanup failed -- try again."
+msgstr "Aufräumen fehlgeschlagen -- bitte erneut versuchen."
+
+#: src/ntasker/app.py:411 src/ntasker/app.py:504
+#: src/ntasker/templates/index.html:474 src/ntasker/templates/tags.html:92
 msgid "Open"
 msgstr "Offen"
 
-#: src/ntasker/app.py:381 src/ntasker/app.py:394
-#: src/ntasker/templates/index.html:512
+#: src/ntasker/app.py:413 src/ntasker/app.py:426
+#: src/ntasker/templates/index.html:488
 msgid "Archive"
 msgstr "Archiv"
 
-#: src/ntasker/app.py:383
+#: src/ntasker/app.py:415
 #, python-brace-format
 msgid "Click to copy: #{id}"
 msgstr "Klicken zum Kopieren: #{id}"
 
-#: src/ntasker/app.py:384
+#: src/ntasker/app.py:416
 #, python-brace-format
 msgid "Filter: project {name}"
 msgstr "Filter: Projekt {name}"
 
-#: src/ntasker/app.py:385
+#: src/ntasker/app.py:417
 msgid "Filter: cross-project"
 msgstr "Filter: Projektübergreifend"
 
-#: src/ntasker/app.py:386
+#: src/ntasker/app.py:418
 msgid "Filter: phase In Progress"
 msgstr "Filter: Phase In Arbeit"
 
-#: src/ntasker/app.py:387
+#: src/ntasker/app.py:419
 msgid "Filter: phase Planned"
 msgstr "Filter: Phase Geplant"
 
-#: src/ntasker/app.py:388
+#: src/ntasker/app.py:420
 msgid "Filter: phase Review"
 msgstr "Filter: Phase Zu prüfen"
 
-#: src/ntasker/app.py:389
+#: src/ntasker/app.py:421
 msgid "Filter: priority Critical"
 msgstr "Filter: Priorität Kritisch"
 
-#: src/ntasker/app.py:390
+#: src/ntasker/app.py:422
 msgid "Filter: priority High"
 msgstr "Filter: Priorität Hoch"
 
-#: src/ntasker/app.py:391
+#: src/ntasker/app.py:423
 msgid "Filter: priority Low"
 msgstr "Filter: Priorität Niedrig"
 
-#: src/ntasker/app.py:392
+#: src/ntasker/app.py:424
 #, python-brace-format
 msgid "Filter: tag {name}"
 msgstr "Filter: Tag {name}"
 
-#: src/ntasker/app.py:393
+#: src/ntasker/app.py:425
 msgid "Edit"
 msgstr "Bearbeiten"
 
-#: src/ntasker/app.py:395
+#: src/ntasker/app.py:427
 msgid "Restore"
 msgstr "Wiederherstellen"
 
-#: src/ntasker/app.py:396
+#: src/ntasker/app.py:428
 msgid "Delete permanently"
 msgstr "Endgültig löschen"
 
-#: src/ntasker/app.py:397 src/ntasker/app.py:494
-#: src/ntasker/templates/index.html:1075
+#: src/ntasker/app.py:429 src/ntasker/app.py:526
+#: src/ntasker/templates/index.html:1051
 msgid "Delete"
 msgstr "Löschen"
 
-#: src/ntasker/app.py:399 src/ntasker/templates/index.html:713
+#: src/ntasker/app.py:431 src/ntasker/templates/index.html:689
 msgid "No tasks"
 msgstr "Keine Aufgaben"
 
-#: src/ntasker/app.py:400
+#: src/ntasker/app.py:432
 msgid "No matches for the active filters."
 msgstr "Keine Treffer für die aktiven Filter."
 
-#: src/ntasker/app.py:401
+#: src/ntasker/app.py:433
 msgid "All done. Or nothing created yet."
 msgstr "Alles erledigt. Oder noch nichts angelegt."
 
-#: src/ntasker/app.py:402
+#: src/ntasker/app.py:434
 msgid "Nothing finished yet."
 msgstr "Noch nichts erledigt."
 
-#: src/ntasker/app.py:403
+#: src/ntasker/app.py:435
 msgid "Archive is empty."
 msgstr "Archiv ist leer."
 
-#: src/ntasker/app.py:405
+#: src/ntasker/app.py:437
 msgid "Edit task"
 msgstr "Aufgabe bearbeiten"
 
-#: src/ntasker/app.py:406
+#: src/ntasker/app.py:438
 msgid "Task"
 msgstr "Aufgabe"
 
-#: src/ntasker/app.py:407
+#: src/ntasker/app.py:439
 msgid "Close"
 msgstr "Schließen"
 
-#: src/ntasker/app.py:408 src/ntasker/templates/index.html:1078
-#: src/ntasker/templates/tags.html:160 src/ntasker/templates/tags.html:210
+#: src/ntasker/app.py:440 src/ntasker/templates/index.html:1054
+#: src/ntasker/templates/tags.html:161 src/ntasker/templates/tags.html:211
 msgid "Cancel"
 msgstr "Abbrechen"
 
-#: src/ntasker/app.py:409 src/ntasker/templates/index.html:1082
-#: src/ntasker/templates/settings.html:97 src/ntasker/templates/tags.html:165
+#: src/ntasker/app.py:441 src/ntasker/templates/index.html:1058
+#: src/ntasker/templates/settings.html:98 src/ntasker/templates/tags.html:166
 msgid "Save"
 msgstr "Speichern"
 
-#: src/ntasker/app.py:411
+#: src/ntasker/app.py:443
 msgid "Create failed."
 msgstr "Anlegen fehlgeschlagen."
 
-#: src/ntasker/app.py:412
+#: src/ntasker/app.py:444
 #, python-brace-format
 msgid "Task #{id} created."
 msgstr "Task #{id} angelegt."
 
-#: src/ntasker/app.py:413
+#: src/ntasker/app.py:445
 #, python-brace-format
 msgid "Task #{id} created -- hidden by an active filter."
 msgstr "Task #{id} angelegt -- durch aktiven Filter ausgeblendet."
 
-#: src/ntasker/app.py:414 src/ntasker/app.py:491
+#: src/ntasker/app.py:446 src/ntasker/app.py:523
 msgid "Delete failed."
 msgstr "Löschen fehlgeschlagen."
 
-#: src/ntasker/app.py:415
+#: src/ntasker/app.py:447
 msgid "Save failed."
 msgstr "Speichern fehlgeschlagen."
 
-#: src/ntasker/app.py:416
+#: src/ntasker/app.py:448
 msgid "Update failed."
 msgstr "Update fehlgeschlagen."
 
-#: src/ntasker/app.py:417
+#: src/ntasker/app.py:449
 msgid "Only archived tasks can be deleted."
 msgstr "Nur archivierte Aufgaben können gelöscht werden."
 
-#: src/ntasker/app.py:418
+#: src/ntasker/app.py:450
 #, python-brace-format
 msgid "\"{title}\" -- delete permanently?"
 msgstr "\"{title}\" endgültig löschen?"
 
-#: src/ntasker/app.py:419
+#: src/ntasker/app.py:451
 #, python-brace-format
 msgid "Copied: {text}"
 msgstr "Kopiert: {text}"
 
-#: src/ntasker/app.py:420
+#: src/ntasker/app.py:452
 msgid "Copy failed"
 msgstr "Kopieren fehlgeschlagen"
 
-#: src/ntasker/app.py:421
+#: src/ntasker/app.py:453
 msgid "Cleanup failed."
 msgstr "Aufräumen fehlgeschlagen."
 
-#: src/ntasker/app.py:422
+#: src/ntasker/app.py:454
 msgid "No unused tags."
 msgstr "Keine ungenutzten Tags."
 
-#: src/ntasker/app.py:423
+#: src/ntasker/app.py:455
 #, python-brace-format
 msgid "{n} unused tags removed: {head}{tail}"
 msgstr "{n} ungenutzte Tags entfernt: {head}{tail}"
 
-#: src/ntasker/app.py:424
+#: src/ntasker/app.py:456
 #, python-brace-format
 msgid ", +{n} more"
 msgstr ", +{n} weitere"
 
-#: src/ntasker/app.py:427 src/ntasker/templates/info.html:47
-#: src/ntasker/templates/settings.html:58 src/ntasker/templates/tags.html:48
+#: src/ntasker/app.py:459 src/ntasker/templates/info.html:48
+#: src/ntasker/templates/settings.html:59 src/ntasker/templates/tags.html:49
 msgid "back to tasks"
 msgstr "zurück zu Aufgaben"
 
-#: src/ntasker/app.py:428 src/ntasker/templates/settings.html:73
+#: src/ntasker/app.py:460 src/ntasker/templates/settings.html:74
 msgid "Known keys"
 msgstr "Bekannte Schlüssel"
 
-#: src/ntasker/app.py:429
+#: src/ntasker/app.py:461
 msgid "(not set yet)"
 msgstr "(noch nicht gesetzt)"
 
-#: src/ntasker/app.py:430
+#: src/ntasker/app.py:462
 #, python-brace-format
 msgid "{key} saved."
 msgstr "{key} gespeichert."
 
-#: src/ntasker/app.py:431
+#: src/ntasker/app.py:463
 #, python-brace-format
 msgid "{key} removed."
 msgstr "{key} entfernt."
 
-#: src/ntasker/app.py:432 src/ntasker/templates/settings.html:188
+#: src/ntasker/app.py:464 src/ntasker/templates/settings.html:189
 msgid "Claude Code Integration"
 msgstr "Claude-Code-Integration"
 
-#: src/ntasker/app.py:434 src/ntasker/templates/settings.html:193
+#: src/ntasker/app.py:466 src/ntasker/templates/settings.html:194
 msgid ""
 "ntasker ships a skill (SKILL.md) and a slash command (/task <id>) for "
 "Claude Code. This card shows the install status -- writes go exclusively "
@@ -515,95 +536,95 @@ msgstr ""
 " für Claude Code aus. Diese Karte zeigt den Installationsstatus — "
 "geschrieben wird ausschließlich über die CLI."
 
-#: src/ntasker/app.py:438 src/ntasker/templates/settings.html:198
+#: src/ntasker/app.py:470 src/ntasker/templates/settings.html:199
 msgid "Installed"
 msgstr "Installiert"
 
-#: src/ntasker/app.py:439 src/ntasker/templates/settings.html:207
+#: src/ntasker/app.py:471 src/ntasker/templates/settings.html:208
 msgid "Package version"
 msgstr "Paketversion"
 
-#: src/ntasker/app.py:440 src/ntasker/templates/settings.html:213
+#: src/ntasker/app.py:472 src/ntasker/templates/settings.html:214
 msgid "Drift"
 msgstr "Abweichung"
 
-#: src/ntasker/app.py:441 src/ntasker/templates/settings.html:222
+#: src/ntasker/app.py:473 src/ntasker/templates/settings.html:223
 msgid "Claude home"
 msgstr "Claude-Home"
 
-#: src/ntasker/app.py:442
+#: src/ntasker/app.py:474
 msgid "yes"
 msgstr "ja"
 
-#: src/ntasker/app.py:443
+#: src/ntasker/app.py:475
 msgid "no"
 msgstr "nein"
 
-#: src/ntasker/app.py:444 src/ntasker/templates/settings.html:236
+#: src/ntasker/app.py:476 src/ntasker/templates/settings.html:237
 msgid "Skill + slash command are not installed yet."
 msgstr "Skill + Slash-Command sind noch nicht installiert."
 
-#: src/ntasker/app.py:446 src/ntasker/templates/settings.html:245
+#: src/ntasker/app.py:478 src/ntasker/templates/settings.html:246
 msgid "Installed files differ from the package version. Update with backup:"
 msgstr "Installierte Dateien weichen von der Paketversion ab. Update mit Backup:"
 
-#: src/ntasker/app.py:448 src/ntasker/templates/settings.html:258
+#: src/ntasker/app.py:480 src/ntasker/templates/settings.html:259
 msgid "All settings (DB content)"
 msgstr "Alle Settings (DB-Inhalt)"
 
-#: src/ntasker/app.py:449 src/ntasker/templates/settings.html:265
+#: src/ntasker/app.py:481 src/ntasker/templates/settings.html:266
 msgid "Key"
 msgstr "Schlüssel"
 
-#: src/ntasker/app.py:450 src/ntasker/templates/settings.html:266
+#: src/ntasker/app.py:482 src/ntasker/templates/settings.html:267
 msgid "Value"
 msgstr "Wert"
 
-#: src/ntasker/app.py:451 src/ntasker/templates/settings.html:267
+#: src/ntasker/app.py:483 src/ntasker/templates/settings.html:268
 msgid "updated"
 msgstr "aktualisiert"
 
-#: src/ntasker/app.py:452 src/ntasker/templates/settings.html:289
+#: src/ntasker/app.py:484 src/ntasker/templates/settings.html:290
 msgid "No settings configured."
 msgstr "Keine Settings gesetzt."
 
-#: src/ntasker/app.py:454 src/ntasker/templates/settings.html:291
+#: src/ntasker/app.py:486 src/ntasker/templates/settings.html:292
 msgid "Configure a known key above, or set one via CLI:"
 msgstr "Konfiguriere oben einen bekannten Schlüssel, oder setze ihn via CLI:"
 
-#: src/ntasker/app.py:457 src/ntasker/templates/settings.html:124
+#: src/ntasker/app.py:489 src/ntasker/templates/settings.html:125
 msgid "Run with Claude"
 msgstr "Mit Claude ausführen"
 
-#: src/ntasker/app.py:458
+#: src/ntasker/app.py:490
 msgid "Claude is waiting for your input"
 msgstr "Claude wartet auf deine Eingabe"
 
-#: src/ntasker/app.py:459
+#: src/ntasker/app.py:491
 msgid "Back"
 msgstr "Zurück"
 
-#: src/ntasker/app.py:460
+#: src/ntasker/app.py:492
 msgid "Stop"
 msgstr "Stoppen"
 
-#: src/ntasker/app.py:461
+#: src/ntasker/app.py:493
 msgid "Mark done"
 msgstr "Erledigt"
 
-#: src/ntasker/app.py:462
+#: src/ntasker/app.py:494
 msgid "Connecting..."
 msgstr "Verbinde..."
 
-#: src/ntasker/app.py:463
+#: src/ntasker/app.py:495
 msgid "Running..."
 msgstr "Läuft..."
 
-#: src/ntasker/app.py:464
+#: src/ntasker/app.py:496
 msgid "Session ended"
 msgstr "Sitzung beendet"
 
-#: src/ntasker/app.py:468 src/ntasker/templates/tags.html:73
+#: src/ntasker/app.py:500 src/ntasker/templates/tags.html:74
 msgid ""
 "Rename, merge or delete tags. Renaming a tag to an existing name merges "
 "the two; deleting strips the tag from every task."
@@ -612,28 +633,28 @@ msgstr ""
 "bereits existierenden Namen umbenannt, werden beide zusammengeführt; "
 "Löschen entfernt den Tag von allen Aufgaben."
 
-#: src/ntasker/app.py:471 src/ntasker/templates/tags.html:90
+#: src/ntasker/app.py:503 src/ntasker/templates/tags.html:91
 msgid "Tag"
 msgstr "Tag"
 
-#: src/ntasker/app.py:473 src/ntasker/templates/tags.html:92
+#: src/ntasker/app.py:505 src/ntasker/templates/tags.html:93
 msgid "Total"
 msgstr "Gesamt"
 
-#: src/ntasker/app.py:474 src/ntasker/templates/tags.html:93
+#: src/ntasker/app.py:506 src/ntasker/templates/tags.html:94
 msgid "Actions"
 msgstr "Aktionen"
 
-#: src/ntasker/app.py:475
+#: src/ntasker/app.py:507
 msgid "Rename / merge"
 msgstr "Umbenennen / zusammenführen"
 
-#: src/ntasker/app.py:476
+#: src/ntasker/app.py:508
 #, python-brace-format
 msgid "Rename or merge “#{name}”"
 msgstr "„#{name}“ umbenennen oder zusammenführen"
 
-#: src/ntasker/app.py:478 src/ntasker/templates/tags.html:151
+#: src/ntasker/app.py:510 src/ntasker/templates/tags.html:152
 msgid ""
 "Type a new name. If it already exists, the two tags are merged and every "
 "task is updated."
@@ -641,148 +662,148 @@ msgstr ""
 "Neuen Namen eingeben. Existiert er bereits, werden beide Tags "
 "zusammengeführt und alle Aufgaben aktualisiert."
 
-#: src/ntasker/app.py:481 src/ntasker/templates/tags.html:152
+#: src/ntasker/app.py:513 src/ntasker/templates/tags.html:153
 msgid "New tag name"
 msgstr "Neuer Tag-Name"
 
-#: src/ntasker/app.py:482
+#: src/ntasker/app.py:514
 #, python-brace-format
 msgid "“#{name}” already exists -- the tags will be merged."
 msgstr "„#{name}“ existiert bereits – die Tags werden zusammengeführt."
 
-#: src/ntasker/app.py:483
+#: src/ntasker/app.py:515
 #, python-brace-format
 msgid "{n} task(s) updated to #{name}."
 msgstr "{n} Aufgabe(n) auf #{name} aktualisiert."
 
-#: src/ntasker/app.py:484
+#: src/ntasker/app.py:516
 msgid "Rename/merge failed."
 msgstr "Umbenennen/Zusammenführen fehlgeschlagen."
 
-#: src/ntasker/app.py:485
+#: src/ntasker/app.py:517
 msgid "Delete tag"
 msgstr "Tag löschen"
 
-#: src/ntasker/app.py:486
+#: src/ntasker/app.py:518
 #, python-brace-format
 msgid "Delete “#{name}”?"
 msgstr "„#{name}“ löschen?"
 
-#: src/ntasker/app.py:487
+#: src/ntasker/app.py:519
 msgid "This tag is not used by any task."
 msgstr "Dieser Tag wird von keiner Aufgabe verwendet."
 
-#: src/ntasker/app.py:488
+#: src/ntasker/app.py:520
 msgid "The following tasks still use this tag:"
 msgstr "Folgende Aufgaben verwenden diesen Tag noch:"
 
-#: src/ntasker/app.py:489
+#: src/ntasker/app.py:521
 msgid "This removes the tag from those tasks. It cannot be undone."
 msgstr ""
 "Der Tag wird von diesen Aufgaben entfernt. Das lässt sich nicht "
 "rückgängig machen."
 
-#: src/ntasker/app.py:490
+#: src/ntasker/app.py:522
 #, python-brace-format
 msgid "Tag #{name} deleted."
 msgstr "Tag #{name} gelöscht."
 
-#: src/ntasker/app.py:492 src/ntasker/templates/tags.html:128
+#: src/ntasker/app.py:524 src/ntasker/templates/tags.html:129
 msgid "No tags yet."
 msgstr "Noch keine Tags."
 
-#: src/ntasker/app.py:493 src/ntasker/templates/index.html:200
-#: src/ntasker/templates/tags.html:79
+#: src/ntasker/app.py:525 src/ntasker/templates/index.html:200
+#: src/ntasker/templates/tags.html:80
 msgid "Filter tags..."
 msgstr "Tags filtern …"
 
-#: src/ntasker/app.py:495
+#: src/ntasker/app.py:527
 msgid "Loading..."
 msgstr "Lädt …"
 
-#: src/ntasker/app.py:498 src/ntasker/templates/info.html:62
+#: src/ntasker/app.py:530 src/ntasker/templates/info.html:63
 msgid "News"
 msgstr "Neuigkeiten"
 
-#: src/ntasker/app.py:499
+#: src/ntasker/app.py:531
 msgid "A new version is available"
 msgstr "Eine neue Version ist verfügbar"
 
-#: src/ntasker/app.py:501
+#: src/ntasker/app.py:533
 #, python-brace-format
 msgid "You are running {current}, but {latest} is available on PyPI. Update with:"
 msgstr ""
 "Du verwendest {current}, auf PyPI ist {latest} verfügbar. Aktualisieren "
 "mit:"
 
-#: src/ntasker/app.py:504
+#: src/ntasker/app.py:536
 msgid "ntasker is up to date."
 msgstr "ntasker ist aktuell."
 
-#: src/ntasker/app.py:505
+#: src/ntasker/app.py:537
 msgid "Could not reach PyPI to check for updates."
 msgstr "PyPI für die Update-Prüfung nicht erreichbar."
 
-#: src/ntasker/app.py:506
+#: src/ntasker/app.py:538
 msgid "Checking for updates..."
 msgstr "Suche nach Updates ..."
 
-#: src/ntasker/app.py:507 src/ntasker/templates/info.html:113
+#: src/ntasker/app.py:539 src/ntasker/templates/info.html:114
 msgid "About"
 msgstr "Über"
 
-#: src/ntasker/app.py:508 src/ntasker/templates/info.html:130
+#: src/ntasker/app.py:540 src/ntasker/templates/info.html:131
 msgid "Made by"
 msgstr "Erstellt von"
 
-#: src/ntasker/app.py:509 src/ntasker/templates/info.html:128
+#: src/ntasker/app.py:541 src/ntasker/templates/info.html:129
 msgid "License"
 msgstr "Lizenz"
 
-#: src/ntasker/app.py:510 src/ntasker/templates/info.html:142
+#: src/ntasker/app.py:542 src/ntasker/templates/info.html:143
 msgid "View on GitHub"
 msgstr "Auf GitHub ansehen"
 
-#: src/ntasker/app.py:511 src/ntasker/templates/info.html:147
+#: src/ntasker/app.py:543 src/ntasker/templates/info.html:148
 msgid "Report an issue"
 msgstr "Problem melden"
 
-#: src/ntasker/app.py:826 src/ntasker/app.py:842
+#: src/ntasker/app.py:873 src/ntasker/app.py:889
 msgid "Setting not found"
 msgstr "Setting nicht gefunden"
 
-#: src/ntasker/app.py:906 src/ntasker/app.py:1360 src/ntasker/app.py:1469
-#: src/ntasker/app.py:1473 src/ntasker/app.py:1502
+#: src/ntasker/app.py:953 src/ntasker/app.py:1407 src/ntasker/app.py:1516
+#: src/ntasker/app.py:1520 src/ntasker/app.py:1549
 msgid "Task not found"
 msgstr "Aufgabe nicht gefunden"
 
-#: src/ntasker/app.py:1060
+#: src/ntasker/app.py:1107
 msgid "Target tag is empty."
 msgstr "Ziel-Tag ist leer."
 
-#: src/ntasker/app.py:1369
+#: src/ntasker/app.py:1416
 msgid "A task cannot depend on itself."
 msgstr "Eine Aufgabe kann nicht von sich selbst abhängen."
 
-#: src/ntasker/app.py:1371
+#: src/ntasker/app.py:1418
 #, python-brace-format
 msgid "Dependency task #{id} does not exist."
 msgstr "Abhängigkeit: Aufgabe #{id} existiert nicht."
 
-#: src/ntasker/app.py:1373
+#: src/ntasker/app.py:1420
 #, python-brace-format
 msgid "That dependency would create a cycle (via task #{id})."
 msgstr "Diese Abhängigkeit würde einen Zyklus erzeugen (über Aufgabe #{id})."
 
-#: src/ntasker/app.py:1393 src/ntasker/app.py:1437
+#: src/ntasker/app.py:1440 src/ntasker/app.py:1484
 msgid "Invalid priority"
 msgstr "Ungültige Priorität"
 
-#: src/ntasker/app.py:1431
+#: src/ntasker/app.py:1478
 msgid "No fields to update"
 msgstr "Keine Felder zum Aktualisieren"
 
-#: src/ntasker/app.py:1447
+#: src/ntasker/app.py:1494
 msgid "Invalid phase"
 msgstr "Ungültige Phase"
 
@@ -826,8 +847,8 @@ msgstr "(projektübergreifend)"
 msgid "Status"
 msgstr "Status"
 
-#: src/ntasker/cli.py:119 src/ntasker/templates/index.html:434
-#: src/ntasker/templates/index.html:1024
+#: src/ntasker/cli.py:119 src/ntasker/templates/index.html:410
+#: src/ntasker/templates/index.html:1000
 msgid "Depends on"
 msgstr "Hängt ab von"
 
@@ -1153,8 +1174,9 @@ msgid ""
 "ntasker: restart deferred -- {n} task session(s) still running ({ids}); a"
 " restart would kill them. Retry later or pass --force."
 msgstr ""
-"ntasker: Neustart aufgeschoben -- {n} Task-Sitzung(en) laufen noch ({ids}); "
-"ein Neustart würde sie beenden. Später erneut versuchen oder --force angeben."
+"ntasker: Neustart aufgeschoben -- {n} Task-Sitzung(en) laufen noch "
+"({ids}); ein Neustart würde sie beenden. Später erneut versuchen oder "
+"--force angeben."
 
 #: src/ntasker/cli.py:1389
 msgid "Lightweight local task tracker. Single-user, FastAPI + SQLite."
@@ -1549,11 +1571,11 @@ msgstr ""
 msgid "Show empty projects"
 msgstr "Leere Projekte anzeigen"
 
-#: src/ntasker/templates/index.html:485
+#: src/ntasker/templates/index.html:461
 msgid "Create + Run"
 msgstr "Anlegen + Starten"
 
-#: src/ntasker/templates/info.html:123
+#: src/ntasker/templates/info.html:124
 msgid ""
 "ntasker is a lightweight, single-user tracker for your Claude Code tasks "
 "-- FastAPI + SQLite, Tabler.io UI, no build step."
@@ -1561,7 +1583,7 @@ msgstr ""
 "ntasker ist ein schlanker Single-User-Tracker für deine Claude-Code-Tasks"
 " -- FastAPI + SQLite, Tabler.io-UI, ohne Build-Schritt."
 
-#: src/ntasker/templates/info.html:136
+#: src/ntasker/templates/info.html:137
 msgid ""
 "Built and maintained by Christian González. If ntasker saves you time, a "
 "coffee keeps it going."
@@ -1569,11 +1591,11 @@ msgstr ""
 "Entwickelt und gepflegt von Christian González. Wenn ntasker dir Zeit "
 "spart, hält ein Kaffee es am Laufen."
 
-#: src/ntasker/templates/settings.html:128
+#: src/ntasker/templates/settings.html:129
 msgid "Permission mode"
 msgstr "Berechtigungsmodus"
 
-#: src/ntasker/templates/settings.html:130
+#: src/ntasker/templates/settings.html:131
 msgid ""
 "How a spawned Claude session handles permissions. Passed to the CLI as "
 "--permission-mode."
@@ -1581,39 +1603,39 @@ msgstr ""
 "Wie eine gestartete Claude-Sitzung mit Berechtigungen umgeht. Wird als "
 "--permission-mode an die CLI übergeben."
 
-#: src/ntasker/templates/settings.html:139
+#: src/ntasker/templates/settings.html:140
 msgid "Claude asks before it edits a file or runs a command."
 msgstr "Claude fragt, bevor es eine Datei ändert oder einen Befehl ausführt."
 
-#: src/ntasker/templates/settings.html:147
+#: src/ntasker/templates/settings.html:148
 msgid "Auto"
 msgstr "Auto"
 
-#: src/ntasker/templates/settings.html:148
+#: src/ntasker/templates/settings.html:149
 msgid "Claude accepts its own actions automatically."
 msgstr "Claude bestätigt seine eigenen Aktionen automatisch."
 
-#: src/ntasker/templates/settings.html:156
+#: src/ntasker/templates/settings.html:157
 msgid "Plan"
 msgstr "Plan"
 
-#: src/ntasker/templates/settings.html:157
+#: src/ntasker/templates/settings.html:158
 msgid "Claude only plans and makes no changes."
 msgstr "Claude plant nur und nimmt keine Änderungen vor."
 
-#: src/ntasker/templates/settings.html:165
+#: src/ntasker/templates/settings.html:166
 msgid "Bypass permissions"
 msgstr "Berechtigungen umgehen"
 
-#: src/ntasker/templates/settings.html:166
+#: src/ntasker/templates/settings.html:167
 msgid "Claude skips every confirmation and runs unattended."
 msgstr "Claude überspringt jede Bestätigung und läuft unbeaufsichtigt."
 
-#: src/ntasker/templates/settings.html:175
+#: src/ntasker/templates/settings.html:176
 msgid "This can be dangerous."
 msgstr "Das kann gefährlich sein."
 
-#: src/ntasker/templates/settings.html:176
+#: src/ntasker/templates/settings.html:177
 msgid ""
 "With permissions bypassed, Claude can change or delete files and run "
 "shell commands in the project directory without asking first. Only use it"
@@ -1624,16 +1646,24 @@ msgstr ""
 "fragen. Nutze das nur für Projekte, denen du voll vertraust."
 
 #: src/ntasker/templates/settings.html:304
-msgid "Server"
-msgstr "Server"
+msgid "House keeping"
+msgstr "Wartung"
 
-#: src/ntasker/templates/settings.html:309
+#: src/ntasker/templates/settings.html:311
 msgid ""
 "Restart the ntasker service -- needed to pick up a new version or apply "
 "changes that require a fresh start."
 msgstr ""
 "Den ntasker-Dienst neu starten -- nötig, um eine neue Version zu laden "
 "oder Änderungen anzuwenden, die einen Neustart erfordern."
+
+#: src/ntasker/templates/settings.html:325
+msgid ""
+"Compact the database: reclaim the space left by deleted and archived "
+"tasks and refresh the query optimizer."
+msgstr ""
+"Datenbank verdichten: den Speicher gelöschter und archivierter Aufgaben "
+"zurückgewinnen und den Abfrage-Optimierer auffrischen."
 
 #~ msgid ""
 #~ "Run interactive Claude sessions without "
@@ -1665,4 +1695,7 @@ msgstr ""
 #~ "Befehl ausführt. Der Auto-Modus "
 #~ "überspringt jede Bestätigung, sodass eine "
 #~ "Session unbeaufsichtigt laufen kann."
+
+#~ msgid "Server"
+#~ msgstr "Server"
 

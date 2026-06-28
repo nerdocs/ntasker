@@ -296,17 +296,18 @@
                     </div>
                 </div>
 
-                {% if can_restart %}
-                {# Server card: only shown when ntasker runs under an installed systemd/launchd unit (the only case a restart can recover from). #}
+                {# House keeping: server restart (service-only) + database compaction. #}
                 <div class="card mb-3">
                     <div class="card-header">
                         <h3 class="card-title">
-                            <i class="ti ti-refresh me-2"></i>
-                            {{ t('Server') }}
+                            <i class="ti ti-tools me-2"></i>
+                            {{ t('House keeping') }}
                         </h3>
                     </div>
                     <div class="card-body">
-                        <p class="text-muted small mb-3">
+                        {% if can_restart %}
+                        {# Restart only recovers under an installed systemd/launchd unit. #}
+                        <p class="text-muted small mb-2">
                             {{ t('Restart the ntasker service -- needed to pick up a new version or apply changes that require a fresh start.') }}
                         </p>
                         <button type="button" class="btn btn-warning"
@@ -318,9 +319,18 @@
                             <i class="ti ti-player-pause me-1"></i>
                             <span x-text="i18n('restart_blocked_tasks', {n: activeTasks.length})"></span>
                         </div>
+                        <hr class="my-3">
+                        {% endif %}
+                        <p class="text-muted small mb-2">
+                            {{ t('Compact the database: reclaim the space left by deleted and archived tasks and refresh the query optimizer.') }}
+                        </p>
+                        <button type="button" class="btn btn-outline-secondary"
+                                @click="cleanupDatabase()" :disabled="cleaning">
+                            <i class="ti ti-database-cog me-1"></i>
+                            <span x-text="cleaning ? $i18n('cleanup_running') : $i18n('cleanup_db')"></span>
+                        </button>
                     </div>
                 </div>
-                {% endif %}
 
             </div>
         </div>
@@ -350,6 +360,8 @@ function settingsPage() {
         // restart kills the whole cgroup, so while this is non-empty the button
         // is disabled and an info banner explains why. Polled by refreshSessions.
         activeTasks: [],
+        // True while a VACUUM/optimize is in flight -- disables the button.
+        cleaning: false,
         // Claude Code asset status -- populated on init() and after manual
         // refreshes. Initialised to ``null`` so x-show guards on
         // ``=== true`` / ``=== false`` stay quiet until the fetch lands.
@@ -505,6 +517,35 @@ function settingsPage() {
                     this.toast(this.i18n('restart_timeout'));
                 }
             }, tries === 0 ? 1000 : 500);
+        },
+
+        // Compact the database (VACUUM + optimize) and report the bytes freed.
+        async cleanupDatabase() {
+            if (this.cleaning) return;
+            this.cleaning = true;
+            try {
+                const r = await fetch('/api/maintenance/cleanup', {method: 'POST'});
+                if (!r.ok) { this.toast(this.i18n('cleanup_failed')); return; }
+                const body = await r.json();
+                if (body.bytes_freed > 0) {
+                    this.toast(this.i18n('cleanup_done', {freed: this.fmtBytes(body.bytes_freed)}));
+                } else {
+                    this.toast(this.i18n('cleanup_done_nofree'));
+                }
+            } catch (e) {
+                this.toast(this.i18n('cleanup_failed'));
+            } finally {
+                this.cleaning = false;
+            }
+        },
+
+        // Human-readable byte count for the cleanup toast (e.g. "12.3 KB").
+        fmtBytes(n) {
+            if (n < 1024) return `${n} B`;
+            const units = ['KB', 'MB', 'GB'];
+            let v = n / 1024, i = 0;
+            while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+            return `${v.toFixed(1)} ${units[i]}`;
         },
 
         toast(msg) {

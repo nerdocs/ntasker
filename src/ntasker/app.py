@@ -46,6 +46,7 @@ from ntasker.projects import discover_claude_projects
 from ntasker import db as _db_module
 from ntasker.db import (
     DepError,
+    cleanup_database,
     delete_tags,
     get_conn,
     init_db,
@@ -400,6 +401,12 @@ def build_js_strings() -> dict[str, str]:
             "Restart blocked -- {n} task session(s) still running. "
             "A restart would interrupt them; wait until they finish."
         ),
+        # Settings -- database cleanup
+        "cleanup_db": _("Clean up database"),
+        "cleanup_running": _("Cleaning up..."),
+        "cleanup_done": _("Database cleaned up -- {freed} freed."),
+        "cleanup_done_nofree": _("Database cleaned up -- already compact."),
+        "cleanup_failed": _("Cleanup failed -- try again."),
         # Tabs
         "tab_open": _("Open"),
         "tab_done": _("Done"),
@@ -739,6 +746,18 @@ def restart(background_tasks: BackgroundTasks) -> JSONResponse:
         )
     background_tasks.add_task(_self_restart)
     return JSONResponse({"ok": True, "restarting": True}, status_code=202)
+
+
+@app.post("/api/maintenance/cleanup")
+def maintenance_cleanup() -> JSONResponse:
+    """Compact the database: VACUUM + PRAGMA optimize.
+
+    Reclaims the free pages left by deleted/archived tasks and refreshes the
+    query-planner stats. Synchronous -- the file is small and the operation
+    is near-instant, so the client just waits for the freed-bytes report.
+    """
+    stats = cleanup_database()
+    return JSONResponse({"ok": True, **stats})
 
 
 # ---------------------------------------------------------------------------

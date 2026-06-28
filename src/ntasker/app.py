@@ -10,6 +10,8 @@ Bind is the CLI's responsibility -- this module only exposes ``app``.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import sqlite3
 from datetime import datetime
 from importlib.resources import files
@@ -29,6 +31,7 @@ from ntasker.assets import (
 )
 from ntasker.claude_assets import resolve_claude_home, scan_status
 from ntasker.claude_runner import (
+    active_session_ids,
     default_cwd_for_project,
     seed_command_for_task,
     session_states,
@@ -469,6 +472,59 @@ def on_startup() -> None:
     # have not been run through ``ntasker init`` yet.
     with get_conn() as conn:
         ensure_settings_table(conn)
+
+
+# How often the background sweep checks whether a live Claude session's task has
+# been finished behind the server's back (CLI / direct DB write / deletion).
+CLAUDE_REAP_INTERVAL = 3.0
+
+_reaper_task: asyncio.Task | None = None
+
+
+async def _reap_finished_claude_sessions() -> None:
+    """Tear down any live Claude session whose task is no longer open.
+
+    The DB is the single source of truth, and *both* the HTTP API and the CLI
+    write task status straight to SQLite -- but only the API path reaches
+    :func:`stop_session` synchronously. ``ntasker done`` / ``ntasker patch
+    --status done`` (and any direct DB edit or delete) flip the bit in another
+    process, so this loop watches the DB and stops the now-orphaned session no
+    matter which path finished the task. Reliability backstop -- the immediate
+    teardown in the PATCH handler still fires first on the UI path.
+    """
+    while True:
+        await asyncio.sleep(CLAUDE_REAP_INTERVAL)
+        tids = active_session_ids()
+        if not tids:
+            continue
+        try:
+            placeholders = ",".join("?" * len(tids))
+            with get_conn() as conn:
+                rows = conn.execute(
+                    f"SELECT id, status FROM tasks WHERE id IN ({placeholders})",
+                    tids,
+                ).fetchall()
+        except Exception:  # noqa: BLE001 -- a DB hiccup must never kill the loop
+            continue
+        still_open = {r["id"] for r in rows if r["status"] != "done"}
+        for tid in tids:
+            # ``done`` or row gone (deleted) -> the session is orphaned, stop it.
+            if tid not in still_open:
+                stop_session(tid)
+
+
+@app.on_event("startup")
+async def _start_claude_reaper() -> None:
+    global _reaper_task
+    _reaper_task = asyncio.create_task(_reap_finished_claude_sessions())
+
+
+@app.on_event("shutdown")
+async def _stop_claude_reaper() -> None:
+    if _reaper_task is not None:
+        _reaper_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await _reaper_task
 
 
 # ---------------------------------------------------------------------------

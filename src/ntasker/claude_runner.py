@@ -24,6 +24,7 @@ import contextlib
 import os
 import shutil
 import signal
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -278,12 +279,45 @@ def _resize(sess: TermSession, rows: int, cols: int) -> None:
         fcntl.ioctl(sess.master_fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
 
 
+# Grace period between the polite SIGTERM and the SIGKILL fallback. ``claude``
+# is a Node TUI with child processes (MCP servers, spawned shells) that don't
+# always honour SIGTERM promptly; without an escalation the PTY never closes,
+# _reap never runs, and the whole process group lingers in the background. We
+# give it a short window, then force the group down so a stopped session is
+# *guaranteed* to die.
+STOP_GRACE_SECONDS = 3.0
+
+
 def _stop(sess: TermSession) -> None:
-    """Signal the whole process group so child processes die too."""
+    """Terminate the session's whole process group, escalating to SIGKILL.
+
+    Sends SIGTERM first, then -- from a short-lived daemon thread so the caller
+    never blocks -- waits for the PTY to close (``sess.alive`` flips False once
+    :func:`_reap` runs) and force-kills the group with SIGKILL if anything is
+    still standing after ``STOP_GRACE_SECONDS``. Idempotent; safe to call twice.
+    """
     if not sess.alive:
         return
+    try:
+        pgid = os.getpgid(sess.proc.pid)
+    except OSError:
+        return  # process already gone -- nothing left to signal
+
     with contextlib.suppress(Exception):
-        os.killpg(os.getpgid(sess.proc.pid), signal.SIGTERM)
+        os.killpg(pgid, signal.SIGTERM)
+
+    def _escalate() -> None:
+        deadline = time.monotonic() + STOP_GRACE_SECONDS
+        while time.monotonic() < deadline:
+            if not sess.alive:
+                return  # _reap saw the PTY close -> the group is gone
+            time.sleep(0.1)
+        with contextlib.suppress(Exception):
+            os.killpg(pgid, signal.SIGKILL)
+
+    threading.Thread(
+        target=_escalate, name=f"ntasker-stop-{sess.task_id}", daemon=True
+    ).start()
 
 
 def stop_session(task_id: int) -> bool:

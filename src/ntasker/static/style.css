@@ -224,6 +224,21 @@
     display: block;
     object-fit: cover;
 }
+/* Labelled Claude call-to-action (e.g. "Create + Run"). The icon-only
+ * .btn-claude is fixed at 2rem and transparent, too narrow for text -- this
+ * filled terracotta variant carries the brand colour with a visible label. */
+.btn-claude-cta,
+.btn-claude-cta:focus {
+    background-color: #d97757;
+    border-color: #d97757;
+    color: #fff;
+}
+.btn-claude-cta:hover,
+.btn-claude-cta:active {
+    background-color: #c25e3f;
+    border-color: #c25e3f;
+    color: #fff;
+}
 /* Claude is blocked on a prompt: the run button turns amber and pulses so the
  * waiting task is easy to spot among the others. */
 .btn-claude-waiting,

@@ -454,7 +454,7 @@
                                         {{ t('Create') }}
                                     </button>
                                     {# Create + immediately hand the task to Claude -- only when the `claude` CLI + a PTY are available. #}
-                                    <button type="button" class="btn btn-sm btn-claude ms-2" x-show="claudeAvailable"
+                                    <button type="button" class="btn btn-sm btn-claude-cta ms-2" x-show="claudeAvailable"
                                             :disabled="!form.title.trim()"
                                             @click="createTask(true)"
                                             :title="$i18n('claude_run')">

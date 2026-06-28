@@ -174,23 +174,23 @@
             <div>
                 <hr class="my-3">
                 <div class="d-flex align-items-center justify-content-between mb-2">
-                    <span class="text-secondary text-uppercase small fw-bold">
-                        <i class="ti ti-tags me-1"></i>
-                        {{ t('Tags') }}
-                    </span>
                     <span class="d-flex align-items-center">
-                        <button type="button" class="btn btn-sm btn-ghost-secondary px-2 py-0"
-                                x-show="tagFilter.length > 0"
-                                @click="clearTagFilter()"
-                                :title="$i18n('clear_tag_filter')">
-                            <i class="ti ti-x fs-3"></i>
-                        </button>
+                        <span class="text-secondary text-uppercase small fw-bold">
+                            <i class="ti ti-tags me-1"></i>
+                            {{ t('Tags') }}
+                        </span>
                         {# Cog -> dedicated tag-management page (rename/merge/delete/cleanup). #}
                         <a href="/tags" class="btn btn-sm btn-ghost-secondary px-2 py-0"
                            :title="$i18n('manage_tags')">
                             <i class="ti ti-settings fs-3"></i>
                         </a>
                     </span>
+                    <button type="button" class="btn btn-sm btn-ghost-secondary px-2 py-0"
+                            x-show="tagFilter.length > 0"
+                            @click="clearTagFilter()"
+                            :title="$i18n('clear_tag_filter')">
+                        <i class="ti ti-x fs-3"></i>
+                    </button>
                 </div>
 
                 {# Type-ahead filter over the tag list (display-only; does not filter tasks). #}

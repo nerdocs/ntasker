@@ -194,6 +194,8 @@ function tracker(serverDefaultView) {
             // After loading projects/tags, drop stale entries silently.
             this.pruneStaleProjectFilter();
             this.pruneStaleTagFilter();
+            // A restored single-project filter prefills the new-task form.
+            this.syncFormProjectFromFilter();
             // Phase / priority filters are validated against fixed value lists at restore time.
             await this.loadTasks();
             // Start the live-update poll last, once the initial state is in
@@ -207,6 +209,20 @@ function tracker(serverDefaultView) {
             return this.projects
                 .filter(p => p.name !== PROJECT_NONE)
                 .map(p => p.name);
+        },
+
+        // The single real project currently in the sidebar filter, or null when
+        // zero or 2+ are active (the cross-project sentinel never counts).
+        get singleFilteredProject() {
+            const real = this.projectFilter.filter(n => n !== PROJECT_NONE);
+            return real.length === 1 ? real[0] : null;
+        },
+
+        // Prefill the new-task form's project from the sidebar filter: exactly
+        // one filtered project becomes the default, any other count clears it.
+        // Driven by the filter so adding a 2nd project empties the field again.
+        syncFormProjectFromFilter() {
+            this.form.project = this.singleFilteredProject || '';
         },
 
         // Projects shown in the sidebar. By default rows with no open tasks are
@@ -280,6 +296,7 @@ function tracker(serverDefaultView) {
             if (idx >= 0) this.projectFilter.splice(idx, 1);
             else this.projectFilter.push(name);
             this.persistProjectFilter();
+            this.syncFormProjectFromFilter();
             this.loadTasks();
             this.loadCounts();
         },
@@ -298,6 +315,7 @@ function tracker(serverDefaultView) {
                 this.projectFilter = this.projects.map(p => p.name);
             }
             this.persistProjectFilter();
+            this.syncFormProjectFromFilter();
             this.loadTasks();
             this.loadCounts();
         },

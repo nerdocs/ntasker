@@ -316,15 +316,39 @@
                             <div class="row g-2">
                                 <div class="col-md-3">
                                     <label class="form-label">{{ t('Project') }}</label>
-                                    {# Free-form text + datalist autocomplete: pick an existing #}
-                                    {# project or type a new name -- the project is created #}
-                                    {# implicitly when the task is saved. Empty = cross-project. #}
-                                    <input type="text" class="form-control"
-                                           x-model="form.project"
-                                           x-ref="projectInput"
-                                           list="ntasker-project-suggestions"
-                                           maxlength="100"
-                                           :placeholder="$i18n('project_placeholder')">
+                                    {# Free-form text + AlpineJS combobox: pick an existing project #}
+                                    {# (Tab/Enter accept the highlighted suggestion, like tags) or #}
+                                    {# type a new name -- created implicitly when the task is saved. #}
+                                    {# Empty = cross-project. #}
+                                    <div class="position-relative" x-data="{ focused: false }">
+                                        <input type="text" class="form-control"
+                                               x-model="form.project"
+                                               x-ref="projectInput"
+                                               maxlength="100"
+                                               autocomplete="off"
+                                               @focus="focused = true"
+                                               @blur="setTimeout(() => focused = false, 150)"
+                                               @input="projectHighlight.form = -1"
+                                               @keydown.enter="onProjectEnter($event, 'form')"
+                                               @keydown.tab="onProjectTab($event, 'form')"
+                                               @keydown.arrow-down.prevent="onProjectArrow('form', 1)"
+                                               @keydown.arrow-up.prevent="onProjectArrow('form', -1)"
+                                               @keydown.escape="focused = false; projectHighlight.form = -1"
+                                               :placeholder="$i18n('project_placeholder')">
+                                        <div class="dropdown-menu show w-100 mt-1"
+                                             x-show="focused && projectSuggestions('form').length > 0"
+                                             style="max-height: 200px; overflow-y: auto;"
+                                             x-cloak>
+                                            <template x-for="(s, idx) in projectSuggestions('form')" :key="s">
+                                                <button type="button" class="dropdown-item"
+                                                        :class="{ active: projectHighlight.form === idx }"
+                                                        @mouseenter="projectHighlight.form = idx"
+                                                        @mousedown.prevent="selectProject('form', s)">
+                                                    <span x-text="s"></span>
+                                                </button>
+                                            </template>
+                                        </div>
+                                    </div>
                                 </div>
                                 <div class="col-md-2">
                                     <label class="form-label">{{ t('Phase') }}</label>
@@ -912,11 +936,35 @@
                 <div class="modal-body">
                     <div class="mb-2">
                         <label class="form-label">{{ t('Project') }}</label>
-                        <input type="text" class="form-control"
-                               x-model="editing.project"
-                               list="ntasker-project-suggestions"
-                               maxlength="100"
-                               :placeholder="$i18n('project_placeholder')">
+                        {# Same AlpineJS combobox as the new-task form (Tab/Enter accept). #}
+                        <div class="position-relative" x-data="{ focused: false }">
+                            <input type="text" class="form-control"
+                                   x-model="editing.project"
+                                   maxlength="100"
+                                   autocomplete="off"
+                                   @focus="focused = true"
+                                   @blur="setTimeout(() => focused = false, 150)"
+                                   @input="projectHighlight.edit = -1"
+                                   @keydown.enter="onProjectEnter($event, 'edit')"
+                                   @keydown.tab="onProjectTab($event, 'edit')"
+                                   @keydown.arrow-down.prevent="onProjectArrow('edit', 1)"
+                                   @keydown.arrow-up.prevent="onProjectArrow('edit', -1)"
+                                   @keydown.escape="focused = false; projectHighlight.edit = -1"
+                                   :placeholder="$i18n('project_placeholder')">
+                            <div class="dropdown-menu show w-100 mt-1"
+                                 x-show="focused && projectSuggestions('edit').length > 0"
+                                 style="max-height: 200px; overflow-y: auto;"
+                                 x-cloak>
+                                <template x-for="(s, idx) in projectSuggestions('edit')" :key="s">
+                                    <button type="button" class="dropdown-item"
+                                            :class="{ active: projectHighlight.edit === idx }"
+                                            @mouseenter="projectHighlight.edit = idx"
+                                            @mousedown.prevent="selectProject('edit', s)">
+                                        <span x-text="s"></span>
+                                    </button>
+                                </template>
+                            </div>
+                        </div>
                     </div>
                     <div class="mb-2">
                         <label class="form-label">{{ t('Phase') }}</label>
@@ -1070,14 +1118,6 @@
      class="toast-container position-fixed bottom-0 end-0 p-3"
      style="z-index: 1100"
      aria-live="polite" aria-atomic="true"></div>
-
-{# Shared autocomplete for every project text-input on the page. Populated #}
-{# from the same projectNames list the sidebar uses; reactive via Alpine. #}
-<datalist id="ntasker-project-suggestions">
-    <template x-for="p in projectNames" :key="p">
-        <option :value="p"></option>
-    </template>
-</datalist>
 
 {# xterm.js for the interactive Claude terminal. Loaded eagerly (no defer) so #}
 {# the Terminal / FitAddon globals exist before app.js uses them at runtime. #}

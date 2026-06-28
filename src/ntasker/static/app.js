@@ -175,6 +175,7 @@ function tracker(serverDefaultView) {
         depSuggest: [],
         // Highlighted suggestion index per tag-input ('form' | 'edit'); -1 = none.
         tagHighlight: { form: -1, edit: -1 },
+        projectHighlight: { form: -1, edit: -1 },
         // Caret position among the tag chips per input. -1 = the text input
         // (caret after the last chip); 0..len-1 = a chip has focus and the
         // caret sits to its LEFT. Backspace removes the chip left of the
@@ -1079,6 +1080,68 @@ function tracker(serverDefaultView) {
             const pick = (hi >= 0 && hi < sugg.length) ? sugg[hi] : sugg[0];
             event.preventDefault();
             this.selectSuggestion(which, pick);
+        },
+
+        // ---- Project input autocomplete (new-task form & edit modal) ----
+        // Single-value combobox over existing project names. Mirrors the tag
+        // input's keyboard handling: arrows highlight, Tab/Enter accept.
+        // `which` = 'form' | 'edit'.
+        _projectBucket(which) {
+            return which === 'edit' ? this.editing : this.form;
+        },
+
+        // Matching project names for the current query. Excludes an exact
+        // full match so the dropdown closes once a name is fully entered.
+        projectSuggestions(which) {
+            const bucket = this._projectBucket(which);
+            if (!bucket) return [];
+            const q = (bucket.project || '').trim().toLowerCase();
+            if (!q) return [];
+            return this.projectNames
+                .filter(name => {
+                    const n = name.toLowerCase();
+                    return n.includes(q) && n !== q;
+                })
+                .slice(0, 8);
+        },
+
+        selectProject(which, name) {
+            const bucket = this._projectBucket(which);
+            if (!bucket) return;
+            bucket.project = name;
+            this.projectHighlight[which] = -1;
+        },
+
+        // Move the dropdown highlight (dir = +1 down / -1 up), wrapping around.
+        onProjectArrow(which, dir) {
+            const n = this.projectSuggestions(which).length;
+            if (!n) { this.projectHighlight[which] = -1; return; }
+            let i = this.projectHighlight[which] + dir;
+            if (i < 0) i = n - 1;
+            else if (i >= n) i = 0;
+            this.projectHighlight[which] = i;
+        },
+
+        // Tab completes to a suggestion (highlighted one if any, else the first
+        // match) instead of letting Tab move focus out of the field.
+        onProjectTab(event, which) {
+            const sugg = this.projectSuggestions(which);
+            if (!sugg.length) return;
+            const hi = this.projectHighlight[which];
+            const pick = (hi >= 0 && hi < sugg.length) ? sugg[hi] : sugg[0];
+            event.preventDefault();
+            this.selectProject(which, pick);
+        },
+
+        // Enter accepts a highlighted suggestion; otherwise it falls through
+        // (submits the new-task form; no-op in the edit modal, which has no form).
+        onProjectEnter(event, which) {
+            const sugg = this.projectSuggestions(which);
+            const hi = this.projectHighlight[which];
+            if (sugg.length && hi >= 0 && hi < sugg.length) {
+                event.preventDefault();
+                this.selectProject(which, sugg[hi]);
+            }
         },
 
         // ---- Dependency input helpers (shared by new-task form & edit-modal) ----

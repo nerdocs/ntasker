@@ -75,9 +75,10 @@
                     </div>
                     <div class="card-body">
                         {% for key in known_keys %}
-                        {# claude_auto_mode is a boolean -- rendered as a switch #}
-                        {# in its own card below, not as a free-text field here. #}
-                        {% if key != 'claude_auto_mode' %}
+                        {# claude_permission_mode has its own selector card below; #}
+                        {# claude_auto_mode is the legacy boolean it replaced. #}
+                        {# Neither is shown as a free-text field here. #}
+                        {% if key not in ('claude_auto_mode', 'claude_permission_mode') %}
                         <div class="mb-3">
                             <label class="form-label fw-bold" :for="`known-{{ key }}`">
                                 <code>{{ key }}</code>
@@ -114,7 +115,8 @@
                     </div>
                 </div>
 
-                {# Run with Claude: opt-in auto mode (skips permission prompts). Dangerous. #}
+                {# Run with Claude: permission mode for spawned sessions. Only #}
+                {# 'bypassPermissions' shows the danger warning. #}
                 <div class="card mb-3">
                     <div class="card-header">
                         <h3 class="card-title">
@@ -123,21 +125,55 @@
                         </h3>
                     </div>
                     <div class="card-body">
-                        <label class="form-check form-switch mb-0">
-                            <input class="form-check-input" type="checkbox"
-                                   :checked="autoMode"
-                                   @change="toggleAutoMode($event)">
-                            <span class="form-check-label fw-bold">{{ t('Auto mode — run without asking') }}</span>
-                        </label>
-                        <div class="text-muted small mt-1">
-                            {{ t('Normally Claude asks before it edits a file or runs a command. Auto mode skips every confirmation so a session can run unattended.') }}
+                        <label class="form-label fw-bold">{{ t('Permission mode') }}</label>
+                        <div class="text-muted small mb-2">
+                            {{ t('How a spawned Claude session handles permissions. Passed to the CLI as --permission-mode.') }}
                         </div>
-                        <div class="alert alert-danger mt-3 mb-0">
+
+                        <label class="form-check">
+                            <input class="form-check-input" name="permission-mode" type="radio" value="default"
+                                   :checked="permissionMode === 'default'"
+                                   @change="setPermissionMode('default')">
+                            <span class="form-check-label">
+                                <strong>{{ t('Normal') }}</strong>
+                                — {{ t('Claude asks before it edits a file or runs a command.') }}
+                            </span>
+                        </label>
+                        <label class="form-check">
+                            <input class="form-check-input" name="permission-mode" type="radio" value="auto"
+                                   :checked="permissionMode === 'auto'"
+                                   @change="setPermissionMode('auto')">
+                            <span class="form-check-label">
+                                <strong>{{ t('Auto') }}</strong>
+                                — {{ t('Claude accepts its own actions automatically.') }}
+                            </span>
+                        </label>
+                        <label class="form-check">
+                            <input class="form-check-input" name="permission-mode" type="radio" value="plan"
+                                   :checked="permissionMode === 'plan'"
+                                   @change="setPermissionMode('plan')">
+                            <span class="form-check-label">
+                                <strong>{{ t('Plan') }}</strong>
+                                — {{ t('Claude only plans and makes no changes.') }}
+                            </span>
+                        </label>
+                        <label class="form-check mb-0">
+                            <input class="form-check-input" name="permission-mode" type="radio" value="bypassPermissions"
+                                   :checked="permissionMode === 'bypassPermissions'"
+                                   @change="setPermissionMode('bypassPermissions')">
+                            <span class="form-check-label">
+                                <strong>{{ t('Bypass permissions') }}</strong>
+                                — {{ t('Claude skips every confirmation and runs unattended.') }}
+                            </span>
+                        </label>
+
+                        <div class="alert alert-danger mt-3 mb-0"
+                             x-show="permissionMode === 'bypassPermissions'" x-cloak>
                             <div class="d-flex">
                                 <i class="ti ti-alert-triangle-filled me-2 fs-3"></i>
                                 <div>
                                     <strong>{{ t('This can be dangerous.') }}</strong>
-                                    {{ t('With auto mode on, Claude can change or delete files and run shell commands in the project directory without asking first. Only enable it for projects you fully trust.') }}
+                                    {{ t('With permissions bypassed, Claude can change or delete files and run shell commands in the project directory without asking first. Only use it for projects you fully trust.') }}
                                 </div>
                             </div>
                         </div>
@@ -359,18 +395,20 @@ function settingsPage() {
             await this.unsetKnown(key);
         },
 
-        // Auto-mode switch state, read from the known-key slot refresh() fills.
-        // The validator stores "true" when on; off clears the key entirely.
-        get autoMode() {
-            return ['1', 'true', 'yes', 'on'].includes(
-                (this.known['claude_auto_mode'] || '').toLowerCase());
+        // Permission mode, read from the known-key slot refresh() fills. Falls
+        // back to the legacy claude_auto_mode boolean (true -> bypass) and then
+        // to 'default' so the radios always reflect the effective mode.
+        get permissionMode() {
+            const m = (this.known['claude_permission_mode'] || '').trim();
+            if (['default', 'auto', 'plan', 'bypassPermissions'].includes(m)) return m;
+            if (['1', 'true', 'yes', 'on'].includes(
+                (this.known['claude_auto_mode'] || '').toLowerCase())) return 'bypassPermissions';
+            return 'default';
         },
 
-        async toggleAutoMode(ev) {
-            const on = ev.target.checked;
-            this.known['claude_auto_mode'] = on ? 'true' : '';
-            if (on) await this.saveKnown('claude_auto_mode');
-            else await this.unsetKnown('claude_auto_mode');
+        async setPermissionMode(mode) {
+            this.known['claude_permission_mode'] = mode;
+            await this.saveKnown('claude_permission_mode');
         },
 
         toast(msg) {

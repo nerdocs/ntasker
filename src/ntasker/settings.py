@@ -136,12 +136,13 @@ _FALSE_STRINGS = frozenset({"0", "false", "no", "off", ""})
 
 
 def validate_claude_auto_mode(value: str) -> str:
-    """Validator for the ``claude_auto_mode`` boolean setting.
+    """Validator for the legacy ``claude_auto_mode`` boolean setting.
 
-    Normalizes truthy/falsy spellings to ``"true"`` / ``"false"``. When enabled,
-    interactive Claude sessions launch with permission prompts skipped (see
-    :func:`ntasker.claude_runner._auto_mode_enabled`). Rejects anything else so a
-    typo can neither silently arm nor silently fail to arm this powerful flag.
+    Superseded by ``claude_permission_mode`` (the /settings selector). Retained
+    so a value stored by an older ntasker stays valid and readable: a legacy
+    truthy value still maps to ``bypassPermissions`` in
+    :func:`claude_permission_mode`. Normalizes truthy/falsy spellings to
+    ``"true"`` / ``"false"``; rejects anything else.
     """
     norm = (value or "").strip().lower()
     if norm in _TRUE_STRINGS:
@@ -153,6 +154,34 @@ def validate_claude_auto_mode(value: str) -> str:
     )
 
 
+# Permission modes a spawned ``claude`` session can launch in. The values are
+# the literal ``--permission-mode`` choices the CLI accepts; ntasker exposes the
+# four the user picks between (see :func:`ntasker.settings.claude_permission_mode`
+# and the /settings selector). ``default`` is normal (Claude asks first);
+# ``bypassPermissions`` skips every prompt and is the only dangerous one.
+CLAUDE_PERMISSION_MODES = ("default", "auto", "plan", "bypassPermissions")
+CLAUDE_PERMISSION_MODE_DEFAULT = "default"
+
+
+def validate_claude_permission_mode(value: str) -> str:
+    """Validator for the ``claude_permission_mode`` setting.
+
+    Accepts one of :data:`CLAUDE_PERMISSION_MODES`. An empty value normalizes to
+    ``"default"`` (normal mode). Rejects anything else so a typo cannot silently
+    arm -- or fail to arm -- the dangerous ``bypassPermissions`` mode.
+    """
+    norm = (value or "").strip()
+    if not norm:
+        return CLAUDE_PERMISSION_MODE_DEFAULT
+    if norm in CLAUDE_PERMISSION_MODES:
+        return norm
+    raise ValueError(
+        _("claude_permission_mode must be one of {modes} (got {value!r}).").format(
+            modes=", ".join(CLAUDE_PERMISSION_MODES), value=value
+        )
+    )
+
+
 VALIDATORS: dict[str, Validator] = {
     "assets_mode": validate_assets_mode,
     "language": validate_language,
@@ -160,6 +189,7 @@ VALIDATORS: dict[str, Validator] = {
     "projects_base": validate_projects_base,
     "claude_idle_seconds": validate_claude_idle_seconds,
     "claude_auto_mode": validate_claude_auto_mode,
+    "claude_permission_mode": validate_claude_permission_mode,
 }
 """Registry of known settings keys with their validators.
 
@@ -193,11 +223,11 @@ HINTS: dict[str, object] = {
         "directory. Unset to fall back to home-relative names. "
         "ENV: NTASKER_PROJECTS_BASE."
     ),
-    "claude_auto_mode": _lazy(
-        "Run interactive Claude sessions without permission prompts (skips every "
-        "confirmation). Convenient but dangerous -- Claude can edit files and run "
-        "shell commands unattended. Only enable on code you fully trust. "
-        "Values: yes/no."
+    "claude_permission_mode": _lazy(
+        "Permission mode for interactive Claude sessions: 'default' (normal -- "
+        "Claude asks first), 'auto' (auto-accept actions), 'plan' (plan only, no "
+        "changes), or 'bypassPermissions' (skip every prompt -- dangerous). "
+        "Passed to the CLI as --permission-mode. Default: default."
     ),
 }
 
@@ -240,13 +270,23 @@ def get_setting(key: str, env_var: str | None = None) -> str | None:
     return row["value"] if row else None
 
 
-def claude_auto_mode_enabled() -> bool:
-    """True if interactive Claude sessions should skip permission prompts.
+def claude_permission_mode() -> str:
+    """Resolved permission mode for interactive Claude sessions.
 
-    Backs the ``claude_auto_mode`` checkbox; read at session spawn in
-    :func:`ntasker.claude_runner._start_session`. Defaults to off (safe).
+    Backs the /settings mode selector; read at session spawn in
+    :func:`ntasker.claude_runner._start_session`. Returns one of
+    :data:`CLAUDE_PERMISSION_MODES`, defaulting to ``"default"`` (safe, normal).
+
+    Backward compatibility: the pre-selector ``claude_auto_mode`` boolean meant
+    "skip every prompt", so a legacy truthy value maps to ``bypassPermissions``
+    when no explicit ``claude_permission_mode`` is set.
     """
-    return (get_setting("claude_auto_mode") or "").strip().lower() in _TRUE_STRINGS
+    raw = (get_setting("claude_permission_mode") or "").strip()
+    if raw in CLAUDE_PERMISSION_MODES:
+        return raw
+    if (get_setting("claude_auto_mode") or "").strip().lower() in _TRUE_STRINGS:
+        return "bypassPermissions"
+    return CLAUDE_PERMISSION_MODE_DEFAULT
 
 
 def set_setting(key: str, value: str) -> dict:

@@ -6,9 +6,9 @@
 #, fuzzy
 msgid ""
 msgstr ""
-"Project-Id-Version: ntasker 2.7.0\n"
+"Project-Id-Version: ntasker 2.8.0\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-06-27 19:42+0200\n"
+"POT-Creation-Date: 2026-06-28 08:47+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -18,37 +18,38 @@ msgstr ""
 "Generated-By: Babel 2.18.0\n"
 
 #: src/ntasker/app.py:90 src/ntasker/app.py:313
-#: src/ntasker/templates/index.html:329 src/ntasker/templates/index.html:903
+#: src/ntasker/templates/index.html:329 src/ntasker/templates/index.html:909
 msgid "Planned"
 msgstr ""
 
 #: src/ntasker/app.py:91 src/ntasker/app.py:312
-#: src/ntasker/templates/index.html:330 src/ntasker/templates/index.html:904
+#: src/ntasker/templates/index.html:330 src/ntasker/templates/index.html:910
 msgid "In Progress"
 msgstr ""
 
 #: src/ntasker/app.py:92 src/ntasker/app.py:314
-#: src/ntasker/templates/index.html:331 src/ntasker/templates/index.html:905
+#: src/ntasker/templates/index.html:331 src/ntasker/templates/index.html:911
 msgid "Review"
 msgstr ""
 
 #: src/ntasker/app.py:99 src/ntasker/app.py:315
-#: src/ntasker/templates/index.html:337 src/ntasker/templates/index.html:911
+#: src/ntasker/templates/index.html:337 src/ntasker/templates/index.html:917
 msgid "Critical"
 msgstr ""
 
 #: src/ntasker/app.py:100 src/ntasker/app.py:316
-#: src/ntasker/templates/index.html:338 src/ntasker/templates/index.html:912
+#: src/ntasker/templates/index.html:338 src/ntasker/templates/index.html:918
 msgid "High"
 msgstr ""
 
 #: src/ntasker/app.py:101 src/ntasker/app.py:317
-#: src/ntasker/templates/index.html:339 src/ntasker/templates/index.html:913
+#: src/ntasker/templates/index.html:339 src/ntasker/templates/index.html:919
+#: src/ntasker/templates/settings.html:138
 msgid "Normal"
 msgstr ""
 
 #: src/ntasker/app.py:102 src/ntasker/app.py:318
-#: src/ntasker/templates/index.html:340 src/ntasker/templates/index.html:914
+#: src/ntasker/templates/index.html:340 src/ntasker/templates/index.html:920
 msgid "Low"
 msgstr ""
 
@@ -90,7 +91,7 @@ msgstr ""
 
 #: src/ntasker/app.py:281 src/ntasker/cli.py:115
 #: src/ntasker/templates/index.html:143 src/ntasker/templates/index.html:335
-#: src/ntasker/templates/index.html:909
+#: src/ntasker/templates/index.html:915
 msgid "Priority"
 msgstr ""
 
@@ -100,7 +101,7 @@ msgstr ""
 
 #: src/ntasker/app.py:284 src/ntasker/cli.py:116
 #: src/ntasker/templates/index.html:179 src/ntasker/templates/index.html:354
-#: src/ntasker/templates/index.html:926
+#: src/ntasker/templates/index.html:932
 msgid "Tags"
 msgstr ""
 
@@ -139,7 +140,7 @@ msgid "Kanban"
 msgstr ""
 
 #: src/ntasker/app.py:297 src/ntasker/app.py:336
-#: src/ntasker/templates/index.html:473
+#: src/ntasker/templates/index.html:479
 msgid "Done"
 msgstr ""
 
@@ -170,7 +171,7 @@ msgid "New task"
 msgstr ""
 
 #: src/ntasker/app.py:308 src/ntasker/cli.py:112
-#: src/ntasker/templates/index.html:315 src/ntasker/templates/index.html:893
+#: src/ntasker/templates/index.html:315 src/ntasker/templates/index.html:899
 msgid "Project"
 msgstr ""
 
@@ -179,7 +180,7 @@ msgid "Project name (leave empty for cross-project)"
 msgstr ""
 
 #: src/ntasker/app.py:310 src/ntasker/cli.py:114
-#: src/ntasker/templates/index.html:327 src/ntasker/templates/index.html:901
+#: src/ntasker/templates/index.html:327 src/ntasker/templates/index.html:907
 msgid "Phase"
 msgstr ""
 
@@ -188,7 +189,7 @@ msgid "--"
 msgstr ""
 
 #: src/ntasker/app.py:319 src/ntasker/templates/index.html:344
-#: src/ntasker/templates/index.html:918
+#: src/ntasker/templates/index.html:924
 msgid "Title"
 msgstr ""
 
@@ -197,7 +198,7 @@ msgid "What needs to be done?"
 msgstr ""
 
 #: src/ntasker/app.py:321 src/ntasker/cli.py:126
-#: src/ntasker/templates/index.html:349 src/ntasker/templates/index.html:922
+#: src/ntasker/templates/index.html:349 src/ntasker/templates/index.html:928
 msgid "Description"
 msgstr ""
 
@@ -233,7 +234,7 @@ msgstr ""
 msgid "blocked by:"
 msgstr ""
 
-#: src/ntasker/app.py:330 src/ntasker/templates/index.html:436
+#: src/ntasker/app.py:330 src/ntasker/templates/index.html:442
 msgid "Create"
 msgstr ""
 
@@ -245,12 +246,12 @@ msgstr ""
 msgid "Clear search"
 msgstr ""
 
-#: src/ntasker/app.py:335 src/ntasker/templates/index.html:466
+#: src/ntasker/app.py:335 src/ntasker/templates/index.html:472
 msgid "Open"
 msgstr ""
 
 #: src/ntasker/app.py:337 src/ntasker/app.py:350
-#: src/ntasker/templates/index.html:480
+#: src/ntasker/templates/index.html:486
 msgid "Archive"
 msgstr ""
 
@@ -309,11 +310,11 @@ msgstr ""
 msgid "Delete permanently"
 msgstr ""
 
-#: src/ntasker/app.py:353 src/ntasker/templates/index.html:1016
+#: src/ntasker/app.py:353 src/ntasker/templates/index.html:1028
 msgid "Delete"
 msgstr ""
 
-#: src/ntasker/app.py:355 src/ntasker/templates/index.html:681
+#: src/ntasker/app.py:355 src/ntasker/templates/index.html:687
 msgid "No tasks"
 msgstr ""
 
@@ -345,12 +346,12 @@ msgstr ""
 msgid "Close"
 msgstr ""
 
-#: src/ntasker/app.py:364 src/ntasker/templates/index.html:1019
+#: src/ntasker/app.py:364 src/ntasker/templates/index.html:1031
 msgid "Cancel"
 msgstr ""
 
-#: src/ntasker/app.py:365 src/ntasker/templates/index.html:1023
-#: src/ntasker/templates/settings.html:96
+#: src/ntasker/app.py:365 src/ntasker/templates/index.html:1035
+#: src/ntasker/templates/settings.html:97
 msgid "Save"
 msgstr ""
 
@@ -438,30 +439,30 @@ msgstr ""
 msgid "{key} removed."
 msgstr ""
 
-#: src/ntasker/app.py:388 src/ntasker/templates/settings.html:152
+#: src/ntasker/app.py:388 src/ntasker/templates/settings.html:188
 msgid "Claude Code Integration"
 msgstr ""
 
-#: src/ntasker/app.py:390 src/ntasker/templates/settings.html:157
+#: src/ntasker/app.py:390 src/ntasker/templates/settings.html:193
 msgid ""
 "ntasker ships a skill (SKILL.md) and a slash command (/task <id>) for "
 "Claude Code. This card shows the install status -- writes go exclusively "
 "through the CLI."
 msgstr ""
 
-#: src/ntasker/app.py:394 src/ntasker/templates/settings.html:162
+#: src/ntasker/app.py:394 src/ntasker/templates/settings.html:198
 msgid "Installed"
 msgstr ""
 
-#: src/ntasker/app.py:395 src/ntasker/templates/settings.html:171
+#: src/ntasker/app.py:395 src/ntasker/templates/settings.html:207
 msgid "Package version"
 msgstr ""
 
-#: src/ntasker/app.py:396 src/ntasker/templates/settings.html:177
+#: src/ntasker/app.py:396 src/ntasker/templates/settings.html:213
 msgid "Drift"
 msgstr ""
 
-#: src/ntasker/app.py:397 src/ntasker/templates/settings.html:186
+#: src/ntasker/app.py:397 src/ntasker/templates/settings.html:222
 msgid "Claude home"
 msgstr ""
 
@@ -473,39 +474,39 @@ msgstr ""
 msgid "no"
 msgstr ""
 
-#: src/ntasker/app.py:400 src/ntasker/templates/settings.html:200
+#: src/ntasker/app.py:400 src/ntasker/templates/settings.html:236
 msgid "Skill + slash command are not installed yet."
 msgstr ""
 
-#: src/ntasker/app.py:402 src/ntasker/templates/settings.html:209
+#: src/ntasker/app.py:402 src/ntasker/templates/settings.html:245
 msgid "Installed files differ from the package version. Update with backup:"
 msgstr ""
 
-#: src/ntasker/app.py:404 src/ntasker/templates/settings.html:222
+#: src/ntasker/app.py:404 src/ntasker/templates/settings.html:258
 msgid "All settings (DB content)"
 msgstr ""
 
-#: src/ntasker/app.py:405 src/ntasker/templates/settings.html:229
+#: src/ntasker/app.py:405 src/ntasker/templates/settings.html:265
 msgid "Key"
 msgstr ""
 
-#: src/ntasker/app.py:406 src/ntasker/templates/settings.html:230
+#: src/ntasker/app.py:406 src/ntasker/templates/settings.html:266
 msgid "Value"
 msgstr ""
 
-#: src/ntasker/app.py:407 src/ntasker/templates/settings.html:231
+#: src/ntasker/app.py:407 src/ntasker/templates/settings.html:267
 msgid "updated"
 msgstr ""
 
-#: src/ntasker/app.py:408 src/ntasker/templates/settings.html:253
+#: src/ntasker/app.py:408 src/ntasker/templates/settings.html:289
 msgid "No settings configured."
 msgstr ""
 
-#: src/ntasker/app.py:410 src/ntasker/templates/settings.html:255
+#: src/ntasker/app.py:410 src/ntasker/templates/settings.html:291
 msgid "Configure a known key above, or set one via CLI:"
 msgstr ""
 
-#: src/ntasker/app.py:413 src/ntasker/templates/settings.html:122
+#: src/ntasker/app.py:413 src/ntasker/templates/settings.html:124
 msgid "Run with Claude"
 msgstr ""
 
@@ -608,8 +609,8 @@ msgstr ""
 msgid "Status"
 msgstr ""
 
-#: src/ntasker/cli.py:119 src/ntasker/templates/index.html:393
-#: src/ntasker/templates/index.html:965
+#: src/ntasker/cli.py:119 src/ntasker/templates/index.html:399
+#: src/ntasker/templates/index.html:977
 msgid "Depends on"
 msgstr ""
 
@@ -1074,32 +1075,37 @@ msgstr ""
 msgid "claude_idle_seconds must be greater than 0."
 msgstr ""
 
-#: src/ntasker/settings.py:152
+#: src/ntasker/settings.py:153
 #, python-brace-format
 msgid "claude_auto_mode must be a yes/no value (got {value!r})."
 msgstr ""
 
-#: src/ntasker/settings.py:177
+#: src/ntasker/settings.py:179
+#, python-brace-format
+msgid "claude_permission_mode must be one of {modes} (got {value!r})."
+msgstr ""
+
+#: src/ntasker/settings.py:207
 msgid ""
 "Vendor assets (Tabler/Alpine): cdn (default, jsDelivr + SRI), local (from"
 " user-data dir, populate via `ntasker assets fetch`), auto (local if "
 "cache complete, else cdn)."
 msgstr ""
 
-#: src/ntasker/settings.py:182
+#: src/ntasker/settings.py:212
 msgid ""
 "UI language: 'auto' (Accept-Language header, fallback English), 'en', or "
 "'de'."
 msgstr ""
 
-#: src/ntasker/settings.py:185
+#: src/ntasker/settings.py:215
 msgid ""
 "Default view on startup: 'list' (classic task list) or 'kanban' (4-column"
 " board). The frontend remembers the last user choice in localStorage; "
 "this setting drives the initial pick on a fresh browser."
 msgstr ""
 
-#: src/ntasker/settings.py:190
+#: src/ntasker/settings.py:220
 msgid ""
 "Base path for project names, e.g. '~/Projekte'. Discovered Claude "
 "projects below it are named relative to it (the folder right under the "
@@ -1108,12 +1114,12 @@ msgid ""
 "NTASKER_PROJECTS_BASE."
 msgstr ""
 
-#: src/ntasker/settings.py:197
+#: src/ntasker/settings.py:227
 msgid ""
-"Run interactive Claude sessions without permission prompts (skips every "
-"confirmation). Convenient but dangerous -- Claude can edit files and run "
-"shell commands unattended. Only enable on code you fully trust. Values: "
-"yes/no."
+"Permission mode for interactive Claude sessions: 'default' (normal -- "
+"Claude asks first), 'auto' (auto-accept actions), 'plan' (plan only, no "
+"changes), or 'bypassPermissions' (skip every prompt -- dangerous). Passed"
+" to the CLI as --permission-mode. Default: default."
 msgstr ""
 
 #: src/ntasker/templates/index.html:72
@@ -1124,24 +1130,52 @@ msgstr ""
 msgid "Filter tags..."
 msgstr ""
 
-#: src/ntasker/templates/settings.html:130
-msgid "Auto mode — run without asking"
+#: src/ntasker/templates/settings.html:128
+msgid "Permission mode"
 msgstr ""
 
-#: src/ntasker/templates/settings.html:133
+#: src/ntasker/templates/settings.html:130
 msgid ""
-"Normally Claude asks before it edits a file or runs a command. Auto mode "
-"skips every confirmation so a session can run unattended."
+"How a spawned Claude session handles permissions. Passed to the CLI as "
+"--permission-mode."
 msgstr ""
 
 #: src/ntasker/templates/settings.html:139
+msgid "Claude asks before it edits a file or runs a command."
+msgstr ""
+
+#: src/ntasker/templates/settings.html:147
+msgid "Auto"
+msgstr ""
+
+#: src/ntasker/templates/settings.html:148
+msgid "Claude accepts its own actions automatically."
+msgstr ""
+
+#: src/ntasker/templates/settings.html:156
+msgid "Plan"
+msgstr ""
+
+#: src/ntasker/templates/settings.html:157
+msgid "Claude only plans and makes no changes."
+msgstr ""
+
+#: src/ntasker/templates/settings.html:165
+msgid "Bypass permissions"
+msgstr ""
+
+#: src/ntasker/templates/settings.html:166
+msgid "Claude skips every confirmation and runs unattended."
+msgstr ""
+
+#: src/ntasker/templates/settings.html:175
 msgid "This can be dangerous."
 msgstr ""
 
-#: src/ntasker/templates/settings.html:140
+#: src/ntasker/templates/settings.html:176
 msgid ""
-"With auto mode on, Claude can change or delete files and run shell "
-"commands in the project directory without asking first. Only enable it "
-"for projects you fully trust."
+"With permissions bypassed, Claude can change or delete files and run "
+"shell commands in the project directory without asking first. Only use it"
+" for projects you fully trust."
 msgstr ""
 

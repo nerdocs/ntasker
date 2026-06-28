@@ -178,13 +178,19 @@ def _start_session(task_id: int, cwd: str | None, seed: str | None) -> TermSessi
     """Spawn a fresh ``claude`` in a PTY and register it with a live reader."""
     master, slave = os.openpty()
     args = ["claude"]
-    # Opt-in "auto mode": skip every permission prompt. Powerful and dangerous
-    # (Claude edits files / runs shell commands unattended) -- gated behind the
-    # claude_auto_mode setting, default off. See settings.py.
-    from ntasker.settings import claude_auto_mode_enabled  # noqa: PLC0415
+    # Permission mode for the session, picked in /settings. "default" is normal
+    # (Claude asks first) and adds no flag. "auto"/"plan" go through the CLI's
+    # --permission-mode. "bypassPermissions" skips every prompt -- powerful and
+    # dangerous (Claude edits files / runs shell commands unattended) -- and uses
+    # the explicit --dangerously-skip-permissions flag the CLI requires for it.
+    # See settings.py:claude_permission_mode.
+    from ntasker.settings import claude_permission_mode  # noqa: PLC0415
 
-    if claude_auto_mode_enabled():
+    mode = claude_permission_mode()
+    if mode == "bypassPermissions":
         args.append("--dangerously-skip-permissions")
+    elif mode in ("auto", "plan"):
+        args.extend(["--permission-mode", mode])
     if seed:
         args.append(seed)
     proc = subprocess.Popen(

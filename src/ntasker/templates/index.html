@@ -231,6 +231,11 @@
                 <span class="badge bg-secondary-lt ms-2 font-monospace small align-middle">v{{ version }}</span>
             </h1>
             <div class="navbar-nav flex-row order-md-last ms-auto align-items-center">
+                <a href="{{ links.coffee }}" target="_blank" rel="noopener"
+                   class="d-inline-flex align-items-center me-4" :title="$i18n('buy_me_a_coffee')">
+                    <img src="/static/buymeacoffee.png?v={{ static_bust('buymeacoffee.png') }}"
+                         alt="Buy me a coffee" height="32">
+                </a>
                 <a href="/info" class="btn btn-icon btn-sm btn-ghost-secondary position-relative me-1"
                    :title="updateAvailable ? $i18n('update_available_short') : $i18n('info')">
                     <i class="ti ti-info-circle fs-3"></i>
@@ -245,18 +250,13 @@
                    class="btn btn-icon btn-sm btn-ghost-secondary me-1" :title="$i18n('github')">
                     <i class="ti ti-brand-github fs-3"></i>
                 </a>
-                <a href="{{ links.coffee }}" target="_blank" rel="noopener"
-                   class="btn btn-icon btn-sm btn-ghost-secondary me-1" :title="$i18n('buy_me_a_coffee')">
-                    <i class="ti ti-coffee fs-3"></i>
-                </a>
-                <a href="/settings" class="btn btn-sm btn-ghost-secondary me-1" :title="$i18n('settings')">
-                    <i class="ti ti-settings me-1 fs-3"></i>
-                    {{ t('Settings') }}
-                </a>
-                <button class="btn btn-icon btn-sm btn-ghost-secondary" @click="toggleTheme()"
+                <button class="btn btn-icon btn-sm btn-ghost-secondary me-1" @click="toggleTheme()"
                         :aria-label="theme === 'dark' ? $i18n('light_mode') : $i18n('dark_mode')">
                     <i class="ti fs-3" :class="theme === 'dark' ? 'ti-sun' : 'ti-moon'"></i>
                 </button>
+                <a href="/settings" class="btn btn-icon btn-sm btn-ghost-secondary" :title="$i18n('settings')">
+                    <i class="ti ti-settings fs-3"></i>
+                </a>
             </div>
         </div>
     </header>

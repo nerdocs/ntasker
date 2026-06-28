@@ -70,43 +70,48 @@ Only the Linux path is regularly tested; the others are derived via `platformdir
 
 ## Setup
 
-```bash
-# As a tool (recommended), from PyPI:
-uv tool install ntasker
-# ...or from a local checkout:
-uv tool install /path/to/ntasker
+Install from PyPI, then run it as a background service that starts at login and restarts on crash -- `systemd --user`
+on Linux, `launchd` on macOS. User-scoped, no root:
 
-ntasker init           # create DB at the default platformdirs path
-ntasker serve          # start server on http://127.0.0.1:8766
+```bash
+uv tool install ntasker                  # install from PyPI
+ntasker service install --auto-update    # run as a service + daily auto-update
 ```
 
-Open <http://127.0.0.1:8766> in a browser.
+Open <http://127.0.0.1:8766> in a browser. That's it -- the service creates the database on first start, restarts on
+crash, and keeps itself up to date.
 
-For repo-local development:
+On Linux, run this once so the service survives logout:
+
+```bash
+loginctl enable-linger $USER
+```
+
+Manage it later:
+
+```bash
+ntasker service status            # install + active state
+ntasker service start / stop      # start / stop the installed service
+ntasker self-update               # upgrade from PyPI now, then restart
+```
+
+Full reference (uninstall, restart, `update_command` override, scheduling): [docs/service.md](docs/service.md).
+
+### Run in the foreground instead
+
+No supervisor -- just run the server until you close it:
+
+```bash
+ntasker serve          # http://127.0.0.1:8766, Ctrl-C to stop
+```
+
+### Repo-local development
 
 ```bash
 cd /path/to/ntasker
 make install   # uv sync
-make init      # uv run ntasker init
 make run       # uv run ntasker serve --reload
 ```
-
-### Run as a service + keep it updated
-
-`ntasker serve` is a long-running daemon, so install it under a process supervisor that starts it at login and restarts
-it on crash -- `systemd --user` on Linux, `launchd` on macOS. User-scoped, no root:
-
-```bash
-ntasker service install --auto-update   # install + enable the service AND a daily auto-update
-ntasker service status                  # install + active state
-ntasker service start / stop            # start / stop the installed service
-ntasker self-update                     # upgrade from PyPI now, then restart the service
-```
-
-`--auto-update` adds a daily timer/agent that runs `ntasker self-update` (upgrade from PyPI, then restart). On Linux,
-enable lingering once so the service survives logout: `loginctl enable-linger $USER`.
-
-Full reference (uninstall, `update_command` override, scheduling details): [docs/service.md](docs/service.md).
 
 ## Settings
 

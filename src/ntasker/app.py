@@ -493,16 +493,8 @@ def build_js_strings() -> dict[str, str]:
         "update_check_failed": _("Could not reach PyPI to check for updates."),
         "checking_updates": _("Checking for updates..."),
         "about": _("About"),
-        "about_intro": _(
-            "ntasker is a lightweight, single-user local task tracker -- "
-            "FastAPI + SQLite, Tabler.io UI, no build step."
-        ),
         "made_by": _("Made by"),
         "license_label": _("License"),
-        "author_blurb": _(
-            "Built and maintained by nerdoc. If ntasker saves you time, a "
-            "coffee keeps it going."
-        ),
         "open_github": _("View on GitHub"),
         "report_issue": _("Report an issue"),
     }

@@ -363,6 +363,8 @@ def build_js_strings() -> dict[str, str]:
         # Search
         "search_placeholder": _("Search in title and description..."),
         "clear_search": _("Clear search"),
+        "show_all_tasks": _("Show all tasks"),
+        "show_all_tasks_title": _("Clear search and all filters -- show every task"),
         # Tabs
         "tab_open": _("Open"),
         "tab_done": _("Done"),

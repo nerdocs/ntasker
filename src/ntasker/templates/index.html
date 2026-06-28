@@ -286,8 +286,16 @@
                             </button>
                         </h2>
                     </div>
-                    {# Page actions: search box, pushed to the far right. #}
-                    <div class="col-auto ms-auto">
+                    {# Page actions: "show all" reset + search box, pushed to the far right. #}
+                    <div class="col-auto ms-auto d-flex align-items-center">
+                        {# Clears the search box and every filter; only shown while something is filtering. #}
+                        <button type="button" class="btn btn-ghost-secondary me-2"
+                                x-show="hasActiveFilters" x-cloak
+                                @click="clearAllFilters()"
+                                :title="$i18n('show_all_tasks_title')">
+                            <i class="ti ti-filter-off me-1"></i>
+                            <span x-text="$i18n('show_all_tasks')"></span>
+                        </button>
                         <div class="input-icon search-box search-box-header">
                             <span class="input-icon-addon"><i class="ti ti-search"></i></span>
                             <input type="text" class="form-control" x-model="filter.search"

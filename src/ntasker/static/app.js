@@ -673,6 +673,32 @@ function tracker(serverDefaultView) {
             this.loadTasks();
         },
 
+        // True iff any search/filter is narrowing the visible tasks.
+        get hasActiveFilters() {
+            return !!this.filter.search ||
+                this.projectFilter.length > 0 ||
+                this.tagFilter.length > 0 ||
+                this.phaseFilter.length > 0 ||
+                this.priorityFilter.length > 0;
+        },
+
+        // "Show all tasks": clear the search box and every filter (project,
+        // tag, phase, priority) in one go, persist the empty filters, reload.
+        clearAllFilters() {
+            this.filter.search = '';
+            this.projectFilter = [];
+            this.tagFilter = [];
+            this.phaseFilter = [];
+            this.priorityFilter = [];
+            this.persistProjectFilter();
+            this.persistTagFilter();
+            this.persistPhaseFilter();
+            this.persistPriorityFilter();
+            this.syncFormProjectFromFilter();
+            this.loadTasks();
+            this.loadCounts();
+        },
+
         // ---- Task CRUD ----
         async createTask(run = false) {
             // Commit any pending tag input before submit.
@@ -1222,11 +1248,7 @@ function tracker(serverDefaultView) {
         },
 
         emptyHint() {
-            if (this.filter.search ||
-                this.projectFilter.length > 0 ||
-                this.tagFilter.length > 0 ||
-                this.phaseFilter.length > 0 ||
-                this.priorityFilter.length > 0) {
+            if (this.hasActiveFilters) {
                 return _i('empty_filtered');
             }
             if (this.tab === 'open') return _i('empty_open');

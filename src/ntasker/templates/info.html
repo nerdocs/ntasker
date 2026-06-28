@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="{{ language }}" data-bs-theme="light">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ntasker — {{ t('Info') }}</title>
+    {# Vendor-Assets über asset()-Helper -- siehe index.html für Details. #}
+    <link rel="stylesheet" href="{{ asset('tabler-css') }}"
+          integrity="{{ asset_sri('tabler-css') }}" crossorigin="anonymous">
+    <link rel="stylesheet" href="{{ asset('tabler-icons-css') }}"
+          integrity="{{ asset_sri('tabler-icons-css') }}" crossorigin="anonymous">
+    <link rel="stylesheet" href="/static/style.css?v={{ static_bust('style.css') }}">
+
+    {# i18n data bridge -- registration + logic live in info.js (no inline logic). #}
+    <script>
+        window.__i18n = {{ js_strings | tojson }};
+    </script>
+</head>
+<body>
+<div class="page" x-data="infoPage()" x-init="init()">
+
+    <header class="navbar navbar-expand-md d-print-none">
+        <div class="container-xl">
+            <h1 class="navbar-brand navbar-brand-autodark d-flex align-items-center mb-0">
+                <a href="/" class="text-reset text-decoration-none d-flex align-items-center">
+                    <i class="ti ti-checkbox me-2 fs-2"></i>
+                    ntasker
+                    <span class="badge bg-secondary-lt ms-2 font-monospace small align-middle">v{{ version }}</span>
+                </a>
+            </h1>
+        </div>
+    </header>
+
+    <div class="page-wrapper">
+        <div class="page-header d-print-none">
+            <div class="container-xl">
+                <div class="row g-2 align-items-center">
+                    <div class="col">
+                        <h2 class="page-title">
+                            <i class="ti ti-info-circle me-2 fs-2"></i>
+                            {{ t('Info') }}
+                        </h2>
+                    </div>
+                    <div class="col-auto">
+                        <a href="/" class="btn btn-sm btn-ghost-secondary">
+                            <i class="ti ti-arrow-left me-1 fs-3"></i>
+                            {{ t('back to tasks') }}
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="page-body">
+            <div class="container-xl">
+
+                {# News / update alerts. #}
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="ti ti-news me-1"></i>
+                            {{ t('News') }}
+                        </h3>
+                    </div>
+                    <div class="card-body">
+
+                        {# Loading. #}
+                        <div class="text-muted" x-show="loading" x-cloak>
+                            <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                            <span x-text="$i18n('checking_updates')"></span>
+                        </div>
+
+                        {# A newer release is on PyPI. #}
+                        <div class="alert alert-warning mb-0" role="alert"
+                             x-show="!loading && updateAvailable" x-cloak>
+                            <div class="d-flex">
+                                <div class="me-2"><i class="ti ti-rocket fs-2"></i></div>
+                                <div>
+                                    <h4 class="alert-title" x-text="$i18n('update_available_title')"></h4>
+                                    <div class="text-secondary"
+                                         x-text="$i18n('update_available_body', { current: current, latest: latest })"></div>
+                                    <pre class="mt-2 mb-0"><code>ntasker self-update</code></pre>
+                                </div>
+                            </div>
+                        </div>
+
+                        {# Up to date. #}
+                        <div class="alert alert-success mb-0" role="alert"
+                             x-show="!loading && !updateAvailable && !error" x-cloak>
+                            <div class="d-flex align-items-center">
+                                <i class="ti ti-circle-check fs-2 me-2"></i>
+                                <span x-text="$i18n('up_to_date')"></span>
+                            </div>
+                        </div>
+
+                        {# Could not reach PyPI (offline etc.). #}
+                        <div class="alert alert-secondary mb-0" role="alert"
+                             x-show="!loading && error && !updateAvailable" x-cloak>
+                            <div class="d-flex align-items-center">
+                                <i class="ti ti-cloud-off fs-2 me-2"></i>
+                                <span x-text="$i18n('update_check_failed')"></span>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+                {# About / author. #}
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="ti ti-heart me-1"></i>
+                            {{ t('About') }}
+                        </h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="d-flex align-items-center mb-3">
+                            <i class="ti ti-checkbox fs-1 me-3 text-primary"></i>
+                            <div>
+                                <div class="h2 mb-0">ntasker
+                                    <span class="badge bg-secondary-lt ms-1 font-monospace small align-middle">v{{ version }}</span>
+                                </div>
+                                <div class="text-secondary">{{ t('ntasker is a lightweight, single-user local task tracker -- FastAPI + SQLite, Tabler.io UI, no build step.') }}</div>
+                            </div>
+                        </div>
+
+                        <dl class="row mb-3">
+                            <dt class="col-3 col-sm-2 text-secondary">{{ t('License') }}</dt>
+                            <dd class="col-9 col-sm-10 mb-0">AGPL-3.0-or-later</dd>
+                            <dt class="col-3 col-sm-2 text-secondary">{{ t('Made by') }}</dt>
+                            <dd class="col-9 col-sm-10 mb-0">
+                                <a href="{{ links.author }}" target="_blank" rel="noopener">nerdoc</a>
+                            </dd>
+                        </dl>
+
+                        <p class="text-secondary">{{ t('Built and maintained by nerdoc. If ntasker saves you time, a coffee keeps it going.') }}</p>
+
+                        <div class="btn-list">
+                            <a href="{{ links.github }}" target="_blank" rel="noopener"
+                               class="btn btn-outline-secondary">
+                                <i class="ti ti-brand-github me-1 fs-3"></i>
+                                {{ t('View on GitHub') }}
+                            </a>
+                            <a href="{{ links.issues }}" target="_blank" rel="noopener"
+                               class="btn btn-outline-secondary">
+                                <i class="ti ti-bug me-1 fs-3"></i>
+                                {{ t('Report an issue') }}
+                            </a>
+                            <a href="{{ links.coffee }}" target="_blank" rel="noopener"
+                               class="btn btn-warning">
+                                <i class="ti ti-coffee me-1 fs-3"></i>
+                                {{ t('Buy me a coffee') }}
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+</div>
+
+{# info.js must define infoPage() + register $i18n BEFORE Alpine boots. #}
+<script src="/static/info.js?v={{ static_bust('info.js') }}"></script>
+<script src="{{ asset('alpine-js') }}"
+        integrity="{{ asset_sri('alpine-js') }}" crossorigin="anonymous" defer></script>
+</body>
+</html>

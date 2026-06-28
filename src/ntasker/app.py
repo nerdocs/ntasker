@@ -68,6 +68,7 @@ from ntasker.i18n import (
     ngettext_for_jinja,
 )
 from ntasker.middleware import LanguageMiddleware
+from ntasker import updates
 from ntasker.settings import (
     HINTS,
     VALIDATORS,
@@ -85,6 +86,15 @@ from ntasker.settings import (
 PROJECT_NONE_SENTINEL = "__none__"
 # Legacy single-value sentinel kept for backwards compatibility with old bookmarks.
 PROJECT_NULL_LEGACY = "__null__"
+
+# External links surfaced in the topbar + /info page. Single source of truth so
+# the template anchors and the about section stay in sync.
+LINKS = {
+    "github": "https://github.com/nerdocs/ntasker",
+    "issues": "https://github.com/nerdocs/ntasker/issues",
+    "author": "https://github.com/nerdoc",
+    "coffee": "https://buymeacoffee.com/nerdoc",
+}
 
 # Fixed phase order + English source labels. The workflow reads left-to-right:
 # planned -> wip -> review. ``done`` is not a phase value but a status; the
@@ -307,6 +317,10 @@ def build_js_strings() -> dict[str, str]:
         "settings": _("Settings"),
         "light_mode": _("Light mode"),
         "dark_mode": _("Dark mode"),
+        "info": _("Info"),
+        "update_available_short": _("Update available"),
+        "github": _("Source on GitHub"),
+        "buy_me_a_coffee": _("Buy me a coffee"),
         # Page header / view switcher
         "tasks_title": _("Task list"),
         "view_list": _("Task list"),
@@ -467,6 +481,30 @@ def build_js_strings() -> dict[str, str]:
         "tags_filter_placeholder": _("Filter tags..."),
         "confirm": _("Delete"),
         "loading": _("Loading..."),
+        # Info / About page
+        "info_title": _("Info"),
+        "news": _("News"),
+        "update_available_title": _("A new version is available"),
+        "update_available_body": _(
+            "You are running {current}, but {latest} is available on PyPI. "
+            "Update with:"
+        ),
+        "up_to_date": _("ntasker is up to date."),
+        "update_check_failed": _("Could not reach PyPI to check for updates."),
+        "checking_updates": _("Checking for updates..."),
+        "about": _("About"),
+        "about_intro": _(
+            "ntasker is a lightweight, single-user local task tracker -- "
+            "FastAPI + SQLite, Tabler.io UI, no build step."
+        ),
+        "made_by": _("Made by"),
+        "license_label": _("License"),
+        "author_blurb": _(
+            "Built and maintained by nerdoc. If ntasker saves you time, a "
+            "coffee keeps it going."
+        ),
+        "open_github": _("View on GitHub"),
+        "report_issue": _("Report an issue"),
     }
 
 # Mount the user-data vendor cache at ``/static/vendor`` *before* the
@@ -565,6 +603,20 @@ async def _start_claude_reaper() -> None:
     _reaper_task = asyncio.create_task(_reap_finished_claude_sessions())
 
 
+@app.on_event("startup")
+async def _prime_update_check() -> None:
+    """Warm the PyPI update-check cache once per server boot, off the event loop.
+
+    A long-running (production) server keeps this cache for 24h; a
+    ``--reload`` dev server re-runs this hook on every restart because the
+    in-memory cache starts empty -- so dev effectively checks on each boot
+    while production checks at most once a day. Runs in a worker thread and
+    swallows everything so a slow/offline PyPI never delays readiness.
+    """
+    with contextlib.suppress(Exception):
+        await asyncio.to_thread(updates.check)
+
+
 @app.on_event("shutdown")
 async def _stop_claude_reaper() -> None:
     if _reaper_task is not None:
@@ -639,6 +691,7 @@ def index(request: Request) -> HTMLResponse:
             "language": get_active_language(),
             "js_strings": build_js_strings(),
             "default_view": get_default_view(),
+            "links": LINKS,
         },
     )
     response.headers["Cache-Control"] = "no-store"
@@ -681,6 +734,34 @@ def tags_page(request: Request) -> HTMLResponse:
     )
     response.headers["Cache-Control"] = "no-store"
     return response
+
+
+@app.get("/info", response_class=HTMLResponse)
+def info_page(request: Request) -> HTMLResponse:
+    """Info / About page: update alerts on top, author + project info below."""
+    response = templates.TemplateResponse(
+        request,
+        "info.html",
+        context={
+            "version": VERSION,
+            "language": get_active_language(),
+            "js_strings": build_js_strings(),
+            "links": LINKS,
+        },
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.get("/api/update-check")
+def api_update_check() -> JSONResponse:
+    """Report whether a newer ntasker release is on PyPI.
+
+    Returns ``{current, latest, update_available, error}``. Cached for 24h
+    (see :mod:`ntasker.updates`); offline simply yields ``latest=null`` with
+    an ``error`` string -- never an HTTP error.
+    """
+    return JSONResponse(updates.check())
 
 
 # ---------------------------------------------------------------------------

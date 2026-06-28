@@ -2,6 +2,8 @@
 
 Lightweight local task tracker. Single-user, FastAPI + SQLite, Tabler.io UI.
 
+[<img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy me a coffee" height="40">](https://buymeacoffee.com/nerdoc)
+
 ## In Claude Code
 
 ntasker doubles as Claude's task memory -- the [skill + `/task` command](#claude-code-integration)

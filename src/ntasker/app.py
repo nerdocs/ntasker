@@ -68,6 +68,7 @@ from ntasker.i18n import (
     ngettext_for_jinja,
 )
 from ntasker.middleware import LanguageMiddleware
+from ntasker import service
 from ntasker import updates
 from ntasker.settings import (
     HINTS,
@@ -365,6 +366,11 @@ def build_js_strings() -> dict[str, str]:
         "clear_search": _("Clear search"),
         "show_all_tasks": _("Show all tasks"),
         "show_all_tasks_title": _("Clear search and all filters -- show every task"),
+        # Settings -- server restart
+        "restart_server": _("Restart server"),
+        "restart_initiated": _("Restarting server..."),
+        "restart_failed": _("Restart failed -- the server is not running as a service."),
+        "restart_timeout": _("Server did not come back in time -- reload manually."),
         # Tabs
         "tab_open": _("Open"),
         "tab_done": _("Done"),
@@ -667,6 +673,34 @@ def shutdown(background_tasks: BackgroundTasks) -> JSONResponse:
     return JSONResponse({"ok": True, "shutting_down": True}, status_code=202)
 
 
+def _self_restart() -> None:
+    """Ask the service manager to restart us, after the response has flushed.
+
+    ``systemctl restart`` / ``launchctl kickstart`` hand the restart job to
+    the supervisor, which then tears down and re-spawns this process -- so the
+    new code is picked up without the client losing the server for good.
+    """
+    import time  # noqa: PLC0415
+
+    time.sleep(0.05)  # let the HTTP response finish flushing
+    service.restart_service()
+
+
+@app.post("/api/service/restart")
+def restart(background_tasks: BackgroundTasks) -> JSONResponse:
+    """Restart the supervised server via its service manager.
+
+    Only works when ntasker runs under an installed systemd/launchd unit;
+    standalone there is no supervisor to bring the process back, so we refuse
+    with 409. The restart itself runs as a background task so the HTTP response
+    leaves the socket before the supervisor stops the process.
+    """
+    if not service.service_installed():
+        return JSONResponse({"ok": False, "reason": "not_supervised"}, status_code=409)
+    background_tasks.add_task(_self_restart)
+    return JSONResponse({"ok": True, "restarting": True}, status_code=202)
+
+
 # ---------------------------------------------------------------------------
 # Routes -- HTML
 # ---------------------------------------------------------------------------
@@ -708,6 +742,7 @@ def settings_page(request: Request) -> HTMLResponse:
             "known_keys": sorted(VALIDATORS.keys()),
             "language": get_active_language(),
             "js_strings": build_js_strings(),
+            "can_restart": service.service_installed(),
         },
     )
     response.headers["Cache-Control"] = "no-store"

@@ -295,6 +295,28 @@
                     </div>
                 </div>
 
+                {% if can_restart %}
+                {# Server card: only shown when ntasker runs under an installed systemd/launchd unit (the only case a restart can recover from). #}
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="ti ti-refresh me-2"></i>
+                            {{ t('Server') }}
+                        </h3>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small mb-3">
+                            {{ t('Restart the ntasker service -- needed to pick up a new version or apply changes that require a fresh start.') }}
+                        </p>
+                        <button type="button" class="btn btn-warning"
+                                @click="restartServer()" :disabled="restarting">
+                            <i class="ti ti-refresh me-1"></i>
+                            <span x-text="restarting ? $i18n('restart_initiated') : $i18n('restart_server')"></span>
+                        </button>
+                    </div>
+                </div>
+                {% endif %}
+
             </div>
         </div>
     </div>
@@ -315,6 +337,9 @@ function settingsPage() {
         rows: [],
         known: {},
         errors: {},
+        // True while a restart is in flight -- disables the button and drives
+        // the "Restarting..." label until the server answers /healthz again.
+        restarting: false,
         // Claude Code asset status -- populated on init() and after manual
         // refreshes. Initialised to ``null`` so x-show guards on
         // ``=== true`` / ``=== false`` stay quiet until the fetch lands.
@@ -409,6 +434,43 @@ function settingsPage() {
         async setPermissionMode(mode) {
             this.known['claude_permission_mode'] = mode;
             await this.saveKnown('claude_permission_mode');
+        },
+
+        // Restart the supervised server, then poll /healthz until it answers
+        // again and reload. Only reachable when the service is installed -- the
+        // button is server-rendered behind a can_restart guard.
+        async restartServer() {
+            if (this.restarting) return;
+            this.restarting = true;
+            try {
+                const r = await fetch('/api/service/restart', {method: 'POST'});
+                if (!r.ok) {
+                    this.restarting = false;
+                    this.toast(this.i18n('restart_failed'));
+                    return;
+                }
+            } catch (e) {
+                // The socket may drop as the process goes down -- expected.
+            }
+            this.waitForServer();
+        },
+
+        // Poll /healthz after a restart; reload once the new process answers.
+        waitForServer(tries = 0) {
+            setTimeout(async () => {
+                try {
+                    const r = await fetch('/healthz', {cache: 'no-store'});
+                    if (r.ok) { location.reload(); return; }
+                } catch (e) {
+                    // still down -- keep polling
+                }
+                if (tries < 40) {
+                    this.waitForServer(tries + 1);
+                } else {
+                    this.restarting = false;
+                    this.toast(this.i18n('restart_timeout'));
+                }
+            }, tries === 0 ? 1000 : 500);
         },
 
         toast(msg) {

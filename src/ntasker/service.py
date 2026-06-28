@@ -302,6 +302,16 @@ def uninstall() -> list[str]:
     return log
 
 
+def service_installed() -> bool:
+    """True iff this process is supervised by an installed ntasker service unit."""
+    mgr = detect_manager()
+    if mgr == "systemd":
+        return (systemd_user_dir() / SYSTEMD_SERVICE).exists()
+    if mgr == "launchd":
+        return (launchd_dir() / f"{LAUNCHD_LABEL}.plist").exists()
+    return False
+
+
 def restart_service() -> bool:
     """Restart the supervised server if its unit is installed. Best-effort."""
     mgr = detect_manager()

@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: ntasker 1.3.0\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-06-28 08:47+0200\n"
+"POT-Creation-Date: 2026-06-28 08:53+0200\n"
 "PO-Revision-Date: 2026-05-02 09:19+0200\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: de\n"
@@ -19,38 +19,38 @@ msgstr ""
 "Generated-By: Babel 2.18.0\n"
 
 #: src/ntasker/app.py:90 src/ntasker/app.py:313
-#: src/ntasker/templates/index.html:329 src/ntasker/templates/index.html:909
+#: src/ntasker/templates/index.html:329 src/ntasker/templates/index.html:912
 msgid "Planned"
 msgstr "Geplant"
 
 #: src/ntasker/app.py:91 src/ntasker/app.py:312
-#: src/ntasker/templates/index.html:330 src/ntasker/templates/index.html:910
+#: src/ntasker/templates/index.html:330 src/ntasker/templates/index.html:913
 msgid "In Progress"
 msgstr "In Arbeit"
 
 #: src/ntasker/app.py:92 src/ntasker/app.py:314
-#: src/ntasker/templates/index.html:331 src/ntasker/templates/index.html:911
+#: src/ntasker/templates/index.html:331 src/ntasker/templates/index.html:914
 msgid "Review"
 msgstr "Zu prüfen"
 
 #: src/ntasker/app.py:99 src/ntasker/app.py:315
-#: src/ntasker/templates/index.html:337 src/ntasker/templates/index.html:917
+#: src/ntasker/templates/index.html:337 src/ntasker/templates/index.html:920
 msgid "Critical"
 msgstr "Kritisch"
 
 #: src/ntasker/app.py:100 src/ntasker/app.py:316
-#: src/ntasker/templates/index.html:338 src/ntasker/templates/index.html:918
+#: src/ntasker/templates/index.html:338 src/ntasker/templates/index.html:921
 msgid "High"
 msgstr "Hoch"
 
 #: src/ntasker/app.py:101 src/ntasker/app.py:317
-#: src/ntasker/templates/index.html:339 src/ntasker/templates/index.html:919
+#: src/ntasker/templates/index.html:339 src/ntasker/templates/index.html:922
 #: src/ntasker/templates/settings.html:138
 msgid "Normal"
 msgstr "Normal"
 
 #: src/ntasker/app.py:102 src/ntasker/app.py:318
-#: src/ntasker/templates/index.html:340 src/ntasker/templates/index.html:920
+#: src/ntasker/templates/index.html:340 src/ntasker/templates/index.html:923
 msgid "Low"
 msgstr "Niedrig"
 
@@ -92,7 +92,7 @@ msgstr "Aufgaben ohne Projekt"
 
 #: src/ntasker/app.py:281 src/ntasker/cli.py:115
 #: src/ntasker/templates/index.html:143 src/ntasker/templates/index.html:335
-#: src/ntasker/templates/index.html:915
+#: src/ntasker/templates/index.html:918
 msgid "Priority"
 msgstr "Priorität"
 
@@ -102,7 +102,7 @@ msgstr "Prioritäts-Filter leeren"
 
 #: src/ntasker/app.py:284 src/ntasker/cli.py:116
 #: src/ntasker/templates/index.html:179 src/ntasker/templates/index.html:354
-#: src/ntasker/templates/index.html:932
+#: src/ntasker/templates/index.html:935
 msgid "Tags"
 msgstr "Tags"
 
@@ -174,7 +174,7 @@ msgid "New task"
 msgstr "Neue Aufgabe"
 
 #: src/ntasker/app.py:308 src/ntasker/cli.py:112
-#: src/ntasker/templates/index.html:315 src/ntasker/templates/index.html:899
+#: src/ntasker/templates/index.html:315 src/ntasker/templates/index.html:902
 msgid "Project"
 msgstr "Projekt"
 
@@ -183,7 +183,7 @@ msgid "Project name (leave empty for cross-project)"
 msgstr "Projektname (leer = projektübergreifend)"
 
 #: src/ntasker/app.py:310 src/ntasker/cli.py:114
-#: src/ntasker/templates/index.html:327 src/ntasker/templates/index.html:907
+#: src/ntasker/templates/index.html:327 src/ntasker/templates/index.html:910
 msgid "Phase"
 msgstr "Phase"
 
@@ -192,7 +192,7 @@ msgid "--"
 msgstr "—"
 
 #: src/ntasker/app.py:319 src/ntasker/templates/index.html:344
-#: src/ntasker/templates/index.html:924
+#: src/ntasker/templates/index.html:927
 msgid "Title"
 msgstr "Titel"
 
@@ -201,7 +201,7 @@ msgid "What needs to be done?"
 msgstr "Was ist zu tun?"
 
 #: src/ntasker/app.py:321 src/ntasker/cli.py:126
-#: src/ntasker/templates/index.html:349 src/ntasker/templates/index.html:928
+#: src/ntasker/templates/index.html:349 src/ntasker/templates/index.html:931
 msgid "Description"
 msgstr "Beschreibung"
 
@@ -313,7 +313,7 @@ msgstr "Wiederherstellen"
 msgid "Delete permanently"
 msgstr "Endgültig löschen"
 
-#: src/ntasker/app.py:353 src/ntasker/templates/index.html:1028
+#: src/ntasker/app.py:353 src/ntasker/templates/index.html:1031
 msgid "Delete"
 msgstr "Löschen"
 
@@ -349,11 +349,11 @@ msgstr "Aufgabe"
 msgid "Close"
 msgstr "Schließen"
 
-#: src/ntasker/app.py:364 src/ntasker/templates/index.html:1031
+#: src/ntasker/app.py:364 src/ntasker/templates/index.html:1034
 msgid "Cancel"
 msgstr "Abbrechen"
 
-#: src/ntasker/app.py:365 src/ntasker/templates/index.html:1035
+#: src/ntasker/app.py:365 src/ntasker/templates/index.html:1038
 #: src/ntasker/templates/settings.html:97
 msgid "Save"
 msgstr "Speichern"
@@ -529,49 +529,53 @@ msgid "Stop"
 msgstr "Stoppen"
 
 #: src/ntasker/app.py:417
+msgid "Mark done"
+msgstr "Erledigt"
+
+#: src/ntasker/app.py:418
 msgid "Connecting..."
 msgstr "Verbinde..."
 
-#: src/ntasker/app.py:418
+#: src/ntasker/app.py:419
 msgid "Running..."
 msgstr "Läuft..."
 
-#: src/ntasker/app.py:419
+#: src/ntasker/app.py:420
 msgid "Session ended"
 msgstr "Sitzung beendet"
 
-#: src/ntasker/app.py:582 src/ntasker/app.py:598
+#: src/ntasker/app.py:583 src/ntasker/app.py:599
 msgid "Setting not found"
 msgstr "Setting nicht gefunden"
 
-#: src/ntasker/app.py:662 src/ntasker/app.py:1065 src/ntasker/app.py:1174
-#: src/ntasker/app.py:1178 src/ntasker/app.py:1207
+#: src/ntasker/app.py:663 src/ntasker/app.py:1066 src/ntasker/app.py:1175
+#: src/ntasker/app.py:1179 src/ntasker/app.py:1208
 msgid "Task not found"
 msgstr "Aufgabe nicht gefunden"
 
-#: src/ntasker/app.py:1074
+#: src/ntasker/app.py:1075
 msgid "A task cannot depend on itself."
 msgstr "Eine Aufgabe kann nicht von sich selbst abhängen."
 
-#: src/ntasker/app.py:1076
+#: src/ntasker/app.py:1077
 #, python-brace-format
 msgid "Dependency task #{id} does not exist."
 msgstr "Abhängigkeit: Aufgabe #{id} existiert nicht."
 
-#: src/ntasker/app.py:1078
+#: src/ntasker/app.py:1079
 #, python-brace-format
 msgid "That dependency would create a cycle (via task #{id})."
 msgstr "Diese Abhängigkeit würde einen Zyklus erzeugen (über Aufgabe #{id})."
 
-#: src/ntasker/app.py:1098 src/ntasker/app.py:1142
+#: src/ntasker/app.py:1099 src/ntasker/app.py:1143
 msgid "Invalid priority"
 msgstr "Ungültige Priorität"
 
-#: src/ntasker/app.py:1136
+#: src/ntasker/app.py:1137
 msgid "No fields to update"
 msgstr "Keine Felder zum Aktualisieren"
 
-#: src/ntasker/app.py:1152
+#: src/ntasker/app.py:1153
 msgid "Invalid phase"
 msgstr "Ungültige Phase"
 
@@ -616,7 +620,7 @@ msgid "Status"
 msgstr "Status"
 
 #: src/ntasker/cli.py:119 src/ntasker/templates/index.html:399
-#: src/ntasker/templates/index.html:977
+#: src/ntasker/templates/index.html:980
 msgid "Depends on"
 msgstr "Hängt ab von"
 
@@ -1160,8 +1164,8 @@ msgid ""
 "changes), or 'bypassPermissions' (skip every prompt -- dangerous). Passed"
 " to the CLI as --permission-mode. Default: default."
 msgstr ""
-"Berechtigungsmodus für interaktive Claude-Sitzungen: 'default' (normal -- "
-"Claude fragt zuerst), 'auto' (Aktionen automatisch bestätigen), 'plan' "
+"Berechtigungsmodus für interaktive Claude-Sitzungen: 'default' (normal --"
+" Claude fragt zuerst), 'auto' (Aktionen automatisch bestätigen), 'plan' "
 "(nur planen, keine Änderungen) oder 'bypassPermissions' (jede Abfrage "
 "überspringen -- gefährlich). Wird als --permission-mode an die CLI "
 "übergeben. Standard: default."

@@ -414,6 +414,7 @@ def build_js_strings() -> dict[str, str]:
         "claude_waiting": _("Claude is waiting for your input"),
         "claude_back": _("Back"),
         "claude_stop": _("Stop"),
+        "claude_mark_done": _("Mark done"),
         "claude_connecting": _("Connecting..."),
         "claude_running": _("Running..."),
         "claude_run_finished": _("Session ended"),

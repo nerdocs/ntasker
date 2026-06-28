@@ -174,6 +174,8 @@ function tracker(serverDefaultView) {
         // Dependency autocomplete suggestions for the currently focused
         // input (form or edit -- only one is open at a time).
         depSuggest: [],
+        // Highlighted suggestion index per tag-input ('form' | 'edit'); -1 = none.
+        tagHighlight: { form: -1, edit: -1 },
         editing: null,               // task object or null
         counts: { open: 0, done: 0, archive: 0 },
 
@@ -934,6 +936,36 @@ function tracker(serverDefaultView) {
             const key = this._tagInputProp(which);
             if (!bucket.tags.includes(name)) bucket.tags.push(name);
             bucket[key] = '';
+            this.tagHighlight[which] = -1;
+        },
+
+        // Move the dropdown highlight (dir = +1 down / -1 up), wrapping around.
+        // Resets to -1 when there are no suggestions.
+        onTagArrow(which, dir) {
+            const n = this.tagSuggestions(which).length;
+            if (!n) { this.tagHighlight[which] = -1; return; }
+            let i = this.tagHighlight[which] + dir;
+            if (i < 0) i = n - 1;
+            else if (i >= n) i = 0;
+            this.tagHighlight[which] = i;
+        },
+
+        // Enter in a tag-input. If a suggestion is highlighted, pick it.
+        // Otherwise let the event fall through: in the new-task form that
+        // submits the form (createTask commits any typed tag first); in the
+        // edit modal -- which has no <form> -- commit the typed tag instead.
+        onTagEnter(event, which) {
+            const sugg = this.tagSuggestions(which);
+            const hi = this.tagHighlight[which];
+            if (sugg.length && hi >= 0 && hi < sugg.length) {
+                event.preventDefault();
+                this.selectSuggestion(which, sugg[hi]);
+                return;
+            }
+            if (which === 'edit') {
+                event.preventDefault();
+                this.commitTagInput(which);
+            }
         },
 
         // ---- Dependency input helpers (shared by new-task form & edit-modal) ----
@@ -1246,6 +1278,18 @@ function tracker(serverDefaultView) {
             if (_claudeTermState && _claudeTermState.ws.readyState === WebSocket.OPEN) {
                 _claudeTermState.ws.send(JSON.stringify({ type: 'stop' }));
             }
+        },
+
+        // Mark the running task done straight from the terminal header. The
+        // PATCH also tears down the server-side session (status=done -> stop),
+        // so we just close the on-screen terminal and return to the board.
+        async markDoneFromClaudeRun() {
+            if (!this.claudeMeta) return;
+            const id = this.claudeMeta.taskId;
+            const r = await this.patch(id, { status: 'done' });
+            if (!r || !r.ok) return;
+            this.backFromClaudeRun();
+            await this.refreshAll();
         },
     };
 }

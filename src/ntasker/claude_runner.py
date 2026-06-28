@@ -46,6 +46,13 @@ except ImportError:  # pragma: no cover - non-POSIX
 # correct final screen; small enough to stay cheap.
 BUFFER_LIMIT = 512 * 1024
 
+# After a window resize the TUI repaints in one burst (SIGWINCH -> full redraw).
+# That output is *not* progress -- it fires just from a client attaching and
+# resizing the terminal. For this grace window we forward the redraw to the
+# screen but do NOT treat it as activity, so a session parked at a prompt stays
+# flagged "waiting" when the user only peeks at it. See :func:`session_states`.
+RESIZE_REDRAW_GRACE = 1.5
+
 # Environment markers that would make the spawned CLI behave as a *nested*
 # Claude Code session. Stripped so it always starts as a fresh top-level
 # session -- exactly as if launched from the user's own shell.
@@ -124,6 +131,9 @@ class TermSession:
     # heuristic (see :func:`session_states`): a long-silent terminal means
     # Claude is parked at a prompt rather than working.
     last_output: float = field(default_factory=time.monotonic)
+    # Monotonic deadline until which PTY output is treated as a resize redraw
+    # and does NOT bump ``last_output`` (see RESIZE_REDRAW_GRACE). 0 = inactive.
+    resize_grace_until: float = 0.0
 
 
 SESSIONS: dict[int, TermSession] = {}
@@ -223,7 +233,12 @@ def _attach_reader(sess: TermSession) -> None:
         if not data:  # EOF / EIO -> the process exited
             _reap(sess)
             return
-        sess.last_output = time.monotonic()
+        # Output inside the post-resize grace window is just the SIGWINCH redraw,
+        # not progress -- forward it but keep the "waiting" clock running so a
+        # quick peek doesn't reset the heuristic.
+        now = time.monotonic()
+        if now >= sess.resize_grace_until:
+            sess.last_output = now
         sess.buffer.extend(data)
         if len(sess.buffer) > BUFFER_LIMIT:
             del sess.buffer[: len(sess.buffer) - BUFFER_LIMIT]
@@ -258,6 +273,7 @@ def _reap(sess: TermSession) -> None:
 def _resize(sess: TermSession, rows: int, cols: int) -> None:
     rows = max(1, min(int(rows), 1000))
     cols = max(1, min(int(cols), 1000))
+    sess.resize_grace_until = time.monotonic() + RESIZE_REDRAW_GRACE
     with contextlib.suppress(OSError):
         fcntl.ioctl(sess.master_fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
 

@@ -372,7 +372,11 @@
                                                    x-ref="formTagInput"
                                                    @focus="focused = true"
                                                    @blur="setTimeout(() => focused = false, 150)"
-                                                   @keydown.enter.prevent="commitTagInput('form')"
+                                                   @input="tagHighlight.form = -1"
+                                                   @keydown.enter="onTagEnter($event, 'form')"
+                                                   @keydown.arrow-down.prevent="onTagArrow('form', 1)"
+                                                   @keydown.arrow-up.prevent="onTagArrow('form', -1)"
+                                                   @keydown.escape="focused = false; tagHighlight.form = -1"
                                                    @keydown="onTagKeydown($event, 'form')"
                                                    :placeholder="$i18n('tag_input_placeholder')">
                                         </div>
@@ -380,8 +384,10 @@
                                              x-show="focused && tagSuggestions('form').length > 0"
                                              style="max-height: 200px; overflow-y: auto;"
                                              x-cloak>
-                                            <template x-for="s in tagSuggestions('form')" :key="s">
+                                            <template x-for="(s, idx) in tagSuggestions('form')" :key="s">
                                                 <button type="button" class="dropdown-item"
+                                                        :class="{ active: tagHighlight.form === idx }"
+                                                        @mouseenter="tagHighlight.form = idx"
                                                         @mousedown.prevent="selectSuggestion('form', s)">
                                                     #<span x-text="s"></span>
                                                 </button>
@@ -855,6 +861,9 @@
                             <template x-if="claudeMeta.status === 'exited'">
                                 <span class="badge bg-secondary-lt" x-text="$i18n('claude_run_finished')"></span>
                             </template>
+                            <button type="button" class="btn btn-sm btn-ghost-success" @click="markDoneFromClaudeRun()">
+                                <i class="ti ti-check me-1 fs-3"></i><span x-text="$i18n('claude_mark_done')"></span>
+                            </button>
                             <template x-if="claudeMeta.status !== 'exited'">
                                 <button type="button" class="btn btn-sm btn-ghost-danger" @click="stopClaudeRun()">
                                     <i class="ti ti-player-stop me-1 fs-3"></i><span x-text="$i18n('claude_stop')"></span>
@@ -944,7 +953,11 @@
                                        x-ref="editTagInput"
                                        @focus="focused = true"
                                        @blur="setTimeout(() => focused = false, 150)"
-                                       @keydown.enter.prevent="commitTagInput('edit')"
+                                       @input="tagHighlight.edit = -1"
+                                       @keydown.enter="onTagEnter($event, 'edit')"
+                                       @keydown.arrow-down.prevent="onTagArrow('edit', 1)"
+                                       @keydown.arrow-up.prevent="onTagArrow('edit', -1)"
+                                       @keydown.escape="focused = false; tagHighlight.edit = -1"
                                        @keydown="onTagKeydown($event, 'edit')"
                                        :placeholder="$i18n('tag_input_placeholder')">
                             </div>
@@ -952,8 +965,10 @@
                                  x-show="focused && tagSuggestions('edit').length > 0"
                                  style="max-height: 200px; overflow-y: auto;"
                                  x-cloak>
-                                <template x-for="s in tagSuggestions('edit')" :key="s">
+                                <template x-for="(s, idx) in tagSuggestions('edit')" :key="s">
                                     <button type="button" class="dropdown-item"
+                                            :class="{ active: tagHighlight.edit === idx }"
+                                            @mouseenter="tagHighlight.edit = idx"
                                             @mousedown.prevent="selectSuggestion('edit', s)">
                                         #<span x-text="s"></span>
                                     </button>

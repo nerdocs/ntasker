@@ -168,8 +168,19 @@
  * fills the viewport below the header so the terminal can size itself via the
  * fit addon; the dark terminal panel sits flush inside it.
  */
+.page-claude-run {
+    /* While the run view is open, pin the whole main column to the viewport so
+     * the run view flex-fills exactly the space below the navbar -- robust
+     * against the navbar's real (possibly wrapped) height, no magic constant. */
+    height: 100vh;
+    overflow: hidden;
+}
 .claude-run-page {
-    height: calc(100vh - 3.5rem);
+    /* Flex-fill the page-wrapper and cancel Tabler's default .page-body top/
+     * bottom margins, which would otherwise push the terminal off the bottom. */
+    flex: 1 1 auto;
+    min-height: 0;
+    margin: 0;
     overflow: hidden;
 }
 .claude-terminal {

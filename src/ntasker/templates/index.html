@@ -221,7 +221,8 @@
     </aside>
 
     {# Main content (full-width inside its column) #}
-    <div class="page flex-fill" style="min-width: 0;">
+    <div class="page flex-fill" style="min-width: 0;"
+         :class="claudeView !== null && 'page-claude-run'">
 
     <header class="navbar navbar-expand-md d-print-none">
         <div class="container-fluid">

@@ -1206,7 +1206,15 @@ def cmd_self_update(args: argparse.Namespace) -> int:
     from ntasker import service  # noqa: PLC0415
     from ntasker.settings import get_setting  # noqa: PLC0415
 
-    cmd = service.resolve_update_command(get_setting("update_command"))
+    # Bind the DB path so the configured ``update_command`` can be read, but
+    # only if the DB already exists -- self-update must never *create* one.
+    db_path = resolve_db_path(args.db)
+    update_command = None
+    if db_path.exists():
+        set_db_path(db_path)
+        update_command = get_setting("update_command")
+
+    cmd = service.resolve_update_command(update_command)
     print(_("ntasker: running `{cmd}`").format(cmd=" ".join(cmd)))
     proc = subprocess.run(cmd)  # noqa: S603 -- user-configured / auto-detected
     if proc.returncode != 0:

@@ -281,6 +281,20 @@
                             </button>
                         </h2>
                     </div>
+                    {# Page actions: search box, pushed to the far right. #}
+                    <div class="col-auto ms-auto">
+                        <div class="input-icon search-box search-box-header">
+                            <span class="input-icon-addon"><i class="ti ti-search"></i></span>
+                            <input type="text" class="form-control" x-model="filter.search"
+                                   @input.debounce.300ms="loadTasks()" :placeholder="$i18n('search_placeholder')">
+                            {# Clear button: only when there is text; resets the search and reloads. #}
+                            <button type="button" class="search-clear" x-show="filter.search" x-cloak
+                                    @click="clearSearch()"
+                                    :title="$i18n('clear_search')" :aria-label="$i18n('clear_search')">
+                                <i class="ti ti-x"></i>
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -444,23 +458,6 @@
                                 </div>
                             </div>
                         </form>
-                    </div>
-                </div>
-
-                {# Filter bar: search only -- project, tag, phase filters live in the sidebar. #}
-                <div class="card mb-3">
-                    <div class="card-body py-2">
-                        <div class="input-icon search-box">
-                            <span class="input-icon-addon"><i class="ti ti-search"></i></span>
-                            <input type="text" class="form-control form-control-sm" x-model="filter.search"
-                                   @input.debounce.300ms="loadTasks()" :placeholder="$i18n('search_placeholder')">
-                            {# Clear button: only when there is text; resets the search and reloads. #}
-                            <button type="button" class="search-clear" x-show="filter.search" x-cloak
-                                    @click="clearSearch()"
-                                    :title="$i18n('clear_search')" :aria-label="$i18n('clear_search')">
-                                <i class="ti ti-x"></i>
-                            </button>
-                        </div>
                     </div>
                 </div>
 

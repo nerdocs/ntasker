@@ -12,6 +12,11 @@
 .search-box .form-control {
     padding-right: 2rem;
 }
+/* Search box in the page-header: compact, not full-width. */
+.search-box-header {
+    width: 16rem;
+    max-width: 40vw;
+}
 .search-clear {
     position: absolute;
     top: 50%;

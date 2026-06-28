@@ -4,6 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [2.9.0] — 2026-06-28
+Search box moved to the top-right of the page-header (page-actions), compact width.
+
 ## [2.8.0] — 2026-06-27
 Claude sessions are flagged per task: amber "waiting for input", tinted "running"; the busy indicator self-heals.
 Run button shows the Claude logomark and is hidden on done tasks; `/task` can `/cd` into the project dir.

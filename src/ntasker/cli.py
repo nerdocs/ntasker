@@ -285,6 +285,29 @@ def _healthz_ok(host: str, port: int, timeout: float = 0.5) -> bool:
         return False
 
 
+def _active_sessions(host: str, port: int, timeout: float = 1.0) -> list[int] | None:
+    """Task ids with a live Claude session, via ``GET /api/claude/sessions``.
+
+    ``active`` covers both *running* and *input-waiting* sessions -- either one
+    would be killed by a restart (``KillMode=control-group``), so both must
+    block it. ``None`` means the daemon could not be reached; the caller reads
+    that as "nothing to protect" since a dead daemon has no child sessions.
+    """
+    import json as _json  # noqa: PLC0415
+    import urllib.error  # noqa: PLC0415
+    import urllib.request  # noqa: PLC0415
+
+    url = f"http://{host}:{port}/api/claude/sessions"
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:  # noqa: S310
+            if resp.status != 200:
+                return None
+            body = _json.loads(resp.read().decode("utf-8"))
+            return list(body.get("active", []))
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+        return None
+
+
 def _spawn_detached_server(host: str, port: int, db_path: str | None) -> int:
     """Start ``ntasker serve`` as a detached background child, cross-platform.
 
@@ -1305,6 +1328,43 @@ def cmd_service_stop(args: argparse.Namespace) -> int:
     return 1
 
 
+def cmd_service_restart(args: argparse.Namespace) -> int:
+    """Restart the installed service so a freshly deployed version goes live.
+
+    Meant as the post-deploy hook: the daemon keeps the old code in memory until
+    its process is replaced. Guarded against killing work in progress -- the unit
+    uses ``KillMode=control-group``, so a restart tears down every child in the
+    cgroup, including running (or input-waiting) ``claude`` task sessions. Unless
+    ``--force`` is given, the restart is *deferred* (exit 2, no restart) while any
+    such session is live, so a deploy never aborts a task mid-run.
+    """
+    from ntasker import service  # noqa: PLC0415
+
+    if not service.service_installed():
+        print(
+            _("ntasker: no service installed -- run `ntasker service install` first."),
+            file=sys.stderr,
+        )
+        return 1
+
+    if not args.force:
+        active = _active_sessions(args.host, args.port)
+        if active:
+            ids = ", ".join(f"#{t}" for t in sorted(active))
+            print(
+                _(
+                    "ntasker: restart deferred -- {n} task session(s) still running "
+                    "({ids}); a restart would kill them. Retry later or pass --force."
+                ).format(n=len(active), ids=ids),
+                file=sys.stderr,
+            )
+            return 2
+
+    service.restart_service()
+    print(_("ntasker: service restarted."))
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # Argparse construction
 # ---------------------------------------------------------------------------
@@ -1588,6 +1648,19 @@ def build_parser() -> argparse.ArgumentParser:
 
     svc_stop = svc_sub.add_parser("stop", help=_("Stop the running service."))
     svc_stop.set_defaults(func=cmd_service_stop)
+
+    svc_restart = svc_sub.add_parser(
+        "restart",
+        help=_("Restart the service to pick up a deployed version (deploy hook)."),
+    )
+    svc_restart.add_argument("--host", default="127.0.0.1")
+    svc_restart.add_argument("--port", type=int, default=8766)
+    svc_restart.add_argument(
+        "--force",
+        action="store_true",
+        help=_("Restart even while task sessions run (they get killed)."),
+    )
+    svc_restart.set_defaults(func=cmd_service_restart)
 
     # self-update ---------------------------------------------------------
     sp_su = sub.add_parser(

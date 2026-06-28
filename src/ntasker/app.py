@@ -371,6 +371,10 @@ def build_js_strings() -> dict[str, str]:
         "restart_initiated": _("Restarting server..."),
         "restart_failed": _("Restart failed -- the server is not running as a service."),
         "restart_timeout": _("Server did not come back in time -- reload manually."),
+        "restart_blocked_tasks": _(
+            "Restart blocked -- {n} task session(s) still running. "
+            "A restart would interrupt them; wait until they finish."
+        ),
         # Tabs
         "tab_open": _("Open"),
         "tab_done": _("Done"),
@@ -694,9 +698,20 @@ def restart(background_tasks: BackgroundTasks) -> JSONResponse:
     standalone there is no supervisor to bring the process back, so we refuse
     with 409. The restart itself runs as a background task so the HTTP response
     leaves the socket before the supervisor stops the process.
+
+    Refused with 409 ``tasks_running`` while any Claude task session is live:
+    ``KillMode=control-group`` means a restart tears down every child in the
+    unit's cgroup, so we never kill a running -- or input-waiting -- task from
+    under the user. The settings button mirrors this by disabling itself.
     """
     if not service.service_installed():
         return JSONResponse({"ok": False, "reason": "not_supervised"}, status_code=409)
+    active = active_session_ids()
+    if active:
+        return JSONResponse(
+            {"ok": False, "reason": "tasks_running", "tasks": sorted(active)},
+            status_code=409,
+        )
     background_tasks.add_task(_self_restart)
     return JSONResponse({"ok": True, "restarting": True}, status_code=202)
 

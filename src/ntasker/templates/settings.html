@@ -309,10 +309,14 @@
                             {{ t('Restart the ntasker service -- needed to pick up a new version or apply changes that require a fresh start.') }}
                         </p>
                         <button type="button" class="btn btn-warning"
-                                @click="restartServer()" :disabled="restarting">
+                                @click="restartServer()" :disabled="restarting || activeTasks.length > 0">
                             <i class="ti ti-refresh me-1"></i>
                             <span x-text="restarting ? $i18n('restart_initiated') : $i18n('restart_server')"></span>
                         </button>
+                        <div class="alert alert-info mt-3 mb-0" x-show="activeTasks.length > 0" x-cloak>
+                            <i class="ti ti-player-pause me-1"></i>
+                            <span x-text="i18n('restart_blocked_tasks', {n: activeTasks.length})"></span>
+                        </div>
                     </div>
                 </div>
                 {% endif %}
@@ -340,6 +344,10 @@ function settingsPage() {
         // True while a restart is in flight -- disables the button and drives
         // the "Restarting..." label until the server answers /healthz again.
         restarting: false,
+        // Task ids with a live Claude session (running OR input-waiting). A
+        // restart kills the whole cgroup, so while this is non-empty the button
+        // is disabled and an info banner explains why. Polled by refreshSessions.
+        activeTasks: [],
         // Claude Code asset status -- populated on init() and after manual
         // refreshes. Initialised to ``null`` so x-show guards on
         // ``=== true`` / ``=== false`` stay quiet until the fetch lands.
@@ -354,6 +362,22 @@ function settingsPage() {
         async init() {
             await this.refresh();
             await this.refreshClaudeAssets();
+            await this.refreshSessions();
+            // Keep the restart guard live -- a task may start or end while the
+            // page is open. Cheap poll; the page reloads itself on restart.
+            setInterval(() => this.refreshSessions(), 4000);
+        },
+
+        // Refresh the live-session list that gates the restart button.
+        async refreshSessions() {
+            try {
+                const r = await fetch('/api/claude/sessions', {cache: 'no-store'});
+                if (!r.ok) return;
+                const body = await r.json();
+                this.activeTasks = body.active || [];
+            } catch (e) {
+                // Best-effort -- leave the previous value on a transient error.
+            }
         },
 
         // Translate an i18n key with optional {placeholder} substitution.
@@ -446,7 +470,15 @@ function settingsPage() {
                 const r = await fetch('/api/service/restart', {method: 'POST'});
                 if (!r.ok) {
                     this.restarting = false;
-                    this.toast(this.i18n('restart_failed'));
+                    // 409 tasks_running: a task slipped in between poll and click.
+                    // Refresh the guard so the button disables, and explain.
+                    const body = await r.json().catch(() => ({}));
+                    if (body.reason === 'tasks_running') {
+                        this.activeTasks = body.tasks || [];
+                        this.toast(this.i18n('restart_blocked_tasks', {n: this.activeTasks.length}));
+                    } else {
+                        this.toast(this.i18n('restart_failed'));
+                    }
                     return;
                 }
             } catch (e) {

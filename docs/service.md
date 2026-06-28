@@ -46,6 +46,23 @@ ntasker service uninstall   # disable + remove all ntasker units (idempotent)
 `ntasker stop`, which shuts down any running `ntasker serve` over HTTP regardless of how it was launched. To stop the
 service permanently (so it does not restart at login), use `service uninstall`.
 
+## Restart after a deploy
+
+The daemon keeps the old code in memory until its process is replaced, so a freshly deployed version only goes live
+after a restart. Wire this into your deploy step:
+
+```bash
+ntasker service restart          # restart the unit to pick up new code
+ntasker service restart --force  # restart even while task sessions run
+```
+
+**Guarded against killing work in progress.** The systemd unit uses `KillMode=control-group`, so a restart tears down
+every child in the unit's cgroup -- including running (or input-waiting) `claude` task sessions. Unless `--force` is
+given, `restart` is *deferred* when any such session is live: it prints which tasks are running and exits `2` without
+restarting, so a deploy hook never aborts a task mid-run. The restart button on the settings page mirrors this -- it
+disables itself and shows an info banner while tasks run, and the `POST /api/service/restart` endpoint refuses with
+`409 tasks_running`.
+
 ## Auto-update
 
 ```bash

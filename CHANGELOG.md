@@ -4,6 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [2.12.0] — 2026-06-28
+`ntasker service restart` (deploy hook); defers while task sessions run; settings restart button disables + warns.
+
 ## [2.11.0] — 2026-06-28
 `ntasker service install/uninstall/status` (systemd + launchd) and `ntasker self-update`; `update_command` setting.
 

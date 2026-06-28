@@ -25,6 +25,7 @@ from __future__ import annotations
 import os
 import plistlib
 import shlex
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -78,16 +79,34 @@ def resolve_update_command(setting: str | None) -> list[str]:
     """Pick the package-upgrade command.
 
     Explicit ``update_command`` setting wins (parsed with ``shlex``).
-    Otherwise auto-detect: a ``uv tool`` install lives under a ``uv/tools``
-    venv -> ``uv tool upgrade ntasker``; anything else -> ``pip install -U``
-    with the *current* interpreter so we hit the right environment.
+    Otherwise auto-detect:
+
+    * a ``uv tool`` install lives under a ``uv/tools`` venv -> ``uv tool
+      upgrade ntasker``;
+    * the current interpreter has ``pip`` -> ``pip install -U`` against it,
+      so we hit the right environment;
+    * no ``pip`` (typical for ``uv``-managed venvs, e.g. ``uv run``) -> fall
+      back to ``uv pip install`` targeting this very interpreter; only if
+      ``uv`` is also missing do we emit the ``pip`` command anyway, so the
+      failure carries a clear message.
     """
     if setting and setting.strip():
         return shlex.split(setting)
     exe = sys.executable.replace("\\", "/").lower()
     if "/uv/tools/" in exe:
         return ["uv", "tool", "upgrade", "ntasker"]
+    if _has_pip():
+        return [sys.executable, "-m", "pip", "install", "-U", "ntasker"]
+    if shutil.which("uv"):
+        return ["uv", "pip", "install", "--python", sys.executable, "-U", "ntasker"]
     return [sys.executable, "-m", "pip", "install", "-U", "ntasker"]
+
+
+def _has_pip() -> bool:
+    """Whether ``pip`` is importable in the current interpreter."""
+    import importlib.util  # noqa: PLC0415
+
+    return importlib.util.find_spec("pip") is not None
 
 
 # ---------------------------------------------------------------------------

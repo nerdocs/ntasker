@@ -71,11 +71,12 @@ const PRIORITY_VALUES = ['critical', 'high', 'normal', 'low'];
 // `default_view` validator.
 const VIEW_MODES = ['list', 'kanban'];
 
-// The one on-screen Claude terminal: {ws, term, fit, taskId, onResize} or null.
-// Kept at module scope (not in Alpine state) so the xterm Terminal instance
-// never lands inside Alpine's reactive proxy. Only one run view is open at a
-// time; the server-side PTY sessions are what persist in the background.
-let _claudeTermState = null;
+// Open Claude terminals, keyed by task id: taskId -> {ws, term, fit}.
+// Kept at module scope (not in Alpine state) so the xterm Terminal instances
+// never land inside Alpine's reactive proxy. The run view shows one tab per
+// live session; each tab owns its own Terminal + WebSocket here, while the
+// server-side PTY sessions persist in the background.
+const _claudeTerms = new Map();
 
 // Decode a base64 string (PTY bytes from the server) into a Uint8Array that
 // xterm's write() accepts -- avoids UTF-8 corruption when multibyte sequences
@@ -123,15 +124,15 @@ function tracker(serverDefaultView) {
 
         // ---- Claude run ("Run with Claude") ----
         // claudeAvailable gates the per-task run button (GET /api/claude/status).
-        // claudeView = taskId currently shown full-page (or null); claudeMeta
-        // holds {taskId, taskTitle, status} for that view's header. claudeSessions
-        // is the set of task ids with a live server-side session (busy spinners).
-        // The xterm Terminal + WebSocket themselves live in the module-level
-        // _claudeTermState (kept out of Alpine's reactive proxy).
+        // claudeView = task id of the currently ACTIVE run tab (or null when the
+        // run view is closed). claudeTabs = [{taskId, taskTitle, status}], one per
+        // open session tab; claudeSessions is the set of task ids with a live
+        // server-side session (busy spinners). The xterm Terminals + WebSockets
+        // live in the module-level _claudeTerms map (out of Alpine's proxy).
         claudeAvailable: false,
         claudeReason: null,
         claudeView: null,
-        claudeMeta: null,
+        claudeTabs: [],
         claudeSessions: [],
         // Subset of claudeSessions that has gone silent long enough to look
         // blocked on a prompt -- drives the "waiting for input" highlight.
@@ -207,6 +208,16 @@ function tracker(serverDefaultView) {
             // Start the live-update poll last, once the initial state is in
             // place -- it then refetches whenever a CLI/API change is detected.
             this.startChangePolling();
+            // Hash routing: the run view lives at #/run/<id> so the browser
+            // history / Back button work and a run is shareable / reloadable.
+            window.addEventListener('hashchange', () => this._applyRoute());
+            // A single window-resize listener refits whichever terminal is on
+            // screen (per-terminal listeners would also fit hidden tabs to 0).
+            window.addEventListener('resize', () => {
+                if (this.claudeView !== null) this._fitAndSync(this.claudeView);
+            });
+            // Honor a deep-linked / reloaded #/run/<id> once everything is up.
+            this._applyRoute();
         },
 
         // Convenience: just the project names (for <select> in forms).
@@ -460,6 +471,21 @@ function tracker(serverDefaultView) {
             if (this.formOpen) {
                 this.$nextTick(() => this.$refs.projectInput?.focus());
             }
+        },
+
+        // Sidebar "+" on a project row: open the new-task form pre-filled with
+        // that project and drop the caret straight into the Title field. Leaves
+        // the run view first (the form lives on the board) so the focus lands.
+        newTaskForProject(name) {
+            this.form.project = name;
+            this.formOpen = true;
+            if (this.claudeView !== null) location.hash = '#/';
+            this.$nextTick(() => {
+                const el = this.$refs.titleInput;
+                if (!el) return;
+                el.focus();
+                el.scrollIntoView({ block: 'nearest' });
+            });
         },
 
         // Static column definitions for the kanban board. ``key`` is either
@@ -1326,7 +1352,10 @@ function tracker(serverDefaultView) {
             }
         },
 
-        // Refresh the set of task ids with a live session (busy indicators).
+        // Refresh the set of task ids with a live session (busy indicators) and
+        // reconcile the run-view tab strip against it -- a tab exists for every
+        // *active* session (running OR waiting for input), wherever it was
+        // started (this browser, another tab, or the CLI).
         async loadClaudeSessions() {
             try {
                 const r = await fetch('/api/claude/sessions');
@@ -1334,8 +1363,46 @@ function tracker(serverDefaultView) {
                     const d = await r.json();
                     this.claudeSessions = d.active || [];
                     this.claudeWaiting = d.waiting || [];
+                    this._syncTabsFromSessions();
                 }
             } catch (_e) { /* leave the last known set */ }
+        },
+
+        // Mirror the live-session set into claudeTabs: add a tab for every active
+        // session we don't track yet, refresh each tab's status (waiting/running)
+        // and drop tabs whose session has ended -- except the one you're viewing
+        // (kept as 'exited' so you can read the final output) and a just-opened
+        // tab that hasn't registered as a session yet ('connecting').
+        _syncTabsFromSessions() {
+            const waiting = new Set(this.claudeWaiting);
+            const active = new Set(this.claudeSessions);
+            for (const id of this.claudeSessions) {
+                if (!this.claudeTabs.some(t => t.taskId === id)) {
+                    this.claudeTabs.push({ taskId: id, taskTitle: '', status: waiting.has(id) ? 'waiting' : 'running' });
+                    this._fetchTabTitle(id);
+                }
+            }
+            this.claudeTabs = this.claudeTabs.filter(tab => {
+                if (active.has(tab.taskId)) {
+                    tab.status = waiting.has(tab.taskId) ? 'waiting' : 'running';
+                    return true;
+                }
+                if (tab.taskId === this.claudeView) { tab.status = 'exited'; return true; }
+                if (tab.status === 'connecting') return true;
+                this._teardownTerm(tab.taskId);
+                return false;
+            });
+        },
+
+        // Fill in a tab's title once we know its id (auto-added session tabs).
+        async _fetchTabTitle(id) {
+            try {
+                const r = await fetch(`/api/tasks/${id}`);
+                if (!r.ok) return;
+                const t = await r.json();
+                const tab = this.claudeTabs.find(x => x.taskId === id);
+                if (tab) tab.taskTitle = t.title || '';
+            } catch (_e) { /* leave blank */ }
         },
 
         // 'waiting' (blocked on a prompt) > 'running' (live session) > null.
@@ -1344,23 +1411,113 @@ function tracker(serverDefaultView) {
             return this.claudeSessions.includes(taskId) ? 'running' : null;
         },
 
-        // Open the full-page terminal for a task. Fetches the guessed cwd + the
-        // `/task <id>` seed, then opens the terminal and attaches the socket --
-        // which starts the session server-side if one isn't already running.
-        async openClaudeRun(task) {
-            let cwd = '', seed = '';
-            try {
-                const r = await fetch(`/api/tasks/${task.id}/claude-run/defaults`);
-                if (r.ok) { const d = await r.json(); cwd = d.cwd || ''; seed = d.seed || ''; }
-            } catch (_e) { /* defaults are best-effort */ }
-            this.claudeView = task.id;
-            this.claudeMeta = { taskId: task.id, taskTitle: task.title || '', status: 'connecting' };
-            this.$nextTick(() => this._claudeConnect(task.id, cwd, seed));
+        // The tab object for the currently active run, or null.
+        get activeTab() {
+            return this.claudeTabs.find(t => t.taskId === this.claudeView) || null;
         },
 
-        // Create the xterm terminal + WebSocket bridge for a task.
+        // ---- Hash routing (#/run/<id>) ----
+        // The hash is the single source of truth for which run tab is shown, so
+        // the browser Back/Forward buttons and deep links / reloads all work.
+        // Navigation helpers write the hash; _applyRoute (on hashchange and at
+        // boot) reconciles the on-screen view to it.
+        _applyRoute() {
+            const m = location.hash.match(/^#\/run\/(\d+)$/);
+            if (!m) { this.claudeView = null; return; }
+            const id = parseInt(m[1], 10);
+            if (this.claudeTabs.some(t => t.taskId === id)) {
+                this._showTab(id);   // existing tab -> connect on demand + reveal
+                return;
+            }
+            // Deep-link / forward to a session we have no tab for yet: open it
+            // (the socket reattaches the server-side PTY if one is still live).
+            if (this.claudeAvailable) this._openRunById(id);
+            else this.claudeView = null;
+        },
+
+        // Reveal a tab: make it active, connect its terminal if needed (a tab
+        // mirrored from a background session is connected lazily on first view),
+        // then fit + focus once the host is on screen.
+        _showTab(id) {
+            this.claudeView = id;
+            this.$nextTick(() => {
+                this._ensureTabConnected(id);
+                this._fitAndSync(id);
+                _claudeTerms.get(id)?.term.focus();
+            });
+        },
+
+        // Attach a terminal to a tab that has none yet -- reattaches the live
+        // server-side PTY (no seed; seed is ignored on reattach anyway).
+        _ensureTabConnected(id) {
+            if (!_claudeTerms.has(id)) this._claudeConnect(id, '', '');
+        },
+
+        // Launch (or re-focus) a run tab for a task. Fetches the guessed cwd +
+        // `/task <id>` seed for a fresh session, then drives the #/run/<id> hash
+        // which shows the tab and attaches the socket -- starting the server-side
+        // session if one isn't already running.
+        async openClaudeRun(task) {
+            const id = task.id;
+            if (this.claudeTabs.some(t => t.taskId === id)) {
+                this.activateTab(id);   // already open -> just switch to its tab
+                return;
+            }
+            let cwd = '', seed = '';
+            try {
+                const r = await fetch(`/api/tasks/${id}/claude-run/defaults`);
+                if (r.ok) { const d = await r.json(); cwd = d.cwd || ''; seed = d.seed || ''; }
+            } catch (_e) { /* defaults are best-effort */ }
+            this._addTab(id, task.title || '');
+            this.claudeView = id;
+            location.hash = '#/run/' + id;   // record in history (idempotent _applyRoute)
+            this.$nextTick(() => this._claudeConnect(id, cwd, seed));
+        },
+
+        // Open a tab from just an id (deep link / browser-forward / reload).
+        // Looks up the title + run defaults, then connects like openClaudeRun.
+        async _openRunById(id) {
+            let title = '', cwd = '', seed = '';
+            try {
+                const r = await fetch(`/api/tasks/${id}`);
+                if (r.ok) title = (await r.json()).title || '';
+            } catch (_e) { /* best-effort */ }
+            try {
+                const r = await fetch(`/api/tasks/${id}/claude-run/defaults`);
+                if (r.ok) { const d = await r.json(); cwd = d.cwd || ''; seed = d.seed || ''; }
+            } catch (_e) { /* best-effort */ }
+            this._addTab(id, title);
+            this.claudeView = id;
+            this.$nextTick(() => this._claudeConnect(id, cwd, seed));
+        },
+
+        // Switch to an already-open tab. Goes through the hash so the switch
+        // lands in browser history; if the hash already matches (no event would
+        // fire) reconcile directly.
+        activateTab(id) {
+            if (location.hash === '#/run/' + id) {
+                this._showTab(id);   // same hash -> no event would fire; reveal directly
+            } else {
+                location.hash = '#/run/' + id;
+            }
+        },
+
+        _addTab(id, title) {
+            if (this.claudeTabs.some(t => t.taskId === id)) return;
+            this.claudeTabs.push({ taskId: id, taskTitle: title, status: 'connecting' });
+        },
+
+        _setTabStatus(id, status) {
+            const t = this.claudeTabs.find(x => x.taskId === id);
+            if (t) t.status = status;
+        },
+
+        // Create the xterm terminal + WebSocket bridge for a task's tab. Attaches
+        // to the per-tab host node (#claude-term-<id>) and stores the live handles
+        // in the module-level _claudeTerms map.
         _claudeConnect(taskId, cwd, seed) {
-            const el = this.$refs.claudeTerm;
+            if (_claudeTerms.has(taskId)) return;   // don't double-connect a tab
+            const el = document.getElementById('claude-term-' + taskId);
             if (!el || typeof Terminal === 'undefined') return;
             const term = new Terminal({
                 cursorBlink: true,
@@ -1372,23 +1529,16 @@ function tracker(serverDefaultView) {
             const fit = new FitAddon.FitAddon();
             term.loadAddon(fit);
             term.open(el);
-            fit.fit();
+            try { fit.fit(); } catch (_e) { /* host not laid out yet */ }
 
             const proto = location.protocol === 'https:' ? 'wss' : 'ws';
             const ws = new WebSocket(`${proto}://${location.host}/ws/claude/${taskId}`);
-            const onResize = () => {
-                try { fit.fit(); } catch (_e) { return; }
-                if (ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
-                }
-            };
-            _claudeTermState = { ws, term, fit, taskId, onResize };
+            _claudeTerms.set(taskId, { ws, term, fit });
 
             ws.onopen = () => {
                 ws.send(JSON.stringify({ type: 'attach', cwd, seed }));
-                onResize();
-                window.addEventListener('resize', onResize);
-                if (this.claudeMeta && this.claudeMeta.taskId === taskId) this.claudeMeta.status = 'running';
+                this._fitAndSync(taskId);
+                this._setTabStatus(taskId, 'running');
                 this.loadClaudeSessions();
             };
             ws.onmessage = (ev) => {
@@ -1396,11 +1546,11 @@ function tracker(serverDefaultView) {
                 if (msg.type === 'output') {
                     term.write(_b64ToBytes(msg.data));
                 } else if (msg.type === 'exit') {
-                    if (this.claudeMeta && this.claudeMeta.taskId === taskId) this.claudeMeta.status = 'exited';
+                    this._setTabStatus(taskId, 'exited');
                     this.loadClaudeSessions();
                 } else if (msg.type === 'error') {
                     term.write(`\r\n\x1b[31m[ntasker] ${msg.error}\x1b[0m\r\n`);
-                    if (this.claudeMeta && this.claudeMeta.taskId === taskId) this.claudeMeta.status = 'exited';
+                    this._setTabStatus(taskId, 'exited');
                 }
             };
             ws.onclose = () => { this.loadClaudeSessions(); };
@@ -1419,46 +1569,69 @@ function tracker(serverDefaultView) {
                 }
             });
             // Focus once the browser has painted the just-shown terminal, so
-            // keystrokes land in the PTY immediately. A bare focus() right after
-            // open() can be dropped while the view is still being revealed.
-            requestAnimationFrame(() => term.focus());
+            // keystrokes land in the PTY immediately -- but only if this tab is
+            // still the active one by then.
+            requestAnimationFrame(() => { if (this.claudeView === taskId) term.focus(); });
         },
 
-        // Drop the on-screen terminal + socket. The *server* PTY keeps running,
-        // so reopening reattaches (or a stopped/exited one is cleaned up).
-        _claudeTeardown() {
-            if (!_claudeTermState) return;
-            window.removeEventListener('resize', _claudeTermState.onResize);
-            try { _claudeTermState.ws.close(); } catch (_e) { /* already closing */ }
-            try { _claudeTermState.term.dispose(); } catch (_e) { /* already disposed */ }
-            _claudeTermState = null;
-        },
-
-        // Back to the list/kanban. The session keeps running in the background.
-        backFromClaudeRun() {
-            this._claudeTeardown();
-            this.claudeView = null;
-            this.claudeMeta = null;
-            this.loadClaudeSessions();
-        },
-
-        // Ask the server to terminate the session (kills the process group).
-        stopClaudeRun() {
-            if (_claudeTermState && _claudeTermState.ws.readyState === WebSocket.OPEN) {
-                _claudeTermState.ws.send(JSON.stringify({ type: 'stop' }));
+        // Fit a tab's terminal to its (now visible) host and tell the PTY the new
+        // size. No-op for a tab whose terminal isn't built yet / is hidden.
+        _fitAndSync(id) {
+            const s = _claudeTerms.get(id);
+            if (!s) return;
+            try { s.fit.fit(); } catch (_e) { return; }
+            if (s.ws.readyState === WebSocket.OPEN) {
+                s.ws.send(JSON.stringify({ type: 'resize', cols: s.term.cols, rows: s.term.rows }));
             }
         },
 
-        // Mark the running task done straight from the terminal header. The
-        // PATCH also tears down the server-side session (status=done -> stop),
-        // so we just close the on-screen terminal and return to the board.
+        // Drop one tab's on-screen terminal + socket. The *server* PTY keeps
+        // running, so reopening reattaches (or a stopped/exited one is reaped).
+        _teardownTerm(id) {
+            const s = _claudeTerms.get(id);
+            if (!s) return;
+            try { s.ws.close(); } catch (_e) { /* already closing */ }
+            try { s.term.dispose(); } catch (_e) { /* already disposed */ }
+            _claudeTerms.delete(id);
+        },
+
+        // Drop a tab immediately (tear down its terminal + remove it) and move to
+        // a neighbor or the board. Used when a session has ended (done/stop) so
+        // the strip updates without waiting for the next session poll.
+        _dropTab(id) {
+            const idx = this.claudeTabs.findIndex(t => t.taskId === id);
+            this._teardownTerm(id);
+            if (idx >= 0) this.claudeTabs.splice(idx, 1);
+            if (this.claudeView !== id) return;
+            const next = this.claudeTabs[idx] || this.claudeTabs[idx - 1] || null;
+            if (next) this.activateTab(next.taskId);
+            else location.hash = '#/';
+        },
+
+        // Back to the board. Sessions + their tabs keep streaming in the
+        // background; reopening any run re-shows the strip.
+        backFromClaudeRun() {
+            location.hash = '#/';
+            this.loadClaudeSessions();
+        },
+
+        // Ask the server to terminate the active session (kills the process group).
+        stopClaudeRun() {
+            const s = _claudeTerms.get(this.claudeView);
+            if (s && s.ws.readyState === WebSocket.OPEN) s.ws.send(JSON.stringify({ type: 'stop' }));
+        },
+
+        // Mark the active task done straight from the run header. The PATCH tears
+        // down the server-side session (the reaper stops it on status=done), so
+        // we just drop its tab and refresh.
         async markDoneFromClaudeRun() {
-            if (!this.claudeMeta) return;
-            const id = this.claudeMeta.taskId;
+            const id = this.claudeView;
+            if (id == null) return;
             const r = await this.patch(id, { status: 'done' });
             if (!r || !r.ok) return;
-            this.backFromClaudeRun();
+            this._dropTab(id);
             await this.refreshAll();
+            this.loadClaudeSessions();
         },
     };
 }

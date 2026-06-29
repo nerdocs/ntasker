@@ -95,6 +95,16 @@
                     </template>
                 </span>
                 <span class="badge bg-secondary-lt ms-2" x-text="proj.open_count"></span>
+                {# Quick "+": open the new-task form pre-filled with this project. #}
+                {# Skipped for the cross-project sentinel (no project to seed). #}
+                <template x-if="proj.name !== '__none__'">
+                    <button type="button" class="btn btn-sm btn-ghost-secondary px-1 py-0 ms-1 project-add-btn"
+                            @click.stop.prevent="newTaskForProject(proj.name)"
+                            :title="$i18n('new_task_for_project')"
+                            :aria-label="$i18n('new_task_for_project')">
+                        <i class="ti ti-plus"></i>
+                    </button>
+                </template>
             </label>
         </template>
 
@@ -371,6 +381,7 @@
                                 <div class="col-md-5">
                                     <label class="form-label">{{ t('Title') }} <span class="text-danger">*</span></label>
                                     <input type="text" class="form-control" x-model="form.title" required maxlength="500"
+                                           x-ref="titleInput"
                                            :placeholder="$i18n('title_placeholder')">
                                 </div>
                                 <div class="col-12">
@@ -869,52 +880,79 @@
         </div>
 
         {# === Claude run view -- full-page; replaces list/kanban while open. #}
-        {# The run keeps streaming in the background when you go Back. === #}
+        {# One tab per live session; the runs keep streaming in the background #}
+        {# when you go Back. Each tab owns its own xterm + WebSocket. === #}
         <div class="page-body claude-run-page" x-show="claudeView !== null" x-cloak>
             <div class="container-fluid d-flex flex-column h-100">
-                <template x-if="claudeMeta">
                 <div class="d-flex flex-column flex-fill" style="min-height: 0">
-                    {# Header: back, title, live status, stop. #}
+                    {# Header: back, per-session tabs, live status + actions for the active tab. #}
                     <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
                         <button type="button" class="btn btn-ghost-secondary" @click="backFromClaudeRun()">
                             <i class="ti ti-arrow-left me-1 fs-2"></i><span x-text="$i18n('claude_back')"></span>
                         </button>
-                        <h2 class="page-title mb-0 text-truncate">
-                            <i class="ti ti-robot me-1"></i>
-                            <span class="font-monospace text-muted" x-text="`#${claudeMeta.taskId}`"></span>
-                            <span class="ms-1" x-text="claudeMeta.taskTitle"></span>
-                        </h2>
+                        {# Tab strip: one per open session. Click switches (drives the #/run/<id> hash). #}
+                        <ul class="nav nav-tabs claude-tabs flex-fill border-0" role="tablist">
+                            <template x-for="tab in claudeTabs" :key="tab.taskId">
+                                <li class="nav-item" role="presentation">
+                                    <a class="nav-link d-flex align-items-center" href="#"
+                                       :class="claudeView === tab.taskId ? 'active' : ''"
+                                       :title="tab.status === 'waiting' ? $i18n('claude_waiting') : tab.taskTitle"
+                                       @click.prevent="activateTab(tab.taskId)">
+                                        <span class="status-dot me-2"
+                                              :class="{
+                                                  'status-dot-animated bg-azure': tab.status === 'connecting' || tab.status === 'running',
+                                                  'status-dot-animated bg-orange': tab.status === 'waiting',
+                                                  'bg-secondary': tab.status === 'exited',
+                                              }"></span>
+                                        <span class="font-monospace text-muted" x-text="`#${tab.taskId}`"></span>
+                                        <span class="ms-1 text-truncate" style="max-width: 14rem" x-text="tab.taskTitle"></span>
+                                    </a>
+                                </li>
+                            </template>
+                        </ul>
+                        <template x-if="activeTab">
                         <span class="ms-auto d-flex align-items-center gap-2">
-                            <template x-if="claudeMeta.status === 'connecting'">
+                            <template x-if="activeTab && activeTab.status === 'connecting'">
                                 <span class="badge bg-azure-lt">
                                     <span class="spinner-border spinner-border-sm me-1"></span>
                                     <span x-text="$i18n('claude_connecting')"></span>
                                 </span>
                             </template>
-                            <template x-if="claudeMeta.status === 'running'">
+                            <template x-if="activeTab && activeTab.status === 'running'">
                                 <span class="badge bg-azure-lt">
                                     <span class="status-dot status-dot-animated bg-azure me-1"></span>
                                     <span x-text="$i18n('claude_running')"></span>
                                 </span>
                             </template>
-                            <template x-if="claudeMeta.status === 'exited'">
+                            <template x-if="activeTab && activeTab.status === 'waiting'">
+                                <span class="badge bg-orange-lt">
+                                    <span class="status-dot status-dot-animated bg-orange me-1"></span>
+                                    <span x-text="$i18n('claude_waiting')"></span>
+                                </span>
+                            </template>
+                            <template x-if="activeTab && activeTab.status === 'exited'">
                                 <span class="badge bg-secondary-lt" x-text="$i18n('claude_run_finished')"></span>
                             </template>
                             <button type="button" class="btn btn-ghost-success" @click="markDoneFromClaudeRun()">
                                 <i class="ti ti-check me-1 fs-3"></i><span x-text="$i18n('claude_mark_done')"></span>
                             </button>
-                            <template x-if="claudeMeta.status !== 'exited'">
+                            <template x-if="activeTab && activeTab.status !== 'exited'">
                                 <button type="button" class="btn btn-ghost-danger" @click="stopClaudeRun()">
                                     <i class="ti ti-player-stop me-1 fs-3"></i><span x-text="$i18n('claude_stop')"></span>
                                 </button>
                             </template>
                         </span>
+                        </template>
                     </div>
 
-                    {# The real Claude Code TUI, rendered by xterm.js into this element. #}
-                    <div class="claude-terminal flex-fill mb-3" x-ref="claudeTerm"></div>
+                    {# One xterm host per tab; only the active one is shown. Stable #}
+                    {# :id lets _claudeConnect attach the Terminal to the right node. #}
+                    <template x-for="tab in claudeTabs" :key="tab.taskId">
+                        <div class="claude-terminal flex-fill mb-3"
+                             :id="`claude-term-${tab.taskId}`"
+                             x-show="claudeView === tab.taskId"></div>
+                    </template>
                 </div>
-                </template>
             </div>
         </div>
     </div>

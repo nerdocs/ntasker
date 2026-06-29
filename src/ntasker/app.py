@@ -494,6 +494,7 @@ def build_js_strings() -> dict[str, str]:
         "claude_connecting": _("Connecting..."),
         "claude_running": _("Running..."),
         "claude_run_finished": _("Session ended"),
+        "new_task_for_project": _("New task for this project"),
         # Tag-management page
         "tags_manage_title": _("Manage tags"),
         "tags_table_intro": _(

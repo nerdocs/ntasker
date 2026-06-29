@@ -195,6 +195,49 @@
     height: 100% !important;
 }
 
+/* Per-session tab strip in the run view (one tab per live session). Inactive
+ * tabs are muted; the active one is clearly lifted out with a primary tint,
+ * accent underline and bolder text so the current session is unmistakable. */
+.claude-tabs {
+    border-bottom: 0;
+}
+.claude-tabs .nav-link {
+    padding: 0.3rem 0.75rem;
+    cursor: pointer;
+    color: var(--tblr-secondary);
+    border: 1px solid transparent;
+    border-radius: var(--tblr-border-radius) var(--tblr-border-radius) 0 0;
+    opacity: 0.7;
+}
+.claude-tabs .nav-link:hover {
+    opacity: 1;
+    background-color: rgba(var(--tblr-secondary-rgb), 0.1);
+}
+.claude-tabs .nav-link.active {
+    opacity: 1;
+    font-weight: 600;
+    color: var(--tblr-primary);
+    background-color: rgba(var(--tblr-primary-rgb), 0.14);
+    border-color: rgba(var(--tblr-primary-rgb), 0.35);
+    border-bottom: 2px solid var(--tblr-primary);
+}
+.claude-tabs .nav-link.active .text-muted {
+    color: var(--tblr-primary) !important;
+    opacity: 0.85;
+}
+
+/* Sidebar "+" quick-add button on a project row: stays out of the way until
+ * the row is hovered/focused, then offers a one-click new task for the project. */
+.project-add-btn {
+    line-height: 1;
+    opacity: 0;
+    transition: opacity 0.1s ease-in-out;
+}
+.form-check:hover .project-add-btn,
+.project-add-btn:focus-visible {
+    opacity: 1;
+}
+
 /* "Run with Claude" button -- ghost (bare): the Claude logo tile it carries is
  * already terracotta/white, so the button itself stays transparent. The orange
  * foreground tints the running spinner Claude-coloured. */

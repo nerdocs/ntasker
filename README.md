@@ -113,6 +113,17 @@ make install   # uv sync
 make run       # uv run ntasker serve --reload
 ```
 
+For a global `ntasker` command that runs live from your working tree -- edits take effect immediately, no rebuild --
+install it editable as a uv tool:
+
+```bash
+uv tool install -e .   # global `ntasker`, live from src/
+```
+
+This is independent of the PyPI install above; the two compete for the same `~/.local/bin/ntasker` symlink and the same
+`ntasker.service` unit, so use one or the other as your active setup. To validate the real PyPI install without
+disturbing your repo setup, install it into a throwaway venv instead.
+
 ## Settings
 
 Required for the project sidebar to populate: configure where your project

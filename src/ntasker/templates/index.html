@@ -510,6 +510,34 @@
                     </div>
                 </div>
 
+                {# Running-projects chips: one per project with a live Claude #}
+                {# session, so you see at a glance what is running in parallel #}
+                {# right now. Click toggles that project's filter. Auto-updates #}
+                {# from the session poll; hidden when nothing is running. #}
+                <div class="running-projects mb-3 d-flex flex-wrap align-items-center gap-2"
+                     x-show="runningProjectChips.length > 0" x-cloak>
+                    <span class="text-secondary small text-uppercase fw-bold me-1">
+                        <i class="ti ti-player-play me-1"></i><span x-text="$i18n('running_now')"></span>
+                    </span>
+                    <template x-for="chip in runningProjectChips" :key="chip.name">
+                        <button type="button"
+                                class="badge running-project-chip d-inline-flex align-items-center"
+                                :class="chip.waiting ? 'bg-orange-lt' : 'bg-azure-lt'"
+                                @click="toggleProject(chip.name)"
+                                :title="chip.name === '__none__' ? $i18n('cross_project') : chip.name">
+                            <span class="status-dot status-dot-animated me-2"
+                                  :class="chip.waiting ? 'bg-orange' : 'bg-azure'"></span>
+                            <template x-if="chip.name === '__none__'">
+                                <span><i class="ti ti-asterisk me-1"></i><span x-text="$i18n('cross_project')"></span></span>
+                            </template>
+                            <template x-if="chip.name !== '__none__'">
+                                <span x-text="chip.name"></span>
+                            </template>
+                            <span class="ms-2 badge bg-secondary-lt" x-show="chip.count > 1" x-text="chip.count"></span>
+                        </button>
+                    </template>
+                </div>
+
                 {# Tabs -- list view only. Kanban renders its own column layout below. #}
                 <ul class="nav nav-tabs mb-3" role="tablist" x-show="viewMode === 'list'" x-cloak>
                     <li class="nav-item" role="presentation">

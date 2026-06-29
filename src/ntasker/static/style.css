@@ -253,6 +253,18 @@
     opacity: 1;
 }
 
+/* Running-projects chips: pill buttons showing each project with a live Claude
+ * session. Rendered as <button> for accessibility, but styled as a flat badge
+ * (no button chrome) so it reads as a chip, not a control. */
+.running-project-chip {
+    border: 0;
+    cursor: pointer;
+    line-height: 1.2;
+}
+.running-project-chip:hover {
+    filter: brightness(0.95);
+}
+
 /* "Run with Claude" button -- ghost (bare): the Claude logo tile it carries is
  * already terracotta/white, so the button itself stays transparent. The orange
  * foreground tints the running spinner Claude-coloured. */

@@ -137,6 +137,10 @@ function tracker(serverDefaultView) {
         // Subset of claudeSessions that has gone silent long enough to look
         // blocked on a prompt -- drives the "waiting for input" highlight.
         claudeWaiting: [],
+        // Project of each active session, keyed by task id (string keys, as
+        // they arrive from JSON). Feeds the running-projects chips and the
+        // same-project parallel-run warning.
+        claudeSessionProjects: {},
 
         // Multi-value project filter. Empty list = no filter (all tasks).
         // Special value '__none__' = include cross-project tasks (project IS NULL).
@@ -1406,6 +1410,7 @@ function tracker(serverDefaultView) {
                     const d = await r.json();
                     this.claudeSessions = d.active || [];
                     this.claudeWaiting = d.waiting || [];
+                    this.claudeSessionProjects = d.projects || {};
                     this._syncTabsFromSessions();
                 }
             } catch (_e) { /* leave the last known set */ }
@@ -1452,6 +1457,35 @@ function tracker(serverDefaultView) {
         taskRunPhase(taskId) {
             if (this.claudeWaiting.includes(taskId)) return 'waiting';
             return this.claudeSessions.includes(taskId) ? 'running' : null;
+        },
+
+        // One chip per project that currently has at least one live Claude
+        // session -- "what's running in parallel right now". Cross-project
+        // sessions (no project) are grouped under the PROJECT_NONE sentinel.
+        // ``count`` = sessions in that project; ``waiting`` = any is blocked on
+        // a prompt. Sorted by name so chip order is stable across polls.
+        get runningProjectChips() {
+            const waiting = new Set(this.claudeWaiting);
+            const byProject = new Map();
+            for (const id of this.claudeSessions) {
+                const proj = this.claudeSessionProjects[String(id)] || PROJECT_NONE;
+                const chip = byProject.get(proj) || { name: proj, count: 0, waiting: false };
+                chip.count += 1;
+                if (waiting.has(id)) chip.waiting = true;
+                byProject.set(proj, chip);
+            }
+            return [...byProject.values()].sort((a, b) => a.name.localeCompare(b.name));
+        },
+
+        // True when ``project`` already has a live session for a DIFFERENT task
+        // -- two agents in one project can collide. Cross-project (null) tasks
+        // never count: they share no working dir to clobber.
+        _projectHasOtherSession(project, exceptTaskId) {
+            if (!project) return false;
+            return this.claudeSessions.some(id =>
+                id !== exceptTaskId &&
+                (this.claudeSessionProjects[String(id)] || null) === project
+            );
         },
 
         // The tab object for the currently active run, or null.
@@ -1504,6 +1538,12 @@ function tracker(serverDefaultView) {
             const id = task.id;
             if (this.claudeTabs.some(t => t.taskId === id)) {
                 this.activateTab(id);   // already open -> just switch to its tab
+                return;
+            }
+            // Same-project collision warning: another agent is already live in
+            // this project. Warn, but don't prevent -- the user may proceed.
+            if (this._projectHasOtherSession(task.project, id) &&
+                !confirm(_i('confirm_parallel_run', { project: task.project }))) {
                 return;
             }
             let cwd = '', seed = '';

@@ -494,6 +494,12 @@ def build_js_strings() -> dict[str, str]:
         "claude_connecting": _("Connecting..."),
         "claude_running": _("Running..."),
         "claude_run_finished": _("Session ended"),
+        "running_now": _("Running now"),
+        "confirm_parallel_run": _(
+            'Project "{project}" already has a running Claude session. '
+            "Two agents in one project can conflict and cause inconsistencies. "
+            "Start another anyway?"
+        ),
         "new_task_for_project": _("New task for this project"),
         # Tag-management page
         "tags_manage_title": _("Manage tags"),
@@ -934,13 +940,26 @@ def api_claude_sessions() -> JSONResponse:
 
     ``active``: every task id with a live session. ``waiting``: the subset that
     has gone silent long enough to look blocked on a prompt (see
-    :func:`ntasker.claude_runner.session_states`).
+    :func:`ntasker.claude_runner.session_states`). ``projects``: the project of
+    each active task (id -> name|null) -- feeds the running-projects chips and
+    the same-project parallel-run warning on the frontend.
     """
     states = session_states()
+    active = list(states.keys())
+    projects: dict[int, str | None] = {}
+    if active:
+        placeholders = ",".join("?" * len(active))
+        with get_conn() as conn:
+            rows = conn.execute(
+                f"SELECT id, project FROM tasks WHERE id IN ({placeholders})",
+                active,
+            ).fetchall()
+        projects = {row["id"]: row["project"] for row in rows}
     return JSONResponse(
         {
-            "active": list(states.keys()),
+            "active": active,
             "waiting": [tid for tid, st in states.items() if st == "waiting"],
+            "projects": projects,
         }
     )
 

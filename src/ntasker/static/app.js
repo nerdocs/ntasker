@@ -467,13 +467,16 @@ function tracker(serverDefaultView) {
         },
 
         // New-task accordion toggle. On expand, move focus into the Project
-        // field -- but only after $nextTick, since the form body is x-show'd
-        // and still display:none at the moment of the click (focus() on a
-        // hidden element is a no-op).
+        // field. Queried by id, not $refs: the input lives inside a nested
+        // x-data combobox, so its x-ref would not register on this root
+        // component. The focus is deferred via $nextTick *and* rAF: at
+        // $nextTick the x-show'd form body is still display:none (focus() on a
+        // hidden element is a no-op), so we wait one frame for it to paint.
         toggleNewTaskForm() {
             this.formOpen = !this.formOpen;
             if (this.formOpen) {
-                this.$nextTick(() => this.$refs.projectInput?.focus());
+                this.$nextTick(() => requestAnimationFrame(
+                    () => document.getElementById('projectinput-form')?.focus()));
             }
         },
 

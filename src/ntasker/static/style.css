@@ -34,6 +34,21 @@
     color: var(--tblr-body-color);
 }
 
+/* New-task project field: live match indicator at the right edge.
+ * The input gets right padding so its text never slides under the icon. */
+.project-validity-box .form-control {
+    padding-right: 2rem;
+}
+.project-validity {
+    position: absolute;
+    top: 50%;
+    right: 0.5rem;
+    transform: translateY(-50%);
+    line-height: 1;
+    pointer-events: none;
+    z-index: 5;
+}
+
 .list-group-item .btn-list {
     flex-wrap: nowrap;
 }

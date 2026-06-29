@@ -331,7 +331,7 @@
                                     {# (Tab/Enter accept the highlighted suggestion, like tags) or #}
                                     {# type a new name -- created implicitly when the task is saved. #}
                                     {# Empty = cross-project. #}
-                                    <div class="position-relative" x-data="{ focused: false }">
+                                    <div class="position-relative project-validity-box" x-data="{ focused: false }">
                                         <input type="text" class="form-control"
                                                x-model="form.project"
                                                x-ref="projectInput"
@@ -346,6 +346,12 @@
                                                @keydown.arrow-up.prevent="onProjectArrow('form', -1)"
                                                @keydown.escape="focused = false; projectHighlight.form = -1"
                                                :placeholder="$i18n('project_placeholder')">
+                                        {# Live match indicator: green check on an exact existing-project match, #}
+                                        {# red X on any other non-empty value. Gates the Create buttons below. #}
+                                        <span class="project-validity" x-show="form.project.trim()" x-cloak>
+                                            <i class="ti ti-check text-green" x-show="isProjectValid('form')"></i>
+                                            <i class="ti ti-x text-danger" x-show="!isProjectValid('form')"></i>
+                                        </span>
                                         <div class="dropdown-menu show w-100 mt-1"
                                              x-show="focused && projectSuggestions('form').length > 0"
                                              style="max-height: 200px; overflow-y: auto;"
@@ -486,13 +492,13 @@
                                     </div>
                                 </div>
                                 <div class="col-12 text-end">
-                                    <button type="submit" class="btn btn-sm btn-primary" :disabled="!form.title.trim()">
+                                    <button type="submit" class="btn btn-sm btn-primary" :disabled="!form.title.trim() || !isProjectValid('form')">
                                         <i class="ti ti-plus me-1 fs-3"></i>
                                         {{ t('Create') }}
                                     </button>
                                     {# Create + immediately hand the task to Claude -- only when the `claude` CLI + a PTY are available. #}
                                     <button type="button" class="btn btn-sm btn-claude-cta ms-2" x-show="claudeAvailable"
-                                            :disabled="!form.title.trim()"
+                                            :disabled="!form.title.trim() || !isProjectValid('form')"
                                             @click="createTask(true)"
                                             :title="$i18n('claude_run')">
                                         <img src="/static/claude.webp?v={{ static_bust('claude.webp') }}" class="claude-logo-icon me-1" alt="">

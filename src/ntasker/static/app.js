@@ -701,7 +701,7 @@ function tracker(serverDefaultView) {
         async createTask(run = false) {
             // Commit any pending tag input before submit.
             this.commitTagInput('form');
-            if (!this.form.title.trim()) return;
+            if (!this.form.title.trim() || !this.isProjectValid('form')) return;
             const body = {
                 project: this.form.project || null,
                 title: this.form.title.trim(),
@@ -1129,19 +1129,36 @@ function tracker(serverDefaultView) {
             return which === 'edit' ? this.editing : this.form;
         },
 
-        // Matching project names for the current query. Excludes an exact
-        // full match so the dropdown closes once a name is fully entered.
+        // Matching project names for the current query, ranked: exact match
+        // first, then startswith, then contains. Non-matches are dropped.
         projectSuggestions(which) {
             const bucket = this._projectBucket(which);
             if (!bucket) return [];
             const q = (bucket.project || '').trim().toLowerCase();
             if (!q) return [];
             return this.projectNames
-                .filter(name => {
+                .map(name => {
                     const n = name.toLowerCase();
-                    return n.includes(q) && n !== q;
+                    let rank = -1;
+                    if (n === q) rank = 0;
+                    else if (n.startsWith(q)) rank = 1;
+                    else if (n.includes(q)) rank = 2;
+                    return { name, rank };
                 })
+                .filter(e => e.rank >= 0)
+                .sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name))
+                .map(e => e.name)
                 .slice(0, 8);
+        },
+
+        // True iff the field holds the exact name of an existing project.
+        // Empty / partial / unknown names are invalid (no cross-project here).
+        isProjectValid(which) {
+            const bucket = this._projectBucket(which);
+            if (!bucket) return false;
+            const q = (bucket.project || '').trim();
+            if (!q) return false;
+            return this.projectNames.includes(q);
         },
 
         selectProject(which, name) {
@@ -1161,15 +1178,41 @@ function tracker(serverDefaultView) {
             this.projectHighlight[which] = i;
         },
 
-        // Tab completes to a suggestion (highlighted one if any, else the first
-        // match) instead of letting Tab move focus out of the field.
+        // Move focus to the next focusable control after `el`, skipping the
+        // suggestion dropdown so Tab lands on the next form field, not a
+        // dropdown item. Scoped to the enclosing form / modal.
+        _focusNextFrom(el) {
+            if (!el) return;
+            const scope = el.closest('form, .modal-content') || document;
+            const focusables = Array.from(
+                scope.querySelectorAll('input, select, textarea, button'))
+                .filter(n => !n.disabled && n.tabIndex !== -1
+                    && n.offsetParent !== null && !n.closest('.dropdown-menu'));
+            const i = focusables.indexOf(el);
+            if (i >= 0 && i + 1 < focusables.length) focusables[i + 1].focus();
+        },
+
+        // Tab behaviour:
+        //  - an arrow-highlighted suggestion always wins (accept it);
+        //  - otherwise, if the field is already an exact match, leave it be and
+        //    let Tab move focus on (never silently swap to a contains-match);
+        //  - otherwise complete to the top-ranked suggestion.
+        // When Tab makes a selection it suppresses the native focus move, so we
+        // advance focus to the next field manually afterwards.
         onProjectTab(event, which) {
             const sugg = this.projectSuggestions(which);
-            if (!sugg.length) return;
             const hi = this.projectHighlight[which];
-            const pick = (hi >= 0 && hi < sugg.length) ? sugg[hi] : sugg[0];
+            if (hi >= 0 && hi < sugg.length) {
+                event.preventDefault();
+                this.selectProject(which, sugg[hi]);
+                this._focusNextFrom(event.target);
+                return;
+            }
+            if (this.isProjectValid(which)) return;
+            if (!sugg.length) return;
             event.preventDefault();
-            this.selectProject(which, pick);
+            this.selectProject(which, sugg[0]);
+            this._focusNextFrom(event.target);
         },
 
         // Enter accepts a highlighted suggestion; otherwise it falls through

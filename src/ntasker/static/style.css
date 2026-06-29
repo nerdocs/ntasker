@@ -190,6 +190,14 @@
     height: 100vh;
     overflow: hidden;
 }
+.page-claude-run .page-wrapper {
+    /* Tabler's .page-wrapper keeps min-height:auto, so it refuses to shrink
+     * below the tall xterm canvas inside it -- the terminal then overflows the
+     * viewport-pinned .page (clipped, bottom rows unreachable) when the window
+     * gets shorter. min-height:0 lets the whole flex chain shrink so the fit
+     * addon (refit on window resize) can size the terminal to the real space. */
+    min-height: 0;
+}
 .claude-run-page {
     /* Flex-fill the page-wrapper and cancel Tabler's default .page-body top/
      * bottom margins, which would otherwise push the terminal off the bottom. */

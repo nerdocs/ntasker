@@ -4,6 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [2.13.0] — 2026-06-29
+Run-view session tabs + project quick-add; ranked project-field autocomplete & running-project chips; ENTER-to-save dialogs.
+
 ## [2.12.0] — 2026-06-28
 `ntasker service restart` (deploy hook); defers while task sessions run; settings restart button disables + warns.
 

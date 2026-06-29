@@ -376,6 +376,8 @@
                                 <div class="col-12">
                                     <label class="form-label">{{ t('Description') }}</label>
                                     <textarea class="form-control" rows="2" x-model="form.description"
+                                              @keydown.enter.ctrl.prevent="createTask()"
+                                              @keydown.enter.meta.prevent="createTask()"
                                               :placeholder="$i18n('description_placeholder')"></textarea>
                                 </div>
                                 <div class="col-md-6">
@@ -921,6 +923,7 @@
     <div class="modal modal-blur fade" tabindex="-1" x-show="editing" x-cloak
          :class="editing ? 'show d-block' : ''"
          :style="editing ? 'background-color: rgba(0,0,0,0.4)' : ''"
+         @keydown.enter="onDialogEnter($event, () => saveEdit())"
          @keydown.escape.window="editing = null">
         <div class="modal-dialog" role="document" x-show="editing" @click.outside="editing = null">
             <div class="modal-content" x-show="editing">

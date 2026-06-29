@@ -813,6 +813,19 @@ function tracker(serverDefaultView) {
             await this.refreshAll();
         },
 
+        // Enter in a dialog triggers its default action. Bound on the modal
+        // root so it catches Enter bubbling up from any field. Skips a
+        // <textarea> on plain Enter (that's a newline -- use Ctrl/Cmd+Enter to
+        // submit) and bails when a child handler already consumed the event
+        // (combobox inputs preventDefault to accept a suggestion / commit a tag).
+        onDialogEnter(event, action) {
+            if (event.defaultPrevented) return;
+            const tag = (event.target.tagName || '').toLowerCase();
+            if (tag === 'textarea' && !(event.ctrlKey || event.metaKey)) return;
+            event.preventDefault();
+            action();
+        },
+
         // Pull a server-supplied error message out of a failed response,
         // falling back to a generic localized key. Used so dependency
         // validation errors (cycle / missing / self) surface verbatim.

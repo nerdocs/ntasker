@@ -174,6 +174,7 @@
     <div class="modal modal-blur fade" tabindex="-1" x-show="deleteTarget !== null" x-cloak
          :class="deleteTarget !== null ? 'show d-block' : ''"
          :style="deleteTarget !== null ? 'background-color: rgba(0,0,0,0.4)' : ''"
+         @keydown.enter.window="deleteTarget !== null && doDelete()"
          @keydown.escape.window="closeDelete()">
         <div class="modal-dialog" role="document" @click.outside="closeDelete()">
             <div class="modal-content">

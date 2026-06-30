@@ -4,6 +4,18 @@
     display: none !important;
 }
 
+/* Kill horizontal page scroll. xterm.js parks a 50000px-wide WidthCache probe
+ * (position:absolute; top:-50000px; width:50000px) directly on <body> while the
+ * Claude run view is open -- it escapes the run view's own overflow:hidden and
+ * blows the document's scroll width out to 50000px (scroll right into empty
+ * space). overflow-x:clip kills it WITHOUT establishing a scroll container, so
+ * vertical scroll and position:sticky keep working. Must be on BOTH html and
+ * body -- the html<->body overflow propagation leaves it visible otherwise. */
+html,
+body {
+    overflow-x: clip;
+}
+
 /* Search field clear button: sits at the right edge of the search input.
  * The input gets right padding so its text never slides under the button. */
 .search-box {
@@ -93,7 +105,11 @@
  */
 .kanban-board {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr 1fr;
+    /* minmax(0, 1fr), not a bare 1fr (= minmax(auto, 1fr)): the auto floor lets a
+     * card's min-content (e.g. a long unbreakable URL/path) push its column far
+     * wider than 1/4 and blow the board out. The 0 floor lets tracks shrink so
+     * the card text wraps (see .kanban-card overflow-wrap) instead. */
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
     gap: 0.75rem;
     /* Stretch every column to the height of the tallest one so the whole
      * column (which is the drop target) stays a big, easy-to-hit area --
@@ -101,7 +117,7 @@
     align-items: stretch;
 }
 .kanban-board.kanban-done-collapsed {
-    grid-template-columns: 1fr 1fr 1fr auto;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) auto;
 }
 @media (max-width: 767.98px) {
     .kanban-board,
@@ -166,6 +182,9 @@
     border-radius: var(--tblr-border-radius);
     padding: 0.5rem 0.625rem;
     cursor: grab;
+    /* Wrap long unbreakable tokens (URLs, file paths) instead of letting them
+     * widen the card and overflow the board horizontally. */
+    overflow-wrap: anywhere;
     transition: box-shadow 0.1s ease, transform 0.1s ease;
 }
 .kanban-card:hover {

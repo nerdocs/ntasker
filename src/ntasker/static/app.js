@@ -1645,6 +1645,17 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             return this.claudeSessions.includes(taskId) ? 'running' : null;
         },
 
+        // Tooltip/aria for the per-task run button. A live session means "switch
+        // to it" (not "run"); an idle session blocked on a prompt keeps the
+        // "waiting for input" hint; no session means "run".
+        runButtonTitle(task) {
+            const phase = this.taskRunPhase(task.id);
+            if (phase === 'waiting') return _i('claude_waiting');
+            const agent = ' (' + this.agentLabel(this.taskAgentKey(task)) + ')';
+            if (phase === 'running') return _i('claude_switch_session') + agent;
+            return _i('claude_run') + agent;
+        },
+
         // One chip per project that currently has at least one live Claude
         // session -- "what's running in parallel right now". Cross-project
         // sessions (no project) are grouped under the PROJECT_NONE sentinel.

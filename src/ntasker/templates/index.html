@@ -766,8 +766,8 @@
                                                     <template x-if="taskRunPhase(task.id) === 'waiting'"><i class="ti ti-help fs-3 text-orange me-1"></i></template>
                                                     <button class="btn btn-sm btn-claude" @click="openClaudeRun(task)"
                                                             :class="{'btn-claude-waiting': taskRunPhase(task.id) === 'waiting'}"
-                                                            :aria-label="taskRunPhase(task.id) === 'waiting' ? $i18n('claude_waiting') : ($i18n('claude_run') + ' (' + agentLabel(taskAgentKey(task)) + ')')"
-                                                            :title="taskRunPhase(task.id) === 'waiting' ? $i18n('claude_waiting') : ($i18n('claude_run') + ' (' + agentLabel(taskAgentKey(task)) + ')')">
+                                                            :aria-label="runButtonTitle(task)"
+                                                            :title="runButtonTitle(task)">
                                                         <img :src="agentIconUrl(task)" class="claude-logo-icon" alt="">
                                                     </button>
                                                 </span>
@@ -896,8 +896,8 @@
                                                         <button class="btn btn-sm btn-claude px-1 py-0"
                                                                 @click.stop="openClaudeRun(task)"
                                                                 :class="{'btn-claude-waiting': taskRunPhase(task.id) === 'waiting'}"
-                                                                :aria-label="taskRunPhase(task.id) === 'waiting' ? $i18n('claude_waiting') : ($i18n('claude_run') + ' (' + agentLabel(taskAgentKey(task)) + ')')"
-                                                                :title="taskRunPhase(task.id) === 'waiting' ? $i18n('claude_waiting') : ($i18n('claude_run') + ' (' + agentLabel(taskAgentKey(task)) + ')')">
+                                                                :aria-label="runButtonTitle(task)"
+                                                                :title="runButtonTitle(task)">
                                                             <img :src="agentIconUrl(task)" class="claude-logo-icon" alt="">
                                                         </button>
                                                     </span>

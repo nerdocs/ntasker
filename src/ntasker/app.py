@@ -524,6 +524,7 @@ def build_js_strings() -> dict[str, str]:
         ),
         # Agent run -- interactive terminal session
         "claude_run": _("Run"),
+        "claude_switch_session": _("Switch to session"),
         "claude_waiting": _("The agent is waiting for your input"),
         "claude_back": _("Back"),
         "claude_stop": _("Stop"),

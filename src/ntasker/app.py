@@ -37,6 +37,7 @@ from ntasker.claude_assets import scan_status
 from ntasker.claude_runner import (
     active_session_ids,
     default_cwd_for_project,
+    projects_base_dir,
     seed_command_for_task,
     session_states,
     stop_session,
@@ -380,6 +381,10 @@ def build_js_strings() -> dict[str, str]:
         "new_task": _("New task"),
         "project": _("Project"),
         "project_placeholder": _("Project name (leave empty for cross-project)"),
+        "project_will_create": _("New project -- a directory will be created at {path}"),
+        "project_no_base_hint": _(
+            "New project -- set a projects directory in the settings to have it created automatically"
+        ),
         "phase": _("Phase"),
         "phase_none": _("--"),
         "phase_wip": _("In Progress"),
@@ -823,6 +828,9 @@ def index(request: Request) -> HTMLResponse:
             "default_view": get_default_view(),
             "claude_open_terminal": get_claude_open_terminal(),
             "default_agent": get_default_agent(),
+            # Configured projects base (expanded) or "" -- lets the project
+            # input show where a new project's directory will be created.
+            "projects_base": str(projects_base_dir() or ""),
             "links": LINKS,
         },
     )

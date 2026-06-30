@@ -31,6 +31,9 @@
         // The agent new tasks default to (the `default_agent` setting). The
         // live registry from /api/agents updates this once loaded.
         window.__defaultAgent = {{ default_agent | default('claude') | tojson }};
+        // Configured projects base dir (expanded) or "". Lets the project input
+        // tell the user where a brand-new project's directory will be created.
+        window.__projectsBase = {{ projects_base | default('') | tojson }};
         document.addEventListener('alpine:init', () => {
             Alpine.magic('i18n', () => (key, params) => {
                 let s = (window.__i18n && window.__i18n[key]) || key;
@@ -353,11 +356,12 @@
                                                @keydown.arrow-up.prevent="onProjectArrow('form', -1)"
                                                @keydown.escape="focused = false; projectHighlight.form = -1"
                                                :placeholder="$i18n('project_placeholder')">
-                                        {# Live match indicator: green check on an exact existing-project match, #}
-                                        {# red X on any other non-empty value. Gates the Create buttons below. #}
+                                        {# Live match indicator: green check on an exact existing-project #}
+                                        {# match, a "new folder" icon on a name that does not exist yet #}
+                                        {# (it will be created on first run -- see message below). #}
                                         <span class="project-validity" x-show="form.project.trim()" x-cloak>
                                             <i class="ti ti-check text-green" x-show="isProjectValid('form')"></i>
-                                            <i class="ti ti-x text-danger" x-show="!isProjectValid('form')"></i>
+                                            <i class="ti ti-folder-plus text-blue" x-show="isNewProject('form')"></i>
                                         </span>
                                         <div class="dropdown-menu show w-100 mt-1"
                                              x-show="focused && projectSuggestions('form').length > 0"
@@ -373,6 +377,10 @@
                                             </template>
                                         </div>
                                     </div>
+                                    {# New-project notice: shown the instant a name that does not exist #}
+                                    {# yet is typed. Tells the user a directory will be created on run. #}
+                                    <div class="small text-blue mt-1" x-show="isNewProject('form')" x-cloak
+                                         x-text="newProjectMessage('form')"></div>
                                 </div>
                                 <div class="col-md-2">
                                     <label class="form-label">{{ t('Phase') }}</label>
@@ -509,14 +517,14 @@
                                     </div>
                                 </div>
                                 <div class="col-12 text-end">
-                                    <button type="submit" class="btn btn-sm btn-primary" :disabled="!form.title.trim() || !isProjectValid('form')">
+                                    <button type="submit" class="btn btn-sm btn-primary" :disabled="!form.title.trim()">
                                         <i class="ti ti-plus me-1 fs-3"></i>
                                         {{ t('Create') }}
                                     </button>
                                     {# Create + immediately hand the task to its agent -- only when that agent's CLI + a PTY are available. #}
                                     <button type="button" class="btn btn-sm btn-claude-cta ms-2"
                                             x-show="agentAvailable(form.agent || defaultAgent)"
-                                            :disabled="!form.title.trim() || !isProjectValid('form')"
+                                            :disabled="!form.title.trim()"
                                             @click="createTask(true)"
                                             :title="$i18n('claude_run') + ' (' + agentLabel(form.agent || defaultAgent) + ')'">
                                         <img :src="agentIconUrl({agent: form.agent})" class="claude-logo-icon me-1" alt="">
@@ -1081,7 +1089,7 @@
                     <div class="mb-2">
                         <label class="form-label">{{ t('Project') }}</label>
                         {# Same AlpineJS combobox as the new-task form (Tab/Enter accept). #}
-                        <div class="position-relative" x-data="{ focused: false }">
+                        <div class="position-relative project-validity-box" x-data="{ focused: false }">
                             <input type="text" class="form-control"
                                    x-model="editing.project"
                                    maxlength="100"
@@ -1095,6 +1103,11 @@
                                    @keydown.arrow-up.prevent="onProjectArrow('edit', -1)"
                                    @keydown.escape="focused = false; projectHighlight.edit = -1"
                                    :placeholder="$i18n('project_placeholder')">
+                            {# Same live match indicator as the new-task form. #}
+                            <span class="project-validity" x-show="editing.project.trim()" x-cloak>
+                                <i class="ti ti-check text-green" x-show="isProjectValid('edit')"></i>
+                                <i class="ti ti-folder-plus text-blue" x-show="isNewProject('edit')"></i>
+                            </span>
                             <div class="dropdown-menu show w-100 mt-1"
                                  x-show="focused && projectSuggestions('edit').length > 0"
                                  style="max-height: 200px; overflow-y: auto;"
@@ -1109,6 +1122,9 @@
                                 </template>
                             </div>
                         </div>
+                        {# New-project notice, mirroring the new-task form. #}
+                        <div class="small text-blue mt-1" x-show="isNewProject('edit')" x-cloak
+                             x-text="newProjectMessage('edit')"></div>
                     </div>
                     <div class="mb-2">
                         <label class="form-label">{{ t('Phase') }}</label>

@@ -135,6 +135,10 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         agents: [],
         defaultAgent: defaultAgent || 'claude',
 
+        // Configured projects base dir (expanded) or ''. Injected server-side;
+        // drives the "new project will be created at <path>" notice.
+        projectsBase: (typeof window !== 'undefined' && window.__projectsBase) || '',
+
         // ---- Agent run (interactive terminal session) ----
         // claudeAvailable = at least one agent's CLI is launchable (any run is
         // possible). Per-task runnability is decided by taskRunnable(task).
@@ -825,7 +829,9 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         async createTask(run = false) {
             // Commit any pending tag input before submit.
             this.commitTagInput('form');
-            if (!this.form.title.trim() || !this.isProjectValid('form')) return;
+            // A project is optional (empty = cross-project) and may be brand
+            // new -- only a title is required.
+            if (!this.form.title.trim()) return;
             const body = {
                 project: this.form.project || null,
                 title: this.form.title.trim(),
@@ -1286,6 +1292,32 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             const q = (bucket.project || '').trim();
             if (!q) return false;
             return this.projectNames.includes(q);
+        },
+
+        // True iff the field holds a non-empty name that is NOT an existing
+        // project -- i.e. a brand-new project. Such a name is accepted (the
+        // task is creatable); its directory is created on first run.
+        isNewProject(which) {
+            const bucket = this._projectBucket(which);
+            if (!bucket) return false;
+            const q = (bucket.project || '').trim();
+            if (!q) return false;
+            return !this.projectNames.includes(q);
+        },
+
+        // Notice shown under the project input for a new project: where the
+        // directory will be created (when a projects base is configured and the
+        // name is relative), or a hint to configure one otherwise.
+        newProjectMessage(which) {
+            const bucket = this._projectBucket(which);
+            if (!bucket) return '';
+            const q = (bucket.project || '').trim();
+            if (!q || this.projectNames.includes(q)) return '';
+            if (this.projectsBase && !q.startsWith('/')) {
+                const sep = this.projectsBase.endsWith('/') ? '' : '/';
+                return _i('project_will_create', { path: this.projectsBase + sep + q });
+            }
+            return _i('project_no_base_hint');
         },
 
         selectProject(which, name) {

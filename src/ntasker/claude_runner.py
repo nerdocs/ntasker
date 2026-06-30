@@ -99,6 +99,21 @@ def _spec_for_task(task_id: int) -> AgentSpec:
     return get_spec(resolve_agent_key(task_agent))
 
 
+def projects_base_dir() -> Path | None:
+    """The configured projects base directory (expanded), or ``None``.
+
+    Reads the ``projects_base`` setting (ENV ``NTASKER_PROJECTS_BASE`` first).
+    Only this directory's subtree is eligible for auto-creating a new project
+    directory on run -- see :func:`resolve_run_cwd`.
+    """
+    from ntasker.settings import get_setting  # noqa: PLC0415
+
+    raw = get_setting("projects_base", env_var="NTASKER_PROJECTS_BASE")
+    if not raw:
+        return None
+    return Path(os.path.abspath(os.path.expanduser(raw)))
+
+
 def default_cwd_for_project(project: str | None) -> str | None:
     """Best-effort working directory for a task's ``project`` name.
 
@@ -112,11 +127,39 @@ def default_cwd_for_project(project: str | None) -> str | None:
     p = Path(project).expanduser()
     if p.is_absolute():
         return str(p)
-    from ntasker.settings import get_setting  # noqa: PLC0415
-
-    raw = get_setting("projects_base", env_var="NTASKER_PROJECTS_BASE")
-    base = Path(os.path.expanduser(raw)) if raw else Path.home()
+    base = projects_base_dir() or Path.home()
     return str(base / project)
+
+
+def resolve_run_cwd(cwd: str | None) -> str:
+    """Working directory for a run, creating a new project dir when warranted.
+
+    Precedence:
+
+    1. ``cwd`` if it already exists -> use it.
+    2. ``cwd`` inside the configured ``projects_base`` -> create it (``mkdir
+       -p``) and use it. This realises a "new project": the agent starts in a
+       fresh directory inside the configured base.
+    3. Otherwise the home directory -- a best-effort fallback so the agent
+       always starts. A path outside the base, or no ``projects_base``
+       configured at all, is never silently created.
+    """
+    home = os.path.expanduser("~")
+    if not cwd:
+        return home
+    if os.path.isdir(cwd):
+        return cwd
+    base = projects_base_dir()
+    if base is not None:
+        try:
+            target = Path(cwd).resolve()
+            base_r = base.resolve()
+            if target == base_r or base_r in target.parents:
+                target.mkdir(parents=True, exist_ok=True)
+                return str(target)
+        except OSError:
+            pass
+    return home
 
 
 def seed_command_for_task(task: dict) -> str:
@@ -214,13 +257,13 @@ def _start_session(task_id: int, cwd: str | None, seed: str | None) -> TermSessi
     spec = _spec_for_task(task_id)
     master, slave = os.openpty()
     args = spec.build_spawn(seed)
-    # The cwd is only a best-effort guess from the task's project name (see
-    # default_cwd_for_project). If that directory does not exist, Popen would
-    # raise FileNotFoundError and the session dies before the TUI ever paints
-    # (a black terminal). Fall back to the home directory so the agent always
-    # starts -- the user is one ``cd`` away from the right place.
-    home = os.path.expanduser("~")
-    run_cwd = cwd if (cwd and os.path.isdir(cwd)) else home
+    # The cwd is a best-effort guess from the task's project name (see
+    # default_cwd_for_project). A new project's directory may not exist yet:
+    # resolve_run_cwd creates it when it lives inside the configured
+    # ``projects_base`` (so a new project starts in a fresh dir), and otherwise
+    # falls back to the home directory so the agent always starts rather than
+    # dying on a FileNotFoundError before the TUI ever paints.
+    run_cwd = resolve_run_cwd(cwd)
     proc = subprocess.Popen(
         args,
         stdin=slave,

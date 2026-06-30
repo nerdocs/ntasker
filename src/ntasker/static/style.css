@@ -301,16 +301,35 @@ body {
     opacity: 1;
 }
 
-/* Running-projects chips: pill buttons showing each project with a live Claude
- * session. Rendered as <button> for accessibility, but styled as a flat badge
- * (no button chrome) so it reads as a chip, not a control. */
+/* Active-projects chips: a flat badge per project with a live agent session.
+ * One session -> the whole chip is a link (.running-chip-link) into that
+ * #/run/<id> session, the agent logo trailing the name. Several sessions ->
+ * the name stays a label and each session's logo (.running-session-link) is
+ * its own link. */
 .running-project-chip {
     border: 0;
-    cursor: pointer;
     line-height: 1.2;
 }
-.running-project-chip:hover {
+a.running-chip-link {
+    cursor: pointer;
+    color: inherit;
+    text-decoration: none;
+    transition: filter 0.1s ease;
+}
+a.running-chip-link:hover {
     filter: brightness(0.95);
+}
+.running-session-link {
+    cursor: pointer;
+    opacity: 0.85;
+    transition: opacity 0.1s ease, filter 0.1s ease;
+}
+.running-session-link:hover {
+    opacity: 1;
+    filter: brightness(1.05);
+}
+.running-session-link-waiting {
+    opacity: 1;
 }
 
 /* "Run with Claude" button -- ghost (bare): the Claude logo tile it carries is

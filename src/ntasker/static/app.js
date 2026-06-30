@@ -164,6 +164,9 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // they arrive from JSON). Feeds the running-projects chips and the
         // same-project parallel-run warning.
         claudeSessionProjects: {},
+        // Resolved agent key of each active session, keyed by task id (string
+        // keys). Feeds the agent logo on each running-session link.
+        claudeSessionAgents: {},
 
         // Multi-value project filter. Empty list = no filter (all tasks).
         // Special value '__none__' = include cross-project tasks (project IS NULL).
@@ -1597,6 +1600,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                     this.claudeSessions = d.active || [];
                     this.claudeWaiting = d.waiting || [];
                     this.claudeSessionProjects = d.projects || {};
+                    this.claudeSessionAgents = d.agents || {};
                     this._syncTabsFromSessions();
                 }
             } catch (_e) { /* leave the last known set */ }
@@ -1656,21 +1660,28 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             return _i('claude_run') + agent;
         },
 
-        // One chip per project that currently has at least one live Claude
-        // session -- "what's running in parallel right now". Cross-project
-        // sessions (no project) are grouped under the PROJECT_NONE sentinel.
-        // ``count`` = sessions in that project; ``waiting`` = any is blocked on
-        // a prompt. Sorted by name so chip order is stable across polls.
-        get runningProjectChips() {
+        // One group per project that currently has at least one live session --
+        // "what's running in parallel right now". Cross-project sessions (no
+        // project) are grouped under the PROJECT_NONE sentinel. Each group lists
+        // its sessions ({id, agent, waiting}) so the chip can render one agent
+        // logo per session, each a deep link into that #/run/<id> session.
+        // ``waiting`` on the group = any of its sessions is blocked on a prompt.
+        // Sorted by name (sessions by id) so the order is stable across polls.
+        get runningProjectGroups() {
             const waiting = new Set(this.claudeWaiting);
             const byProject = new Map();
             for (const id of this.claudeSessions) {
                 const proj = this.claudeSessionProjects[String(id)] || PROJECT_NONE;
-                const chip = byProject.get(proj) || { name: proj, count: 0, waiting: false };
-                chip.count += 1;
-                if (waiting.has(id)) chip.waiting = true;
-                byProject.set(proj, chip);
+                const group = byProject.get(proj) || { name: proj, waiting: false, sessions: [] };
+                group.sessions.push({
+                    id,
+                    agent: this.claudeSessionAgents[String(id)] || this.defaultAgent,
+                    waiting: waiting.has(id),
+                });
+                if (waiting.has(id)) group.waiting = true;
+                byProject.set(proj, group);
             }
+            for (const g of byProject.values()) g.sessions.sort((a, b) => a.id - b.id);
             return [...byProject.values()].sort((a, b) => a.name.localeCompare(b.name));
         },
 

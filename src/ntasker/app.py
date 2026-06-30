@@ -32,7 +32,7 @@ from ntasker.assets import (
     get_asset_url,
     get_sri,
 )
-from ntasker.agents import AGENTS, AGENT_KEYS, resolve_home
+from ntasker.agents import AGENTS, AGENT_KEYS, resolve_agent_key, resolve_home
 from ntasker.claude_assets import scan_status
 from ntasker.claude_runner import (
     active_session_ids,
@@ -533,7 +533,7 @@ def build_js_strings() -> dict[str, str]:
         "claude_running": _("Running..."),
         "claude_run_finished": _("Session ended"),
         "claude_started_background": _("Task #{id} started in the background."),
-        "running_now": _("Running now"),
+        "running_now": _("Active projects"),
         "confirm_parallel_run": _(
             'Project "{project}" already has a running agent session. '
             "Two agents in one project can conflict and cause inconsistencies. "
@@ -1002,23 +1002,28 @@ def api_claude_sessions() -> JSONResponse:
     has gone silent long enough to look blocked on a prompt (see
     :func:`ntasker.claude_runner.session_states`). ``projects``: the project of
     each active task (id -> name|null) -- feeds the running-projects chips and
-    the same-project parallel-run warning on the frontend.
+    the same-project parallel-run warning on the frontend. ``agents``: the
+    resolved agent key of each active task (id -> key) -- feeds the agent logo
+    on each running-session link.
     """
     states = session_states()
     active = list(states.keys())
     projects: dict[int, str | None] = {}
+    agents: dict[int, str] = {}
     if active:
         placeholders = ",".join("?" * len(active))
         with get_conn() as conn:
             rows = conn.execute(
-                f"SELECT id, project FROM tasks WHERE id IN ({placeholders})",
+                f"SELECT id, project, agent FROM tasks WHERE id IN ({placeholders})",
                 active,
             ).fetchall()
         projects = {row["id"]: row["project"] for row in rows}
+        agents = {row["id"]: resolve_agent_key(row["agent"]) for row in rows}
     return JSONResponse(
         {
             "active": active,
             "waiting": [tid for tid, st in states.items() if st == "waiting"],
+            "agents": agents,
             "projects": projects,
         }
     )

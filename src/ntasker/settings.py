@@ -186,6 +186,24 @@ CLAUDE_PERMISSION_MODES = ("default", "auto", "plan", "bypassPermissions")
 CLAUDE_PERMISSION_MODE_DEFAULT = "default"
 
 
+def validate_claude_open_terminal(value: str) -> str:
+    """Validator for the ``claude_open_terminal`` boolean setting.
+
+    Controls what a "Create + Run" / per-task Claude-run click does: when truthy
+    (default) the run view opens immediately; when falsy the session starts in
+    the background and the user stays on the board. Normalizes truthy/falsy
+    spellings to ``"true"`` / ``"false"``; rejects anything else.
+    """
+    norm = (value or "").strip().lower()
+    if norm in _TRUE_STRINGS:
+        return "true"
+    if norm in _FALSE_STRINGS:
+        return "false"
+    raise ValueError(
+        _("claude_open_terminal must be a yes/no value (got {value!r}).").format(value=value)
+    )
+
+
 def validate_claude_permission_mode(value: str) -> str:
     """Validator for the ``claude_permission_mode`` setting.
 
@@ -213,6 +231,7 @@ VALIDATORS: dict[str, Validator] = {
     "claude_idle_seconds": validate_claude_idle_seconds,
     "claude_auto_mode": validate_claude_auto_mode,
     "claude_permission_mode": validate_claude_permission_mode,
+    "claude_open_terminal": validate_claude_open_terminal,
     "update_command": validate_update_command,
 }
 """Registry of known settings keys with their validators.
@@ -252,6 +271,12 @@ HINTS: dict[str, object] = {
         "Claude asks first), 'auto' (auto-accept actions), 'plan' (plan only, no "
         "changes), or 'bypassPermissions' (skip every prompt -- dangerous). "
         "Passed to the CLI as --permission-mode. Default: default."
+    ),
+    "claude_open_terminal": _lazy(
+        "When starting a Claude session (Create + Run or the per-task run "
+        "button), open the terminal immediately (true, default) or start it in "
+        "the background and stay on the board (false). ENV: "
+        "NTASKER_CLAUDE_OPEN_TERMINAL."
     ),
 }
 
@@ -379,6 +404,20 @@ def get_default_view() -> str:
     if norm not in DEFAULT_VIEW_ALLOWED:
         return DEFAULT_VIEW_FALLBACK
     return norm
+
+
+def get_claude_open_terminal() -> bool:
+    """Whether a starting Claude session opens its terminal immediately.
+
+    Honours the ``NTASKER_CLAUDE_OPEN_TERMINAL`` ENV override. Defaults to
+    ``True`` (the historical behaviour: Create + Run jumps straight into the
+    run view). A falsy value makes the session start in the background while
+    the user stays on the board.
+    """
+    raw = get_setting("claude_open_terminal", env_var="NTASKER_CLAUDE_OPEN_TERMINAL")
+    if raw is None:
+        return True
+    return raw.strip().lower() in _TRUE_STRINGS
 
 
 def get_language_setting() -> str:

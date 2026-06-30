@@ -24,6 +24,10 @@
         // Read by tracker() in app.js; localStorage still wins once the user
         // has actively switched views.
         window.__defaultView = {{ default_view | tojson }};
+        // When false, "Create + Run" and the per-task Claude button start the
+        // session in the background and keep you on the board instead of
+        // opening the run view. Read by tracker() in app.js.
+        window.__claudeOpenTerminal = {{ claude_open_terminal | default(true) | tojson }};
         document.addEventListener('alpine:init', () => {
             Alpine.magic('i18n', () => (key, params) => {
                 let s = (window.__i18n && window.__i18n[key]) || key;
@@ -39,7 +43,7 @@
 </head>
 <body>
 <div class="d-flex" style="min-height: 100vh;"
-     x-data="tracker(window.__defaultView)"
+     x-data="tracker(window.__defaultView, window.__claudeOpenTerminal)"
      x-init="init()">
 
     {# Sidebar: project + tag filter (full-width checkboxes). Hidden on mobile (<768px). #}

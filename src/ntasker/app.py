@@ -80,6 +80,7 @@ from ntasker.settings import (
     delete_setting,
     ensure_settings_table,
     get_assets_mode_resolved,
+    get_claude_open_terminal,
     get_default_view,
     get_setting_raw,
     list_settings,
@@ -494,6 +495,7 @@ def build_js_strings() -> dict[str, str]:
         "claude_connecting": _("Connecting..."),
         "claude_running": _("Running..."),
         "claude_run_finished": _("Session ended"),
+        "claude_started_background": _("Task #{id} started with Claude in the background."),
         "running_now": _("Running now"),
         "confirm_parallel_run": _(
             'Project "{project}" already has a running Claude session. '
@@ -785,6 +787,7 @@ def index(request: Request) -> HTMLResponse:
             "language": get_active_language(),
             "js_strings": build_js_strings(),
             "default_view": get_default_view(),
+            "claude_open_terminal": get_claude_open_terminal(),
             "links": LINKS,
         },
     )

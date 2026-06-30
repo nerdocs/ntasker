@@ -77,9 +77,10 @@
                     <div class="card-body">
                         {% for key in known_keys %}
                         {# claude_permission_mode has its own selector card below; #}
-                        {# claude_auto_mode is the legacy boolean it replaced. #}
-                        {# Neither is shown as a free-text field here. #}
-                        {% if key not in ('claude_auto_mode', 'claude_permission_mode') %}
+                        {# claude_auto_mode is the legacy boolean it replaced; #}
+                        {# claude_open_terminal has its own toggle in that card. #}
+                        {# None is shown as a free-text field here. #}
+                        {% if key not in ('claude_auto_mode', 'claude_permission_mode', 'claude_open_terminal') %}
                         <div class="mb-3">
                             <label class="form-label fw-bold" :for="`known-{{ key }}`">
                                 <code>{{ key }}</code>
@@ -178,6 +179,18 @@
                                 </div>
                             </div>
                         </div>
+
+                        <hr class="my-3">
+
+                        <label class="form-check form-switch mb-0">
+                            <input class="form-check-input" type="checkbox"
+                                   :checked="openTerminal"
+                                   @change="setOpenTerminal($event.target.checked)">
+                            <span class="form-check-label">
+                                <strong>{{ t('Open terminal immediately on start') }}</strong>
+                                — {{ t('When off, Create + Run and the per-task run button start the session in the background and keep you on the board. Click the running task to open its terminal.') }}
+                            </span>
+                        </label>
                     </div>
                 </div>
 
@@ -472,6 +485,19 @@ function settingsPage() {
         async setPermissionMode(mode) {
             this.known['claude_permission_mode'] = mode;
             await this.saveKnown('claude_permission_mode');
+        },
+
+        // "Open terminal immediately on start" toggle. Defaults to true (the
+        // historical behaviour) when the key is unset; only a stored falsy
+        // value flips it off.
+        get openTerminal() {
+            const v = (this.known['claude_open_terminal'] || '').toLowerCase();
+            return !['0', 'false', 'no', 'off'].includes(v);
+        },
+
+        async setOpenTerminal(checked) {
+            this.known['claude_open_terminal'] = checked ? 'true' : 'false';
+            await this.saveKnown('claude_open_terminal');
         },
 
         // Restart the supervised server, then poll /healthz until it answers

@@ -88,7 +88,7 @@ function _b64ToBytes(b64) {
     return bytes;
 }
 
-function tracker(serverDefaultView) {
+function tracker(serverDefaultView, claudeOpenTerminal = true) {
     // Resolve initial viewMode: localStorage > server-supplied default > 'list'.
     // The server value comes from the `default_view` setting and is injected
     // into the Alpine root in index.html.
@@ -133,6 +133,11 @@ function tracker(serverDefaultView) {
         claudeReason: null,
         claudeView: null,
         claudeTabs: [],
+        // When false (the `claude_open_terminal` setting), starting a session
+        // (Create + Run or the per-task run button) attaches it in the
+        // background and keeps the board on screen instead of opening the run
+        // view. Clicking an already-running task still surfaces its terminal.
+        claudeOpenTerminal: claudeOpenTerminal !== false,
         claudeSessions: [],
         // Subset of claudeSessions that has gone silent long enough to look
         // blocked on a prompt -- drives the "waiting for input" highlight.
@@ -1555,6 +1560,15 @@ function tracker(serverDefaultView) {
                 if (r.ok) { const d = await r.json(); cwd = d.cwd || ''; seed = d.seed || ''; }
             } catch (_e) { /* defaults are best-effort */ }
             this._addTab(id, task.title || '');
+            // Background start: attach the session but stay on the board. The
+            // tab's xterm host still renders (hidden) via the claudeTabs x-for,
+            // so the socket attaches and the server-side PTY starts; opening the
+            // tab later (clicking the running task) reattaches and fits it.
+            if (!this.claudeOpenTerminal) {
+                this.$nextTick(() => this._claudeConnect(id, cwd, seed));
+                this.showToast(_i('claude_started_background', { id }), 'success');
+                return;
+            }
             this.claudeView = id;
             location.hash = '#/run/' + id;   // record in history (idempotent _applyRoute)
             this.$nextTick(() => this._claudeConnect(id, cwd, seed));

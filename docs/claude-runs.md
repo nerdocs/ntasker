@@ -1,9 +1,35 @@
-# Run with Claude
+# Run with an agent
 
-Every task row carries a robot button (**Run with Claude**, Claude-orange). It opens a full-page view that embeds the
-**real interactive `claude` CLI** -- the genuine Claude Code TUI, rendered in the browser by xterm.js. Not a headless
-wrapper: it is the same binary you run from a shell, so you get its full interactivity (it asks, you answer; you can
-steer it, interrupt it with `Ctrl-C`, type anything) and the *identical* context.
+Every task row carries a run button showing **its agent's logo**. It opens a full-page view that embeds the **real
+interactive agent CLI** -- the genuine TUI, rendered in the browser by xterm.js. Not a headless wrapper: it is the
+same binary you run from a shell, so you get its full interactivity (it asks, you answer; you can steer it, interrupt
+it with `Ctrl-C`, type anything) and the *identical* context.
+
+## Multiple agents (Claude · OpenCode · Pi)
+
+ntasker is agent-agnostic. Each task carries an **agent** (`claude`, `opencode` or `pi`); pick it in the new-task form
+or the edit dialog, or leave it on the **default agent** (the `default_agent` setting). The run button shows that
+agent's logo and only appears when the agent's CLI is on `PATH`.
+
+The agent registry lives in `src/ntasker/agents.py` -- one `AgentSpec` per agent captures the binary, the spawn
+command (permission flags + how the `/task` seed is passed), the config home, and where the integration assets install.
+Adding a fourth agent is one registry entry plus a command template.
+
+**Integration assets per agent.** Each agent gets ntasker's skill (`SKILL.md`) and `/task <id>` slash command
+installed into its own config home -- `~/.claude`, `~/.config/opencode`, `~/.pi/agent`. Install / check per agent:
+
+```
+ntasker agent list                 # CLI availability + integration status
+ntasker agent install opencode     # install the skill + /task command
+ntasker agent install pi --check   # 0=ok, 1=drift, 2=not installed
+```
+
+The /settings page groups this as **AI agent integration** (common: default agent + open-terminal) with one subgroup
+card per agent (availability, run options, install status). `install-claude-assets` stays as a deprecated alias for
+`agent install claude`.
+
+The rest of this page describes the Claude session in detail; OpenCode and Pi work the same way (their CLI is spawned
+in the task's project directory, seeded with `/task <id>`), differing only in the per-agent options above.
 
 ## The flow
 

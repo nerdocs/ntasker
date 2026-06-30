@@ -4,32 +4,35 @@ Lightweight local task tracker. Single-user, FastAPI + SQLite, Tabler.io UI.
 
 [<img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy me a coffee" height="40">](https://buymeacoffee.com/nerdoc)
 
-## In Claude Code
+## In your AI coding agent
 
-ntasker doubles as Claude's task memory -- the [skill + `/task` command](#claude-code-integration)
-let Claude read and drive your tracker, no copy-paste:
+ntasker is **agent-agnostic**: every task can run on **Claude Code, OpenCode or Pi** (and the framework is extensible
+to more). It doubles as your agent's task memory -- the [skill + `/task` command](#ai-agent-integration) let the agent
+read and drive your tracker, no copy-paste:
 
-- **"What should I work on next?"** -- Claude grabs the open tasks for your current
+- **"What should I work on next?"** -- the agent grabs the open tasks for your current
   project folder and ranks them by urgency.
 - **`/task 34`** -- pulls #34 into the session (title, description, tags), flips it to
   *in progress*, and warns you if you're sitting in the wrong project.
-- **"Add a todo: ..."** -- Claude files it for you; drop a `#34` anywhere later and it
+- **"Add a todo: ..."** -- it files the task for you; drop a `#34` anywhere later and it
   knows exactly which task you mean.
-- Finished an assigned task? Claude moves it to **Review** for you to sign off -- it
+- Finished an assigned task? The agent moves it to **Review** for you to sign off -- it
   never closes, deletes, or archives tasks on its own.
 
 ![ntasker kanban board with the projects sidebar](docs/screenshot.jpg)
 
-## Run with Claude (web UI)
+## Run with an agent (web UI)
 
-The flip side of the integration above: every task row has a **Run with Claude** button that opens a real interactive
-Claude Code session -- the genuine TUI, embedded in the page via xterm.js -- running in the task's project directory
-and seeded with `/task <id>`. You answer Claude's questions, approve its tool prompts and interrupt it exactly as in a
-terminal; it is the same `claude` binary with the same `CLAUDE.md`, skills, MCP and permissions.
+The flip side of the integration above: every task row has a **run** button -- showing that task's agent logo -- that
+opens a real interactive session -- the genuine TUI, embedded in the page via xterm.js -- running in the task's project
+directory and seeded with `/task <id>`. You answer the agent's questions, approve its tool prompts and interrupt it
+exactly as in a terminal; it is the same CLI with the same `CLAUDE.md`, skills, MCP and permissions.
 
-Sessions run in the background (the button shows a spinner, and re-opening reattaches to the live session); marking a
-task **done** ends its session. Needs the `claude` CLI on `PATH` and a POSIX pseudo-terminal, otherwise the button
-stays hidden. See [docs/claude-runs.md](docs/claude-runs.md).
+Each task picks its agent (or inherits the `default_agent` setting); the run button only appears when that agent's CLI
+resolves. Sessions run in the background (the button shows a spinner, and re-opening reattaches to the live session);
+marking a task **done** ends its session. Needs the agent's CLI on `PATH` (or a configured path) and a POSIX
+pseudo-terminal, otherwise the button stays hidden. See [docs/claude-runs.md](docs/claude-runs.md) and
+[docs/agents.md](docs/agents.md).
 
 ![Interactive Claude Code session embedded in the ntasker web UI](docs/screenshot-xterm.jpg)
 
@@ -207,42 +210,46 @@ The cache lives at `platformdirs.user_data_dir("nTasker") / "vendor"`
 ENV override: `NTASKER_ASSETS_MODE=cdn ntasker serve`. SRI is emitted in
 both modes (catches on-disk tampering for `local` too).
 
-## Claude Code Integration
+## AI agent integration
 
-ntasker ships a Claude Code skill (`SKILL.md`) and slash-command loader (`/task <id>`)
-inside the package. The single source of truth lives under
-`src/ntasker/claude_assets/` and gets installed into `~/.claude/` via the CLI.
+ntasker is **agent-agnostic** -- it integrates with **Claude Code, OpenCode and Pi**, and adding another agent is one
+registry entry. The agent registry in `src/ntasker/agents.py` (one `AgentSpec` per agent) is the single source of
+truth for the binary, the spawn command, the config home, and the icon.
+
+Each task carries an `agent` (a nullable field). NULL falls back to the **`default_agent`** setting, then to `claude`.
+Pick it in the new-task form, the edit dialog, or via the CLI:
 
 ```bash
-# Default install: writes SKILL.md, task.md, _ntasker_loader.py
-ntasker install-claude-assets
-
-# Status check (exit codes: 0=identical, 1=drift, 2=not installed)
-ntasker install-claude-assets --check
-
-# Update after a version bump (creates timestamped .bak.YYYYMMDD-HHMMSS backups)
-ntasker install-claude-assets --force
-
-# Use a different slash command name (e.g. /todo instead of /task)
-ntasker install-claude-assets --command-name todo
-
-# Dry run -- show planned actions without writing
-ntasker install-claude-assets --dry-run
-
-# Test/sandbox: redirect to a non-default Claude home
-ntasker install-claude-assets --claude-home /tmp/test-home
-# Or via env: NTASKER_CLAUDE_HOME=/tmp/test-home ntasker install-claude-assets
+ntasker add --title "..." --agent opencode    # create a task pinned to OpenCode
+ntasker patch 34 --agent pi                    # repoint a task
+ntasker patch 34 --agent ''                    # clear -> falls back to default_agent
+ntasker config set default_agent opencode      # change the default for new tasks
 ```
 
-The `--command-name` flag accepts only `[A-Za-z0-9_-]+` (no slashes, no dots) to
-prevent path traversal. The helper file `_ntasker_loader.py` always keeps that
-exact name regardless of the slash command.
+ntasker ships a skill (`SKILL.md`) and slash-command loader (`/task <id>`) inside the package and installs them into
+**each agent's own config home** -- Claude `~/.claude`, OpenCode `~/.config/opencode`, Pi `~/.pi/agent`:
 
-`ntasker serve` prints a one-liner to stderr at boot if installed Claude assets
-are out of date relative to the running version. The `/settings` UI shows the
-same status as a read-only card; there is intentionally no HTTP write endpoint
-(installs are user-initiated via the CLI to avoid CSRF / DNS-rebinding write
-surface).
+```bash
+ntasker agent list                       # all agents: CLI availability + integration status
+ntasker agent install opencode           # install the SKILL.md + /task slash command
+ntasker agent install pi --check         # status check: exit 0=identical, 1=drift, 2=not installed
+ntasker agent install claude --force     # update after a version bump (timestamped backups)
+ntasker agent install opencode --dry-run # show planned actions without writing
+ntasker agent install pi --command-name todo  # use /todo instead of /task
+ntasker agent install claude --home /tmp/test-home  # redirect to a non-default config home
+```
+
+`install-claude-assets` remains as a **deprecated alias** of `ntasker agent install claude`. The `--command-name` flag
+accepts only `[A-Za-z0-9_-]+` (no slashes, no dots) to prevent path traversal.
+
+**Configurable CLI path.** When the server runs with a narrower `PATH` than your shell (e.g. a `systemd --user` unit
+without `nvm`), point ntasker at an agent's CLI with the per-agent `claude_bin` / `opencode_bin` / `pi_bin` setting
+(ENV `NTASKER_CLAUDE_BIN` etc.). Empty auto-detects on `PATH`.
+
+`ntasker serve` prints a one-liner to stderr at boot if installed assets are out of date relative to the running
+version. The `/settings` UI shows the same status as read-only cards (one per agent under an **AI agent integration**
+card); there is intentionally no HTTP write endpoint (installs are user-initiated via the CLI to avoid CSRF /
+DNS-rebinding write surface). Full reference: [docs/agents.md](docs/agents.md).
 
 ## CLI
 
@@ -252,7 +259,7 @@ surface).
 | `ntasker serve`             | Run the FastAPI server (defaults: 127.0.0.1:8766)             |
 | `ntasker list [filters]`    | List tasks; supports `--project`, `--tag`, `--phase`, ...     |
 | `ntasker show <id>`         | Show a single task; pair with `--json` for raw output         |
-| `ntasker add --title=...`   | Create a task; optional `--project --phase --priority --tag`  |
+| `ntasker add --title=...`   | Create a task; optional `--project --phase --priority --tag --agent` |
 | `ntasker done <id>`         | Mark a task as done                                           |
 | `ntasker patch <id> [...]`  | Patch arbitrary fields (`--title`, `--phase`, `--status`, ...)|
 | `ntasker tag-add <id> <t>`  | Append a tag                                                  |
@@ -262,7 +269,8 @@ surface).
 | `ntasker config get <k>`    | Read a setting                                                |
 | `ntasker config set <k> <v>`| Write a setting (validated)                                   |
 | `ntasker config unset <k>`  | Remove a setting                                              |
-| `ntasker install-claude-assets` | Install / check the Claude Code skill + `/task` slash-command |
+| `ntasker agent list`        | List agents with CLI availability + `/task` integration status |
+| `ntasker agent install <key>` | Install / check an agent's skill + `/task` slash-command (`claude`/`opencode`/`pi`) |
 | `ntasker assets fetch / status / remove` | Manage the optional local vendor-asset cache |
 | `ntasker service install / uninstall / status / start / stop` | Run ntasker as an OS service (systemd / launchd) |
 | `ntasker self-update`       | Upgrade the package from PyPI, then restart the service        |
@@ -305,6 +313,7 @@ couple of CLI subcommands via subprocess.
 | GET | `/api/settings/{key}` | Single setting or 404 |
 | PUT | `/api/settings/{key}` | `{value: "..."}` -- 200 on accept, 400 if a registered validator rejects |
 | DELETE | `/api/settings/{key}` | 204 on success, 404 if not present |
+| GET | `/api/agents` | Read-only registry feed: per-agent availability + `/task` integration status, plus the default |
 | GET | `/api/claude-assets/status` | Read-only: `{installed, drift, package_version, claude_home, files[]}` |
 
 OpenAPI: <http://127.0.0.1:8766/api/docs>
@@ -322,7 +331,8 @@ CREATE TABLE tasks (
     priority TEXT NOT NULL DEFAULT 'normal',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     completed_at TEXT,
-    archived INTEGER NOT NULL DEFAULT 0
+    archived INTEGER NOT NULL DEFAULT 0,
+    agent TEXT                       -- AI agent for this task; NULL = default_agent setting (then claude)
 );
 CREATE TABLE tags (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

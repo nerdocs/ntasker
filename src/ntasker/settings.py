@@ -22,6 +22,7 @@ import sqlite3
 from collections.abc import Callable
 from datetime import datetime
 
+from ntasker.agents import AGENT_KEYS, DEFAULT_AGENT
 from ntasker.assets import validate_assets_mode
 from ntasker.db import get_conn
 from ntasker.i18n import AVAILABLE_LANGUAGES, _, _lazy
@@ -223,15 +224,53 @@ def validate_claude_permission_mode(value: str) -> str:
     )
 
 
+def validate_default_agent(value: str) -> str:
+    """Validator for the ``default_agent`` setting.
+
+    The AI coding agent new tasks default to (and the fallback for any task
+    without an explicit ``agent``). Whitelist against the registered agent
+    keys; empty normalizes to the built-in default. See :mod:`ntasker.agents`.
+    """
+    norm = (value or "").strip().lower()
+    if not norm:
+        return DEFAULT_AGENT
+    if norm in AGENT_KEYS:
+        return norm
+    raise ValueError(
+        _("default_agent must be one of {keys} (got {value!r}).").format(
+            keys=", ".join(AGENT_KEYS), value=value
+        )
+    )
+
+
+def validate_opencode_auto(value: str) -> str:
+    """Validator for the ``opencode_auto`` boolean setting.
+
+    When truthy, a spawned OpenCode session runs with ``--auto`` (it
+    auto-approves its own actions). Normalizes truthy/falsy spellings to
+    ``"true"`` / ``"false"``; rejects anything else.
+    """
+    norm = (value or "").strip().lower()
+    if norm in _TRUE_STRINGS:
+        return "true"
+    if norm in _FALSE_STRINGS:
+        return "false"
+    raise ValueError(
+        _("opencode_auto must be a yes/no value (got {value!r}).").format(value=value)
+    )
+
+
 VALIDATORS: dict[str, Validator] = {
     "assets_mode": validate_assets_mode,
     "language": validate_language,
     "default_view": validate_default_view,
+    "default_agent": validate_default_agent,
     "projects_base": validate_projects_base,
     "claude_idle_seconds": validate_claude_idle_seconds,
     "claude_auto_mode": validate_claude_auto_mode,
     "claude_permission_mode": validate_claude_permission_mode,
     "claude_open_terminal": validate_claude_open_terminal,
+    "opencode_auto": validate_opencode_auto,
     "update_command": validate_update_command,
 }
 """Registry of known settings keys with their validators.
@@ -266,6 +305,15 @@ HINTS: dict[str, object] = {
         "directory. Unset to fall back to home-relative names. "
         "ENV: NTASKER_PROJECTS_BASE."
     ),
+    "default_agent": _lazy(
+        "Default AI coding agent for new tasks (and the fallback for any task "
+        "without an explicit agent): claude, opencode or pi. ENV: "
+        "NTASKER_DEFAULT_AGENT."
+    ),
+    "opencode_auto": _lazy(
+        "Run spawned OpenCode sessions with --auto (auto-approve actions). "
+        "Yes/no, default no."
+    ),
     "claude_permission_mode": _lazy(
         "Permission mode for interactive Claude sessions: 'default' (normal -- "
         "Claude asks first), 'auto' (auto-accept actions), 'plan' (plan only, no "
@@ -279,6 +327,51 @@ HINTS: dict[str, object] = {
         "NTASKER_CLAUDE_OPEN_TERMINAL."
     ),
 }
+
+
+def _make_bin_validator(agent_key: str) -> Validator:
+    """Build a validator for an agent's ``<key>_bin`` binary-path override.
+
+    Accepts a path (contains ``/`` -> expanded, must be an executable file) or
+    a bare command name (must resolve on ``PATH``). Rejects anything that does
+    not resolve so the user gets immediate feedback instead of a silent
+    "still unavailable". To clear it, DELETE the key (auto-detect on PATH).
+    """
+
+    def _validate(value: str) -> str:
+        import shutil  # noqa: PLC0415
+
+        norm = (value or "").strip()
+        if not norm:
+            raise ValueError(
+                _("{key} must not be empty -- unset it to auto-detect on PATH.").format(
+                    key=f"{agent_key}_bin"
+                )
+            )
+        if "/" in norm:
+            expanded = os.path.expanduser(norm)
+            if not (os.path.isfile(expanded) and os.access(expanded, os.X_OK)):
+                raise ValueError(
+                    _("{value!r} is not an executable file.").format(value=norm)
+                )
+            return norm
+        if shutil.which(norm) is None:
+            raise ValueError(_("{value!r} was not found on PATH.").format(value=norm))
+        return norm
+
+    return _validate
+
+
+# Register a per-agent binary-path override (``claude_bin`` / ``opencode_bin``
+# / ``pi_bin``). Lets the user point ntasker at a CLI that is not on the
+# server's PATH -- e.g. when run as a systemd unit without ``nvm`` /
+# ``~/.opencode/bin``. See :func:`ntasker.agents.resolve_binary`.
+for _agent_key in AGENT_KEYS:
+    VALIDATORS[f"{_agent_key}_bin"] = _make_bin_validator(_agent_key)
+    HINTS[f"{_agent_key}_bin"] = _lazy(
+        "Full path to the agent's CLI when it is not on the server's PATH "
+        "(e.g. an absolute path under your home). Unset to auto-detect."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -417,6 +510,28 @@ def get_claude_open_terminal() -> bool:
     raw = get_setting("claude_open_terminal", env_var="NTASKER_CLAUDE_OPEN_TERMINAL")
     if raw is None:
         return True
+    return raw.strip().lower() in _TRUE_STRINGS
+
+
+def get_default_agent() -> str:
+    """Return the configured default agent key (``claude`` / ``opencode`` / ``pi``).
+
+    Honours the ``NTASKER_DEFAULT_AGENT`` ENV override. Falls back to the
+    built-in :data:`ntasker.agents.DEFAULT_AGENT` when unset or invalid, so a
+    stale value never pushes a task onto an unknown agent.
+    """
+    raw = get_setting("default_agent", env_var="NTASKER_DEFAULT_AGENT")
+    if not raw:
+        return DEFAULT_AGENT
+    norm = raw.strip().lower()
+    return norm if norm in AGENT_KEYS else DEFAULT_AGENT
+
+
+def get_opencode_auto() -> bool:
+    """Whether spawned OpenCode sessions run with ``--auto``. Defaults to False."""
+    raw = get_setting("opencode_auto", env_var="NTASKER_OPENCODE_AUTO")
+    if raw is None:
+        return False
     return raw.strip().lower() in _TRUE_STRINGS
 
 

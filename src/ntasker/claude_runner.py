@@ -22,7 +22,6 @@ import asyncio
 import base64
 import contextlib
 import os
-import shutil
 import signal
 import threading
 import time
@@ -30,6 +29,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from fastapi import WebSocket, WebSocketDisconnect
+
+from ntasker.agents import AgentSpec, agent_available, get_spec, resolve_agent_key
 
 try:  # POSIX-only PTY machinery
     import fcntl
@@ -54,32 +55,48 @@ BUFFER_LIMIT = 512 * 1024
 # flagged "waiting" when the user only peeks at it. See :func:`session_states`.
 RESIZE_REDRAW_GRACE = 1.5
 
-# Environment markers that would make the spawned CLI behave as a *nested*
-# Claude Code session. Stripped so it always starts as a fresh top-level
-# session -- exactly as if launched from the user's own shell.
-_STRIP_ENV = (
-    "CLAUDECODE",
-    "CLAUDE_CODE_CHILD_SESSION",
-    "CLAUDE_CODE_ENTRYPOINT",
-    "CLAUDE_CODE_EXECPATH",
-    "CLAUDE_CODE_SESSION_ID",
-    "CLAUDE_CODE_DISABLE_MOUSE",
-    "AI_AGENT",
-    "CLAUDE_EFFORT",
-)
+def pty_available() -> tuple[bool, str | None]:
+    """Whether the host can run *any* interactive agent session.
 
-
-def terminal_available() -> tuple[bool, str | None]:
-    """Return ``(available, reason_if_not)``.
-
-    Needs the ``claude`` CLI on PATH and a POSIX PTY. Either missing -> the UI
-    hides the run button and surfaces the reason.
+    Interactive runs need a POSIX PTY (``os.openpty`` + ``termios``). On a
+    platform without them the whole feature is unavailable regardless of which
+    agent binaries are installed.
     """
     if not _PTY_OK:
         return False, "interactive runs need a POSIX pseudo-terminal"
-    if shutil.which("claude") is None:
-        return False, "the `claude` CLI was not found on PATH"
     return True, None
+
+
+def terminal_available(spec: AgentSpec) -> tuple[bool, str | None]:
+    """Return ``(available, reason_if_not)`` for one agent.
+
+    Needs a POSIX PTY *and* the agent's CLI on PATH. Either missing -> the UI
+    hides that agent's run button and surfaces the reason.
+    """
+    ok, reason = pty_available()
+    if not ok:
+        return ok, reason
+    if not agent_available(spec):
+        return False, (
+            f"the `{spec.binary}` CLI was not found on PATH "
+            f"(set `{spec.bin_setting_key}` to its full path if it is installed elsewhere)"
+        )
+    return True, None
+
+
+def _spec_for_task(task_id: int) -> AgentSpec:
+    """Resolve the :class:`AgentSpec` for a task from its persisted ``agent``."""
+    from ntasker.db import get_conn  # noqa: PLC0415
+
+    try:
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT agent FROM tasks WHERE id = ?", (task_id,)
+            ).fetchone()
+    except Exception:  # noqa: BLE001 -- a DB hiccup must not crash the spawn path
+        row = None
+    task_agent = row["agent"] if row else None
+    return get_spec(resolve_agent_key(task_agent))
 
 
 def default_cwd_for_project(project: str | None) -> str | None:
@@ -172,8 +189,8 @@ def session_states() -> dict[int, str]:
     }
 
 
-def _clean_env() -> dict:
-    env = {k: v for k, v in os.environ.items() if k not in _STRIP_ENV}
+def _clean_env(spec: AgentSpec) -> dict:
+    env = {k: v for k, v in os.environ.items() if k not in spec.strip_env}
     env["TERM"] = "xterm-256color"
     return env
 
@@ -186,31 +203,31 @@ def _child_setup() -> None:
 
 
 def _start_session(task_id: int, cwd: str | None, seed: str | None) -> TermSession:
-    """Spawn a fresh ``claude`` in a PTY and register it with a live reader."""
-    master, slave = os.openpty()
-    args = ["claude"]
-    # Permission mode for the session, picked in /settings. "default" is normal
-    # (Claude asks first) and adds no flag. "auto"/"plan" go through the CLI's
-    # --permission-mode. "bypassPermissions" skips every prompt -- powerful and
-    # dangerous (Claude edits files / runs shell commands unattended) -- and uses
-    # the explicit --dangerously-skip-permissions flag the CLI requires for it.
-    # See settings.py:claude_permission_mode.
-    from ntasker.settings import claude_permission_mode  # noqa: PLC0415
+    """Spawn a fresh agent session in a PTY and register it with a live reader.
 
-    mode = claude_permission_mode()
-    if mode == "bypassPermissions":
-        args.append("--dangerously-skip-permissions")
-    elif mode in ("auto", "plan"):
-        args.extend(["--permission-mode", mode])
-    if seed:
-        args.append(seed)
+    The agent (Claude / OpenCode / Pi) is resolved from the task's ``agent``
+    field; its :class:`~ntasker.agents.AgentSpec` builds the full argv --
+    including permission/auto flags and how the ``/task`` seed is attached
+    (positional vs ``--prompt``) -- and which env markers get stripped. The cwd
+    is always set on the subprocess (uniform across agents).
+    """
+    spec = _spec_for_task(task_id)
+    master, slave = os.openpty()
+    args = spec.build_spawn(seed)
+    # The cwd is only a best-effort guess from the task's project name (see
+    # default_cwd_for_project). If that directory does not exist, Popen would
+    # raise FileNotFoundError and the session dies before the TUI ever paints
+    # (a black terminal). Fall back to the home directory so the agent always
+    # starts -- the user is one ``cd`` away from the right place.
+    home = os.path.expanduser("~")
+    run_cwd = cwd if (cwd and os.path.isdir(cwd)) else home
     proc = subprocess.Popen(
         args,
         stdin=slave,
         stdout=slave,
         stderr=slave,
-        cwd=cwd or os.path.expanduser("~"),
-        env=_clean_env(),
+        cwd=run_cwd,
+        env=_clean_env(spec),
         preexec_fn=_child_setup,
         close_fds=True,
     )
@@ -355,7 +372,7 @@ async def serve(websocket: WebSocket, task_id: int) -> None:
     * server -> ``{"type":"output", "data"}`` (base64 PTY bytes)
     * server -> ``{"type":"exit", "code"}``
     """
-    available, reason = terminal_available()
+    available, reason = terminal_available(_spec_for_task(task_id))
     if not available:
         await websocket.send_json({"type": "error", "error": reason})
         return

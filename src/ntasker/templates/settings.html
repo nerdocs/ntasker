@@ -76,11 +76,10 @@
                     </div>
                     <div class="card-body">
                         {% for key in known_keys %}
-                        {# claude_permission_mode has its own selector card below; #}
-                        {# claude_auto_mode is the legacy boolean it replaced; #}
-                        {# claude_open_terminal has its own toggle in that card. #}
-                        {# None is shown as a free-text field here. #}
-                        {% if key not in ('claude_auto_mode', 'claude_permission_mode', 'claude_open_terminal') %}
+                        {# These keys have dedicated widgets in the AI-agent cards #}
+                        {# below; claude_auto_mode is the legacy boolean replaced by #}
+                        {# claude_permission_mode. None is shown as free text here. #}
+                        {% if key not in ('claude_auto_mode', 'claude_permission_mode', 'claude_open_terminal', 'default_agent', 'opencode_auto') and not key.endswith('_bin') %}
                         <div class="mb-3">
                             <label class="form-label fw-bold" :for="`known-{{ key }}`">
                                 <code>{{ key }}</code>
@@ -117,71 +116,30 @@
                     </div>
                 </div>
 
-                {# Run with Claude: permission mode for spawned sessions. Only #}
-                {# 'bypassPermissions' shows the danger warning. #}
+                {# AI agent integration: common settings shared by every agent. #}
                 <div class="card mb-3">
                     <div class="card-header">
                         <h3 class="card-title">
-                            <i class="ti ti-player-play me-1"></i>
-                            {{ t('Run with Claude') }}
+                            <i class="ti ti-robot me-1"></i>
+                            <span x-text="$i18n('agent_integration')"></span>
                         </h3>
                     </div>
                     <div class="card-body">
-                        <label class="form-label fw-bold">{{ t('Permission mode') }}</label>
-                        <div class="text-muted small mb-2">
-                            {{ t('How a spawned Claude session handles permissions. Passed to the CLI as --permission-mode.') }}
-                        </div>
+                        <p class="text-muted small mb-3" x-text="$i18n('agent_integration_intro')"></p>
 
-                        <label class="form-check">
-                            <input class="form-check-input" name="permission-mode" type="radio" value="default"
-                                   :checked="permissionMode === 'default'"
-                                   @change="setPermissionMode('default')">
-                            <span class="form-check-label">
-                                <strong>{{ t('Normal') }}</strong>
-                                — {{ t('Claude asks before it edits a file or runs a command.') }}
-                            </span>
-                        </label>
-                        <label class="form-check">
-                            <input class="form-check-input" name="permission-mode" type="radio" value="auto"
-                                   :checked="permissionMode === 'auto'"
-                                   @change="setPermissionMode('auto')">
-                            <span class="form-check-label">
-                                <strong>{{ t('Auto') }}</strong>
-                                — {{ t('Claude accepts its own actions automatically.') }}
-                            </span>
-                        </label>
-                        <label class="form-check">
-                            <input class="form-check-input" name="permission-mode" type="radio" value="plan"
-                                   :checked="permissionMode === 'plan'"
-                                   @change="setPermissionMode('plan')">
-                            <span class="form-check-label">
-                                <strong>{{ t('Plan') }}</strong>
-                                — {{ t('Claude only plans and makes no changes.') }}
-                            </span>
-                        </label>
-                        <label class="form-check mb-0">
-                            <input class="form-check-input" name="permission-mode" type="radio" value="bypassPermissions"
-                                   :checked="permissionMode === 'bypassPermissions'"
-                                   @change="setPermissionMode('bypassPermissions')">
-                            <span class="form-check-label">
-                                <strong>{{ t('Bypass permissions') }}</strong>
-                                — {{ t('Claude skips every confirmation and runs unattended.') }}
-                            </span>
-                        </label>
-
-                        <div class="alert alert-danger mt-3 mb-0"
-                             x-show="permissionMode === 'bypassPermissions'" x-cloak>
-                            <div class="d-flex">
-                                <i class="ti ti-alert-triangle-filled me-2 fs-3"></i>
-                                <div>
-                                    <strong>{{ t('This can be dangerous.') }}</strong>
-                                    {{ t('With permissions bypassed, Claude can change or delete files and run shell commands in the project directory without asking first. Only use it for projects you fully trust.') }}
-                                </div>
-                            </div>
-                        </div>
+                        {# Default agent for new tasks. #}
+                        <label class="form-label fw-bold" x-text="$i18n('default_agent_label')"></label>
+                        <div class="text-muted small mb-2" x-text="$i18n('default_agent_hint')"></div>
+                        <select class="form-select mb-3" style="max-width: 24rem"
+                                x-model="known['default_agent']" @change="saveKnown('default_agent')">
+                            <template x-for="a in agents" :key="a.key">
+                                <option :value="a.key" x-text="a.label"></option>
+                            </template>
+                        </select>
 
                         <hr class="my-3">
 
+                        {# Open terminal immediately -- common to every agent run. #}
                         <label class="form-check form-switch mb-0">
                             <input class="form-check-input" type="checkbox"
                                    :checked="openTerminal"
@@ -194,75 +152,148 @@
                     </div>
                 </div>
 
-                {# Claude Code integration: read-only status + copy-paste install command. #}
-                <div class="card mb-3">
-                    <div class="card-header">
-                        <h3 class="card-title">
-                            <i class="ti ti-robot me-1"></i>
-                            {{ t('Claude Code Integration') }}
-                        </h3>
-                    </div>
-                    <div class="card-body">
-                        <p class="text-muted small mb-2">
-                            {{ t('ntasker ships a skill (SKILL.md) and a slash command (/task <id>) for Claude Code. This card shows the install status -- writes go exclusively through the CLI.') }}
-                        </p>
-
-                        <div class="datagrid">
-                            <div class="datagrid-item">
-                                <div class="datagrid-title">{{ t('Installed') }}</div>
-                                <div class="datagrid-content">
-                                    <span x-show="claudeAssets.installed === true"
-                                          class="badge bg-success-lt" x-text="$i18n('yes')"></span>
-                                    <span x-show="claudeAssets.installed === false"
-                                          class="badge bg-secondary-lt" x-text="$i18n('no')"></span>
-                                </div>
-                            </div>
-                            <div class="datagrid-item">
-                                <div class="datagrid-title">{{ t('Package version') }}</div>
-                                <div class="datagrid-content">
-                                    <code x-text="claudeAssets.package_version || '-'"></code>
-                                </div>
-                            </div>
-                            <div class="datagrid-item">
-                                <div class="datagrid-title">{{ t('Drift') }}</div>
-                                <div class="datagrid-content">
-                                    <span x-show="claudeAssets.drift === true"
-                                          class="badge bg-warning-lt" x-text="$i18n('yes')"></span>
-                                    <span x-show="claudeAssets.drift === false"
-                                          class="badge bg-success-lt" x-text="$i18n('no')"></span>
-                                </div>
-                            </div>
-                            <div class="datagrid-item">
-                                <div class="datagrid-title">{{ t('Claude home') }}</div>
-                                <div class="datagrid-content">
-                                    <code class="text-muted small"
-                                          x-text="claudeAssets.claude_home || '-'"></code>
-                                </div>
-                            </div>
+                {# Per-agent integration cards (Claude / OpenCode / Pi): availability, #}
+                {# agent-specific run options, and the /task install status. Read-only #}
+                {# status -- installs go through the `ntasker agent install` CLI. #}
+                <template x-for="a in agents" :key="a.key">
+                    <div class="card mb-3">
+                        <div class="card-header d-flex align-items-center">
+                            <img :src="'/static/' + a.icon" alt=""
+                                 style="width: 1.4rem; height: 1.4rem; object-fit: contain;" class="me-2">
+                            <h3 class="card-title mb-0" x-text="a.label"></h3>
+                            <span class="badge ms-2"
+                                  :class="a.available ? 'bg-success-lt' : 'bg-secondary-lt'"
+                                  x-text="a.available ? $i18n('agent_available_badge') : $i18n('agent_unavailable_badge')"></span>
                         </div>
+                        <div class="card-body">
+                            <div class="alert alert-warning mb-3" x-show="!a.available" x-cloak>
+                                <i class="ti ti-alert-triangle me-1"></i>
+                                <span x-text="$i18n('agent_cli_missing')"></span>
+                            </div>
 
-                        {# Hinweisblock: bei nicht-installiert oder Drift Copy-Paste-Snippet. #}
-                        {# Kein Schreib-Button -- HTTP-Schreib-Endpunkt waere CSRF/Rebinding-Angriffsflaeche. #}
-                        <template x-if="claudeAssets.installed === false">
-                            <div class="alert alert-info mt-3 mb-0">
+                            {# Binary-path override: point ntasker at the CLI when it #}
+                            {# is not on the server's PATH. Saved on blur/Enter. #}
+                            <label class="form-label fw-bold" x-text="$i18n('agent_bin_label')"></label>
+                            <div class="text-muted small mb-1" x-text="$i18n('agent_bin_hint')"></div>
+                            <div class="input-group mb-3" style="max-width: 38rem">
+                                <input type="text" class="form-control font-monospace"
+                                       x-model="known[a.key + '_bin']"
+                                       @keydown.enter.prevent="saveKnown(a.key + '_bin'); refreshAgents()"
+                                       :placeholder="a.key === 'opencode' ? '/home/you/.opencode/bin/opencode' : ('/path/to/' + a.key)">
+                                <button type="button" class="btn btn-primary"
+                                        @click="saveKnown(a.key + '_bin'); refreshAgents()">
+                                    <i class="ti ti-device-floppy me-1 fs-3"></i>{{ t('Save') }}
+                                </button>
+                                <button type="button" class="btn btn-ghost-danger"
+                                        @click="unsetKnown(a.key + '_bin'); refreshAgents()"
+                                        :disabled="!known[a.key + '_bin']">
+                                    <i class="ti ti-trash fs-3"></i>
+                                </button>
+                            </div>
+                            <div class="invalid-feedback mb-2"
+                                 :class="errors[a.key + '_bin'] ? 'd-block' : ''"
+                                 x-text="errors[a.key + '_bin']"></div>
+
+                            {# Claude: permission mode for spawned sessions. #}
+                            <template x-if="a.key === 'claude'">
+                                <div class="mb-3">
+                                    <label class="form-label fw-bold">{{ t('Permission mode') }}</label>
+                                    <div class="text-muted small mb-2">
+                                        {{ t('How a spawned Claude session handles permissions. Passed to the CLI as --permission-mode.') }}
+                                    </div>
+                                    <label class="form-check">
+                                        <input class="form-check-input" name="permission-mode" type="radio" value="default"
+                                               :checked="permissionMode === 'default'" @change="setPermissionMode('default')">
+                                        <span class="form-check-label"><strong>{{ t('Normal') }}</strong>
+                                            — {{ t('Claude asks before it edits a file or runs a command.') }}</span>
+                                    </label>
+                                    <label class="form-check">
+                                        <input class="form-check-input" name="permission-mode" type="radio" value="auto"
+                                               :checked="permissionMode === 'auto'" @change="setPermissionMode('auto')">
+                                        <span class="form-check-label"><strong>{{ t('Auto') }}</strong>
+                                            — {{ t('Claude accepts its own actions automatically.') }}</span>
+                                    </label>
+                                    <label class="form-check">
+                                        <input class="form-check-input" name="permission-mode" type="radio" value="plan"
+                                               :checked="permissionMode === 'plan'" @change="setPermissionMode('plan')">
+                                        <span class="form-check-label"><strong>{{ t('Plan') }}</strong>
+                                            — {{ t('Claude only plans and makes no changes.') }}</span>
+                                    </label>
+                                    <label class="form-check mb-0">
+                                        <input class="form-check-input" name="permission-mode" type="radio" value="bypassPermissions"
+                                               :checked="permissionMode === 'bypassPermissions'" @change="setPermissionMode('bypassPermissions')">
+                                        <span class="form-check-label"><strong>{{ t('Bypass permissions') }}</strong>
+                                            — {{ t('Claude skips every confirmation and runs unattended.') }}</span>
+                                    </label>
+                                    <div class="alert alert-danger mt-3 mb-0"
+                                         x-show="permissionMode === 'bypassPermissions'" x-cloak>
+                                        <div class="d-flex">
+                                            <i class="ti ti-alert-triangle-filled me-2 fs-3"></i>
+                                            <div>
+                                                <strong>{{ t('This can be dangerous.') }}</strong>
+                                                {{ t('With permissions bypassed, Claude can change or delete files and run shell commands in the project directory without asking first. Only use it for projects you fully trust.') }}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </template>
+
+                            {# OpenCode: auto-approve actions (--auto). #}
+                            <template x-if="a.key === 'opencode'">
+                                <label class="form-check form-switch mb-3">
+                                    <input class="form-check-input" type="checkbox"
+                                           :checked="opencodeAuto" @change="setOpencodeAuto($event.target.checked)">
+                                    <span class="form-check-label">
+                                        <strong x-text="$i18n('opencode_auto_label')"></strong>
+                                        — <span x-text="$i18n('opencode_auto_hint')"></span>
+                                    </span>
+                                </label>
+                            </template>
+
+                            {# /task integration status. #}
+                            <div class="datagrid">
+                                <div class="datagrid-item">
+                                    <div class="datagrid-title" x-text="$i18n('installed')"></div>
+                                    <div class="datagrid-content">
+                                        <span class="badge"
+                                              :class="a.assets.installed ? 'bg-success-lt' : 'bg-secondary-lt'"
+                                              x-text="a.assets.installed ? $i18n('yes') : $i18n('no')"></span>
+                                    </div>
+                                </div>
+                                <div class="datagrid-item">
+                                    <div class="datagrid-title" x-text="$i18n('drift')"></div>
+                                    <div class="datagrid-content">
+                                        <span class="badge"
+                                              :class="a.assets.drift ? 'bg-warning-lt' : 'bg-success-lt'"
+                                              x-text="a.assets.drift ? $i18n('yes') : $i18n('no')"></span>
+                                    </div>
+                                </div>
+                                <div class="datagrid-item">
+                                    <div class="datagrid-title" x-text="$i18n('agent_home')"></div>
+                                    <div class="datagrid-content">
+                                        <code class="text-muted small" x-text="a.assets.home || '-'"></code>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="alert alert-info mt-3 mb-0" x-show="a.assets.installed === false" x-cloak>
                                 <div class="mb-1">
                                     <i class="ti ti-info-circle me-1"></i>
-                                    {{ t('Skill + slash command are not installed yet.') }}
+                                    <span x-text="$i18n('agent_not_installed')"></span>
                                 </div>
-                                <pre class="mb-0"><code>ntasker install-claude-assets</code></pre>
+                                <pre class="mb-0"><code x-text="'ntasker agent install ' + a.key"></code></pre>
                             </div>
-                        </template>
-                        <template x-if="claudeAssets.installed === true && claudeAssets.drift === true">
-                            <div class="alert alert-warning mt-3 mb-0">
+                            <div class="alert alert-warning mt-3 mb-0"
+                                 x-show="a.assets.installed === true && a.assets.drift === true" x-cloak>
                                 <div class="mb-1">
                                     <i class="ti ti-alert-triangle me-1"></i>
-                                    {{ t('Installed files differ from the package version. Update with backup:') }}
+                                    <span x-text="$i18n('agent_drift')"></span>
                                 </div>
-                                <pre class="mb-0"><code>ntasker install-claude-assets --force</code></pre>
+                                <pre class="mb-0"><code x-text="'ntasker agent install ' + a.key + ' --force'"></code></pre>
                             </div>
-                        </template>
+                        </div>
                     </div>
-                </div>
+                </template>
 
                 {# All settings (read-only listing, includes ad-hoc keys). #}
                 <div class="card">
@@ -375,20 +406,14 @@ function settingsPage() {
         activeTasks: [],
         // True while a VACUUM/optimize is in flight -- disables the button.
         cleaning: false,
-        // Claude Code asset status -- populated on init() and after manual
-        // refreshes. Initialised to ``null`` so x-show guards on
-        // ``=== true`` / ``=== false`` stay quiet until the fetch lands.
-        claudeAssets: {
-            installed: null,
-            drift: null,
-            package_version: '',
-            claude_home: '',
-            files: [],
-        },
+        // Agent registry (GET /api/agents): one entry per agent with
+        // {key,label,icon,available,assets}. Drives the per-agent cards.
+        agents: [],
+        agentDefault: 'claude',
 
         async init() {
             await this.refresh();
-            await this.refreshClaudeAssets();
+            await this.refreshAgents();
             await this.refreshSessions();
             // Keep the restart guard live -- a task may start or end while the
             // page is open. Cheap poll; the page reloads itself on restart.
@@ -431,13 +456,18 @@ function settingsPage() {
             for (const k of knownKeys) this.known[k] = byKey[k] || '';
         },
 
-        async refreshClaudeAssets() {
+        async refreshAgents() {
             try {
-                const r = await fetch('/api/claude-assets/status');
+                const r = await fetch('/api/agents');
                 if (!r.ok) return;
-                this.claudeAssets = await r.json();
+                const data = await r.json();
+                this.agents = data.agents || [];
+                this.agentDefault = data.default || 'claude';
+                // Reflect the effective default in the selector when unset, so
+                // the dropdown shows the agent tasks actually fall back to.
+                if (!this.known['default_agent']) this.known['default_agent'] = this.agentDefault;
             } catch (e) {
-                // Best-effort -- the card stays in its initial neutral state.
+                // Best-effort -- the cards stay empty.
             }
         },
 
@@ -498,6 +528,17 @@ function settingsPage() {
         async setOpenTerminal(checked) {
             this.known['claude_open_terminal'] = checked ? 'true' : 'false';
             await this.saveKnown('claude_open_terminal');
+        },
+
+        // OpenCode "--auto" toggle. Defaults to off when the key is unset.
+        get opencodeAuto() {
+            const v = (this.known['opencode_auto'] || '').toLowerCase();
+            return ['1', 'true', 'yes', 'on'].includes(v);
+        },
+
+        async setOpencodeAuto(checked) {
+            this.known['opencode_auto'] = checked ? 'true' : 'false';
+            await this.saveKnown('opencode_auto');
         },
 
         // Restart the supervised server, then poll /healthz until it answers

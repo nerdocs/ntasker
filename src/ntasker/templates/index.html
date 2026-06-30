@@ -28,6 +28,9 @@
         // session in the background and keep you on the board instead of
         // opening the run view. Read by tracker() in app.js.
         window.__claudeOpenTerminal = {{ claude_open_terminal | default(true) | tojson }};
+        // The agent new tasks default to (the `default_agent` setting). The
+        // live registry from /api/agents updates this once loaded.
+        window.__defaultAgent = {{ default_agent | default('claude') | tojson }};
         document.addEventListener('alpine:init', () => {
             Alpine.magic('i18n', () => (key, params) => {
                 let s = (window.__i18n && window.__i18n[key]) || key;
@@ -43,7 +46,7 @@
 </head>
 <body>
 <div class="d-flex" style="min-height: 100vh;"
-     x-data="tracker(window.__defaultView, window.__claudeOpenTerminal)"
+     x-data="tracker(window.__defaultView, window.__claudeOpenTerminal, window.__defaultAgent)"
      x-init="init()">
 
     {# Sidebar: project + tag filter (full-width checkboxes). Hidden on mobile (<768px). #}
@@ -388,7 +391,17 @@
                                         <option value="low">{{ t('Low') }}</option>
                                     </select>
                                 </div>
-                                <div class="col-md-5">
+                                <div class="col-md-2" x-show="agents.length">
+                                    <label class="form-label" x-text="$i18n('agent_label')"></label>
+                                    <select class="form-select" x-model="form.agent">
+                                        <option value="" x-text="$i18n('default_agent_label') + ' (' + agentLabel(defaultAgent) + ')'"></option>
+                                        <template x-for="a in agents" :key="a.key">
+                                            <option :value="a.key"
+                                                    x-text="a.label + (a.available ? '' : ' — ' + $i18n('agent_not_installed_hint'))"></option>
+                                        </template>
+                                    </select>
+                                </div>
+                                <div class="col-md-3">
                                     <label class="form-label">{{ t('Title') }} <span class="text-danger">*</span></label>
                                     <input type="text" class="form-control" x-model="form.title" required maxlength="500"
                                            x-ref="titleInput"
@@ -500,12 +513,13 @@
                                         <i class="ti ti-plus me-1 fs-3"></i>
                                         {{ t('Create') }}
                                     </button>
-                                    {# Create + immediately hand the task to Claude -- only when the `claude` CLI + a PTY are available. #}
-                                    <button type="button" class="btn btn-sm btn-claude-cta ms-2" x-show="claudeAvailable"
+                                    {# Create + immediately hand the task to its agent -- only when that agent's CLI + a PTY are available. #}
+                                    <button type="button" class="btn btn-sm btn-claude-cta ms-2"
+                                            x-show="agentAvailable(form.agent || defaultAgent)"
                                             :disabled="!form.title.trim() || !isProjectValid('form')"
                                             @click="createTask(true)"
-                                            :title="$i18n('claude_run')">
-                                        <img src="/static/claude.webp?v={{ static_bust('claude.webp') }}" class="claude-logo-icon me-1" alt="">
+                                            :title="$i18n('claude_run') + ' (' + agentLabel(form.agent || defaultAgent) + ')'">
+                                        <img :src="agentIconUrl({agent: form.agent})" class="claude-logo-icon me-1" alt="">
                                         {{ t('Create + Run') }}
                                     </button>
                                 </div>
@@ -518,8 +532,10 @@
                 {# session, so you see at a glance what is running in parallel #}
                 {# right now. Click toggles that project's filter. Auto-updates #}
                 {# from the session poll; hidden when nothing is running. #}
-                <div class="running-projects mb-3 d-flex flex-wrap align-items-center gap-2"
-                     x-show="runningProjectChips.length > 0" x-cloak>
+                {# x-show sits on a plain wrapper (no Bootstrap display utility) so #}
+                {# `.d-flex !important` cannot override Alpine's display:none. #}
+                <div x-show="runningProjectChips.length > 0" x-cloak>
+                <div class="running-projects mb-3 d-flex flex-wrap align-items-center gap-2">
                     <span class="text-secondary small text-uppercase fw-bold me-1">
                         <i class="ti ti-player-play me-1"></i><span x-text="$i18n('running_now')"></span>
                     </span>
@@ -540,6 +556,7 @@
                             <span class="ms-2 badge bg-secondary-lt" x-show="chip.count > 1" x-text="chip.count"></span>
                         </button>
                     </template>
+                </div>
                 </div>
 
                 {# Tabs -- list view only. Kanban renders its own column layout below. #}
@@ -717,12 +734,12 @@
                                     <div class="col-auto">
                                         <div class="btn-list">
                                             {# Run with Claude -- only when the `claude` CLI + a PTY are available. #}
-                                            <template x-if="claudeAvailable && task.status !== 'done'">
+                                            <template x-if="taskRunnable(task) && task.status !== 'done'">
                                                 <button class="btn btn-sm btn-claude" @click="openClaudeRun(task)"
                                                         :class="{'btn-claude-waiting': taskRunPhase(task.id) === 'waiting'}"
-                                                        :aria-label="taskRunPhase(task.id) === 'waiting' ? $i18n('claude_waiting') : $i18n('claude_run')"
-                                                        :title="taskRunPhase(task.id) === 'waiting' ? $i18n('claude_waiting') : $i18n('claude_run')">
-                                                    <template x-if="taskRunPhase(task.id) === 'waiting'"><i class="ti ti-help fs-3"></i></template><template x-if="taskRunPhase(task.id) === 'running'"><span class="spinner-border spinner-border-sm"></span></template><template x-if="!taskRunPhase(task.id)"><img src="/static/claude.webp?v={{ static_bust('claude.webp') }}" class="claude-logo-icon" alt=""></template>
+                                                        :aria-label="taskRunPhase(task.id) === 'waiting' ? $i18n('claude_waiting') : ($i18n('claude_run') + ' (' + agentLabel(taskAgentKey(task)) + ')')"
+                                                        :title="taskRunPhase(task.id) === 'waiting' ? $i18n('claude_waiting') : ($i18n('claude_run') + ' (' + agentLabel(taskAgentKey(task)) + ')')">
+                                                    <template x-if="taskRunPhase(task.id) === 'waiting'"><i class="ti ti-help fs-3"></i></template><template x-if="taskRunPhase(task.id) === 'running'"><span class="spinner-border spinner-border-sm"></span></template><template x-if="!taskRunPhase(task.id)"><img :src="agentIconUrl(task)" class="claude-logo-icon" alt=""></template>
                                                 </button>
                                             </template>
                                             <button class="btn btn-sm btn-ghost-secondary" @click="startEdit(task)"
@@ -829,13 +846,13 @@
                                                         @click.stop="task._expanded = !task._expanded"
                                                         x-text="task.title"></strong>
                                                 {# Run with Claude -- only when the `claude` CLI + a PTY are available. #}
-                                                <template x-if="claudeAvailable && task.status !== 'done'">
+                                                <template x-if="taskRunnable(task) && task.status !== 'done'">
                                                     <button class="btn btn-sm btn-claude px-1 py-0"
                                                             @click.stop="openClaudeRun(task)"
                                                             :class="{'btn-claude-waiting': taskRunPhase(task.id) === 'waiting'}"
-                                                            :aria-label="taskRunPhase(task.id) === 'waiting' ? $i18n('claude_waiting') : $i18n('claude_run')"
-                                                            :title="taskRunPhase(task.id) === 'waiting' ? $i18n('claude_waiting') : $i18n('claude_run')">
-                                                        <template x-if="taskRunPhase(task.id) === 'waiting'"><i class="ti ti-help fs-3"></i></template><template x-if="taskRunPhase(task.id) === 'running'"><span class="spinner-border spinner-border-sm"></span></template><template x-if="!taskRunPhase(task.id)"><img src="/static/claude.webp?v={{ static_bust('claude.webp') }}" class="claude-logo-icon" alt=""></template>
+                                                            :aria-label="taskRunPhase(task.id) === 'waiting' ? $i18n('claude_waiting') : ($i18n('claude_run') + ' (' + agentLabel(taskAgentKey(task)) + ')')"
+                                                            :title="taskRunPhase(task.id) === 'waiting' ? $i18n('claude_waiting') : ($i18n('claude_run') + ' (' + agentLabel(taskAgentKey(task)) + ')')">
+                                                        <template x-if="taskRunPhase(task.id) === 'waiting'"><i class="ti ti-help fs-3"></i></template><template x-if="taskRunPhase(task.id) === 'running'"><span class="spinner-border spinner-border-sm"></span></template><template x-if="!taskRunPhase(task.id)"><img :src="agentIconUrl(task)" class="claude-logo-icon" alt=""></template>
                                                     </button>
                                                 </template>
                                                 <button class="btn btn-sm btn-ghost-secondary px-1 py-0"
@@ -1061,6 +1078,16 @@
                             <option value="high">{{ t('High') }}</option>
                             <option value="normal">{{ t('Normal') }}</option>
                             <option value="low">{{ t('Low') }}</option>
+                        </select>
+                    </div>
+                    <div class="mb-2" x-show="agents.length">
+                        <label class="form-label" x-text="$i18n('agent_label')"></label>
+                        <select class="form-select" x-model="editing.agent">
+                            <option :value="null" x-text="$i18n('default_agent_label') + ' (' + agentLabel(defaultAgent) + ')'"></option>
+                            <template x-for="a in agents" :key="a.key">
+                                <option :value="a.key"
+                                        x-text="a.label + (a.available ? '' : ' — ' + $i18n('agent_not_installed_hint'))"></option>
+                            </template>
                         </select>
                     </div>
                     <div class="mb-2">

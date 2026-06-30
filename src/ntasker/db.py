@@ -40,7 +40,10 @@ CREATE TABLE IF NOT EXISTS tasks (
     priority TEXT NOT NULL DEFAULT 'normal',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     completed_at TEXT,
-    archived INTEGER NOT NULL DEFAULT 0
+    archived INTEGER NOT NULL DEFAULT 0,
+    -- Which AI coding agent runs this task. NULL = fall back to the
+    -- ``default_agent`` setting (then ``claude``). See ntasker.agents.
+    agent TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_archived ON tasks(archived);
 CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project);
@@ -98,6 +101,13 @@ def init_db(path: Path | None = None) -> None:
             conn.execute(
                 "ALTER TABLE tasks ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal'"
             )
+        except sqlite3.OperationalError:
+            pass
+        # v2.14 multi-agent migration: add the per-task `agent` column on
+        # pre-multi-agent DBs. Nullable, no default -- NULL means "use the
+        # default_agent setting". Existing tasks keep running on Claude.
+        try:
+            conn.execute("ALTER TABLE tasks ADD COLUMN agent TEXT")
         except sqlite3.OperationalError:
             pass
         # v2.0 phase migration: legacy values `later` and NULL collapse into
@@ -188,6 +198,7 @@ def row_to_task(
         "created_at": row["created_at"],
         "completed_at": row["completed_at"],
         "archived": bool(row["archived"]),
+        "agent": row["agent"],
         "tags": tags or [],
         "depends": depends or [],
     }

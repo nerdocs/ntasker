@@ -88,7 +88,7 @@ function _b64ToBytes(b64) {
     return bytes;
 }
 
-function tracker(serverDefaultView, claudeOpenTerminal = true) {
+function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'claude') {
     // Resolve initial viewMode: localStorage > server-supplied default > 'list'.
     // The server value comes from the `default_view` setting and is injected
     // into the Alpine root in index.html.
@@ -122,8 +122,17 @@ function tracker(serverDefaultView, claudeOpenTerminal = true) {
         draggedTaskId: null,
         dragOverColumn: null,
 
-        // ---- Claude run ("Run with Claude") ----
-        // claudeAvailable gates the per-task run button (GET /api/claude/status).
+        // ---- Agent registry (Claude / OpenCode / Pi) ----
+        // ntasker is agent-agnostic: each task carries an ``agent`` and the run
+        // button shows that agent's icon. ``agents`` is the /api/agents feed --
+        // one entry per agent with {key,label,icon,available,assets}.
+        // ``defaultAgent`` is the agent a task without an explicit one runs on.
+        agents: [],
+        defaultAgent: defaultAgent || 'claude',
+
+        // ---- Agent run (interactive terminal session) ----
+        // claudeAvailable = at least one agent's CLI is launchable (any run is
+        // possible). Per-task runnability is decided by taskRunnable(task).
         // claudeView = task id of the currently ACTIVE run tab (or null when the
         // run view is closed). claudeTabs = [{taskId, taskTitle, status}], one per
         // open session tab; claudeSessions is the set of task ids with a live
@@ -175,6 +184,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true) {
             description: '',
             phase: '',
             priority: 'normal',
+            agent: '',         // '' = use the default agent
             tags: [],          // committed tag list (lowercase strings)
             tagInput: '',      // current text in the tag-input
             depends: [],       // committed dependencies: [{id, title, done}]
@@ -720,6 +730,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true) {
                 description: this.form.description.trim() || null,
                 phase: this.form.phase || null,
                 priority: this.form.priority || 'normal',
+                agent: this.form.agent || null,
                 tags: this.form.tags,
                 depends: this.form.depends.map(d => d.id),
             };
@@ -737,15 +748,16 @@ function tracker(serverDefaultView, claudeOpenTerminal = true) {
             this.form.description = '';
             this.form.phase = '';
             this.form.priority = 'normal';
+            this.form.agent = '';
             this.form.tags = [];
             this.form.tagInput = '';
             this.form.depends = [];
             this.form.depInput = '';
             // Keep project selection for rapid same-project entry.
             await this.refreshAll();
-            // Create + Run: hand the fresh task straight to Claude. The run
+            // Create + Run: hand the fresh task straight to its agent. The run
             // view replaces the page, so skip the create toast below.
-            if (run && this.claudeAvailable) {
+            if (run && this.taskRunnable(created)) {
                 this.openClaudeRun(created);
                 return;
             }
@@ -835,6 +847,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true) {
                 project: t.project || null,
                 phase: t.phase || null,
                 priority: t.priority || 'normal',
+                agent: t.agent || null,
                 tags: t.tags,
                 depends: (t.depends || []).map(d => d.id),
             };
@@ -1393,18 +1406,49 @@ function tracker(serverDefaultView, claudeOpenTerminal = true) {
         // it keeps running when you go Back (or reload), and reattaching replays
         // the recent output to reconstruct the screen. See claude_runner.py.
 
-        // Probe feature availability (`claude` CLI + a POSIX PTY). Non-fatal:
-        // the run button just stays hidden when unavailable.
+        // Load the agent registry (GET /api/agents): which agents exist, whether
+        // each CLI is launchable, and the resolved default agent. Non-fatal --
+        // run buttons just stay hidden when nothing is available.
         async loadClaudeStatus() {
             try {
-                const r = await fetch('/api/claude/status');
+                const r = await fetch('/api/agents');
                 if (!r.ok) return;
                 const data = await r.json();
-                this.claudeAvailable = !!data.available;
-                this.claudeReason = data.reason || null;
+                this.agents = data.agents || [];
+                if (data.default) this.defaultAgent = data.default;
+                this.claudeAvailable = this.agents.some(a => a.available);
             } catch (_e) {
                 this.claudeAvailable = false;
             }
+        },
+
+        // ---- Agent helpers (per-task icon + runnability) ----
+        // The registry entry for ``key`` (or null when unknown).
+        agentByKey(key) {
+            return this.agents.find(a => a.key === key) || null;
+        },
+        // The effective agent key for a task: its own ``agent`` or the default.
+        taskAgentKey(task) {
+            return (task && task.agent) || this.defaultAgent;
+        },
+        // Whether a given agent key's CLI is currently launchable.
+        agentAvailable(key) {
+            const a = this.agentByKey(key);
+            return !!(a && a.available);
+        },
+        // Whether a task can be run right now (its agent's CLI is available).
+        taskRunnable(task) {
+            return this.agentAvailable(this.taskAgentKey(task));
+        },
+        // Static URL of a task's agent icon (for the run button <img>).
+        agentIconUrl(task) {
+            const a = this.agentByKey(this.taskAgentKey(task));
+            return a && a.icon ? ('/static/' + a.icon) : '';
+        },
+        // Human label for an agent key (for tooltips / the picker).
+        agentLabel(key) {
+            const a = this.agentByKey(key);
+            return a ? a.label : (key || '');
         },
 
         // Refresh the set of task ids with a live session (busy indicators) and

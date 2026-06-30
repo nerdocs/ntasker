@@ -672,11 +672,14 @@ def main() -> int:
     # ------------------------------------------------------------------
 
     from ntasker import claude_assets as _ca  # noqa: E402, PLC0415
+    from ntasker.agents import AGENTS as _AGENTS  # noqa: E402, PLC0415
+
+    _claude_spec = _AGENTS["claude"]
 
     # 36. Packaged assets exist + readable.
     skill_md = _ca.read_skill_md()
     assert "ntasker Skill" in skill_md, "SKILL.md must contain heading"
-    template = _ca.read_command_template()
+    template = _ca.read_command_template(_claude_spec.command_template)
     assert "{COMMAND_NAME}" in template and "{HELPER_PATH}" in template, (
         "task.md.template must keep both placeholders"
     )
@@ -959,10 +962,10 @@ def main() -> int:
 
     # 39. Install into a fresh test home: writes 3 files.
     test_home = _tmp_root / "claude-home-fresh"
-    plan = _ca.expected_files(test_home, "task")
+    plan = _ca.expected_files(_claude_spec, test_home, "task")
     assert len(plan) == 3
     assert {p.label for p in plan} == {"skill", "command", "helper"}
-    result = _ca.install_assets(test_home, "task")
+    result = _ca.install_assets(_claude_spec, test_home, "task")
     assert result.success, f"install must succeed on fresh home: {result.actions}"
     assert all(a.action == "write" for a in result.actions), [a.action for a in result.actions]
     for af in plan:
@@ -970,7 +973,7 @@ def main() -> int:
     print(f"OK install_assets on fresh {test_home} -> 3 writes")
 
     # 40. --check after install: status.installed=True, drift=False (CLI exit 0).
-    status = _ca.scan_status(test_home, command_name="task")
+    status = _ca.scan_status(_claude_spec, test_home, command_name="task")
     assert status.installed is True and status.drift is False
     print("OK scan_status after install -> installed=True, drift=False")
 
@@ -1069,23 +1072,25 @@ def main() -> int:
     assert proc.returncode == 2, "path-traversal command name must be rejected"
     print("OK path-traversal --command-name rejected with exit 2")
 
-    # 49. /api/claude-assets/status returns the expected JSON shape.
+    # 49. /api/agents reports per-agent availability + /task integration status.
     os.environ["NTASKER_CLAUDE_HOME"] = str(test_home)
     try:
         # Re-install so test_home is clean (no DRIFT MARKER) and we know exact state.
-        _ca.install_assets(test_home, "task", force=True)
-        r = client.get("/api/claude-assets/status")
+        _ca.install_assets(_claude_spec, test_home, "task", force=True)
+        r = client.get("/api/agents")
         assert_ok(r)
         body = r.json()
-        assert set(body.keys()) >= {
-            "installed", "drift", "package_version", "claude_home", "files"
-        }
-        assert body["installed"] is True
-        assert body["drift"] is False
-        assert isinstance(body["files"], list) and len(body["files"]) == 3
-        assert all("expected_hash" in f and f["expected_hash"].startswith("sha256:")
-                   for f in body["files"])
-        print(f"OK GET /api/claude-assets/status -> installed=True drift=False ({len(body['files'])} files)")
+        assert set(body.keys()) >= {"default", "package_version", "agents"}
+        by_key = {a["key"]: a for a in body["agents"]}
+        assert set(by_key) == {"claude", "opencode", "pi"}, by_key.keys()
+        claude = by_key["claude"]
+        assert set(claude.keys()) >= {"key", "label", "icon", "available", "assets"}
+        assert claude["assets"]["installed"] is True
+        assert claude["assets"]["drift"] is False
+        assert claude["assets"]["home"] == str(test_home)
+        # Default must be one of the known agents.
+        assert body["default"] in by_key
+        print(f"OK GET /api/agents -> claude installed=True drift=False (default={body['default']})")
     finally:
         del os.environ["NTASKER_CLAUDE_HOME"]
 
@@ -1286,7 +1291,7 @@ def main() -> int:
     # 50. boot_drift_warning returns None on a clean install.
     os.environ["NTASKER_CLAUDE_HOME"] = str(test_home)
     try:
-        _ca.install_assets(test_home, "task", force=True)
+        _ca.install_assets(_claude_spec, test_home, "task", force=True)
         assert _ca.boot_drift_warning() is None
         # Now drift the file -> warning surfaces.
         skill_path = test_home / "skills" / "ntasker" / "SKILL.md"

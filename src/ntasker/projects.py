@@ -28,7 +28,7 @@ import json
 import os
 from pathlib import Path
 
-from ntasker.claude_assets import resolve_claude_home
+from ntasker.agents import AGENTS, resolve_home
 
 # Cap how many lines of a session file we scan for a ``cwd`` -- it lives on the
 # first line in practice; the cap just bounds the read for pathological files.
@@ -172,7 +172,7 @@ def discover_claude_projects(
     if base is None:
         base = _resolve_projects_base()
     try:
-        root = resolve_claude_home(claude_home) / "projects"
+        root = resolve_home(AGENTS["claude"], claude_home) / "projects"
         entries = sorted(root.iterdir()) if root.is_dir() else []
     except OSError:
         return []

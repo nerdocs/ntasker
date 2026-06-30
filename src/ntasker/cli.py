@@ -26,7 +26,6 @@ import argparse
 import json
 import sys
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 from ntasker import __version__
@@ -37,9 +36,9 @@ from ntasker.assets import (
     local_path_for,
     resolve_mode,
 )
+from ntasker.agents import AGENT_KEYS, AGENTS, agent_available, resolve_home
 from ntasker.claude_assets import (
     install_assets,
-    resolve_claude_home,
     scan_status,
     validate_command_name,
 )
@@ -545,6 +544,12 @@ def cmd_add(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
+    if args.agent is not None and args.agent not in AGENT_KEYS:
+        print(
+            _("ntasker: invalid agent: {value!r}").format(value=args.agent),
+            file=sys.stderr,
+        )
+        return 2
     # phase column is NOT NULL since v2.0 -- default to ``planned`` when the
     # caller omits ``--phase`` so ``ntasker add --title X`` keeps working.
     phase_value = args.phase or "planned"
@@ -569,9 +574,9 @@ def cmd_add(args: argparse.Namespace) -> int:
                 )
                 return 2
         cur = conn.execute(
-            "INSERT INTO tasks (project, title, description, phase, priority) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (args.project, args.title, args.description, phase_value, args.priority),
+            "INSERT INTO tasks (project, title, description, phase, priority, agent) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (args.project, args.title, args.description, phase_value, args.priority, args.agent),
         )
         new_id = int(cur.lastrowid)
         if norm_tags:
@@ -666,6 +671,16 @@ def cmd_patch(args: argparse.Namespace) -> int:
             )
             return 2
         fields["priority"] = args.priority
+    if args.agent is not None:
+        # Empty string clears the agent (-> default_agent at run time).
+        candidate = args.agent.strip()
+        if candidate and candidate not in AGENT_KEYS:
+            print(
+                _("ntasker: invalid agent: {value!r}").format(value=args.agent),
+                file=sys.stderr,
+            )
+            return 2
+        fields["agent"] = candidate or None
     if args.archived is not None:
         fields["archived"] = 1 if args.archived else 0
     if args.status is not None:
@@ -920,60 +935,51 @@ def cmd_projects_migrate(args: argparse.Namespace) -> int:
     return 0
 
 
-# Claude Code assets ---------------------------------------------------------
+# Agent integration assets (skill + /task slash command) --------------------
 
 
-def cmd_install_claude_assets(args: argparse.Namespace) -> int:
-    """Install / check the packaged Claude Code skill + slash command.
-
-    Modes:
-
-    * ``--check``    -- read-only inspection. Exit 0 = identical, 1 = drift,
-      2 = not installed.
-    * ``--dry-run``  -- print actions without touching the filesystem.
-    * default        -- write missing files; skip identical; abort on drift
-      unless ``--force`` is given (then backup + overwrite).
-    """
+def _do_agent_install(
+    spec,
+    command_name_raw: str,
+    home_override: str | None,
+    *,
+    check: bool,
+    force: bool,
+    dry_run: bool,
+) -> int:
+    """Shared install/check logic for one agent's ``/task`` skill + command."""
     try:
-        command_name = validate_command_name(args.command_name)
+        command_name = validate_command_name(command_name_raw)
     except ValueError as exc:
         print(f"ntasker: {exc}", file=sys.stderr)
         return 2
     try:
-        claude_home = resolve_claude_home(args.claude_home)
-    except Exception as exc:
-        print(f"ntasker: invalid --claude-home: {exc}", file=sys.stderr)
+        home = resolve_home(spec, home_override)
+    except Exception as exc:  # noqa: BLE001
+        print(f"ntasker: invalid agent home: {exc}", file=sys.stderr)
         return 2
 
-    if args.check:
-        status = scan_status(claude_home, command_name=command_name)
+    if check:
+        status = scan_status(spec, home, command_name=command_name)
         for fs in status.files:
-            if not fs.installed:
-                marker = "MISSING"
-            elif fs.drift:
-                marker = "DRIFT"
-            else:
-                marker = "OK"
+            marker = "MISSING" if not fs.installed else ("DRIFT" if fs.drift else "OK")
             print(f"  {marker:<8} {fs.label:<8} {fs.path}")
         if not status.installed:
-            print(_("ntasker: Claude assets not installed."))
+            print(_("ntasker: {agent} assets not installed.").format(agent=spec.label))
             return 2
         if status.drift:
             print(
                 _(
-                    "ntasker: Claude assets installed but out of date. "
-                    "Run `ntasker install-claude-assets --force` to update."
-                )
+                    "ntasker: {agent} assets installed but out of date. "
+                    "Run `ntasker agent install {key} --force` to update."
+                ).format(agent=spec.label, key=spec.key)
             )
             return 1
-        print(_("ntasker: Claude assets up to date."))
+        print(_("ntasker: {agent} assets up to date.").format(agent=spec.label))
         return 0
 
     result = install_assets(
-        claude_home,
-        command_name=command_name,
-        force=args.force,
-        dry_run=args.dry_run,
+        spec, home, command_name=command_name, force=force, dry_run=dry_run
     )
 
     written = [a for a in result.actions if a.action == "write"]
@@ -985,16 +991,11 @@ def cmd_install_claude_assets(args: argparse.Namespace) -> int:
     for a in written:
         print(f"  {prefix}WRITE   {a.label:<8} {a.path}")
     for a in backed:
-        print(
-            f"  {prefix}BACKUP  {a.label:<8} {a.path}  ->  {a.backup_path}"
-        )
+        print(f"  {prefix}BACKUP  {a.label:<8} {a.path}  ->  {a.backup_path}")
     for a in skipped:
         print(f"  {prefix}SKIP    {a.label:<8} {a.path}  ({a.reason})")
     for a in blocked:
-        print(
-            f"  {prefix}BLOCKED {a.label:<8} {a.path}  ({a.reason})",
-            file=sys.stderr,
-        )
+        print(f"  {prefix}BLOCKED {a.label:<8} {a.path}  ({a.reason})", file=sys.stderr)
 
     if blocked:
         print(
@@ -1006,10 +1007,81 @@ def cmd_install_claude_assets(args: argparse.Namespace) -> int:
         )
         return 3
     if result.dry_run:
-        print(_("ntasker: would install to {path}").format(path=claude_home))
+        print(_("ntasker: would install to {path}").format(path=home))
     else:
-        print(_("ntasker: installed to {path}").format(path=claude_home))
+        print(_("ntasker: installed to {path}").format(path=home))
     return 0
+
+
+def cmd_agent_install(args: argparse.Namespace) -> int:
+    """Install / check one agent's ``/task`` skill + slash command.
+
+    Modes: ``--check`` (read-only; 0=identical, 1=drift, 2=not installed),
+    ``--dry-run`` (print actions, no writes), default (write missing, skip
+    identical, abort on drift unless ``--force`` -> backup + overwrite).
+    """
+    key = args.agent
+    if key not in AGENTS:
+        print(
+            _("ntasker: unknown agent {key!r}. Known: {keys}").format(
+                key=key, keys=", ".join(AGENT_KEYS)
+            ),
+            file=sys.stderr,
+        )
+        return 2
+    return _do_agent_install(
+        AGENTS[key],
+        args.command_name,
+        args.home,
+        check=args.check,
+        force=args.force,
+        dry_run=args.dry_run,
+    )
+
+
+def cmd_agent_list(args: argparse.Namespace) -> int:
+    """List the known agents with CLI availability + ``/task`` install status."""
+    rows: list[dict] = []
+    for spec in AGENTS.values():
+        try:
+            home = resolve_home(spec)
+            status = scan_status(spec, home)
+            installed, drift = status.installed, status.drift
+        except Exception:  # noqa: BLE001
+            home, installed, drift = spec.default_home, False, False
+        rows.append(
+            {
+                "key": spec.key,
+                "label": spec.label,
+                "binary": spec.binary,
+                "available": agent_available(spec),
+                "installed": installed,
+                "drift": drift,
+                "home": str(home),
+            }
+        )
+    if getattr(args, "json", False):
+        _print_json(rows)
+        return 0
+    print(f"  {'AGENT':<10} {'CLI':<6} {'INTEGRATION':<14} {'HOME'}")
+    print("  " + "-" * 70)
+    for r in rows:
+        cli = "ok" if r["available"] else "-"
+        integ = "drift" if r["drift"] else ("installed" if r["installed"] else "-")
+        print(f"  {r['key']:<10} {cli:<6} {integ:<14} {r['home']}")
+    return 0
+
+
+def cmd_install_claude_assets(args: argparse.Namespace) -> int:
+    """Deprecated alias for ``ntasker agent install claude``."""
+    return _do_agent_install(
+        AGENTS["claude"],
+        args.command_name,
+        args.claude_home,
+        check=args.check,
+        force=args.force,
+        dry_run=args.dry_run,
+    )
 
 
 # Vendor assets (CDN/local) -------------------------------------------------
@@ -1451,6 +1523,11 @@ def build_parser() -> argparse.ArgumentParser:
     sp_add.add_argument("--description")
     sp_add.add_argument("--phase", choices=["planned", "wip", "review"])
     sp_add.add_argument("--priority", default="normal")
+    sp_add.add_argument(
+        "--agent",
+        choices=list(AGENT_KEYS),
+        help=_("AI coding agent for this task (default: the default_agent setting)."),
+    )
     sp_add.add_argument("--tag", action="append", default=[])
     sp_add.add_argument(
         "--depends",
@@ -1487,6 +1564,10 @@ def build_parser() -> argparse.ArgumentParser:
     sp_patch.add_argument("--project")
     sp_patch.add_argument("--phase")
     sp_patch.add_argument("--priority")
+    sp_patch.add_argument(
+        "--agent",
+        help=_("Set the task's agent (claude/opencode/pi; '' clears to default)."),
+    )
     sp_patch.add_argument("--status")
     sp_patch.add_argument(
         "--archived",
@@ -1558,10 +1639,53 @@ def build_parser() -> argparse.ArgumentParser:
     )
     proj_migrate.set_defaults(func=cmd_projects_migrate)
 
-    # install-claude-assets ----------------------------------------------
+    # agent ---------------------------------------------------------------
+    sp_agent = sub.add_parser(
+        "agent",
+        help=_("Manage AI coding agents (list, install /task integration)."),
+    )
+    agent_sub = sp_agent.add_subparsers(dest="agent_cmd", required=True)
+
+    ag_list = agent_sub.add_parser(
+        "list", help=_("List agents with CLI availability + integration status.")
+    )
+    ag_list.add_argument("--json", action="store_true")
+    ag_list.set_defaults(func=cmd_agent_list)
+
+    ag_install = agent_sub.add_parser(
+        "install",
+        help=_("Install / check an agent's skill + /task slash command."),
+    )
+    ag_install.add_argument("agent", choices=list(AGENT_KEYS))
+    ag_install.add_argument(
+        "--command-name",
+        default="task",
+        help=_("Slash command file name (default: task -> /task <id>)."),
+    )
+    ag_install.add_argument(
+        "--force",
+        action="store_true",
+        help=_("Overwrite divergent files (timestamped backup is created)."),
+    )
+    ag_install.add_argument(
+        "--dry-run", action="store_true", help=_("Show planned actions without writing.")
+    )
+    ag_install.add_argument(
+        "--check",
+        action="store_true",
+        help=_("Read-only status check. Exit 0=identical, 1=drift, 2=not installed."),
+    )
+    ag_install.add_argument(
+        "--home",
+        default=None,
+        help=_("Override the agent's config home (also via its *_DIR/*_HOME env var)."),
+    )
+    ag_install.set_defaults(func=cmd_agent_install)
+
+    # install-claude-assets (deprecated alias of `agent install claude`) ---
     sp_ica = sub.add_parser(
         "install-claude-assets",
-        help=_("Install / check the Claude Code skill + slash command"),
+        help=_("Deprecated: use `ntasker agent install claude`."),
     )
     sp_ica.add_argument(
         "--command-name",
@@ -1691,11 +1815,18 @@ def main(argv: list[str] | None = None) -> int:
     # filesystem-only -- no DB involvement. ``assets status`` *does*
     # read the ``assets_mode`` setting and therefore goes through the
     # standard DB-init path below.
-    if args.command == "install-claude-assets":
+    if args.command in {"install-claude-assets", "agent"}:
         # Pin the active language for this run before any string is
         # printed -- ``resolve_for_cli`` falls back to env vars when no
         # DB is reachable yet (and these subcommands intentionally avoid
-        # opening one).
+        # *creating* one).
+        # ``agent list``/``install`` read settings (e.g. the ``<key>_bin``
+        # binary-path overrides), so bind an *existing* DB -- but never
+        # create one just to inspect agents.
+        if args.command == "agent":
+            db_path = resolve_db_path(args.db)
+            if db_path.exists():
+                set_db_path(db_path)
         set_active_language(resolve_for_cli())
         return args.func(args)
     if args.command == "assets" and getattr(args, "assets_cmd", None) in {"fetch", "remove"}:

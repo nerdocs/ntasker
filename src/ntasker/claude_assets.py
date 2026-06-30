@@ -30,7 +30,6 @@ Design notes:
 from __future__ import annotations
 
 import hashlib
-import os
 import re
 from dataclasses import dataclass
 from datetime import datetime
@@ -38,12 +37,14 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Iterable
 
+from ntasker.agents import AGENTS, AgentSpec, resolve_home
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
 #: Fixed helper filename. The ``--command-name`` flag changes the slash
-#: command file (``<name>.md``) but never the helper -- ``task.md`` always
+#: command file (``<name>.md``) but never the helper -- the command always
 #: points at the same ``_ntasker_loader.py`` so users can rename their
 #: slash command without rewriting the helper path.
 HELPER_FILENAME = "_ntasker_loader.py"
@@ -51,10 +52,6 @@ HELPER_FILENAME = "_ntasker_loader.py"
 #: Regex guarding ``--command-name`` against path traversal / injection.
 #: We accept ASCII alnum + underscore + hyphen, no slashes, no dots.
 _COMMAND_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
-
-#: Default ``~/.claude`` home. Override via ``--claude-home`` or
-#: ``NTASKER_CLAUDE_HOME``.
-DEFAULT_CLAUDE_HOME = Path.home() / ".claude"
 
 
 # ---------------------------------------------------------------------------
@@ -72,26 +69,6 @@ def validate_command_name(name: str) -> str:
             f"Invalid command name {name!r}: must match {_COMMAND_NAME_RE.pattern}"
         )
     return name
-
-
-def resolve_claude_home(override: str | os.PathLike | None) -> Path:
-    """Resolve the Claude home directory.
-
-    Precedence: explicit ``override`` > ``NTASKER_CLAUDE_HOME`` env var >
-    ``~/.claude``. The result is expanduser-expanded + made absolute, but
-    we deliberately do NOT enforce that it equals ``~/.claude`` -- tests
-    and ad-hoc setups need to redirect it.
-
-    Symlinks are NOT resolved: when ``~/.claude`` is a symlink (e.g. to a
-    dotfiles repo under ``~/Projekte/claude``), we keep the logical
-    ``~/.claude`` path rather than its target -- that is the location users
-    expect to see and write through.
-    """
-    if override is not None:
-        raw = str(override)
-    else:
-        raw = os.environ.get("NTASKER_CLAUDE_HOME", str(DEFAULT_CLAUDE_HOME))
-    return Path(os.path.abspath(os.path.expanduser(raw)))
 
 
 # ---------------------------------------------------------------------------
@@ -116,11 +93,14 @@ def read_skill_md() -> str:
     return (_asset_root() / "skill" / "SKILL.md").read_text(encoding="utf-8")
 
 
-def read_command_template() -> str:
-    """Return the packaged slash-command template (with ``{COMMAND_NAME}`` /
-    ``{HELPER_PATH}`` placeholders intact).
+def read_command_template(template_name: str) -> str:
+    """Return a packaged slash-command template (placeholders intact).
+
+    ``template_name`` is the per-agent template filename from the agent's
+    :class:`~ntasker.agents.AgentSpec` (e.g. ``task.md.template`` for Claude,
+    ``task.generic.md.template`` for OpenCode/Pi).
     """
-    return (_asset_root() / "command" / "task.md.template").read_text(encoding="utf-8")
+    return (_asset_root() / "command" / template_name).read_text(encoding="utf-8")
 
 
 def read_helper_py() -> str:
@@ -181,28 +161,30 @@ class AssetFile:
         return sha256(self.content)
 
 
-def _helper_path_for_command(command_name: str) -> str:
-    """Path string we substitute into ``task.md`` (literal ``~`` for portability)."""
-    # Keep the literal ``~`` so the rendered slash-command file stays
-    # user-readable / portable. The actual file is written to the resolved
-    # home, but the in-file reference uses the canonical tilde form that
-    # Claude Code accepts in ``allowed-tools`` / shell invocations.
-    return f"~/.claude/commands/{HELPER_FILENAME}"
+def _helper_path_for_command(spec: AgentSpec) -> str:
+    """``~``-form helper path substituted into the rendered command body.
+
+    Keep the literal ``~`` so the rendered command file stays user-readable /
+    portable. The actual file is written to the resolved home, but the in-file
+    reference uses the canonical tilde form (per-agent commands dir).
+    """
+    return f"{spec.helper_ref_dir}/{HELPER_FILENAME}"
 
 
-def expected_files(claude_home: Path, command_name: str) -> list[AssetFile]:
-    """Return the install plan: 3 :class:`AssetFile` entries.
+def expected_files(spec: AgentSpec, home: Path, command_name: str) -> list[AssetFile]:
+    """Return the install plan for one agent: 3 :class:`AssetFile` entries.
 
     Order: ``skill``, ``command``, ``helper`` -- so output and tests are
-    deterministic.
+    deterministic. Paths + the command template come from the agent's
+    :class:`~ntasker.agents.AgentSpec`.
     """
     validate_command_name(command_name)
-    skills_dir = claude_home / "skills" / "ntasker"
-    commands_dir = claude_home / "commands"
+    skills_dir = home / spec.skills_subdir
+    commands_dir = home / spec.commands_subdir
 
-    helper_ref = _helper_path_for_command(command_name)
+    helper_ref = _helper_path_for_command(spec)
     rendered_command = render_command(
-        read_command_template(),
+        read_command_template(spec.command_template),
         command_name=command_name,
         helper_path=helper_ref,
     )
@@ -269,13 +251,13 @@ class InstallStatus:
         }
 
 
-def scan_status(claude_home: Path, command_name: str = "task") -> InstallStatus:
-    """Inspect the filesystem and report installed/drift state.
+def scan_status(spec: AgentSpec, home: Path, command_name: str = "task") -> InstallStatus:
+    """Inspect the filesystem and report installed/drift state for one agent.
 
     Read-only. Used by both the ``--check`` CLI mode and the
-    ``/api/claude-assets/status`` endpoint.
+    ``/api/agents/{key}/assets/status`` endpoint.
     """
-    plan = expected_files(claude_home, command_name)
+    plan = expected_files(spec, home, command_name)
     files_status: list[FileStatus] = []
     all_installed = True
     any_drift = False
@@ -348,13 +330,14 @@ def _backup_suffix(now: datetime | None = None) -> str:
 
 
 def install_assets(
-    claude_home: Path,
+    spec: AgentSpec,
+    home: Path,
     command_name: str = "task",
     *,
     force: bool = False,
     dry_run: bool = False,
 ) -> InstallResult:
-    """Install (or simulate installing) the 3 asset files.
+    """Install (or simulate installing) one agent's 3 asset files.
 
     Conflict handling per file:
 
@@ -367,14 +350,14 @@ def install_assets(
     ``dry_run`` records the action but never touches the filesystem
     (no mkdir, no writes, no backups). Useful for ``--dry-run`` and tests.
     """
-    plan = expected_files(claude_home, command_name)
+    plan = expected_files(spec, home, command_name)
     actions: list[InstallAction] = []
     success = True
 
     if not dry_run:
         # Make sure parent dirs exist; harmless if they do.
-        (claude_home / "skills" / "ntasker").mkdir(parents=True, exist_ok=True)
-        (claude_home / "commands").mkdir(parents=True, exist_ok=True)
+        (home / spec.skills_subdir).mkdir(parents=True, exist_ok=True)
+        (home / spec.commands_subdir).mkdir(parents=True, exist_ok=True)
 
     for af in plan:
         actual = file_sha256(af.path)
@@ -433,27 +416,29 @@ def install_assets(
 
 
 def boot_drift_warning() -> str | None:
-    """Return a warning string if installed Claude assets are stale.
+    """Return a warning string if any installed agent's assets are stale.
 
     Best-effort: catches everything and returns ``None`` on any error so a
-    broken claude-home cannot prevent ``ntasker serve`` from booting. The
+    broken agent home cannot prevent ``ntasker serve`` from booting. Stays
+    quiet for agents the user has not integrated at all (not installed). The
     caller (``ntasker.cli.cmd_serve``) prints the result to stderr.
     """
-    try:
-        claude_home = resolve_claude_home(None)
-        status = scan_status(claude_home, command_name="task")
-    except Exception:
-        return None
-    # Stay quiet for users who do not use Claude Code at all.
-    if not status.installed:
-        return None
-    if not status.drift:
+    stale: list[AgentSpec] = []
+    for spec in AGENTS.values():
+        try:
+            status = scan_status(spec, resolve_home(spec), command_name="task")
+        except Exception:  # noqa: BLE001 -- one bad home must not hide the rest
+            continue
+        if status.installed and status.drift:
+            stale.append(spec)
+    if not stale:
         return None
     from ntasker import __version__ as VERSION  # noqa: PLC0415
 
+    labels = ", ".join(s.label for s in stale)
     return (
-        f"[ntasker] Claude Code assets out of date for v{VERSION}. "
-        "Run `ntasker install-claude-assets --force` to update."
+        f"[ntasker] Agent assets out of date for v{VERSION} ({labels}). "
+        "Run `ntasker agent install <agent> --force` to update."
     )
 
 
@@ -462,7 +447,7 @@ def boot_drift_warning() -> str | None:
 # ---------------------------------------------------------------------------
 
 
-def iter_asset_paths(claude_home: Path, command_name: str = "task") -> Iterable[Path]:
+def iter_asset_paths(spec: AgentSpec, home: Path, command_name: str = "task") -> Iterable[Path]:
     """Yield the 3 absolute target paths in the standard order."""
-    for af in expected_files(claude_home, command_name):
+    for af in expected_files(spec, home, command_name):
         yield af.path

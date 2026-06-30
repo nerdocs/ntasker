@@ -32,7 +32,8 @@ from ntasker.assets import (
     get_asset_url,
     get_sri,
 )
-from ntasker.claude_assets import resolve_claude_home, scan_status
+from ntasker.agents import AGENTS, AGENT_KEYS, resolve_home
+from ntasker.claude_assets import scan_status
 from ntasker.claude_runner import (
     active_session_ids,
     default_cwd_for_project,
@@ -81,6 +82,7 @@ from ntasker.settings import (
     ensure_settings_table,
     get_assets_mode_resolved,
     get_claude_open_terminal,
+    get_default_agent,
     get_default_view,
     get_setting_raw,
     list_settings,
@@ -171,6 +173,10 @@ class TaskCreate(BaseModel):
     # Plain ``str`` so the endpoint can return HTTP 400 (not 422) on bad
     # values via the explicit whitelist check.
     priority: str = "normal"
+    # AI coding agent for this task (claude/opencode/pi). None -> the
+    # ``default_agent`` setting decides at run time. Validated against the
+    # registry on insert; a bad value yields HTTP 400.
+    agent: str | None = None
     tags: list[str] = Field(default_factory=list)
     # Task ids this task depends on. Validated (existence + no cycles) on
     # insert; an invalid set yields HTTP 400.
@@ -184,6 +190,9 @@ class TaskUpdate(BaseModel):
     status: Status | None = None
     phase: Phase | None = None
     priority: str | None = None
+    # None when omitted = unchanged; an explicit null clears it (-> default
+    # agent). Validated against the registry on update.
+    agent: str | None = None
     archived: bool | None = None
     tags: list[str] | None = None  # None = unchanged; [] = clear all
     depends: list[int] | None = None  # None = unchanged; [] = clear all
@@ -462,21 +471,39 @@ def build_js_strings() -> dict[str, str]:
         "unset_placeholder": _("(not set yet)"),
         "saved": _("{key} saved."),
         "removed": _("{key} removed."),
-        "claude_integration": _("Claude Code Integration"),
-        "claude_intro": _(
-            "ntasker ships a skill (SKILL.md) and a slash command (/task <id>) "
-            "for Claude Code. This card shows the install status -- writes go "
+        "agent_integration": _("AI agent integration"),
+        "agent_integration_intro": _(
+            "ntasker ships a skill (SKILL.md) and a /task <id> slash command for "
+            "each agent. This shows the install status per agent -- writes go "
             "exclusively through the CLI."
+        ),
+        "default_agent_label": _("Default agent"),
+        "default_agent_hint": _(
+            "Agent new tasks use, and the fallback for any task without one."
         ),
         "installed": _("Installed"),
         "package_version": _("Package version"),
         "drift": _("Drift"),
-        "claude_home": _("Claude home"),
+        "agent_home": _("Config home"),
+        "agent_cli_missing": _(
+            "CLI not found on PATH -- runs are disabled for this agent until it is installed."
+        ),
+        "agent_available_badge": _("CLI available"),
+        "agent_unavailable_badge": _("CLI missing"),
         "yes": _("yes"),
         "no": _("no"),
-        "claude_not_installed": _("Skill + slash command are not installed yet."),
-        "claude_drift": _(
+        "agent_not_installed": _("Skill + slash command are not installed yet. Install with:"),
+        "agent_drift": _(
             "Installed files differ from the package version. Update with backup:"
+        ),
+        "opencode_auto_label": _("Auto-approve actions (--auto)"),
+        "opencode_auto_hint": _(
+            "Run OpenCode sessions with --auto, so it accepts its own actions."
+        ),
+        "agent_bin_label": _("CLI path"),
+        "agent_bin_hint": _(
+            "Full path to the agent's CLI when it is not on the server's PATH "
+            "(e.g. run as a service without nvm). Leave empty to auto-detect."
         ),
         "all_settings": _("All settings (DB content)"),
         "key": _("Key"),
@@ -486,23 +513,26 @@ def build_js_strings() -> dict[str, str]:
         "no_settings_hint_prefix": _(
             "Configure a known key above, or set one via CLI:"
         ),
-        # Claude run -- interactive "Run with Claude" terminal
-        "claude_run": _("Run with Claude"),
-        "claude_waiting": _("Claude is waiting for your input"),
+        # Agent run -- interactive terminal session
+        "claude_run": _("Run"),
+        "claude_waiting": _("The agent is waiting for your input"),
         "claude_back": _("Back"),
         "claude_stop": _("Stop"),
         "claude_mark_done": _("Mark done"),
         "claude_connecting": _("Connecting..."),
         "claude_running": _("Running..."),
         "claude_run_finished": _("Session ended"),
-        "claude_started_background": _("Task #{id} started with Claude in the background."),
+        "claude_started_background": _("Task #{id} started in the background."),
         "running_now": _("Running now"),
         "confirm_parallel_run": _(
-            'Project "{project}" already has a running Claude session. '
+            'Project "{project}" already has a running agent session. '
             "Two agents in one project can conflict and cause inconsistencies. "
             "Start another anyway?"
         ),
         "new_task_for_project": _("New task for this project"),
+        # New-task / edit -- agent picker
+        "agent_label": _("Agent"),
+        "agent_not_installed_hint": _("not installed"),
         # Tag-management page
         "tags_manage_title": _("Manage tags"),
         "tags_table_intro": _(
@@ -788,6 +818,7 @@ def index(request: Request) -> HTMLResponse:
             "js_strings": build_js_strings(),
             "default_view": get_default_view(),
             "claude_open_terminal": get_claude_open_terminal(),
+            "default_agent": get_default_agent(),
             "links": LINKS,
         },
     )
@@ -900,41 +931,54 @@ def api_delete_setting(key: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Routes -- API: claude-assets (read-only status)
+# Routes -- API: agents (registry + availability + integration status)
 # ---------------------------------------------------------------------------
 
 
-@app.get("/api/claude-assets/status")
-def api_claude_assets_status() -> JSONResponse:
-    """Read-only: report whether the packaged Claude Code skill + slash
-    command are installed in ``~/.claude`` and match the package version.
+@app.get("/api/agents")
+def api_agents() -> JSONResponse:
+    """Per-agent registry feed: availability + ``/task`` integration status.
 
-    Intentionally no write counterpart: installs are user-initiated via
-    the ``ntasker install-claude-assets`` CLI to avoid CSRF / DNS-rebind
-    write surface.
+    Single source for the frontend: which agents exist, whether each one's CLI
+    is launchable (binary on PATH + a POSIX PTY), and whether its skill + slash
+    command are installed (and match the package). Drives the per-task run
+    button, the new-task agent picker, and the /settings integration cards.
+
+    Read-only -- installs go through the ``ntasker agent install`` CLI to avoid
+    CSRF / DNS-rebind write surface. Reports ``default`` so the UI knows which
+    agent a task without an explicit ``agent`` will run on.
     """
-    claude_home = resolve_claude_home(None)
-    status = scan_status(claude_home, command_name="task")
-    body = {
-        "installed": status.installed,
-        "drift": status.drift,
-        "package_version": VERSION,
-        "claude_home": str(claude_home),
-        "files": [f.to_dict() for f in status.files],
-    }
-    return JSONResponse(body)
+    default = get_default_agent()
+    out: list[dict] = []
+    for spec in AGENTS.values():
+        available, reason = terminal_available(spec)
+        try:
+            home = resolve_home(spec)
+            status = scan_status(spec, home, command_name="task")
+            assets = {
+                "installed": status.installed,
+                "drift": status.drift,
+                "home": str(home),
+            }
+        except Exception:  # noqa: BLE001 -- a broken home must not 500 the page
+            assets = {"installed": False, "drift": False, "home": None}
+        out.append(
+            {
+                "key": spec.key,
+                "label": spec.label,
+                "icon": spec.icon,
+                "available": available,
+                "reason": reason,
+                "is_default": spec.key == default,
+                "assets": assets,
+            }
+        )
+    return JSONResponse({"default": default, "package_version": VERSION, "agents": out})
 
 
 # ---------------------------------------------------------------------------
-# Routes -- API + WebSocket: Claude Code runs
+# Routes -- API + WebSocket: interactive agent runs
 # ---------------------------------------------------------------------------
-
-
-@app.get("/api/claude/status")
-def api_claude_status() -> JSONResponse:
-    """Whether an interactive Claude session can be launched (CLI + PTY)."""
-    available, reason = terminal_available()
-    return JSONResponse({"available": available, "reason": reason})
 
 
 @app.get("/api/claude/sessions")
@@ -1461,14 +1505,16 @@ def _normalize_project(value: str | None) -> str | None:
 def api_create_task(payload: TaskCreate) -> JSONResponse:
     if payload.priority not in PRIORITY_VALID:
         raise HTTPException(status_code=400, detail=_("Invalid priority"))
+    if payload.agent is not None and payload.agent not in AGENT_KEYS:
+        raise HTTPException(status_code=400, detail=_("Invalid agent"))
     norm_tags = normalize_tags(payload.tags)
     phase_value = payload.phase or PHASE_DEFAULT
     project_value = _normalize_project(payload.project)
     with get_conn() as conn:
         cur = conn.execute(
             """
-            INSERT INTO tasks (project, title, description, phase, priority)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO tasks (project, title, description, phase, priority, agent)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
             (
                 project_value,
@@ -1476,6 +1522,7 @@ def api_create_task(payload: TaskCreate) -> JSONResponse:
                 payload.description,
                 phase_value,
                 payload.priority,
+                payload.agent,
             ),
         )
         new_id = int(cur.lastrowid)
@@ -1505,6 +1552,9 @@ def api_update_task(task_id: int, payload: TaskUpdate) -> JSONResponse:
 
     if "priority" in fields and fields["priority"] not in PRIORITY_VALID:
         raise HTTPException(status_code=400, detail=_("Invalid priority"))
+
+    if "agent" in fields and fields["agent"] is not None and fields["agent"] not in AGENT_KEYS:
+        raise HTTPException(status_code=400, detail=_("Invalid agent"))
 
     # phase is NOT NULL since v2.0: a legacy client trying to set phase=null
     # falls back to the canonical default rather than tripping the SQL

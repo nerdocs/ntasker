@@ -1,0 +1,35 @@
+---
+description: Load an nTasker task into the session for processing
+---
+
+# nTasker task #$ARGUMENTS (via /{COMMAND_NAME})
+
+Your first action: run the loader below with your shell tool. It prints the
+task (title, description, project, phase, priority) and moves it to
+phase "wip" (In Progress):
+
+    python3 {HELPER_PATH} "$ARGUMENTS"
+
+Then work the task:
+
+1. Read the loaded task data.
+2. Make sure you are in the right project directory. If the loader printed a
+   project-mismatch warning, stop and ask the user whether to proceed here or
+   switch -- do not start work until they confirm.
+3. On unclear requirements, ask -- do not assume.
+4. When your work is done, hand it off to review by moving the task to
+   phase "review" (this is a handoff, not a close -- no user OK needed):
+
+       ntasker patch "$ARGUMENTS" --phase review
+
+   If you could not finish (blocker, missing info, failed verification), do
+   NOT move to review -- leave the phase as-is and report the blocker.
+
+**Hard rules:**
+
+- Never set status=done on your own. Closing a task is the user's decision;
+  only do it when the user explicitly asks (then: ntasker done "$ARGUMENTS").
+- The only autonomous tracker writes allowed are phase "wip" on start (done by
+  the loader) and phase "review" when you genuinely finished. Nothing else.
+- Never archive on someone's behalf. No new tasks, no deletes, no writes to
+  other task IDs.

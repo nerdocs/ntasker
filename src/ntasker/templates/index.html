@@ -590,8 +590,24 @@
                         <template x-for="task in tasks" :key="task.id">
                             <div class="list-group-item"
                                  :class="{'task-session-running': taskRunPhase(task.id) === 'running',
-                                          'task-session-waiting': taskRunPhase(task.id) === 'waiting'}">
+                                          'task-session-waiting': taskRunPhase(task.id) === 'waiting',
+                                          'drop-before': dragOverTaskId === task.id && dragOverBefore,
+                                          'drop-after': dragOverTaskId === task.id && !dragOverBefore}"
+                                 @dragover.prevent="onCardDragOver($event, task, null)"
+                                 @drop.prevent="onCardDrop($event, task, null)">
                                 <div class="row align-items-start">
+                                    {# Drag handle -- only this grip starts a reorder drag, so the #}
+                                    {# row's many click affordances keep working. #}
+                                    <div class="col-auto pe-0 d-flex align-items-center align-self-stretch">
+                                        <span class="drag-handle text-muted" role="button"
+                                              draggable="true"
+                                              @dragstart="onCardDragStart($event, task)"
+                                              @dragend="onCardDragEnd($event)"
+                                              :title="$i18n('reorder_hint')"
+                                              :aria-label="$i18n('reorder_hint')">
+                                            <i class="ti ti-grip-vertical"></i>
+                                        </span>
+                                    </div>
                                     <div class="col-auto">
                                         {# Disabled while blocked: a task with open dependencies #}
                                         {# can't be completed (mirrors the kanban drag guard). #}
@@ -734,13 +750,27 @@
                                     <div class="col-auto">
                                         <div class="btn-list">
                                             {# Run with Claude -- only when the `claude` CLI + a PTY are available. #}
+                                            {# Runnable: session indicator (spinner / waiting) sits LEFT of the #}
+                                            {# button so the agent logo stays visible while it runs. #}
                                             <template x-if="taskRunnable(task) && task.status !== 'done'">
-                                                <button class="btn btn-sm btn-claude" @click="openClaudeRun(task)"
-                                                        :class="{'btn-claude-waiting': taskRunPhase(task.id) === 'waiting'}"
-                                                        :aria-label="taskRunPhase(task.id) === 'waiting' ? $i18n('claude_waiting') : ($i18n('claude_run') + ' (' + agentLabel(taskAgentKey(task)) + ')')"
-                                                        :title="taskRunPhase(task.id) === 'waiting' ? $i18n('claude_waiting') : ($i18n('claude_run') + ' (' + agentLabel(taskAgentKey(task)) + ')')">
-                                                    <template x-if="taskRunPhase(task.id) === 'waiting'"><i class="ti ti-help fs-3"></i></template><template x-if="taskRunPhase(task.id) === 'running'"><span class="spinner-border spinner-border-sm"></span></template><template x-if="!taskRunPhase(task.id)"><img :src="agentIconUrl(task)" class="claude-logo-icon" alt=""></template>
-                                                </button>
+                                                <span class="d-inline-flex align-items-center">
+                                                    <template x-if="taskRunPhase(task.id) === 'running'"><span class="spinner-border spinner-border-sm text-secondary me-1"></span></template>
+                                                    <template x-if="taskRunPhase(task.id) === 'waiting'"><i class="ti ti-help fs-3 text-orange me-1"></i></template>
+                                                    <button class="btn btn-sm btn-claude" @click="openClaudeRun(task)"
+                                                            :class="{'btn-claude-waiting': taskRunPhase(task.id) === 'waiting'}"
+                                                            :aria-label="taskRunPhase(task.id) === 'waiting' ? $i18n('claude_waiting') : ($i18n('claude_run') + ' (' + agentLabel(taskAgentKey(task)) + ')')"
+                                                            :title="taskRunPhase(task.id) === 'waiting' ? $i18n('claude_waiting') : ($i18n('claude_run') + ' (' + agentLabel(taskAgentKey(task)) + ')')">
+                                                        <img :src="agentIconUrl(task)" class="claude-logo-icon" alt="">
+                                                    </button>
+                                                </span>
+                                            </template>
+                                            {# Agent CLI not installed: no button (it would go nowhere) -- just a #}
+                                            {# greyed-out agent logo so you still see which agent the task uses. #}
+                                            <template x-if="!taskRunnable(task) && task.status !== 'done' && agentIconUrl(task)">
+                                                <span class="btn btn-sm btn-claude agent-logo-btn-disabled"
+                                                      :title="agentLabel(taskAgentKey(task)) + ' — ' + $i18n('agent_not_installed_hint')">
+                                                    <img :src="agentIconUrl(task)" class="claude-logo-icon agent-logo-disabled" alt="">
+                                                </span>
                                             </template>
                                             <button class="btn btn-sm btn-ghost-secondary" @click="startEdit(task)"
                                                     :aria-label="$i18n('edit')" :title="$i18n('edit')">
@@ -825,11 +855,15 @@
                                     <template x-for="task in kanbanTasksFor(col.key)" :key="task.id">
                                         <div class="kanban-card"
                                              :class="{'kanban-card-dragging': draggedTaskId === task.id,
+                                                      'drop-before': dragOverTaskId === task.id && dragOverBefore,
+                                                      'drop-after': dragOverTaskId === task.id && !dragOverBefore,
                                                       'task-session-running': taskRunPhase(task.id) === 'running',
                                                       'task-session-waiting': taskRunPhase(task.id) === 'waiting'}"
                                              draggable="true"
                                              @dragstart="onCardDragStart($event, task)"
-                                             @dragend="onCardDragEnd($event)">
+                                             @dragend="onCardDragEnd($event)"
+                                             @dragover.prevent.stop="onCardDragOver($event, task, col.key)"
+                                             @drop.prevent.stop="onCardDrop($event, task, col.key)">
 
                                             <div class="d-flex align-items-start gap-1 mb-1">
                                                 <span class="task-id badge bg-secondary-lt text-secondary font-monospace"
@@ -845,15 +879,28 @@
                                                         style="cursor: pointer"
                                                         @click.stop="task._expanded = !task._expanded"
                                                         x-text="task.title"></strong>
-                                                {# Run with Claude -- only when the `claude` CLI + a PTY are available. #}
+                                                {# Runnable: session indicator (spinner / waiting) LEFT of the button #}
+                                                {# so the agent logo stays visible while it runs. #}
                                                 <template x-if="taskRunnable(task) && task.status !== 'done'">
-                                                    <button class="btn btn-sm btn-claude px-1 py-0"
-                                                            @click.stop="openClaudeRun(task)"
-                                                            :class="{'btn-claude-waiting': taskRunPhase(task.id) === 'waiting'}"
-                                                            :aria-label="taskRunPhase(task.id) === 'waiting' ? $i18n('claude_waiting') : ($i18n('claude_run') + ' (' + agentLabel(taskAgentKey(task)) + ')')"
-                                                            :title="taskRunPhase(task.id) === 'waiting' ? $i18n('claude_waiting') : ($i18n('claude_run') + ' (' + agentLabel(taskAgentKey(task)) + ')')">
-                                                        <template x-if="taskRunPhase(task.id) === 'waiting'"><i class="ti ti-help fs-3"></i></template><template x-if="taskRunPhase(task.id) === 'running'"><span class="spinner-border spinner-border-sm"></span></template><template x-if="!taskRunPhase(task.id)"><img :src="agentIconUrl(task)" class="claude-logo-icon" alt=""></template>
-                                                    </button>
+                                                    <span class="d-inline-flex align-items-center">
+                                                        <template x-if="taskRunPhase(task.id) === 'running'"><span class="spinner-border spinner-border-sm text-secondary me-1"></span></template>
+                                                        <template x-if="taskRunPhase(task.id) === 'waiting'"><i class="ti ti-help fs-3 text-orange me-1"></i></template>
+                                                        <button class="btn btn-sm btn-claude px-1 py-0"
+                                                                @click.stop="openClaudeRun(task)"
+                                                                :class="{'btn-claude-waiting': taskRunPhase(task.id) === 'waiting'}"
+                                                                :aria-label="taskRunPhase(task.id) === 'waiting' ? $i18n('claude_waiting') : ($i18n('claude_run') + ' (' + agentLabel(taskAgentKey(task)) + ')')"
+                                                                :title="taskRunPhase(task.id) === 'waiting' ? $i18n('claude_waiting') : ($i18n('claude_run') + ' (' + agentLabel(taskAgentKey(task)) + ')')">
+                                                            <img :src="agentIconUrl(task)" class="claude-logo-icon" alt="">
+                                                        </button>
+                                                    </span>
+                                                </template>
+                                                {# Agent CLI not installed: greyed-out logo in a non-clickable button #}
+                                                {# box so it lines up exactly with the run buttons on other cards. #}
+                                                <template x-if="!taskRunnable(task) && task.status !== 'done' && agentIconUrl(task)">
+                                                    <span class="btn btn-sm btn-claude px-1 py-0 agent-logo-btn-disabled"
+                                                          :title="agentLabel(taskAgentKey(task)) + ' — ' + $i18n('agent_not_installed_hint')">
+                                                        <img :src="agentIconUrl(task)" class="claude-logo-icon agent-logo-disabled" alt="">
+                                                    </span>
                                                 </template>
                                                 <button class="btn btn-sm btn-ghost-secondary px-1 py-0"
                                                         @click.stop="startEdit(task)"

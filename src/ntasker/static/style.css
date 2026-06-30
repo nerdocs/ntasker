@@ -332,6 +332,19 @@ body {
     display: block;
     object-fit: cover;
 }
+/* Shown in place of the run button when the task's agent CLI is not
+ * installed: the agent logo, greyed out + non-interactive, so you still
+ * see which agent the task targets without a button that leads nowhere.
+ * The logo sits in a non-clickable .btn.btn-claude box (.agent-logo-btn-
+ * disabled) so it lines up pixel-for-pixel with the real run buttons. */
+.agent-logo-btn-disabled {
+    pointer-events: none;
+    cursor: default;
+}
+.agent-logo-disabled {
+    opacity: 0.4;
+    filter: grayscale(1);
+}
 /* Labelled Claude call-to-action (e.g. "Create + Run"). The icon-only
  * .btn-claude is fixed at 2rem and transparent, too narrow for text -- this
  * filled terracotta variant carries the brand colour with a visible label. */

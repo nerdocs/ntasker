@@ -43,7 +43,12 @@ CREATE TABLE IF NOT EXISTS tasks (
     archived INTEGER NOT NULL DEFAULT 0,
     -- Which AI coding agent runs this task. NULL = fall back to the
     -- ``default_agent`` setting (then ``claude``). See ntasker.agents.
-    agent TEXT
+    agent TEXT,
+    -- Manual drag&drop position. Higher = nearer the top (rows are ordered
+    -- ``sort_order DESC``). New tasks get ``MAX(sort_order)+1`` so they land
+    -- on top; a drop between two neighbours stores the average of their
+    -- values (fractional indexing), so only the moved row is rewritten.
+    sort_order REAL NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_archived ON tasks(archived);
 CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project);
@@ -108,6 +113,20 @@ def init_db(path: Path | None = None) -> None:
         # default_agent setting". Existing tasks keep running on Claude.
         try:
             conn.execute("ALTER TABLE tasks ADD COLUMN agent TEXT")
+        except sqlite3.OperationalError:
+            pass
+        # v2.15 drag&drop migration: add the manual ``sort_order`` column.
+        # Runs exactly once -- the ALTER raises OperationalError on re-boot
+        # once the column exists, so the backfill in the same try-block also
+        # fires only on the migrating boot. Seed from ``id`` so the initial
+        # ``sort_order DESC`` order matches the previous ``created_at DESC``
+        # default (newest first); a sort_order of 0 would otherwise sink every
+        # legacy row below freshly created tasks.
+        try:
+            conn.execute(
+                "ALTER TABLE tasks ADD COLUMN sort_order REAL NOT NULL DEFAULT 0"
+            )
+            conn.execute("UPDATE tasks SET sort_order = id")
         except sqlite3.OperationalError:
             pass
         # v2.0 phase migration: legacy values `later` and NULL collapse into
@@ -199,6 +218,7 @@ def row_to_task(
         "completed_at": row["completed_at"],
         "archived": bool(row["archived"]),
         "agent": row["agent"],
+        "sort_order": row["sort_order"],
         "tags": tags or [],
         "depends": depends or [],
     }

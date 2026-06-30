@@ -360,6 +360,42 @@ def main() -> int:
     print(f"OK ntasker list --search {needle_id} --json (CLI id match)")
 
     # ------------------------------------------------------------------
+    # 24c. Manual drag&drop order (sort_order, new in v2.15). New tasks get
+    # MAX(sort_order)+1 so they sort to the top (sort_order DESC); a PATCH
+    # with a fractional sort_order reorders without touching its neighbours.
+    # ------------------------------------------------------------------
+    so_ids = []
+    for i in range(3):
+        rr = client.post("/api/tasks", json={"title": f"so-{i}", "project": "so-proj"})
+        assert_ok(rr, 201)
+        assert "sort_order" in rr.json(), "task payload must expose sort_order"
+        so_ids.append(rr.json()["id"])
+    # Freshly created -> newest first (reverse insertion order).
+    listed = client.get("/api/tasks?project=so-proj&status=open&archived=false").json()
+    order = [t["id"] for t in listed]
+    assert order == list(reversed(so_ids)), f"new tasks must sort newest-first, got {order}"
+    print(f"OK POST /api/tasks seeds sort_order -> newest-first {order}")
+
+    # Move the oldest (currently last) above the current top via a larger
+    # sort_order, and confirm it jumps to the front.
+    top_so = listed[0]["sort_order"]
+    r = client.patch(f"/api/tasks/{so_ids[0]}", json={"sort_order": top_so + 1})
+    assert_ok(r)
+    moved = [t["id"] for t in
+             client.get("/api/tasks?project=so-proj&status=open&archived=false").json()]
+    assert moved[0] == so_ids[0], f"reordered task must be first, got {moved}"
+    print(f"OK PATCH sort_order reorders the list -> {moved}")
+
+    # Fractional insert: drop so_ids[1] between the top two; it must land 2nd.
+    rows = client.get("/api/tasks?project=so-proj&status=open&archived=false").json()
+    between = (rows[0]["sort_order"] + rows[1]["sort_order"]) / 2
+    client.patch(f"/api/tasks/{so_ids[1]}", json={"sort_order": between})
+    final = [t["id"] for t in
+             client.get("/api/tasks?project=so-proj&status=open&archived=false").json()]
+    assert final[1] == so_ids[1], f"fractional insert must land 2nd, got {final}"
+    print(f"OK fractional sort_order insert -> {final}")
+
+    # ------------------------------------------------------------------
     # Settings module (new in v1.0.0)
     # ------------------------------------------------------------------
 

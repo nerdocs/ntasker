@@ -196,6 +196,9 @@ class TaskUpdate(BaseModel):
     archived: bool | None = None
     tags: list[str] | None = None  # None = unchanged; [] = clear all
     depends: list[int] | None = None  # None = unchanged; [] = clear all
+    # Manual drag&drop position (fractional). None = unchanged. Written as a
+    # plain column by the generic UPDATE path -- no extra validation needed.
+    sort_order: float | None = None
 
 
 class SettingUpdate(BaseModel):
@@ -365,6 +368,7 @@ def build_js_strings() -> dict[str, str]:
         # Kanban board
         "kanban_col_done": _("Done"),
         "kanban_empty_column": _("(empty)"),
+        "reorder_hint": _("Drag to reorder"),
         "expand_done": _("Expand done column"),
         "collapse_done": _("Collapse done column"),
         # Banners
@@ -1360,7 +1364,11 @@ def _query_tasks(
             params.append(int(candidate))
         sql += " AND (" + " OR ".join(clauses) + ")"
 
-    sql += " ORDER BY archived ASC, status ASC, created_at DESC"
+    # Manual drag&drop order (sort_order DESC) is the primary sort within a
+    # group; id DESC breaks ties deterministically (newest first) for rows
+    # that share a sort_order. archived/status keep done + archived rows
+    # grouped at the bottom of unfiltered queries.
+    sql += " ORDER BY archived ASC, status ASC, sort_order DESC, id DESC"
 
     with get_conn() as conn:
         return conn.execute(sql, params).fetchall()
@@ -1513,8 +1521,10 @@ def api_create_task(payload: TaskCreate) -> JSONResponse:
     with get_conn() as conn:
         cur = conn.execute(
             """
-            INSERT INTO tasks (project, title, description, phase, priority, agent)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO tasks (project, title, description, phase, priority, agent,
+                               sort_order)
+            VALUES (?, ?, ?, ?, ?, ?,
+                    (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM tasks))
             """,
             (
                 project_value,

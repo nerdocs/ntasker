@@ -121,6 +121,11 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // drives the column-highlight CSS class.
         draggedTaskId: null,
         dragOverColumn: null,
+        // Intra-group reordering indicator: the card/row the cursor hovers and
+        // whether the drop would land above (true) or below (false) it. Drives
+        // the insertion-line CSS (.drop-before / .drop-after).
+        dragOverTaskId: null,
+        dragOverBefore: false,
 
         // ---- Agent registry (Claude / OpenCode / Pi) ----
         // ntasker is agent-agnostic: each task carries an ``agent`` and the run
@@ -549,12 +554,105 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         onCardDragEnd() {
             this.draggedTaskId = null;
             this.dragOverColumn = null;
+            this.dragOverTaskId = null;
             // A change detected mid-drag was deferred (re-rendering would abort
             // the drag); apply it now that the drag is over.
             if (this._liveRefreshPending) {
                 this._liveRefreshPending = false;
                 this.refreshAll();
             }
+        },
+
+        // ---- Drag & Drop: intra-group reordering (kanban column + list) ----
+        // Manual order lives in each task's fractional ``sort_order`` (rows are
+        // served ``sort_order DESC`` -- larger = nearer the top). Dropping a
+        // task between two neighbours stores the average of their values, so a
+        // single PATCH rewrites only the moved row. ``colKey`` is the kanban
+        // column key, or ``null`` in the flat list view.
+
+        // The visible group for a drop target, in display order, minus the
+        // task being dragged (it is leaving its old slot).
+        _dropGroup(colKey, excludeId) {
+            const base = colKey == null ? this.tasks : this.kanbanTasksFor(colKey);
+            return base.filter(t => t.id !== excludeId);
+        },
+
+        // Fractional ``sort_order`` that lands the dragged task at ``index``
+        // within ``group`` (display order, sort_order DESC, dragged removed).
+        _sortOrderForInsert(group, index) {
+            const above = index > 0 ? group[index - 1].sort_order : null;        // larger
+            const below = index < group.length ? group[index].sort_order : null; // smaller
+            if (above === null && below === null) return 0;   // empty group
+            if (above === null) return below + 1;             // top
+            if (below === null) return above - 1;             // bottom
+            return (above + below) / 2;                       // between neighbours
+        },
+
+        onCardDragOver(event, task, colKey) {
+            if (this.draggedTaskId == null) return;
+            // Hovering the dragged card itself: no insertion line, but keep the
+            // column highlighted and the drop allowed (a no-op drop is fine).
+            if (this.draggedTaskId === task.id) {
+                this.dragOverTaskId = null;
+                if (colKey != null) this.dragOverColumn = colKey;
+                if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+                return;
+            }
+            // Kanban: a blocked task may not advance into Review/Done.
+            if (colKey != null) {
+                const dragged = this.tasks.find(t => t.id === this.draggedTaskId);
+                if (dragged && !this.canDropOn(dragged, colKey)) {
+                    if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
+                    this.dragOverTaskId = null;
+                    this.dragOverColumn = null;
+                    return;
+                }
+                this.dragOverColumn = colKey;
+            }
+            const rect = event.currentTarget.getBoundingClientRect();
+            this.dragOverBefore = (event.clientY - rect.top) < rect.height / 2;
+            this.dragOverTaskId = task.id;
+            if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+        },
+
+        async onCardDrop(event, task, colKey) {
+            const id = this.draggedTaskId;
+            const before = this.dragOverBefore;
+            this.dragOverTaskId = null;
+            this.dragOverColumn = null;
+            this.draggedTaskId = null;
+            if (id == null || id === task.id) return; // dropped on itself
+            const group = this._dropGroup(colKey, id);
+            let idx = group.findIndex(t => t.id === task.id);
+            if (idx < 0) idx = group.length;
+            else if (!before) idx += 1;
+            await this._applyDrop(id, colKey, group, idx);
+        },
+
+        // Shared drop committer: builds the PATCH body (sort_order, plus the
+        // phase/status flip when a kanban drop crosses columns) and reloads.
+        async _applyDrop(id, colKey, group, insertIndex) {
+            const task = this.tasks.find(t => t.id === id);
+            if (!task) return;
+            const body = {};
+            if (colKey != null) {
+                if (!this.canDropOn(task, colKey)) {
+                    this.showToast(_i('blocked_hint'), 'danger');
+                    return;
+                }
+                if (colKey === 'done') {
+                    if (task.status !== 'done') body.status = 'done';
+                } else {
+                    if (task.status === 'done') body.status = 'open';
+                    if (task.phase !== colKey) body.phase = colKey;
+                }
+            }
+            const idx = Math.max(0, Math.min(insertIndex, group.length));
+            const newOrder = this._sortOrderForInsert(group, idx);
+            if (task.sort_order !== newOrder) body.sort_order = newOrder;
+            if (Object.keys(body).length === 0) return; // no actual move
+            const r = await this.patch(id, body);
+            if (r && r.ok) await this.refreshAll();
         },
 
         // A blocked task (open dependencies) must not advance to Review or Done.
@@ -579,6 +677,9 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             // Required to allow the drop event to fire.
             if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
             this.dragOverColumn = colKey;
+            // Over the column's empty area (between/below cards) -- no specific
+            // insertion line. Card-level dragover sets this again when hovered.
+            this.dragOverTaskId = null;
         },
 
         onColumnDragLeave(event, colKey) {
@@ -593,6 +694,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         async onColumnDrop(event, colKey) {
             const id = this.draggedTaskId;
             this.dragOverColumn = null;
+            this.dragOverTaskId = null;
             this.draggedTaskId = null;
             if (id == null) return;
             const task = this.tasks.find(t => t.id === id);

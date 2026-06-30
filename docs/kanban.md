@@ -41,14 +41,34 @@ to `open` and (if the column differs) updates phase.
 ## Drag & drop
 
 - Cards are HTML5-draggable (`draggable="true"`).
-- Drop on a column header or column body triggers `onColumnDrop`:
+- Drop on a column header or empty column body triggers `onColumnDrop`:
   - Same column -> no-op.
   - Phase column -> `PATCH /api/tasks/<id> {"phase": "<col>"}` (and
     `"status": "open"` if coming out of Done).
   - Done column -> `PATCH /api/tasks/<id> {"status": "done"}`; phase
     stays so re-opening lands the card back in its previous column.
+- Drop **onto another card** triggers `onCardDrop` (which `.stop`s the
+  column handler): the card is inserted above or below the target,
+  depending on which half it was dropped over. When the target sits in a
+  different column this also applies the phase/status flip above, so a
+  cross-column drop moves *and* positions in one go.
 - Failure (HTTP non-2xx) shows a toast; the UI state is reloaded from
   the server, so a failed move never leaves the board out of sync.
+
+### Manual order (`sort_order`)
+
+Both views honour a manual drag&drop order stored per task in the
+`sort_order` column (`REAL`). Rows are served `sort_order DESC` -- larger
+values sit nearer the top. New tasks get `MAX(sort_order)+1`, so they
+land on top (matching the previous newest-first default); the migration
+backfills existing rows from their `id` to preserve that order.
+
+Reordering uses **fractional indexing**: dropping a card between two
+neighbours stores the average of their `sort_order` values, so a single
+`PATCH /api/tasks/<id> {"sort_order": <value>}` rewrites only the moved
+row -- no renumbering of the whole column. The same mechanism drives the
+list view, where each row carries a `ti-grip-vertical` drag handle (only
+the handle starts a drag, so the row's click targets keep working).
 
 ## Done column
 

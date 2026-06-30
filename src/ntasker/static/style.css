@@ -197,6 +197,27 @@ body {
     opacity: 0.4;
 }
 
+/* Drag&drop reorder indicator: a thick primary-coloured edge marks where the
+ * dragged task would land. Shared by the kanban card and the list row. */
+.kanban-card.drop-before,
+.list-group-item.drop-before {
+    box-shadow: inset 0 3px 0 0 var(--tblr-primary);
+}
+.kanban-card.drop-after,
+.list-group-item.drop-after {
+    box-shadow: inset 0 -3px 0 0 var(--tblr-primary);
+}
+
+/* List-view reorder grip. Only this handle is draggable so the row's click
+ * targets (title, badges, checkbox) keep working. */
+.drag-handle {
+    cursor: grab;
+    line-height: 1;
+}
+.drag-handle:active {
+    cursor: grabbing;
+}
+
 /* ---------------- Claude run view ----------------
  * Full-page host for the real Claude Code TUI, rendered by xterm.js. The page
  * fills the viewport below the header so the terminal can size itself via the

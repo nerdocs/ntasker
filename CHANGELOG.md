@@ -4,6 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [2.14.0] — 2026-07-01
+Agent-agnostic runs (Claude/OpenCode/Pi); drag-and-drop sortable tasks; new project dirs on run; project chips into sessions; settings radio/number widgets.
+
 ## [2.13.0] — 2026-06-29
 Run-view session tabs + project quick-add; ranked project-field autocomplete & running-project chips; ENTER-to-save dialogs.
 

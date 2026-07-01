@@ -77,6 +77,8 @@ from ntasker.middleware import LanguageMiddleware
 from ntasker import service
 from ntasker import updates
 from ntasker.settings import (
+    FIELD_CHOICES,
+    FIELD_DEFAULTS,
     HINTS,
     VALIDATORS,
     delete_setting,
@@ -846,12 +848,23 @@ def settings_page(request: Request) -> HTMLResponse:
     # template gets a plain mapping with already-translated values for
     # the active language.
     hints_text = {key: str(val) for key, val in HINTS.items()}
+    # Coerce the LazyString labels/descriptions to plain strings for the
+    # active language; None descriptions become "".
+    field_choices = {
+        key: [
+            {"value": value, "label": str(label), "desc": str(desc) if desc else ""}
+            for (value, label, desc) in opts
+        ]
+        for key, opts in FIELD_CHOICES.items()
+    }
     response = templates.TemplateResponse(
         request,
         "settings.html",
         context={
             "version": VERSION,
             "hints": hints_text,
+            "field_choices": field_choices,
+            "field_defaults": FIELD_DEFAULTS,
             "known_keys": sorted(VALIDATORS.keys()),
             "language": get_active_language(),
             "js_strings": build_js_strings(),

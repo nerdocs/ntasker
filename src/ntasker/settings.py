@@ -291,7 +291,8 @@ HINTS: dict[str, object] = {
         "auto (local if cache complete, else cdn)."
     ),
     "language": _lazy(
-        "UI language: 'auto' (Accept-Language header, fallback English), 'en', or 'de'."
+        "UI language. Leave unset for automatic (follows the browser's "
+        "Accept-Language header, fallback English), or pick English or German."
     ),
     "default_view": _lazy(
         "Default view on startup: 'list' (classic task list) or 'kanban' "
@@ -326,6 +327,44 @@ HINTS: dict[str, object] = {
         "the background and stay on the board (false). ENV: "
         "NTASKER_CLAUDE_OPEN_TERMINAL."
     ),
+    "claude_idle_seconds": _lazy(
+        "How many seconds a live Claude session may stay silent before ntasker "
+        "treats it as waiting for your input (the CLI sends no explicit "
+        "'I have a question' signal). Lower = quicker 'waiting' badge but more "
+        "false positives; higher = fewer false positives but slower. Default 8."
+    ),
+    "update_command": _lazy(
+        "Shell command run by 'self-update' to upgrade ntasker "
+        "(e.g. `uv tool upgrade ntasker`). Unset to auto-detect how ntasker "
+        "was installed."
+    ),
+}
+
+
+# Radio-style choice sets for the enum settings rendered in the /settings
+# "Known keys" section. Each option is (value, label, description); the label
+# is a short caption and the description a one-line per-option hint (or None).
+# LazyStrings so they translate per-request. FIELD_DEFAULTS gives the effective
+# default so an unset key still shows its active choice pre-selected.
+FIELD_CHOICES: dict[str, list[tuple[str, object, object]]] = {
+    "assets_mode": [
+        ("cdn", _lazy("CDN"), _lazy("Load Tabler/Alpine from jsDelivr (with SRI). Needs internet.")),
+        ("local", _lazy("Local"), _lazy("Serve from the user-data cache (fill it via `ntasker assets fetch`).")),
+        ("auto", _lazy("Auto"), _lazy("Use the local cache when complete, otherwise fall back to the CDN.")),
+    ],
+    "language": [
+        ("en", _lazy("English"), None),
+        ("de", _lazy("Deutsch"), None),
+    ],
+    "default_view": [
+        ("list", _lazy("List"), _lazy("Classic task list.")),
+        ("kanban", _lazy("Kanban board"), _lazy("Four-column board.")),
+    ],
+}
+
+FIELD_DEFAULTS: dict[str, str] = {
+    "assets_mode": "auto",
+    "default_view": DEFAULT_VIEW_FALLBACK,
 }
 
 

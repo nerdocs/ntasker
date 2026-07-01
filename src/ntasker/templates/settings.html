@@ -87,6 +87,50 @@
                             {% if hints.get(key) %}
                             <div class="text-muted small mb-1">{{ hints[key] }}</div>
                             {% endif %}
+                            {% if (field_choices | default({})).get(key) %}
+                            {# Enum setting -- radio group, saved on change (like the #}
+                            {# permission-mode / default-agent widgets). #}
+                            {% for opt in field_choices[key] %}
+                            <label class="form-check">
+                                <input class="form-check-input" type="radio" name="known-{{ key }}"
+                                       value="{{ opt.value }}"
+                                       :checked="known['{{ key }}'] === '{{ opt.value }}'"
+                                       @change="known['{{ key }}'] = '{{ opt.value }}'; saveKnown('{{ key }}')">
+                                <span class="form-check-label">
+                                    <strong>{{ opt.label }}</strong>{% if opt.desc %} — {{ opt.desc }}{% endif %}
+                                </span>
+                            </label>
+                            {% endfor %}
+                            {# Fields without a default option (e.g. language) fall back #}
+                            {# to the app's automatic behaviour when unset -- offer a #}
+                            {# reset so the user can leave the en/de radios again. #}
+                            {% if key not in (field_defaults | default({})) %}
+                            <button type="button" class="btn btn-sm btn-ghost-secondary mt-1"
+                                    x-show="known['{{ key }}']" x-cloak
+                                    @click="unsetKnown('{{ key }}')">
+                                <i class="ti ti-rotate-clockwise me-1"></i>{{ t('Automatic') }}
+                            </button>
+                            {% endif %}
+                            {% elif key == 'claude_idle_seconds' %}
+                            {# Numeric setting -- number input with a unit affordance. #}
+                            <div class="input-group" style="max-width: 16rem">
+                                <input type="number" min="0.5" step="0.5" class="form-control"
+                                       id="known-{{ key }}"
+                                       x-model="known['{{ key }}']"
+                                       :placeholder="$i18n('unset_placeholder')">
+                                <span class="input-group-text">{{ t('seconds') }}</span>
+                                <button type="button" class="btn btn-primary"
+                                        @click="saveKnown('{{ key }}')">
+                                    <i class="ti ti-device-floppy fs-3"></i>
+                                </button>
+                                <button type="button" class="btn btn-ghost-danger"
+                                        @click="unsetKnown('{{ key }}')"
+                                        :disabled="!known['{{ key }}']">
+                                    <i class="ti ti-trash fs-3"></i>
+                                </button>
+                            </div>
+                            {% else %}
+                            {# Free-text setting (paths, shell command). #}
                             <div class="input-group">
                                 <input type="text" class="form-control"
                                        id="known-{{ key }}"
@@ -103,6 +147,7 @@
                                     <i class="ti ti-trash fs-3"></i>
                                 </button>
                             </div>
+                            {% endif %}
                             {# CAVE: `d-block` via :class instead of fixed -- Bootstrap sets #}
                             {# `.d-block { display: block !important }` which would override #}
                             {# AlpineJS x-show's `style="display: none"` (same bug as the #}
@@ -451,9 +496,11 @@ function settingsPage() {
             const byKey = {};
             for (const row of this.rows) byKey[row.key] = row.value;
             // Populate ALL known keys (incl. unset ones) so x-model bindings
-            // have a slot. Unset keys default to empty string.
+            // have a slot. Unset enum keys fall back to their effective default
+            // so the matching radio shows selected; everything else to ''.
             const knownKeys = {{ known_keys | tojson }};
-            for (const k of knownKeys) this.known[k] = byKey[k] || '';
+            const fieldDefaults = {{ field_defaults | default({}) | tojson }};
+            for (const k of knownKeys) this.known[k] = byKey[k] || fieldDefaults[k] || '';
         },
 
         async refreshAgents() {

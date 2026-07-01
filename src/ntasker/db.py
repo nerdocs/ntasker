@@ -146,6 +146,14 @@ def init_db(path: Path | None = None) -> None:
             conn.execute("DELETE FROM settings WHERE key = 'projects_dir'")
         except sqlite3.OperationalError:
             pass
+        # v2.16 language migration: an explicit `language = auto` row is now
+        # redundant -- an unset key already resolves to automatic. Drop it so
+        # the /settings language radios (en/de only) show the correct
+        # "nothing selected = automatic" state instead of a stale value.
+        try:
+            conn.execute("DELETE FROM settings WHERE key = 'language' AND value = 'auto'")
+        except sqlite3.OperationalError:
+            pass
         conn.commit()
 
 

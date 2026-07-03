@@ -163,13 +163,69 @@ def resolve_run_cwd(cwd: str | None) -> str:
 
 
 def seed_command_for_task(task: dict) -> str:
-    """Initial input for the session: the ntasker ``/task <id>`` slash command.
+    """Initial input for the session, in one of two styles.
 
-    ntasker ships that command for Claude Code; firing it as the first message
-    loads the task (title, description, phase) into the session via the existing
-    integration -- no guessing, no clash with the built-in ``Task`` tools.
+    Default: the ntasker ``/task <id>`` slash command. ntasker ships that
+    command for every agent; firing it as the first message loads the task
+    (title, description, phase) into the session via the existing integration
+    -- no guessing, no clash with the built-in ``Task`` tools.
+
+    With the ``compact_seed`` setting on: the task data inlined directly into
+    the prompt (see :func:`_compact_seed`). This skips the loader tool
+    roundtrip -- one full extra inference pass -- and several thousand prompt
+    tokens, which matters a lot on slow local models (Ollama). The ``/task``
+    command stays installed for manual terminal sessions; only ntasker-spawned
+    runs bypass it.
     """
+    from ntasker.settings import get_compact_seed  # noqa: PLC0415 -- lazy: avoid cycle
+
+    if get_compact_seed():
+        return _compact_seed(task)
     return f"/task {task['id']}"
+
+
+def _compact_seed(task: dict) -> str:
+    """Self-contained initial prompt: task data plus the tracker hand-off rules.
+
+    Replaces what the ``/task`` command + loader would have injected. The task
+    id is kept prominent -- the agent needs it for the review hand-off. The
+    ``phase=wip`` move the loader normally performs happens server-side at
+    spawn instead (see :func:`_mark_wip`).
+    """
+    from ntasker.db import get_conn, load_tags_for  # noqa: PLC0415 -- lazy: avoid cycle
+
+    try:
+        with get_conn() as conn:
+            tags = load_tags_for(conn, int(task["id"]))
+    except Exception:  # noqa: BLE001 -- tags are nice-to-have, never block a spawn
+        tags = []
+
+    facts = [f"Status: {task.get('status') or 'open'}"]
+    if task.get("project"):
+        facts.insert(0, f"Project: {task['project']}")
+    facts.append(f"Priority: {task.get('priority') or 'normal'}")
+    if tags:
+        facts.append(f"Tags: {', '.join(tags)}")
+
+    title = (task.get("title") or "").strip()
+    head = f"# nTasker task #{task['id']}" + (f": {title}" if title else "")
+    lines = [head, "", " | ".join(facts)]
+    description = (task.get("description") or "").strip()
+    if description:
+        lines += ["", "## Description", "", description]
+    lines += [
+        "",
+        "## Tracker rules",
+        "",
+        "- Work the task described above.",
+        "- When your work is done, hand it off to review (a handoff, not a close --",
+        f'  no user OK needed): ntasker patch "{task["id"]}" --phase review',
+        "- If you cannot finish (blocker, missing info), leave the phase as-is and",
+        "  report the blocker instead.",
+        "- Never set status=done or archive on your own; only the user closes tasks.",
+        "- No new tracker tasks, no deletes, no writes to other task IDs.",
+    ]
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -245,6 +301,25 @@ def _child_setup() -> None:
         fcntl.ioctl(0, termios.TIOCSCTTY, 0)
 
 
+def _mark_wip(task_id: int) -> None:
+    """Move a starting task to ``phase=wip`` -- the loader's job, done here.
+
+    Compact-seed runs never execute the ``/task`` loader, so its "starting
+    work marks the task in progress" step moves here. Same guards as the
+    loader: never resurrect an archived/closed task, no-op when already wip.
+    Best-effort -- a DB hiccup must not block the spawn.
+    """
+    from ntasker.db import get_conn  # noqa: PLC0415 -- lazy: avoid cycle
+
+    with contextlib.suppress(Exception):
+        with get_conn() as conn:
+            conn.execute(
+                "UPDATE tasks SET phase = 'wip' "
+                "WHERE id = ? AND archived = 0 AND status != 'done' AND phase != 'wip'",
+                (task_id,),
+            )
+
+
 def _start_session(task_id: int, cwd: str | None, seed: str | None) -> TermSession:
     """Spawn a fresh agent session in a PTY and register it with a live reader.
 
@@ -254,9 +329,15 @@ def _start_session(task_id: int, cwd: str | None, seed: str | None) -> TermSessi
     (positional vs ``--prompt``) -- and which env markers get stripped. The cwd
     is always set on the subprocess (uniform across agents).
     """
+    from ntasker.settings import get_compact_seed  # noqa: PLC0415 -- lazy: avoid cycle
+
     spec = _spec_for_task(task_id)
     master, slave = os.openpty()
     args = spec.build_spawn(seed)
+    # Compact-seed sessions bypass the /task loader, so the phase=wip move it
+    # normally performs happens here instead.
+    if seed and get_compact_seed():
+        _mark_wip(task_id)
     # The cwd is a best-effort guess from the task's project name (see
     # default_cwd_for_project). A new project's directory may not exist yet:
     # resolve_run_cwd creates it when it lives inside the configured

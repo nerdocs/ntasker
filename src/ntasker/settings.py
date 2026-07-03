@@ -260,6 +260,27 @@ def validate_opencode_auto(value: str) -> str:
     )
 
 
+def validate_compact_seed(value: str) -> str:
+    """Validator for the ``compact_seed`` boolean setting.
+
+    When truthy, a spawned session is seeded with the task data inlined into
+    the initial prompt instead of the ``/task <id>`` slash command. That skips
+    the loader tool roundtrip (one full extra inference pass) and shrinks the
+    prompt -- a large win for slow local models (Ollama etc.). ntasker then
+    moves the task to ``phase=wip`` itself at spawn, since the loader that
+    normally does it never runs. Normalizes truthy/falsy spellings to
+    ``"true"`` / ``"false"``; rejects anything else.
+    """
+    norm = (value or "").strip().lower()
+    if norm in _TRUE_STRINGS:
+        return "true"
+    if norm in _FALSE_STRINGS:
+        return "false"
+    raise ValueError(
+        _("compact_seed must be a yes/no value (got {value!r}).").format(value=value)
+    )
+
+
 VALIDATORS: dict[str, Validator] = {
     "assets_mode": validate_assets_mode,
     "language": validate_language,
@@ -271,6 +292,7 @@ VALIDATORS: dict[str, Validator] = {
     "claude_permission_mode": validate_claude_permission_mode,
     "claude_open_terminal": validate_claude_open_terminal,
     "opencode_auto": validate_opencode_auto,
+    "compact_seed": validate_compact_seed,
     "update_command": validate_update_command,
 }
 """Registry of known settings keys with their validators.
@@ -314,6 +336,12 @@ HINTS: dict[str, object] = {
     "opencode_auto": _lazy(
         "Run spawned OpenCode sessions with --auto (auto-approve actions). "
         "Yes/no, default no."
+    ),
+    "compact_seed": _lazy(
+        "Seed spawned sessions with the task data inlined into the initial "
+        "prompt instead of the /task command. Skips the loader roundtrip -- "
+        "much faster time-to-first-response with slow local models (Ollama). "
+        "Yes/no, default no. ENV: NTASKER_COMPACT_SEED."
     ),
     "claude_permission_mode": _lazy(
         "Permission mode for interactive Claude sessions: 'default' (normal -- "
@@ -569,6 +597,19 @@ def get_default_agent() -> str:
 def get_opencode_auto() -> bool:
     """Whether spawned OpenCode sessions run with ``--auto``. Defaults to False."""
     raw = get_setting("opencode_auto", env_var="NTASKER_OPENCODE_AUTO")
+    if raw is None:
+        return False
+    return raw.strip().lower() in _TRUE_STRINGS
+
+
+def get_compact_seed() -> bool:
+    """Whether spawned sessions get the compact inline seed. Defaults to False.
+
+    Honours the ``NTASKER_COMPACT_SEED`` ENV override. See
+    :func:`validate_compact_seed` and
+    :func:`ntasker.claude_runner.seed_command_for_task`.
+    """
+    raw = get_setting("compact_seed", env_var="NTASKER_COMPACT_SEED")
     if raw is None:
         return False
     return raw.strip().lower() in _TRUE_STRINGS

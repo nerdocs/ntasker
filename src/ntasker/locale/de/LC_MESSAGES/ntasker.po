@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: ntasker 1.3.0\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-07-03 10:37+0200\n"
+"POT-Creation-Date: 2026-07-03 13:26+0200\n"
 "PO-Revision-Date: 2026-05-02 09:19+0200\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: de\n"
@@ -102,7 +102,7 @@ msgstr "Prioritäts-Filter leeren"
 
 #: src/ntasker/app.py:359 src/ntasker/cli.py:115
 #: src/ntasker/templates/index.html:200 src/ntasker/templates/index.html:437
-#: src/ntasker/templates/index.html:1216 src/ntasker/templates/tags.html:62
+#: src/ntasker/templates/index.html:1218 src/ntasker/templates/tags.html:62
 msgid "Tags"
 msgstr "Tags"
 
@@ -230,7 +230,7 @@ msgid "--"
 msgstr "—"
 
 #: src/ntasker/app.py:404 src/ntasker/templates/index.html:413
-#: src/ntasker/templates/index.html:1199
+#: src/ntasker/templates/index.html:1201
 msgid "Title"
 msgstr "Titel"
 
@@ -247,7 +247,7 @@ msgid "Could not generate a title"
 msgstr "Titel konnte nicht erzeugt werden"
 
 #: src/ntasker/app.py:408 src/ntasker/cli.py:125
-#: src/ntasker/templates/index.html:429 src/ntasker/templates/index.html:1212
+#: src/ntasker/templates/index.html:429 src/ntasker/templates/index.html:1214
 msgid "Description"
 msgstr "Beschreibung"
 
@@ -416,7 +416,7 @@ msgid "Delete permanently"
 msgstr "Endgültig löschen"
 
 #: src/ntasker/app.py:457 src/ntasker/app.py:584
-#: src/ntasker/templates/index.html:1320
+#: src/ntasker/templates/index.html:1322
 msgid "Delete"
 msgstr "Löschen"
 
@@ -452,12 +452,12 @@ msgstr "Aufgabe"
 msgid "Close"
 msgstr "Schließen"
 
-#: src/ntasker/app.py:468 src/ntasker/templates/index.html:1323
+#: src/ntasker/app.py:468 src/ntasker/templates/index.html:1325
 #: src/ntasker/templates/tags.html:161 src/ntasker/templates/tags.html:212
 msgid "Cancel"
 msgstr "Abbrechen"
 
-#: src/ntasker/app.py:469 src/ntasker/templates/index.html:1327
+#: src/ntasker/app.py:469 src/ntasker/templates/index.html:1329
 #: src/ntasker/templates/settings.html:142
 #: src/ntasker/templates/settings.html:230 src/ntasker/templates/tags.html:166
 msgid "Save"
@@ -877,50 +877,50 @@ msgstr "Auf GitHub ansehen"
 msgid "Report an issue"
 msgstr "Problem melden"
 
-#: src/ntasker/app.py:947 src/ntasker/app.py:963
+#: src/ntasker/app.py:968 src/ntasker/app.py:984
 msgid "Setting not found"
 msgstr "Setting nicht gefunden"
 
-#: src/ntasker/app.py:1058 src/ntasker/app.py:1516 src/ntasker/app.py:1649
-#: src/ntasker/app.py:1653 src/ntasker/app.py:1682
+#: src/ntasker/app.py:1079 src/ntasker/app.py:1537 src/ntasker/app.py:1670
+#: src/ntasker/app.py:1674 src/ntasker/app.py:1703
 msgid "Task not found"
 msgstr "Aufgabe nicht gefunden"
 
-#: src/ntasker/app.py:1212
+#: src/ntasker/app.py:1233
 msgid "Target tag is empty."
 msgstr "Ziel-Tag ist leer."
 
-#: src/ntasker/app.py:1525
+#: src/ntasker/app.py:1546
 msgid "A task cannot depend on itself."
 msgstr "Eine Aufgabe kann nicht von sich selbst abhängen."
 
-#: src/ntasker/app.py:1527
+#: src/ntasker/app.py:1548
 #, python-brace-format
 msgid "Dependency task #{id} does not exist."
 msgstr "Abhängigkeit: Aufgabe #{id} existiert nicht."
 
-#: src/ntasker/app.py:1529
+#: src/ntasker/app.py:1550
 #, python-brace-format
 msgid "That dependency would create a cycle (via task #{id})."
 msgstr "Diese Abhängigkeit würde einen Zyklus erzeugen (über Aufgabe #{id})."
 
-#: src/ntasker/app.py:1555
+#: src/ntasker/app.py:1576
 msgid "No text to generate a title from"
 msgstr "Kein Text, aus dem ein Titel erzeugt werden könnte"
 
-#: src/ntasker/app.py:1565 src/ntasker/app.py:1614
+#: src/ntasker/app.py:1586 src/ntasker/app.py:1635
 msgid "Invalid priority"
 msgstr "Ungültige Priorität"
 
-#: src/ntasker/app.py:1567 src/ntasker/app.py:1617
+#: src/ntasker/app.py:1588 src/ntasker/app.py:1638
 msgid "Invalid agent"
 msgstr "Ungültiger Agent"
 
-#: src/ntasker/app.py:1608
+#: src/ntasker/app.py:1629
 msgid "No fields to update"
 msgstr "Keine Felder zum Aktualisieren"
 
-#: src/ntasker/app.py:1627
+#: src/ntasker/app.py:1648
 msgid "Invalid phase"
 msgstr "Ungültige Phase"
 
@@ -965,7 +965,7 @@ msgid "Status"
 msgstr "Status"
 
 #: src/ntasker/cli.py:118 src/ntasker/templates/index.html:490
-#: src/ntasker/templates/index.html:1269
+#: src/ntasker/templates/index.html:1271
 msgid "Depends on"
 msgstr "Hängt ab von"
 
@@ -1678,7 +1678,12 @@ msgstr "claude_permission_mode muss einer von {modes} sein (war {value!r})."
 msgid "opencode_auto must be a yes/no value (got {value!r})."
 msgstr "claude_auto_mode muss ein Ja/Nein-Wert sein (war {value!r})."
 
-#: src/ntasker/settings.py:289
+#: src/ntasker/settings.py:280
+#, python-brace-format
+msgid "compact_seed must be a yes/no value (got {value!r})."
+msgstr "compact_seed muss ein Ja/Nein-Wert sein (war {value!r})."
+
+#: src/ntasker/settings.py:311
 msgid ""
 "Vendor assets (Tabler/Alpine): cdn (default, jsDelivr + SRI), local (from"
 " user-data dir, populate via `ntasker assets fetch`), auto (local if "
@@ -1688,7 +1693,7 @@ msgstr ""
 "User-Data-Dir, vorher mit `ntasker assets fetch` laden), auto (local wenn"
 " Cache vollständig, sonst cdn)."
 
-#: src/ntasker/settings.py:294
+#: src/ntasker/settings.py:316
 msgid ""
 "UI language. Leave unset for automatic (follows the browser's Accept-"
 "Language header, fallback English), or pick English or German."
@@ -1696,7 +1701,7 @@ msgstr ""
 "UI-Sprache. Leer lassen für automatisch (folgt dem Accept-Language-Header"
 " des Browsers, Rückfall Englisch) oder Englisch bzw. Deutsch wählen."
 
-#: src/ntasker/settings.py:298
+#: src/ntasker/settings.py:320
 msgid ""
 "Default view on startup: 'list' (classic task list) or 'kanban' (4-column"
 " board). The frontend remembers the last user choice in localStorage; "
@@ -1707,7 +1712,7 @@ msgstr ""
 " localStorage; diese Einstellung greift nur beim ersten Aufruf in einem "
 "frischen Browser."
 
-#: src/ntasker/settings.py:303
+#: src/ntasker/settings.py:325
 msgid ""
 "Base path for project names, e.g. '~/Projekte'. Discovered Claude "
 "projects below it are named relative to it (the folder right under the "
@@ -1721,20 +1726,32 @@ msgstr ""
 "Verzeichnis. Leer lassen, um auf Home-relative Namen zurückzufallen. ENV:"
 " NTASKER_PROJECTS_BASE."
 
-#: src/ntasker/settings.py:310
+#: src/ntasker/settings.py:332
 msgid ""
 "Default AI coding agent for new tasks (and the fallback for any task "
 "without an explicit agent): claude, opencode or pi. ENV: "
 "NTASKER_DEFAULT_AGENT."
 msgstr ""
 
-#: src/ntasker/settings.py:315
+#: src/ntasker/settings.py:337
 msgid ""
 "Run spawned OpenCode sessions with --auto (auto-approve actions). Yes/no,"
 " default no."
 msgstr ""
 
-#: src/ntasker/settings.py:319
+#: src/ntasker/settings.py:341
+msgid ""
+"Seed spawned sessions with the task data inlined into the initial prompt "
+"instead of the /task command. Skips the loader roundtrip -- much faster "
+"time-to-first-response with slow local models (Ollama). Yes/no, default "
+"no. ENV: NTASKER_COMPACT_SEED."
+msgstr ""
+"Gestartete Sessions mit den Task-Daten direkt im Start-Prompt seeden statt "
+"mit dem /task-Kommando. Spart den Loader-Umweg -- deutlich schnellere erste "
+"Antwort bei langsamen lokalen Modellen (Ollama). Ja/Nein, Standard Nein. "
+"ENV: NTASKER_COMPACT_SEED."
+
+#: src/ntasker/settings.py:347
 msgid ""
 "Permission mode for interactive Claude sessions: 'default' (normal -- "
 "Claude asks first), 'auto' (auto-accept actions), 'plan' (plan only, no "
@@ -1747,7 +1764,7 @@ msgstr ""
 "überspringen -- gefährlich). Wird als --permission-mode an die CLI "
 "übergeben. Standard: default."
 
-#: src/ntasker/settings.py:325
+#: src/ntasker/settings.py:353
 msgid ""
 "When starting a Claude session (Create + Run or the per-task run button),"
 " open the terminal immediately (true, default) or start it in the "
@@ -1755,7 +1772,7 @@ msgid ""
 "NTASKER_CLAUDE_OPEN_TERMINAL."
 msgstr ""
 
-#: src/ntasker/settings.py:331
+#: src/ntasker/settings.py:359
 msgid ""
 "How many seconds a live Claude session may stay silent before ntasker "
 "treats it as waiting for your input (the CLI sends no explicit 'I have a "
@@ -1768,7 +1785,7 @@ msgstr ""
 "'wartet'-Abzeichen, aber mehr Fehlalarme; höher = weniger Fehlalarme, "
 "aber träger. Standard 8."
 
-#: src/ntasker/settings.py:337
+#: src/ntasker/settings.py:365
 msgid ""
 "Shell command run by 'self-update' to upgrade ntasker (e.g. `uv tool "
 "upgrade ntasker`). Unset to auto-detect how ntasker was installed."
@@ -1777,59 +1794,59 @@ msgstr ""
 "(z. B. `uv tool upgrade ntasker`). Leer lassen, um die Installationsart "
 "automatisch zu erkennen."
 
-#: src/ntasker/settings.py:351
+#: src/ntasker/settings.py:379
 msgid "CDN"
 msgstr "CDN"
 
-#: src/ntasker/settings.py:351
+#: src/ntasker/settings.py:379
 msgid "Load Tabler/Alpine from jsDelivr (with SRI). Needs internet."
 msgstr "Tabler/Alpine von jsDelivr laden (mit SRI). Braucht Internet."
 
-#: src/ntasker/settings.py:352
+#: src/ntasker/settings.py:380
 #, fuzzy
 msgid "Local"
 msgstr "Gesamt"
 
-#: src/ntasker/settings.py:352
+#: src/ntasker/settings.py:380
 msgid "Serve from the user-data cache (fill it via `ntasker assets fetch`)."
 msgstr "Aus dem lokalen Cache ausliefern (befüllen mit `ntasker assets fetch`)."
 
-#: src/ntasker/settings.py:353 src/ntasker/templates/settings.html:258
+#: src/ntasker/settings.py:381 src/ntasker/templates/settings.html:258
 msgid "Auto"
 msgstr "Auto"
 
-#: src/ntasker/settings.py:353
+#: src/ntasker/settings.py:381
 msgid "Use the local cache when complete, otherwise fall back to the CDN."
 msgstr "Lokalen Cache verwenden, wenn vollständig, sonst auf das CDN zurückfallen."
 
-#: src/ntasker/settings.py:356
+#: src/ntasker/settings.py:384
 msgid "English"
 msgstr ""
 
-#: src/ntasker/settings.py:357
+#: src/ntasker/settings.py:385
 msgid "Deutsch"
 msgstr ""
 
-#: src/ntasker/settings.py:360
+#: src/ntasker/settings.py:388
 #, fuzzy
 msgid "List"
 msgstr "Aufgabenliste"
 
-#: src/ntasker/settings.py:360
+#: src/ntasker/settings.py:388
 #, fuzzy
 msgid "Classic task list."
 msgstr "Aufgabenliste"
 
-#: src/ntasker/settings.py:361
+#: src/ntasker/settings.py:389
 #, fuzzy
 msgid "Kanban board"
 msgstr "Kanban"
 
-#: src/ntasker/settings.py:361
+#: src/ntasker/settings.py:389
 msgid "Four-column board."
 msgstr "Vier-Spalten-Board."
 
-#: src/ntasker/settings.py:386
+#: src/ntasker/settings.py:414
 #, fuzzy, python-brace-format
 msgid "{key} must not be empty -- unset it to auto-detect on PATH."
 msgstr ""
@@ -1837,17 +1854,17 @@ msgstr ""
 "löschen.projects_base darf nicht leer sein -- zum Löschen die Einstellung"
 " entfernen."
 
-#: src/ntasker/settings.py:394
+#: src/ntasker/settings.py:422
 #, python-brace-format
 msgid "{value!r} is not an executable file."
 msgstr ""
 
-#: src/ntasker/settings.py:398
+#: src/ntasker/settings.py:426
 #, python-brace-format
 msgid "{value!r} was not found on PATH."
 msgstr ""
 
-#: src/ntasker/settings.py:411
+#: src/ntasker/settings.py:439
 msgid ""
 "Full path to the agent's CLI when it is not on the server's PATH (e.g. an"
 " absolute path under your home). Unset to auto-detect."

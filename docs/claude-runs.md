@@ -31,6 +31,15 @@ card per agent (availability, run options, install status). `install-claude-asse
 The rest of this page describes the Claude session in detail; OpenCode and Pi work the same way (their CLI is spawned
 in the task's project directory, seeded with `/task <id>`), differing only in the per-agent options above.
 
+**Compact seed (`compact_seed` setting, default off).** The default `/task <id>` seed makes the agent run the loader
+script first -- a full extra inference pass (generate the tool call, execute it, re-read its output) plus a couple
+thousand prompt tokens. Cheap on hosted models, painful on slow local ones (Ollama). With `compact_seed = true`
+(ENV `NTASKER_COMPACT_SEED`), ntasker instead inlines the task data -- id, title, description, project, tags, and the
+tracker hand-off rules -- directly into the initial prompt, and performs the loader's `phase=wip` move itself at
+spawn (same guards: archived / `status=done` tasks are never resurrected). The `/task` command stays installed and
+keeps working in manual terminal sessions; only ntasker-spawned runs bypass it. Trade-off: the compact seed skips the
+loader's project-mismatch warning and does not pull in ntasker's `SKILL.md` knowledge.
+
 ## The flow
 
 1. Click the robot on a task (list or kanban view). A full-page terminal opens (with a **Back** button), and a

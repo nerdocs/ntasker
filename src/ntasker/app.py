@@ -656,7 +656,11 @@ def on_startup() -> None:
 # been finished behind the server's back (CLI / direct DB write / deletion).
 CLAUDE_REAP_INTERVAL = 3.0
 
+# How often the background poll actively refreshes the PyPI update-check cache.
+UPDATE_POLL_INTERVAL = 24 * 60 * 60  # once a day
+
 _reaper_task: asyncio.Task | None = None
+_update_poll_task: asyncio.Task | None = None
 
 
 async def _reap_finished_claude_sessions() -> None:
@@ -697,18 +701,27 @@ async def _start_claude_reaper() -> None:
     _reaper_task = asyncio.create_task(_reap_finished_claude_sessions())
 
 
-@app.on_event("startup")
-async def _prime_update_check() -> None:
-    """Warm the PyPI update-check cache once per server boot, off the event loop.
+async def _poll_updates() -> None:
+    """Actively refresh the PyPI update-check cache on boot and once a day.
 
-    A long-running (production) server keeps this cache for 24h; a
-    ``--reload`` dev server re-runs this hook on every restart because the
-    in-memory cache starts empty -- so dev effectively checks on each boot
-    while production checks at most once a day. Runs in a worker thread and
-    swallows everything so a slow/offline PyPI never delays readiness.
+    The in-memory cache in :mod:`ntasker.updates` has a 24h TTL, but it only
+    refreshes when something *calls* ``check()`` -- i.e. when a client hits
+    ``/api/update-check``. On a long-running server nobody may load a page for
+    days, so the "update available" badge would silently go stale. This loop
+    drives the refresh itself: once right after startup, then every 24h,
+    ``force``-ing past the TTL. Each check runs in a worker thread and swallows
+    everything so a slow/offline PyPI never delays readiness or kills the loop.
     """
-    with contextlib.suppress(Exception):
-        await asyncio.to_thread(updates.check)
+    while True:
+        with contextlib.suppress(Exception):
+            await asyncio.to_thread(updates.check, True)
+        await asyncio.sleep(UPDATE_POLL_INTERVAL)
+
+
+@app.on_event("startup")
+async def _start_update_poll() -> None:
+    global _update_poll_task
+    _update_poll_task = asyncio.create_task(_poll_updates())
 
 
 @app.on_event("shutdown")
@@ -717,6 +730,14 @@ async def _stop_claude_reaper() -> None:
         _reaper_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await _reaper_task
+
+
+@app.on_event("shutdown")
+async def _stop_update_poll() -> None:
+    if _update_poll_task is not None:
+        _update_poll_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await _update_poll_task
 
 
 # ---------------------------------------------------------------------------

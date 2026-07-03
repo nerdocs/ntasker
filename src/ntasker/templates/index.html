@@ -1187,7 +1187,9 @@
                     </div>
                     <div class="mb-2" x-show="agents.length">
                         <label class="form-label" x-text="$i18n('agent_label')"></label>
-                        <select class="form-select" x-model="editing.agent">
+                        {# x-model can't sync the initial value here: the <option>s come from x-for and aren't in the DOM when the modal mounts, so the select falls back to the first ("default") option -- re-apply editing.agent once the options exist. #}
+                        <select class="form-select" x-model="editing.agent"
+                                x-init="$nextTick(() => $el.value = editing.agent == null ? 'null' : editing.agent)">
                             <option :value="null" x-text="$i18n('default_agent_label') + ' (' + agentLabel(defaultAgent) + ')'"></option>
                             <template x-for="a in agents" :key="a.key">
                                 <option :value="a.key"

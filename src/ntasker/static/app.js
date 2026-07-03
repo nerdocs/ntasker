@@ -14,6 +14,10 @@ const LS_KEY_THEME = 'ntasker.theme';
 // user's last choice survives navigation; the server-supplied default
 // (`default_view` setting) only kicks in on a fresh browser.
 const LS_KEY_VIEW_MODE = 'ntasker.viewMode';
+// Task ordering mode ('priority' | 'manual'). Default is 'priority'; a
+// drag&drop reorder flips it to 'manual' and the page-action button flips
+// it back. Persisted so the choice survives reloads.
+const LS_KEY_SORT_MODE = 'ntasker.sortMode';
 const LS_KEY_KANBAN_DONE_COLLAPSED = 'ntasker.kanbanDoneCollapsed';
 const LS_KEY_SHOW_EMPTY_PROJECTS = 'ntasker.showEmptyProjects';
 
@@ -96,6 +100,9 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
     if (!VIEW_MODES.includes(initialView)) {
         initialView = VIEW_MODES.includes(serverDefaultView) ? serverDefaultView : 'list';
     }
+    // Resolve initial sort mode: localStorage > 'priority' (the default).
+    let initialSort = localStorage.getItem(LS_KEY_SORT_MODE);
+    if (initialSort !== 'priority' && initialSort !== 'manual') initialSort = 'priority';
     return {
         // Sidebar feeds.
         // projects/tags: [{name, open_count}]; phases/priorities: [{value, label, open_count}].
@@ -106,6 +113,10 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         tasks: [],
         tab: 'open',                 // 'open' | 'done' | 'archive' (list view only)
         viewMode: initialView,       // 'list' | 'kanban'
+        // Task ordering: 'priority' (default) ranks critical->low; 'manual'
+        // honours the drag&drop sort_order. A reorder-drop flips this to
+        // 'manual'; the page-action button flips it back to 'priority'.
+        sortMode: initialSort,       // 'priority' | 'manual'
         // Done column in kanban defaults to collapsed so the workflow columns
         // get the real estate; user can expand it via the column header.
         doneCollapsed: (localStorage.getItem(LS_KEY_KANBAN_DONE_COLLAPSED) ?? '1') === '1',
@@ -498,6 +509,15 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             localStorage.setItem(LS_KEY_KANBAN_DONE_COLLAPSED, this.doneCollapsed ? '1' : '0');
         },
 
+        // ---- Sort mode (priority / manual) ----
+        setSortMode(mode) {
+            if (mode !== 'priority' && mode !== 'manual') return;
+            if (this.sortMode === mode) return;
+            this.sortMode = mode;
+            localStorage.setItem(LS_KEY_SORT_MODE, mode);
+            this.loadTasks();
+        },
+
         // New-task accordion toggle. On expand, move focus into the Project
         // field. Queried by id, not $refs: the input lives inside a nested
         // x-data combobox, so its x-ref would not register on this root
@@ -647,24 +667,61 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             const task = this.tasks.find(t => t.id === id);
             if (!task) return;
             const body = {};
+            let crossColumn = false;   // does the drop change phase/status?
             if (colKey != null) {
                 if (!this.canDropOn(task, colKey)) {
                     this.showToast(_i('blocked_hint'), 'danger');
                     return;
                 }
                 if (colKey === 'done') {
-                    if (task.status !== 'done') body.status = 'done';
+                    if (task.status !== 'done') { body.status = 'done'; crossColumn = true; }
                 } else {
-                    if (task.status === 'done') body.status = 'open';
-                    if (task.phase !== colKey) body.phase = colKey;
+                    if (task.status === 'done') { body.status = 'open'; crossColumn = true; }
+                    if (task.phase !== colKey) { body.phase = colKey; crossColumn = true; }
                 }
             }
             const idx = Math.max(0, Math.min(insertIndex, group.length));
-            const newOrder = this._sortOrderForInsert(group, idx);
-            if (task.sort_order !== newOrder) body.sort_order = newOrder;
+
+            // Pure reorder (no column change) while priority-sorted: the
+            // displayed order is priority-ranked, so a single fractional
+            // sort_order insert would land the card unpredictably in manual
+            // mode. Instead snapshot the whole displayed group with the task
+            // moved into its slot, persist it as the manual order, and switch
+            // to manual mode so the move becomes visible.
+            if (!crossColumn && this.sortMode === 'priority') {
+                const ordered = group.slice();     // group already excludes `task`
+                ordered.splice(idx, 0, task);
+                const ok = await this._reorderTasks(ordered.map(t => t.id));
+                if (ok) {
+                    this.sortMode = 'manual';
+                    localStorage.setItem(LS_KEY_SORT_MODE, 'manual');
+                    await this.refreshAll();
+                }
+                return;
+            }
+
+            // Manual mode: efficient single-row fractional insert. In priority
+            // mode a cross-column move only needs the phase/status flip --
+            // position within the target column stays priority-determined.
+            if (this.sortMode === 'manual') {
+                const newOrder = this._sortOrderForInsert(group, idx);
+                if (task.sort_order !== newOrder) body.sort_order = newOrder;
+            }
             if (Object.keys(body).length === 0) return; // no actual move
             const r = await this.patch(id, body);
             if (r && r.ok) await this.refreshAll();
+        },
+
+        // Persist an explicit manual order (ids top-to-bottom) via the bulk
+        // reorder endpoint. Returns true on success.
+        async _reorderTasks(ids) {
+            const r = await fetch('/api/tasks/reorder', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids }),
+            });
+            if (!r.ok) this.showToast(_i('update_failed'), 'danger');
+            return r.ok;
         },
 
         // A blocked task (open dependencies) must not advance to Review or Done.
@@ -773,6 +830,8 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
 
         async loadTasks() {
             const params = this._buildFilterParams();
+            // In-group ordering: priority rank (default) or manual sort_order.
+            params.set('sort', this.sortMode);
             // Kanban view always shows non-archived tasks (open + done) so
             // the Done column has content; status tabs are irrelevant here.
             if (this.viewMode === 'kanban') {

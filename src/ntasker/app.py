@@ -131,6 +131,18 @@ PRIORITY_ORDER: list[tuple[str, str]] = [
 PRIORITY_VALID = {value for value, _label in PRIORITY_ORDER}
 PRIORITY_DEFAULT = "normal"
 
+# SQL rank expression mirroring PRIORITY_ORDER (critical=0 .. low=3), so the
+# ``sort=priority`` ordering stays in sync with the sidebar order. Unknown
+# values sort last.
+_PRIORITY_RANK_SQL = (
+    "CASE priority "
+    + " ".join(
+        f"WHEN '{value}' THEN {rank}"
+        for rank, (value, _label) in enumerate(PRIORITY_ORDER)
+    )
+    + f" ELSE {len(PRIORITY_ORDER)} END"
+)
+
 
 # ---------------------------------------------------------------------------
 # Resource paths -- via importlib.resources so this works from a wheel install
@@ -222,6 +234,11 @@ class TagDelete(BaseModel):
 class TitleSuggestIn(BaseModel):
     # Free text (usually the task description) to derive a title from.
     text: str = Field(..., min_length=1)
+
+
+class ReorderIn(BaseModel):
+    # Explicit manual order: ids[0] ends up topmost (largest sort_order).
+    ids: list[int] = Field(..., min_length=1)
 
 
 # ---------------------------------------------------------------------------
@@ -373,6 +390,8 @@ def build_js_strings() -> dict[str, str]:
         "tasks_title": _("Task list"),
         "view_list": _("Task list"),
         "view_kanban": _("Kanban"),
+        "sort_by_priority": _("Sort by priority"),
+        "sort_by_priority_title": _("Restore the default priority order (discards manual drag order)"),
         # Kanban board
         "kanban_col_done": _("Done"),
         "kanban_empty_column": _("(empty)"),
@@ -1379,8 +1398,14 @@ def _query_tasks(
     status: Status | None,
     archived: bool | None,
     search: str | None,
+    sort: str = "priority",
 ) -> list[sqlite3.Row]:
-    """Run the SELECT against the tasks table with filters applied."""
+    """Run the SELECT against the tasks table with filters applied.
+
+    ``sort`` picks the primary in-group ordering: ``priority`` (default)
+    ranks critical->low then newest first; ``manual`` honours the
+    drag&drop ``sort_order``.
+    """
     sql = "SELECT tasks.* FROM tasks WHERE 1=1"
     params: list[object] = []
 
@@ -1424,11 +1449,16 @@ def _query_tasks(
             params.append(int(candidate))
         sql += " AND (" + " OR ".join(clauses) + ")"
 
-    # Manual drag&drop order (sort_order DESC) is the primary sort within a
-    # group; id DESC breaks ties deterministically (newest first) for rows
-    # that share a sort_order. archived/status keep done + archived rows
-    # grouped at the bottom of unfiltered queries.
-    sql += " ORDER BY archived ASC, status ASC, sort_order DESC, id DESC"
+    # archived/status keep done + archived rows grouped at the bottom of
+    # unfiltered queries. The in-group order then depends on ``sort``:
+    #  - ``priority``: rank critical->low, id DESC (newest first) as tie-break.
+    #    sort_order is ignored -- the ordering is fully deterministic.
+    #  - ``manual``: drag&drop sort_order DESC, id DESC as tie-break.
+    if sort == "manual":
+        in_group = "sort_order DESC, id DESC"
+    else:
+        in_group = f"{_PRIORITY_RANK_SQL} ASC, id DESC"
+    sql += f" ORDER BY archived ASC, status ASC, {in_group}"
 
     with get_conn() as conn:
         return conn.execute(sql, params).fetchall()
@@ -1443,8 +1473,9 @@ def api_list_tasks(
     status: Status | None = None,
     archived: bool | None = None,
     search: str | None = None,
+    sort: Literal["priority", "manual"] = "priority",
 ) -> JSONResponse:
-    rows = _query_tasks(project, tag, phase, priority, status, archived, search)
+    rows = _query_tasks(project, tag, phase, priority, status, archived, search, sort)
     ids = [int(r["id"]) for r in rows]
     with get_conn() as conn:
         tags_by_id = load_tags_bulk(conn, ids)
@@ -1531,6 +1562,29 @@ def api_changes() -> JSONResponse:
     except OSError:
         token = 0
     return JSONResponse({"v": token})
+
+
+# NB: registered before ``/api/tasks/{task_id}`` so the literal "reorder"
+# path isn't swallowed by the int path-param route (which would 422).
+@app.patch("/api/tasks/reorder")
+def api_reorder_tasks(payload: ReorderIn) -> JSONResponse:
+    """Persist an explicit manual order for the given task ids.
+
+    ``ids[0]`` becomes the topmost row (largest ``sort_order``), descending
+    from there. The frontend calls this when the user drag-reorders while
+    priority-sorted: it snapshots the displayed order (with the dragged task
+    moved into its drop slot) so manual mode then shows exactly that
+    arrangement. Ids not listed keep their current ``sort_order``.
+    """
+    ids = payload.ids
+    n = len(ids)
+    with get_conn() as conn:
+        for i, tid in enumerate(ids):
+            conn.execute(
+                "UPDATE tasks SET sort_order = ? WHERE id = ?",
+                (float(n - i), int(tid)),
+            )
+    return JSONResponse({"reordered": n})
 
 
 @app.get("/api/tasks/{task_id}")

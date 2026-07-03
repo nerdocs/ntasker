@@ -283,8 +283,17 @@
                             </button>
                         </h2>
                     </div>
-                    {# Page actions: "show all" reset + search box, pushed to the far right. #}
+                    {# Page actions: "sort by priority" reset + "show all" reset + search box, far right. #}
                     <div class="col-auto ms-auto d-flex align-items-center">
+                        {# Only shown after a drag&drop reorder switched sorting to manual; #}
+                        {# clicking it restores the priority-ranked default order. #}
+                        <button type="button" class="btn btn-ghost-secondary me-2"
+                                x-show="sortMode === 'manual'" x-cloak
+                                @click="setSortMode('priority')"
+                                :title="$i18n('sort_by_priority_title')">
+                            <i class="ti ti-arrows-sort me-1"></i>
+                            <span x-text="$i18n('sort_by_priority')"></span>
+                        </button>
                         {# Clears the search box and every filter; only shown while something is filtering. #}
                         <button type="button" class="btn btn-ghost-secondary me-2"
                                 x-show="hasActiveFilters" x-cloak

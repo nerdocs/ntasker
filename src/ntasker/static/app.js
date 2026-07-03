@@ -1616,7 +1616,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             const active = new Set(this.claudeSessions);
             for (const id of this.claudeSessions) {
                 if (!this.claudeTabs.some(t => t.taskId === id)) {
-                    this.claudeTabs.push({ taskId: id, taskTitle: '', status: waiting.has(id) ? 'waiting' : 'running' });
+                    this.claudeTabs.push({ taskId: id, taskTitle: '', project: '', status: waiting.has(id) ? 'waiting' : 'running' });
                     this._fetchTabTitle(id);
                 }
             }
@@ -1632,14 +1632,14 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             });
         },
 
-        // Fill in a tab's title once we know its id (auto-added session tabs).
+        // Fill in a tab's title + project once we know its id (auto-added session tabs).
         async _fetchTabTitle(id) {
             try {
                 const r = await fetch(`/api/tasks/${id}`);
                 if (!r.ok) return;
                 const t = await r.json();
                 const tab = this.claudeTabs.find(x => x.taskId === id);
-                if (tab) tab.taskTitle = t.title || '';
+                if (tab) { tab.taskTitle = t.title || ''; tab.project = t.project || ''; }
             } catch (_e) { /* leave blank */ }
         },
 
@@ -1759,7 +1759,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 const r = await fetch(`/api/tasks/${id}/claude-run/defaults`);
                 if (r.ok) { const d = await r.json(); cwd = d.cwd || ''; seed = d.seed || ''; }
             } catch (_e) { /* defaults are best-effort */ }
-            this._addTab(id, task.title || '');
+            this._addTab(id, task.title || '', task.project || '');
             // Background start: attach the session but stay on the board. The
             // tab's xterm host still renders (hidden) via the claudeTabs x-for,
             // so the socket attaches and the server-side PTY starts; opening the
@@ -1777,16 +1777,16 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // Open a tab from just an id (deep link / browser-forward / reload).
         // Looks up the title + run defaults, then connects like openClaudeRun.
         async _openRunById(id) {
-            let title = '', cwd = '', seed = '';
+            let title = '', project = '', cwd = '', seed = '';
             try {
                 const r = await fetch(`/api/tasks/${id}`);
-                if (r.ok) title = (await r.json()).title || '';
+                if (r.ok) { const t = await r.json(); title = t.title || ''; project = t.project || ''; }
             } catch (_e) { /* best-effort */ }
             try {
                 const r = await fetch(`/api/tasks/${id}/claude-run/defaults`);
                 if (r.ok) { const d = await r.json(); cwd = d.cwd || ''; seed = d.seed || ''; }
             } catch (_e) { /* best-effort */ }
-            this._addTab(id, title);
+            this._addTab(id, title, project);
             this.claudeView = id;
             this.$nextTick(() => this._claudeConnect(id, cwd, seed));
         },
@@ -1802,9 +1802,16 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             }
         },
 
-        _addTab(id, title) {
+        _addTab(id, title, project = '') {
             if (this.claudeTabs.some(t => t.taskId === id)) return;
-            this.claudeTabs.push({ taskId: id, taskTitle: title, status: 'connecting' });
+            this.claudeTabs.push({ taskId: id, taskTitle: title, project, status: 'connecting' });
+        },
+
+        // Tab label: "<project>: <title>" when the task has a project, else just
+        // the title. Used for both the visible tab text and its tooltip.
+        tabLabel(tab) {
+            if (!tab) return '';
+            return tab.project ? `${tab.project}: ${tab.taskTitle}` : tab.taskTitle;
         },
 
         _setTabStatus(id, status) {

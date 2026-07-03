@@ -1037,7 +1037,7 @@
                                 <li class="nav-item" role="presentation">
                                     <a class="nav-link d-flex align-items-center" href="#"
                                        :class="claudeView === tab.taskId ? 'active' : ''"
-                                       :title="tab.status === 'waiting' ? $i18n('claude_waiting') : tab.taskTitle"
+                                       :title="tab.status === 'waiting' ? $i18n('claude_waiting') : tabLabel(tab)"
                                        @click.prevent="activateTab(tab.taskId)">
                                         <span class="status-dot me-2"
                                               :class="{
@@ -1046,7 +1046,7 @@
                                                   'bg-secondary': tab.status === 'exited',
                                               }"></span>
                                         <span class="font-monospace text-muted" x-text="`#${tab.taskId}`"></span>
-                                        <span class="ms-1 text-truncate" style="max-width: 14rem" x-text="tab.taskTitle"></span>
+                                        <span class="ms-1 text-truncate" style="max-width: 14rem" x-text="tabLabel(tab)"></span>
                                     </a>
                                 </li>
                             </template>

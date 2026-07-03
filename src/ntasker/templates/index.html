@@ -1146,7 +1146,7 @@
                                    @keydown.escape="focused = false; projectHighlight.edit = -1"
                                    :placeholder="$i18n('project_placeholder')">
                             {# Same live match indicator as the new-task form. #}
-                            <span class="project-validity" x-show="editing.project.trim()" x-cloak>
+                            <span class="project-validity" x-show="(editing.project || '').trim()" x-cloak>
                                 <i class="ti ti-check text-green" x-show="isProjectValid('edit')"></i>
                                 <i class="ti ti-folder-plus text-blue" x-show="isNewProject('edit')"></i>
                             </span>

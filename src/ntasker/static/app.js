@@ -1873,7 +1873,13 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         _claudeConnect(taskId, cwd, seed) {
             if (_claudeTerms.has(taskId)) return;   // don't double-connect a tab
             const el = document.getElementById('claude-term-' + taskId);
-            if (!el || typeof Terminal === 'undefined') return;
+            if (!el || typeof Terminal === 'undefined') {
+                // Host node missing or xterm.js never loaded (CDN blocked?) --
+                // without a visible terminal the only channel left is a toast.
+                this.showToast(_i('claude_term_init_failed'), 'danger');
+                this._setTabStatus(taskId, 'exited');
+                return;
+            }
             const term = new Terminal({
                 cursorBlink: true,
                 fontSize: 13,
@@ -1890,7 +1896,12 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             const ws = new WebSocket(`${proto}://${location.host}/ws/claude/${taskId}`);
             _claudeTerms.set(taskId, { ws, term, fit });
 
+            // Track the socket's lifecycle so onclose can tell a normal end
+            // (exit/error already reported, or torn down by us) from a failure
+            // that would otherwise leave a silently dead terminal.
+            let opened = false, ended = false;
             ws.onopen = () => {
+                opened = true;
                 ws.send(JSON.stringify({ type: 'attach', cwd, seed }));
                 this._fitAndSync(taskId);
                 this._setTabStatus(taskId, 'running');
@@ -1901,14 +1912,30 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 if (msg.type === 'output') {
                     term.write(_b64ToBytes(msg.data));
                 } else if (msg.type === 'exit') {
+                    ended = true;
                     this._setTabStatus(taskId, 'exited');
                     this.loadClaudeSessions();
                 } else if (msg.type === 'error') {
+                    ended = true;
                     term.write(`\r\n\x1b[31m[ntasker] ${msg.error}\x1b[0m\r\n`);
                     this._setTabStatus(taskId, 'exited');
                 }
             };
-            ws.onclose = () => { this.loadClaudeSessions(); };
+            ws.onclose = () => {
+                if (!opened) {
+                    // Never connected: the tab would just show a blinking
+                    // cursor forever -- say so in the terminal and as a toast.
+                    try { term.write(`\r\n\x1b[31m[ntasker] ${_i('claude_connect_failed')}\x1b[0m\r\n`); } catch (_e) { /* disposed */ }
+                    this.showToast(_i('claude_connect_failed'), 'danger');
+                    this._setTabStatus(taskId, 'exited');
+                } else if (!ended) {
+                    // Dropped mid-session without an exit/error (e.g. server
+                    // restart): the screen would freeze without a trace.
+                    try { term.write(`\r\n\x1b[31m[ntasker] ${_i('claude_disconnected')}\x1b[0m\r\n`); } catch (_e) { /* disposed */ }
+                    this._setTabStatus(taskId, 'exited');
+                }
+                this.loadClaudeSessions();
+            };
             term.onData((data) => {
                 if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'input', data }));
             });

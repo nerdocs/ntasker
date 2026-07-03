@@ -542,6 +542,11 @@ def build_js_strings() -> dict[str, str]:
         "claude_running": _("Running..."),
         "claude_run_finished": _("Session ended"),
         "claude_started_background": _("Task #{id} started in the background."),
+        "claude_connect_failed": _("Could not connect to the agent session."),
+        "claude_disconnected": _("Connection to the session lost."),
+        "claude_term_init_failed": _(
+            "The terminal component failed to load -- reload the page (Ctrl+Shift+R)."
+        ),
         "running_now": _("Active projects"),
         "confirm_parallel_run": _(
             'Project "{project}" already has a running agent session. '

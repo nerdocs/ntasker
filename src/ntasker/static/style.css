@@ -264,6 +264,12 @@ body {
 .claude-tabs {
     border-bottom: 0;
 }
+/* Tabs share the full strip width equally (2 tabs -> 50% each), so the
+ * "project: title" labels get maximum room before truncating. */
+.claude-tabs .nav-item {
+    flex: 1 1 0;
+    min-width: 0;
+}
 .claude-tabs .nav-link {
     padding: 0.3rem 0.75rem;
     cursor: pointer;

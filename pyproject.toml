@@ -19,6 +19,11 @@ dependencies = [
     # assets into the user-data dir. Runtime dep (not dev-only) since
     # the CLI ships in every install.
     "httpx>=0.28",
+    # Title suggestion (``POST /api/title-suggest``): YAKE + TextRank keyword
+    # extraction with automatic language detection. See ntasker/titlegen.py.
+    "yake>=0.4.8",
+    "summa>=1.2",
+    "langdetect>=1.0.9",
 ]
 
 [project.scripts]

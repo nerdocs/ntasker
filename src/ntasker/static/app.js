@@ -215,6 +215,11 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         tagCaret: { form: -1, edit: -1 },
         editing: null,               // task object or null
         counts: { open: 0, done: 0, archive: 0 },
+        // Title suggestion (create form): auto-fill from the description as
+        // long as the user hasn't typed a title themselves. Typing into the
+        // title field turns it off; clearing the field turns it back on.
+        titleAuto: true,
+        titleGenBusy: { form: false, edit: false },
 
         async init() {
             this.restoreProjectFilter();
@@ -828,6 +833,48 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             this.loadCounts();
         },
 
+        // ---- Title suggestion (server-side YAKE + TextRank) ----
+        // Debounced from the create form's description textarea: keep the
+        // title in sync while typing, but only while titleAuto is on.
+        async autoSuggestTitle() {
+            if (!this.titleAuto) return;
+            const text = this.form.description.trim();
+            if (text.length < 15) return;  // too little signal for extraction
+            const title = await this._suggestTitle(text, 'form');
+            // Re-check titleAuto: the user may have typed a title meanwhile.
+            if (title !== null && this.titleAuto) this.form.title = title;
+        },
+
+        // ✨ button: explicit (re)generation, create form ('form') or edit
+        // modal ('edit'). Overwrites the title; failures get a toast.
+        async generateTitle(which) {
+            const target = which === 'edit' ? this.editing : this.form;
+            if (!target) return;
+            const text = (target.description || '').trim();
+            if (!text) return;
+            const title = await this._suggestTitle(text, which);
+            if (title !== null) target.title = title;
+            else this.showToast(_i('title_suggest_failed'), 'danger');
+        },
+
+        // POST the text to /api/title-suggest; null on any failure.
+        async _suggestTitle(text, which) {
+            this.titleGenBusy[which] = true;
+            try {
+                const r = await fetch('/api/title-suggest', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text }),
+                });
+                if (!r.ok) return null;
+                return (await r.json()).title || null;
+            } catch (_e) {
+                return null;
+            } finally {
+                this.titleGenBusy[which] = false;
+            }
+        },
+
         // ---- Task CRUD ----
         async createTask(run = false) {
             // Commit any pending tag input before submit.
@@ -864,6 +911,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             this.form.tagInput = '';
             this.form.depends = [];
             this.form.depInput = '';
+            this.titleAuto = true;  // fresh form -> auto-fill armed again
             // Keep project selection for rapid same-project entry.
             await this.refreshAll();
             // Create + Run: hand the fresh task straight to its agent. The run

@@ -219,6 +219,11 @@ class TagDelete(BaseModel):
     names: list[str] = Field(..., min_length=1)
 
 
+class TitleSuggestIn(BaseModel):
+    # Free text (usually the task description) to derive a title from.
+    text: str = Field(..., min_length=1)
+
+
 # ---------------------------------------------------------------------------
 # FastAPI app
 # ---------------------------------------------------------------------------
@@ -398,6 +403,8 @@ def build_js_strings() -> dict[str, str]:
         "priority_low": _("Low"),
         "title": _("Title"),
         "title_placeholder": _("What needs to be done?"),
+        "generate_title": _("Generate title from description"),
+        "title_suggest_failed": _("Could not generate a title"),
         "description": _("Description"),
         "description_placeholder": _("Optional"),
         "tag_input_placeholder": _("Type a tag, Enter to add"),
@@ -1534,6 +1541,22 @@ def _normalize_project(value: str | None) -> str | None:
         return None
     trimmed = value.strip()
     return trimmed or None
+
+
+@app.post("/api/title-suggest")
+def api_title_suggest(payload: TitleSuggestIn) -> JSONResponse:
+    """Suggest a short task title for free text (YAKE + TextRank).
+
+    Returns ``{"title": ..., "language": ...}``; language is the
+    auto-detected ISO-639-1 code the extractors ran with.
+    """
+    text = payload.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail=_("No text to generate a title from"))
+    # Lazy import: pulls in numpy/scipy -- keep `ntasker serve` startup fast.
+    from ntasker.titlegen import suggest_title  # noqa: PLC0415
+
+    return JSONResponse(suggest_title(text))
 
 
 @app.post("/api/tasks", status_code=201)

@@ -411,15 +411,26 @@
                                 </div>
                                 <div class="col-md-3">
                                     <label class="form-label">{{ t('Title') }} <span class="text-danger">*</span></label>
-                                    <input type="text" class="form-control" x-model="form.title" required maxlength="500"
-                                           x-ref="titleInput"
-                                           :placeholder="$i18n('title_placeholder')">
+                                    <div class="input-group">
+                                        <input type="text" class="form-control" x-model="form.title" required maxlength="500"
+                                               x-ref="titleInput"
+                                               @input="titleAuto = $event.target.value === ''"
+                                               :placeholder="$i18n('title_placeholder')">
+                                        <button type="button" class="btn btn-icon" tabindex="-1"
+                                                :title="$i18n('generate_title')"
+                                                :disabled="!form.description.trim() || titleGenBusy.form"
+                                                @click="generateTitle('form')">
+                                            <span class="spinner-border spinner-border-sm" x-show="titleGenBusy.form"></span>
+                                            <i class="ti ti-sparkles" x-show="!titleGenBusy.form"></i>
+                                        </button>
+                                    </div>
                                 </div>
                                 <div class="col-12">
                                     <label class="form-label">{{ t('Description') }}</label>
                                     <textarea class="form-control" rows="2" x-model="form.description"
                                               @keydown.enter.ctrl.prevent="createTask()"
                                               @keydown.enter.meta.prevent="createTask()"
+                                              @input.debounce.700ms="autoSuggestTitle()"
                                               :placeholder="$i18n('description_placeholder')"></textarea>
                                 </div>
                                 <div class="col-md-6">
@@ -1046,7 +1057,7 @@
                                                   'bg-secondary': tab.status === 'exited',
                                               }"></span>
                                         <span class="font-monospace text-muted" x-text="`#${tab.taskId}`"></span>
-                                        <span class="ms-1 text-truncate" style="max-width: 14rem" x-text="tabLabel(tab)"></span>
+                                        <span class="ms-1 text-truncate flex-fill" style="min-width: 0" x-text="tabLabel(tab)"></span>
                                     </a>
                                 </li>
                             </template>
@@ -1186,7 +1197,16 @@
                     </div>
                     <div class="mb-2">
                         <label class="form-label">{{ t('Title') }}</label>
-                        <input type="text" class="form-control" x-model="editing.title" maxlength="500">
+                        <div class="input-group">
+                            <input type="text" class="form-control" x-model="editing.title" maxlength="500">
+                            <button type="button" class="btn btn-icon" tabindex="-1"
+                                    :title="$i18n('generate_title')"
+                                    :disabled="!(editing.description || '').trim() || titleGenBusy.edit"
+                                    @click="generateTitle('edit')">
+                                <span class="spinner-border spinner-border-sm" x-show="titleGenBusy.edit"></span>
+                                <i class="ti ti-sparkles" x-show="!titleGenBusy.edit"></i>
+                            </button>
+                        </div>
                     </div>
                     <div class="mb-2">
                         <label class="form-label">{{ t('Description') }}</label>

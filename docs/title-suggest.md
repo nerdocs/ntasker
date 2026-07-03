@@ -14,8 +14,14 @@ Pipeline (`src/ntasker/titlegen.py`):
    language's stopwords.
 3. **TextRank** (`summa`) ranks central single words. Each YAKE phrase's score is divided by
    `1 + |phrase words TextRank also ranked|`, so both extractors vote together.
-4. The best non-overlapping phrases are joined with an en dash until 60 characters are reached; degenerate
-   input (too short for extraction) falls back to the trimmed first line.
+4. **Cut-phrase repair** -- a candidate whose occurrence in the text is immediately followed by a word
+   character was truncated by the n-gram window (e.g. `effectiveTime-Präzedenz bei seltener` [Re-Statement
+   ...]); its dangling tail is dropped at the phrase's last stopword. Phrases ending at a clause boundary
+   stay untouched.
+5. The best non-overlapping phrases are joined with an en dash until 60 characters are reached, ordered by
+   their position in the text (headline reading order, not rank order). The first letter is only
+   capitalized for plain lowercase words -- camelCase identifiers (`effectiveTime`) are left as-is.
+   Degenerate input (too short for extraction) falls back to the trimmed first line.
 
 The heavy imports (numpy/scipy via yake/summa) are loaded lazily on the first request, not at server start.
 

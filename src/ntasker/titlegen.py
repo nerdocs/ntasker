@@ -85,6 +85,32 @@ def _yake_candidates(text: str, lang: str) -> list[tuple[str, float]]:
         return _yake_candidates(text, "en")
 
 
+def _stopword_set(lang: str) -> set[str]:
+    """YAKE's stopword list for *lang* (lowercased), empty set on failure."""
+    try:
+        return yake.KeywordExtractor(lan=lang).stopword_set
+    except Exception:
+        if lang == "en":
+            return set()
+        return _stopword_set("en")
+
+
+def _trim_cut_phrase(phrase: str, text: str, stopwords: set[str]) -> str:
+    """Drop a dangling tail from a phrase the n-gram window cut mid-clause.
+
+    If the phrase's occurrence in *text* is immediately followed by a word
+    character, the extractor truncated it (e.g. ``"effectiveTime-Präzedenz
+    bei seltener" [Re-Statement ...]``). Cutting at the phrase's last
+    stopword removes the incomplete fragment. Phrases ending at a clause
+    boundary (punctuation, end of text) are returned unchanged.
+    """
+    if not re.search(re.escape(phrase) + r"\s*\w", text, re.IGNORECASE):
+        return phrase
+    tokens = phrase.split()
+    idx = max((i for i, tok in enumerate(tokens) if tok.lower() in stopwords), default=0)
+    return " ".join(tokens[:idx]) if idx else phrase
+
+
 def _textrank_words(text: str, lang: str) -> set[str]:
     """Central single words according to TextRank; empty set on failure."""
     language = _SUMMA_LANGUAGES.get(lang, "english")
@@ -118,6 +144,7 @@ def suggest_title(text: str) -> dict[str, str]:
         return {"title": _first_line_fallback(text), "language": lang}
 
     central = _textrank_words(text, lang)
+    stopwords = _stopword_set(lang)
     ranked = sorted(
         candidates,
         key=lambda item: item[1] / (1 + len(_words(item[0]) & central)),
@@ -126,6 +153,7 @@ def suggest_title(text: str) -> dict[str, str]:
     parts: list[str] = []
     used: set[str] = set()
     for phrase, _score in ranked:
+        phrase = _trim_cut_phrase(phrase, text, stopwords)
         words = _words(phrase)
         if words & used:  # redundant with an already-chosen phrase
             continue
@@ -137,6 +165,15 @@ def suggest_title(text: str) -> dict[str, str]:
         if len(parts) >= 2:
             break
 
+    # Join in text order, not rank order -- reads like a headline instead
+    # of a shuffled keyword list.
+    lower = text.lower()
+    parts.sort(key=lambda p: lower.find(p.lower()))
     title = " – ".join(parts)  # noqa: RUF001 -- en dash intended
-    title = title[0].upper() + title[1:] if title else _first_line_fallback(text)
+    if not title:
+        title = _first_line_fallback(text)
+    elif title[0].islower() and title.split()[0].islower():
+        # Capitalize plain words only -- leave camelCase identifiers
+        # (``effectiveTime``) untouched.
+        title = title[0].upper() + title[1:]
     return {"title": title, "language": lang}

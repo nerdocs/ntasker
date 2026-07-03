@@ -4,6 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [2.15.0] — 2026-07-03
+Opt-in `compact_seed` setting: task data inlined into the session seed, skipping the /task loader — faster local runs.
+
 ## [2.14.0] — 2026-07-01
 Agent-agnostic runs (Claude/OpenCode/Pi); drag-and-drop sortable tasks; new project dirs on run; project chips into sessions; settings radio/number widgets.
 

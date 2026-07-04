@@ -4,6 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [2.16.0] — 2026-07-04
+Stale-page banner: open pages detect a newer server version after `self-update` and offer a one-click reload.
+
 ## [2.15.0] — 2026-07-03
 Opt-in `compact_seed` setting: task data inlined into the session seed, skipping the /task loader — faster local runs.
 

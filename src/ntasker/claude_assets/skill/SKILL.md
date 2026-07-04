@@ -2,17 +2,24 @@
 name: ntasker
 description: >
   ntasker -- lightweight local task tracker (FastAPI + SQLite).
-  Load when any message contains: #<digits>, Task #N, TODO #N, Tracker #N,
-  "tasks.db", "ntasker", "nerdocs-tracker", "Tracker", "Aufgaben-Liste",
-  or an explicit user write-command ("create a task", "add a todo",
-  "leg einen Task an", "trag das ein", "neuer Task").
+  ALWAYS load this skill BEFORE running any `ntasker` CLI command or
+  calling http://127.0.0.1:8766 -- never drive the tracker from
+  `--help` output or from memory.
+  Load whenever tasks, todos or Aufgaben are in play as trackable items,
+  in English or German, any casing/inflection/prefix: "task", "ntask",
+  "nTask", "ntasker", "nTasker", "Aufgabe", "Aufgaben", "todo", "TODO",
+  "Tracker", "tasks.db", "nerdocs-tracker" (legacy alias), #<digits>,
+  Task #N, TODO #N, "Aufgaben-Liste" -- and any write-command ("create a
+  task", "add a todo", "leg einen Task an", "trag das ein", "neuer
+  Task", "erstelle einen ntask", "als Task/ntask anlegen", "der
+  ntask/Task ist das Deliverable").
   Also load when the user asks for open tasks or what to do next in the
   current project ("offene Tasks", "open tasks", "was soll ich als
   nächstes machen", "what should I work on next", "what's next", "nächste
   Aufgabe", "woran arbeiten", "todo in diesem Projekt") -- then suggest
   the next tasks ranked by urgency (see section 3.1).
-  Note: `nerdocs-tracker` and `Tracker` remain trigger words as legacy
-  aliases for installs that migrated from the pre-1.0.0 package name.
+  When in doubt whether "task"/"Aufgabe" refers to the tracker: load the
+  skill anyway -- loading is cheap, missing it is not.
   Hard rule: NO agent creates, deletes or closes tasks autonomously. The
   autonomous writes are moving a task to phase=wip when started via /task
   (since v2.2.0) and to phase=review on completion (since v1.5.0);

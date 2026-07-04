@@ -2,7 +2,20 @@
 {# badge), GitHub, theme toggle, settings. Self-contained Alpine component #}
 {# (topnav() in topnav.js) so it works identically regardless of the page's #}
 {# own main component. Needs the `links` context var + the top-bar i18n keys. #}
-<div class="navbar-nav flex-row order-md-last ms-auto align-items-center" x-data="topnav()">
+<div class="navbar-nav flex-row order-md-last ms-auto align-items-center" x-data="topnav('{{ version }}')">
+    {# Stale-page banner: the server restarted with a newer version than this #}
+    {# page was rendered with. Fixed overlay; never auto-reloads (data loss). #}
+    {# No d-flex utility here: its !important display would defeat x-show's #}
+    {# inline display:none -- the flex layout lives in .stale-version-banner. #}
+    <div class="alert alert-info stale-version-banner mb-0" role="alert"
+         x-show="staleVersion" x-cloak>
+        <i class="ti ti-refresh-alert me-2"></i>
+        <span x-text="$i18n('stale_version_notice', { version: serverVersion })"></span>
+        <button type="button" class="btn btn-sm btn-info ms-3 flex-shrink-0"
+                @click="location.reload()" x-text="$i18n('reload_page')"></button>
+        <button type="button" class="btn-close ms-2 flex-shrink-0" :aria-label="$i18n('close')"
+                @click="staleVersion = false"></button>
+    </div>
     <a href="{{ links.coffee }}" target="_blank" rel="noopener"
        class="d-inline-flex align-items-center me-4" :title="$i18n('buy_me_a_coffee')">
         <img src="/static/buymeacoffee.png?v={{ static_bust('buymeacoffee.png') }}"

@@ -386,6 +386,10 @@ def build_js_strings() -> dict[str, str]:
         "update_available_short": _("Update available"),
         "github": _("Source on GitHub"),
         "buy_me_a_coffee": _("Buy me a coffee"),
+        "stale_version_notice": _(
+            "nTasker was updated to v{version} -- reload the page to use the new version."
+        ),
+        "reload_page": _("Reload page"),
         # Page header / view switcher
         "tasks_title": _("Task list"),
         "view_list": _("Task list"),

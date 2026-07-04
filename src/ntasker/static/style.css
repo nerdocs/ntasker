@@ -437,3 +437,23 @@ a.running-chip-link:hover {
     background-color: rgba(var(--tblr-warning-rgb), 0.16);
     border-left: 3px solid var(--tblr-warning);
 }
+
+/* Stale-page banner (_topnav.html): shown when /healthz reports a newer
+ * server version than the one this page was rendered with (after a
+ * `self-update` restart). Fixed top-center overlay above the navbar; the
+ * user reloads explicitly -- never automatically. */
+.stale-version-banner {
+    display: flex;
+    align-items: center;
+    position: fixed;
+    /* Below the 56px navbar so the brand/logo stays visible. */
+    top: 4.25rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1080;
+    /* Tabler alerts have a transparent background -- fine in document flow,
+     * unreadable as a fixed overlay. Paint an opaque surface behind it. */
+    background-color: var(--tblr-bg-surface, #fff);
+    box-shadow: var(--tblr-box-shadow, 0 0.5rem 1rem rgba(0, 0, 0, 0.15));
+    max-width: calc(100vw - 2rem);
+}

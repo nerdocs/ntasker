@@ -474,7 +474,9 @@ def build_js_strings() -> dict[str, str]:
         "filter_priority_low": _("Filter: priority Low"),
         "filter_tag": _("Filter: tag {name}"),
         "edit": _("Edit"),
-        "archive": _("Archive"),
+        # Distinct msgid from the "Archive" tab label: the button is an
+        # action ("archive this task"), the tab is a place.
+        "archive": _("Archive task"),
         "unarchive": _("Restore"),
         "delete_permanently": _("Delete permanently"),
         "delete": _("Delete"),

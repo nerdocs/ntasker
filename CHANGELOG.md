@@ -4,6 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [2.17.0] — 2026-07-10
+Drop lib-based title suggestion (YAKE/TextRank); title is now optional and falls back to the description start.
+
 ## [2.16.0] — 2026-07-04
 Stale-page banner: open pages detect a newer server version after `self-update` and offer a one-click reload.
 

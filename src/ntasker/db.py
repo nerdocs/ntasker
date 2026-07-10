@@ -29,6 +29,26 @@ def set_db_path(path: Path) -> None:
     DB_PATH = path
 
 
+# Fallback title length when a task is created without an explicit title and
+# the first line of its description gets used instead.
+TITLE_FROM_DESC_MAX = 60
+
+
+def title_from_description(description: str | None) -> str:
+    """Derive a task title from the start of *description*.
+
+    Takes the first non-empty line, trimmed, and truncates it at a word
+    boundary (ellipsis appended) once it exceeds :data:`TITLE_FROM_DESC_MAX`.
+    Returns an empty string when *description* has no usable text.
+    """
+    if not description or not description.strip():
+        return ""
+    line = description.strip().splitlines()[0].strip()
+    if len(line) > TITLE_FROM_DESC_MAX:
+        line = line[: TITLE_FROM_DESC_MAX - 1].rsplit(" ", 1)[0] + "…"
+    return line
+
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -54,6 +54,7 @@ from ntasker.db import (
     set_db_path,
     set_task_deps,
     set_task_tags,
+    title_from_description,
     validate_deps,
 )
 from ntasker.i18n import _, resolve_for_cli, set_active_language
@@ -550,6 +551,11 @@ def cmd_add(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
+    # Title is optional -- fall back to the start of the description.
+    title_value = (args.title or "").strip() or title_from_description(args.description)
+    if not title_value:
+        print(_("ntasker: need a --title or a --description"), file=sys.stderr)
+        return 2
     # phase column is NOT NULL since v2.0 -- default to ``planned`` when the
     # caller omits ``--phase`` so ``ntasker add --title X`` keeps working.
     phase_value = args.phase or "planned"
@@ -576,14 +582,14 @@ def cmd_add(args: argparse.Namespace) -> int:
         cur = conn.execute(
             "INSERT INTO tasks (project, title, description, phase, priority, agent) "
             "VALUES (?, ?, ?, ?, ?, ?)",
-            (args.project, args.title, args.description, phase_value, args.priority, args.agent),
+            (args.project, title_value, args.description, phase_value, args.priority, args.agent),
         )
         new_id = int(cur.lastrowid)
         if norm_tags:
             set_task_tags(conn, new_id, norm_tags)
         if dep_ids:
             set_task_deps(conn, new_id, dep_ids)
-    print(_("#{id} created: {title}").format(id=new_id, title=args.title))
+    print(_("#{id} created: {title}").format(id=new_id, title=title_value))
     return 0
 
 
@@ -1518,7 +1524,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # add -----------------------------------------------------------------
     sp_add = sub.add_parser("add", help=_("Create a task"))
-    sp_add.add_argument("--title", required=True)
+    sp_add.add_argument("--title", help=_("Optional; defaults to the start of --description"))
     sp_add.add_argument("--project")
     sp_add.add_argument("--description")
     sp_add.add_argument("--phase", choices=["planned", "wip", "review"])

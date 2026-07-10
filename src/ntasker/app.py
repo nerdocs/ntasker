@@ -64,6 +64,7 @@ from ntasker.db import (
     set_task_deps,
     set_task_tags,
     tasks_for_tag,
+    title_from_description,
     validate_deps,
 )
 from ntasker.i18n import (
@@ -180,7 +181,9 @@ Priority = Literal["low", "normal", "high", "critical"]
 
 class TaskCreate(BaseModel):
     project: str | None = None
-    title: str = Field(..., min_length=1, max_length=500)
+    # Optional: an empty/omitted title falls back to the start of the
+    # description on insert (see ``title_from_description``).
+    title: str = Field("", max_length=500)
     description: str | None = None
     # Tolerated as None for legacy clients (and for forms that emit an
     # empty <select>); the endpoint substitutes ``PHASE_DEFAULT`` on insert.
@@ -200,7 +203,9 @@ class TaskCreate(BaseModel):
 
 class TaskUpdate(BaseModel):
     project: str | None = None
-    title: str | None = Field(None, min_length=1, max_length=500)
+    # None (omitted) = unchanged. An explicit empty/whitespace title falls
+    # back to the start of the description on update (mirrors create).
+    title: str | None = Field(None, max_length=500)
     description: str | None = None
     status: Status | None = None
     phase: Phase | None = None
@@ -229,11 +234,6 @@ class TagMerge(BaseModel):
 
 class TagDelete(BaseModel):
     names: list[str] = Field(..., min_length=1)
-
-
-class TitleSuggestIn(BaseModel):
-    # Free text (usually the task description) to derive a title from.
-    text: str = Field(..., min_length=1)
 
 
 class ReorderIn(BaseModel):
@@ -426,8 +426,6 @@ def build_js_strings() -> dict[str, str]:
         "priority_low": _("Low"),
         "title": _("Title"),
         "title_placeholder": _("What needs to be done?"),
-        "generate_title": _("Generate title from description"),
-        "title_suggest_failed": _("Could not generate a title"),
         "description": _("Description"),
         "description_placeholder": _("Optional"),
         "tag_input_placeholder": _("Type a tag, Enter to add"),
@@ -1629,22 +1627,6 @@ def _normalize_project(value: str | None) -> str | None:
     return trimmed or None
 
 
-@app.post("/api/title-suggest")
-def api_title_suggest(payload: TitleSuggestIn) -> JSONResponse:
-    """Suggest a short task title for free text (YAKE + TextRank).
-
-    Returns ``{"title": ..., "language": ...}``; language is the
-    auto-detected ISO-639-1 code the extractors ran with.
-    """
-    text = payload.text.strip()
-    if not text:
-        raise HTTPException(status_code=400, detail=_("No text to generate a title from"))
-    # Lazy import: pulls in numpy/scipy -- keep `ntasker serve` startup fast.
-    from ntasker.titlegen import suggest_title  # noqa: PLC0415
-
-    return JSONResponse(suggest_title(text))
-
-
 @app.post("/api/tasks", status_code=201)
 def api_create_task(payload: TaskCreate) -> JSONResponse:
     if payload.priority not in PRIORITY_VALID:
@@ -1654,6 +1636,8 @@ def api_create_task(payload: TaskCreate) -> JSONResponse:
     norm_tags = normalize_tags(payload.tags)
     phase_value = payload.phase or PHASE_DEFAULT
     project_value = _normalize_project(payload.project)
+    # Title is optional: fall back to the start of the description.
+    title_value = payload.title.strip() or title_from_description(payload.description)
     with get_conn() as conn:
         cur = conn.execute(
             """
@@ -1664,7 +1648,7 @@ def api_create_task(payload: TaskCreate) -> JSONResponse:
             """,
             (
                 project_value,
-                payload.title,
+                title_value,
                 payload.description,
                 phase_value,
                 payload.priority,
@@ -1727,6 +1711,18 @@ def api_update_task(task_id: int, payload: TaskUpdate) -> JSONResponse:
         fields["archived"] = 1 if fields["archived"] else 0
 
     with get_conn() as conn:
+        # Title is optional: an emptied title falls back to the start of the
+        # description -- the just-submitted one if present, else the stored
+        # one. Mirrors the create endpoint.
+        if "title" in fields and not (fields["title"] or "").strip():
+            if "description" in fields:
+                desc = fields["description"]
+            else:
+                cur = conn.execute("SELECT description FROM tasks WHERE id = ?", (task_id,))
+                stored = cur.fetchone()
+                desc = stored["description"] if stored else None
+            fields["title"] = title_from_description(desc)
+
         if fields:
             set_clause = ", ".join(f"{k} = ?" for k in fields)
             params = [*fields.values(), task_id]

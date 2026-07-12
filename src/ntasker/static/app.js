@@ -1954,6 +1954,11 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             term.onData((data) => {
                 if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'input', data }));
             });
+            // Accept drag-dropped files onto the terminal like a native terminal:
+            // the browser would otherwise navigate to / display the dropped image,
+            // so we intercept, ship the bytes to the server, and it types the
+            // saved file's path into the PTY for the agent to pick up.
+            this._wireTerminalDnd(el, ws);
             // Auto-copy on selection: mimics the Linux terminal habit of
             // "select = copied". Lets the user paste back via middle-click
             // without ever pressing Ctrl+C (which stays the Claude interrupt).
@@ -1969,6 +1974,47 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             // keystrokes land in the PTY immediately -- but only if this tab is
             // still the active one by then.
             requestAnimationFrame(() => { if (this.claudeView === taskId) term.focus(); });
+        },
+
+        // Wire the xterm host as a drag-drop file target. The browser's default
+        // is to open/display a dropped image, so every relevant event is
+        // cancelled; accepted files are base64-encoded and sent as a `file`
+        // message (the server saves them and types the path into the PTY).
+        _wireTerminalDnd(el, ws) {
+            const MAX = 25 * 1024 * 1024;   // keep in sync with MAX_UPLOAD_BYTES
+            const cancel = (e) => { e.preventDefault(); e.stopPropagation(); };
+            el.addEventListener('dragover', (e) => {
+                cancel(e);
+                if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+                el.classList.add('term-drag-over');
+            });
+            el.addEventListener('dragleave', (e) => {
+                cancel(e);
+                // Fires when moving over child nodes too; only clear when the
+                // cursor actually left the host.
+                if (e.target === el) el.classList.remove('term-drag-over');
+            });
+            el.addEventListener('drop', (e) => {
+                cancel(e);
+                el.classList.remove('term-drag-over');
+                const files = e.dataTransfer ? Array.from(e.dataTransfer.files) : [];
+                if (!files.length || ws.readyState !== WebSocket.OPEN) return;
+                for (const file of files) {
+                    if (file.size > MAX) {
+                        this.showToast(_i('claude_file_too_large'), 'danger');
+                        continue;
+                    }
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                        // reader.result is a data: URL -> keep only the base64 tail.
+                        const b64 = String(reader.result).split(',', 2)[1] || '';
+                        if (b64 && ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({ type: 'file', name: file.name, data: b64 }));
+                        }
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
         },
 
         // Fit a tab's terminal to its (now visible) host and tell the PTY the new

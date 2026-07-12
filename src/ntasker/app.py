@@ -570,6 +570,7 @@ def build_js_strings() -> dict[str, str]:
         "claude_term_init_failed": _(
             "The terminal component failed to load -- reload the page (Ctrl+Shift+R)."
         ),
+        "claude_file_too_large": _("File is too large to drop into the terminal (max 25 MB)."),
         "running_now": _("Active projects"),
         "confirm_parallel_run": _(
             'Project "{project}" already has a running agent session. '

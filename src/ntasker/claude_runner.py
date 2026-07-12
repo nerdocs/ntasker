@@ -20,11 +20,15 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import binascii
 import contextlib
 import os
+import shlex
 import signal
+import tempfile
 import threading
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -479,6 +483,36 @@ def _b64(data: bytes) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Drag-dropped file uploads
+# ---------------------------------------------------------------------------
+
+# Cap on a single drag-dropped file (base64-decoded). Big enough for any
+# screenshot/image, small enough to reject an accidental multi-GB drop.
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+
+# Where drag-dropped files land before their path is typed into the PTY. One
+# dir for the whole app; unique names avoid collisions. Cleared by the OS on
+# reboot like any temp dir -- we don't own the files' lifecycle once the agent
+# has read them.
+_UPLOAD_DIR = Path(tempfile.gettempdir()) / "ntasker-uploads"
+
+
+def _save_upload(name: str, data: bytes) -> str:
+    """Write a drag-dropped file to a temp dir and return its absolute path.
+
+    The returned path is what gets typed into the PTY -- mirroring a real
+    terminal, where dragging a file inserts its path. The agent then reads the
+    file (e.g. attaches an image) from that path. ``name`` is reduced to a bare
+    basename so a crafted value cannot escape the upload dir.
+    """
+    _UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    base = os.path.basename(name).lstrip(".") or "file"
+    dest = _UPLOAD_DIR / f"{uuid.uuid4().hex[:8]}-{base}"
+    dest.write_bytes(data)
+    return str(dest)
+
+
+# ---------------------------------------------------------------------------
 # WebSocket bridge
 # ---------------------------------------------------------------------------
 
@@ -491,6 +525,8 @@ async def serve(websocket: WebSocket, task_id: int) -> None:
     * client -> ``{"type":"attach", "cwd", "seed"}`` (cwd/seed only used when a
       session has to be started; ignored on reattach)
     * client -> ``{"type":"input", "data"}`` (keystrokes, written to the PTY)
+    * client -> ``{"type":"file", "name", "data"}`` (base64 file bytes; saved to
+      a temp file whose path is typed into the PTY -- like a terminal drag-drop)
     * client -> ``{"type":"resize", "rows", "cols"}``
     * client -> ``{"type":"stop"}``
     * server -> ``{"type":"output", "data"}`` (base64 PTY bytes)
@@ -541,6 +577,20 @@ async def serve(websocket: WebSocket, task_id: int) -> None:
             if kind == "input" and sess.alive:
                 with contextlib.suppress(OSError):
                     os.write(sess.master_fd, str(msg.get("data", "")).encode("utf-8", "ignore"))
+            elif kind == "file" and sess.alive:
+                # A file dropped onto the terminal: decode, cap, save, then type
+                # its quoted path (+ trailing space) into the PTY -- exactly what
+                # a real terminal does on drag-drop. Invalid/oversized payloads
+                # are dropped silently (the client guards size and toasts).
+                try:
+                    blob = base64.b64decode(str(msg.get("data", "")), validate=True)
+                except (ValueError, binascii.Error):
+                    continue
+                if not blob or len(blob) > MAX_UPLOAD_BYTES:
+                    continue
+                path = _save_upload(str(msg.get("name", "")), blob)
+                with contextlib.suppress(OSError):
+                    os.write(sess.master_fd, (shlex.quote(path) + " ").encode("utf-8"))
             elif kind == "resize":
                 _resize(sess, msg.get("rows", 24), msg.get("cols", 80))
             elif kind == "stop":

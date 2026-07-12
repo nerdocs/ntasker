@@ -257,6 +257,12 @@ body {
 .claude-terminal .xterm-viewport {
     height: 100% !important;
 }
+/* Drag-drop affordance: dropping a file onto the terminal ships it to the
+ * agent (see _wireTerminalDnd). Highlight the host while a file hovers. */
+.claude-terminal.term-drag-over {
+    outline: 2px dashed var(--tblr-primary);
+    outline-offset: -4px;
+}
 
 /* Per-session tab strip in the run view (one tab per live session). Inactive
  * tabs are muted; the active one is clearly lifted out with a primary tint,

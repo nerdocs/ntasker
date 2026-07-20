@@ -4,6 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [2.17.1] — 2026-07-20
+Enlarged the edit-task modal (xl width) and its description field; drag-dropped files are accepted in the agent terminal.
+
 ## [2.17.0] — 2026-07-10
 Drop lib-based title suggestion (YAKE/TextRank); title is now optional and falls back to the description start.
 

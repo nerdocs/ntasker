@@ -1113,7 +1113,7 @@
          :style="editing ? 'background-color: rgba(0,0,0,0.4)' : ''"
          @keydown.enter="onDialogEnter($event, () => saveEdit())"
          @keydown.escape.window="editing = null">
-        <div class="modal-dialog" role="document" x-show="editing" @click.outside="editing = null">
+        <div class="modal-dialog modal-xl edit-modal-dialog" role="document" x-show="editing" @click.outside="editing = null">
             <div class="modal-content" x-show="editing">
                 <div class="modal-header">
                     <h5 class="modal-title">
@@ -1201,7 +1201,7 @@
                     </div>
                     <div class="mb-2">
                         <label class="form-label">{{ t('Description') }}</label>
-                        <textarea class="form-control" rows="6" x-model="editing.description"></textarea>
+                        <textarea class="form-control edit-description" rows="16" x-model="editing.description"></textarea>
                     </div>
                     <div class="mb-2">
                         <label class="form-label">{{ t('Tags') }}</label>

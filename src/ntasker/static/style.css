@@ -463,3 +463,19 @@ a.running-chip-link:hover {
     box-shadow: var(--tblr-box-shadow, 0 0.5rem 1rem rgba(0, 0, 0, 0.15));
     max-width: calc(100vw - 2rem);
 }
+
+/* Edit-task modal: the form is long (project, phase, priority, agent, title,
+ * description, tags, dependencies), so `modal-xl` alone still cramps the
+ * description. Widen beyond Tabler's xl breakpoint and let the description
+ * grow with the viewport. The modal container itself scrolls (Bootstrap
+ * default) -- deliberately no `modal-dialog-scrollable`, which would clip the
+ * project/tag/dependency autocomplete dropdowns inside the body. */
+@media (min-width: 1200px) {
+    .edit-modal-dialog {
+        max-width: min(1400px, calc(100vw - 4rem));
+    }
+}
+
+.edit-description {
+    min-height: 45vh;
+}

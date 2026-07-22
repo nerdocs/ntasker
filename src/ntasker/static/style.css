@@ -70,11 +70,16 @@ body {
     padding: 0.625rem 1rem;
 }
 
-/* ID badge — visually clickable, hover state for affordance. */
+/* ID badge — visually clickable, hover state for affordance.
+ * Tabler's .badge adds letter-spacing + overflow:hidden; on the monospace ID
+ * the trailing letter-spacing pushed the last digit past the padding box and
+ * it got clipped (worse when zoomed). Drop the tracking and let it not clip. */
 .task-id {
     cursor: pointer;
     user-select: none;
     transition: filter 0.1s ease;
+    letter-spacing: normal;
+    overflow: visible;
 }
 .task-id:hover {
     filter: brightness(0.95);

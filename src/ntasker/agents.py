@@ -90,6 +90,16 @@ class AgentSpec:
     seed_mode: str
     """How the ``/task <id>`` seed is handed to the CLI: ``positional`` or ``prompt-flag``."""
 
+    session_flag: str | None = None
+    """CLI flag that forces a specific session id at spawn (``--session-id``),
+    or ``None`` if the agent has no such capability. When set, ntasker mints a
+    session id, hands it over here, and persists it so the run can be resumed."""
+
+    resume_flag: str | None = None
+    """CLI flag that resumes a stored session by id (``--resume``), or ``None``.
+    Requires :attr:`session_flag` to be meaningful (an id must have been forced
+    and persisted first)."""
+
     extra_strip_env: tuple[str, ...] = field(default_factory=tuple)
     """Agent-specific nesting markers, merged with :data:`_BASE_STRIP_ENV`."""
 
@@ -124,15 +134,32 @@ class AgentSpec:
         """ENV var overriding this agent's binary path (``NTASKER_<KEY>_BIN``)."""
         return f"NTASKER_{self.key.upper()}_BIN"
 
-    def build_spawn(self, seed: str | None) -> list[str]:
+    def build_spawn(
+        self,
+        seed: str | None,
+        *,
+        session_id: str | None = None,
+        resume_id: str | None = None,
+    ) -> list[str]:
         """Full argv for an interactive session, incl. permission flags + seed.
 
         The working directory is set by the caller via the subprocess ``cwd``
         (uniform across all three agents -- pi has no ``--dir`` flag), so the
         seed is the only agent-specific tail handled here. argv[0] is the
         resolved binary (a configured override, else the bare name on PATH).
+
+        ``resume_id`` reopens a stored session (:attr:`resume_flag`) -- the
+        conversation is already there, so the ``seed`` is ignored. Otherwise
+        ``session_id`` forces a fresh session's id (:attr:`session_flag`) so
+        ntasker can persist it and resume the run later. Both are no-ops on an
+        agent that lacks the corresponding flag.
         """
         args = [resolve_binary(self) or self.binary, *self.permission_args()]
+        if resume_id and self.resume_flag:
+            args.extend([self.resume_flag, resume_id])
+            return args  # resuming replays the conversation -- no seed
+        if session_id and self.session_flag:
+            args.extend([self.session_flag, session_id])
         if seed:
             if self.seed_mode == "prompt-flag":
                 args.extend(["--prompt", seed])
@@ -160,6 +187,8 @@ AGENTS: dict[str, AgentSpec] = {
         command_template="task.md.template",
         helper_ref_dir="~/.claude/commands",
         seed_mode="positional",
+        session_flag="--session-id",
+        resume_flag="--resume",
     ),
     "opencode": AgentSpec(
         key="opencode",

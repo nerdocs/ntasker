@@ -324,7 +324,40 @@ def _mark_wip(task_id: int) -> None:
             )
 
 
-def _start_session(task_id: int, cwd: str | None, seed: str | None) -> TermSession:
+def _store_session_id(task_id: int, session_id: str) -> None:
+    """Persist a run's forced session id so the task can be resumed later.
+
+    Best-effort, mirroring :func:`_mark_wip`: a DB hiccup must never block the
+    spawn. Overwrites any previous id -- the column always points at the task's
+    most recent web-terminal run.
+    """
+    from ntasker.db import get_conn  # noqa: PLC0415 -- lazy: avoid cycle
+
+    with contextlib.suppress(Exception):
+        with get_conn() as conn:
+            conn.execute(
+                "UPDATE tasks SET session_id = ? WHERE id = ?",
+                (session_id, task_id),
+            )
+
+
+def _stored_session_id(task_id: int) -> str | None:
+    """The task's persisted Claude session id, or ``None`` if it never ran."""
+    from ntasker.db import get_conn  # noqa: PLC0415 -- lazy: avoid cycle
+
+    try:
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT session_id FROM tasks WHERE id = ?", (task_id,)
+            ).fetchone()
+    except Exception:  # noqa: BLE001 -- a DB hiccup must not break the spawn path
+        return None
+    return row["session_id"] if row else None
+
+
+def _start_session(
+    task_id: int, cwd: str | None, seed: str | None, resume: bool = False
+) -> TermSession:
     """Spawn a fresh agent session in a PTY and register it with a live reader.
 
     The agent (Claude / OpenCode / Pi) is resolved from the task's ``agent``
@@ -337,10 +370,24 @@ def _start_session(task_id: int, cwd: str | None, seed: str | None) -> TermSessi
 
     spec = _spec_for_task(task_id)
     master, slave = os.openpty()
-    args = spec.build_spawn(seed)
+    # Resume: reopen the stored session (conversation replays, no seed). Only
+    # when the agent supports it and an id was captured on a previous run --
+    # otherwise fall through to a fresh session.
+    resume_id = _stored_session_id(task_id) if (resume and spec.resume_flag) else None
+    if resume_id:
+        args = spec.build_spawn(None, resume_id=resume_id)
+    elif spec.session_flag:
+        # Fresh run: force a known session id so it can be resumed later, and
+        # persist it. uuid4 is what --session-id expects (a canonical UUID).
+        forced_id = str(uuid.uuid4())
+        args = spec.build_spawn(seed, session_id=forced_id)
+        _store_session_id(task_id, forced_id)
+    else:
+        args = spec.build_spawn(seed)
     # Compact-seed sessions bypass the /task loader, so the phase=wip move it
-    # normally performs happens here instead.
-    if seed and get_compact_seed():
+    # normally performs happens here instead. A resume reopens finished work --
+    # never resurrect its phase.
+    if seed and not resume_id and get_compact_seed():
         _mark_wip(task_id)
     # The cwd is a best-effort guess from the task's project name (see
     # default_cwd_for_project). A new project's directory may not exist yet:
@@ -522,8 +569,9 @@ async def serve(websocket: WebSocket, task_id: int) -> None:
 
     Protocol (JSON):
 
-    * client -> ``{"type":"attach", "cwd", "seed"}`` (cwd/seed only used when a
-      session has to be started; ignored on reattach)
+    * client -> ``{"type":"attach", "cwd", "seed", "resume"}`` (cwd/seed/resume
+      only used when a session has to be started; ignored on reattach. ``resume``
+      truthy reopens the task's stored session id instead of seeding a fresh one)
     * client -> ``{"type":"input", "data"}`` (keystrokes, written to the PTY)
     * client -> ``{"type":"file", "name", "data"}`` (base64 file bytes; saved to
       a temp file whose path is typed into the PTY -- like a terminal drag-drop)
@@ -550,7 +598,8 @@ async def serve(websocket: WebSocket, task_id: int) -> None:
             SESSIONS.pop(task_id, None)
         cwd = (first.get("cwd") or "").strip() or None
         seed = (first.get("seed") or "").strip() or None
-        sess = _start_session(task_id, cwd, seed)
+        resume = bool(first.get("resume"))
+        sess = _start_session(task_id, cwd, seed, resume=resume)
 
     queue: asyncio.Queue = asyncio.Queue(maxsize=2000)
     sess.subscribers.add(queue)

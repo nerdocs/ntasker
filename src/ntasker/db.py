@@ -64,6 +64,10 @@ CREATE TABLE IF NOT EXISTS tasks (
     -- Which AI coding agent runs this task. NULL = fall back to the
     -- ``default_agent`` setting (then ``claude``). See ntasker.agents.
     agent TEXT,
+    -- Claude session id of the last web-terminal run (forced via
+    -- ``--session-id`` at spawn). NULL until the task has been run once.
+    -- Lets a finished task's conversation be reopened via ``--resume``.
+    session_id TEXT,
     -- Manual drag&drop position. Higher = nearer the top (rows are ordered
     -- ``sort_order DESC``). New tasks get ``MAX(sort_order)+1`` so they land
     -- on top; a drop between two neighbours stores the average of their
@@ -133,6 +137,13 @@ def init_db(path: Path | None = None) -> None:
         # default_agent setting". Existing tasks keep running on Claude.
         try:
             conn.execute("ALTER TABLE tasks ADD COLUMN agent TEXT")
+        except sqlite3.OperationalError:
+            pass
+        # v2.18 session-resume migration: add the ``session_id`` column that
+        # records a run's forced Claude session id so a finished task can be
+        # resumed. Nullable, no default -- NULL means "never run in a session".
+        try:
+            conn.execute("ALTER TABLE tasks ADD COLUMN session_id TEXT")
         except sqlite3.OperationalError:
             pass
         # v2.15 drag&drop migration: add the manual ``sort_order`` column.
@@ -246,6 +257,7 @@ def row_to_task(
         "completed_at": row["completed_at"],
         "archived": bool(row["archived"]),
         "agent": row["agent"],
+        "session_id": row["session_id"],
         "sort_order": row["sort_order"],
         "tags": tags or [],
         "depends": depends or [],

@@ -389,6 +389,23 @@ a.running-chip-link:hover {
     display: block;
     object-fit: cover;
 }
+/* Resume button: the agent logo with a small "rotate" glyph badged onto its
+ * bottom-right corner, distinguishing "reopen the finished session" from the
+ * plain run button (which shows the bare logo). The button is positioned so
+ * the glyph can be pinned to the logo's corner. */
+.btn-claude .claude-resume-glyph {
+    position: absolute;
+    right: 0.1rem;
+    bottom: 0.1rem;
+    font-size: 0.7rem;
+    line-height: 1;
+    color: #c25e3f;
+    background: var(--tblr-card-bg, #fff);
+    border-radius: 50%;
+}
+.btn-claude:has(.claude-resume-glyph) {
+    position: relative;
+}
 /* Shown in place of the run button when the task's agent CLI is not
  * installed: the agent logo, greyed out + non-interactive, so you still
  * see which agent the task targets without a button that leads nowhere.

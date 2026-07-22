@@ -820,6 +820,14 @@
                                                     <img :src="agentIconUrl(task)" class="claude-logo-icon agent-logo-disabled" alt="">
                                                 </span>
                                             </template>
+                                            {# Resume: reopen a finished task's stored Claude session. #}
+                                            <template x-if="canResume(task)">
+                                                <button class="btn btn-sm btn-claude" @click="openClaudeResume(task)"
+                                                        :aria-label="$i18n('claude_resume')" :title="$i18n('claude_resume')">
+                                                    <img :src="agentIconUrl(task)" class="claude-logo-icon" alt="">
+                                                    <i class="ti ti-rotate-clockwise-2 claude-resume-glyph"></i>
+                                                </button>
+                                            </template>
                                             <button class="btn btn-sm btn-ghost-secondary" @click="startEdit(task)"
                                                     :aria-label="$i18n('edit')" :title="$i18n('edit')">
                                                 <i class="ti ti-pencil fs-3"></i>
@@ -949,6 +957,14 @@
                                                           :title="agentLabel(taskAgentKey(task)) + ' — ' + $i18n('agent_not_installed_hint')">
                                                         <img :src="agentIconUrl(task)" class="claude-logo-icon agent-logo-disabled" alt="">
                                                     </span>
+                                                </template>
+                                                {# Resume: reopen a finished task's stored Claude session. #}
+                                                <template x-if="canResume(task)">
+                                                    <button class="btn btn-sm btn-claude px-1 py-0" @click.stop="openClaudeResume(task)"
+                                                            :aria-label="$i18n('claude_resume')" :title="$i18n('claude_resume')">
+                                                        <img :src="agentIconUrl(task)" class="claude-logo-icon" alt="">
+                                                        <i class="ti ti-rotate-clockwise-2 claude-resume-glyph"></i>
+                                                    </button>
                                                 </template>
                                                 <button class="btn btn-sm btn-ghost-secondary px-1 py-0"
                                                         @click.stop="startEdit(task)"

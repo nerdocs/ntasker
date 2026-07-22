@@ -1640,6 +1640,15 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         taskRunnable(task) {
             return this.agentAvailable(this.taskAgentKey(task));
         },
+        // Whether a finished task's session can be reopened: it ran once (a
+        // captured session_id), its agent supports resume (Claude only, for
+        // now), and that agent's CLI is launchable. Shown on done tasks in
+        // place of the run button.
+        canResume(task) {
+            return !!(task && task.status === 'done' && task.session_id
+                && this.taskAgentKey(task) === 'claude'
+                && this.taskRunnable(task));
+        },
         // Static URL of a task's agent icon (for the run button <img>).
         agentIconUrl(task) {
             const a = this.agentByKey(this.taskAgentKey(task));
@@ -1837,6 +1846,34 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             this.$nextTick(() => this._claudeConnect(id, cwd, seed));
         },
 
+        // Reopen a finished task's Claude session in the web terminal
+        // (`claude --resume <stored id>`). Same tab machinery as openClaudeRun,
+        // but no seed -- the conversation replays -- and the attach carries
+        // ``resume`` so the server reopens the stored id instead of seeding a
+        // fresh session. The cwd still matters (resume history is per-project),
+        // so we fetch the guessed one.
+        async openClaudeResume(task) {
+            const id = task.id;
+            if (this.claudeTabs.some(t => t.taskId === id)) {
+                this.activateTab(id);
+                return;
+            }
+            let cwd = '';
+            try {
+                const r = await fetch(`/api/tasks/${id}/claude-run/defaults`);
+                if (r.ok) { const d = await r.json(); cwd = d.cwd || ''; }
+            } catch (_e) { /* defaults are best-effort */ }
+            this._addTab(id, task.title || '', task.project || '');
+            if (!this.claudeOpenTerminal) {
+                this.$nextTick(() => this._claudeConnect(id, cwd, '', true));
+                this.showToast(_i('claude_started_background', { id }), 'success');
+                return;
+            }
+            this.claudeView = id;
+            location.hash = '#/run/' + id;
+            this.$nextTick(() => this._claudeConnect(id, cwd, '', true));
+        },
+
         // Open a tab from just an id (deep link / browser-forward / reload).
         // Looks up the title + run defaults, then connects like openClaudeRun.
         async _openRunById(id) {
@@ -1885,7 +1922,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // Create the xterm terminal + WebSocket bridge for a task's tab. Attaches
         // to the per-tab host node (#claude-term-<id>) and stores the live handles
         // in the module-level _claudeTerms map.
-        _claudeConnect(taskId, cwd, seed) {
+        _claudeConnect(taskId, cwd, seed, resume = false) {
             if (_claudeTerms.has(taskId)) return;   // don't double-connect a tab
             const el = document.getElementById('claude-term-' + taskId);
             if (!el || typeof Terminal === 'undefined') {
@@ -1917,7 +1954,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             let opened = false, ended = false;
             ws.onopen = () => {
                 opened = true;
-                ws.send(JSON.stringify({ type: 'attach', cwd, seed }));
+                ws.send(JSON.stringify({ type: 'attach', cwd, seed, resume }));
                 this._fitAndSync(taskId);
                 this._setTabStatus(taskId, 'running');
                 this.loadClaudeSessions();

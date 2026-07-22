@@ -69,8 +69,19 @@ or the `claude` process exiting on its own, ends it; the next robot click then s
 
 **Marking the task done ends its session.** When a task's status flips to `done` (via the API -- which is also how
 the ntasker skill closes a task), ntasker terminates that task's session completely: the work is finished, so the
-interactive process is torn down. A done task shows **no run button** at all -- you cannot start a session from the
+interactive process is torn down. A done task shows **no run button** -- you cannot start a *fresh* session from the
 Done column.
+
+## Resuming a finished session (Claude only)
+
+Every Claude web-terminal run is started with a forced session id (`--session-id <uuid>`), which ntasker persists on
+the task. Because Claude Code keeps its conversation on disk, tearing down the live process on `done` does not lose
+the history. A done task whose run was Claude therefore shows a **Resume session** button (the Claude logo with a small
+rotate glyph) in place of the run button. Clicking it reopens the terminal on `claude --resume <uuid>` in the task's
+project directory -- the whole conversation replays and you can keep working where you left off.
+
+The button appears only when the task ran at least once (a captured session id), its agent is Claude, and the `claude`
+CLI is launchable. OpenCode and Pi have their own session mechanics and do not expose a resume button yet.
 
 ## Session indicators -- running vs. waiting
 

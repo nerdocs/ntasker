@@ -100,6 +100,12 @@ class AgentSpec:
     Requires :attr:`session_flag` to be meaningful (an id must have been forced
     and persisted first)."""
 
+    system_prompt_flag: str | None = None
+    """CLI flag that appends to the agent's system prompt
+    (``--append-system-prompt``), or ``None`` if it has no such capability.
+    Used to brief a session without putting anything in the *user* prompt --
+    see the quick run in :mod:`ntasker.claude_runner`."""
+
     extra_strip_env: tuple[str, ...] = field(default_factory=tuple)
     """Agent-specific nesting markers, merged with :data:`_BASE_STRIP_ENV`."""
 
@@ -140,6 +146,7 @@ class AgentSpec:
         *,
         session_id: str | None = None,
         resume_id: str | None = None,
+        system_prompt: str | None = None,
     ) -> list[str]:
         """Full argv for an interactive session, incl. permission flags + seed.
 
@@ -151,8 +158,10 @@ class AgentSpec:
         ``resume_id`` reopens a stored session (:attr:`resume_flag`) -- the
         conversation is already there, so the ``seed`` is ignored. Otherwise
         ``session_id`` forces a fresh session's id (:attr:`session_flag`) so
-        ntasker can persist it and resume the run later. Both are no-ops on an
-        agent that lacks the corresponding flag.
+        ntasker can persist it and resume the run later. ``system_prompt`` is
+        appended to the agent's system prompt (:attr:`system_prompt_flag`) --
+        a briefing that leaves the user prompt untouched. All three are no-ops
+        on an agent that lacks the corresponding flag.
         """
         args = [resolve_binary(self) or self.binary, *self.permission_args()]
         if resume_id and self.resume_flag:
@@ -160,6 +169,8 @@ class AgentSpec:
             return args  # resuming replays the conversation -- no seed
         if session_id and self.session_flag:
             args.extend([self.session_flag, session_id])
+        if system_prompt and self.system_prompt_flag:
+            args.extend([self.system_prompt_flag, system_prompt])
         if seed:
             if self.seed_mode == "prompt-flag":
                 args.extend(["--prompt", seed])
@@ -189,6 +200,7 @@ AGENTS: dict[str, AgentSpec] = {
         seed_mode="positional",
         session_flag="--session-id",
         resume_flag="--resume",
+        system_prompt_flag="--append-system-prompt",
     ),
     "opencode": AgentSpec(
         key="opencode",

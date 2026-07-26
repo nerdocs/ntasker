@@ -21,6 +21,8 @@ all read the registry. An `AgentSpec` captures:
 - `command_template` -- the packaged template under `claude_assets/command/` rendered into the command file.
 - `seed_mode` -- how the `/task <id>` seed is handed to the CLI: `positional` (appended as an argument) or
   `prompt-flag` (passed as `--prompt <seed>`).
+- `system_prompt_flag` -- flag that appends to the agent's system prompt (Claude: `--append-system-prompt`), or `None`.
+  Lets ntasker brief a session without touching the user prompt -- used by the sidebar quick run.
 - `extra_strip_env` -- agent-specific nesting markers stripped before spawn, on top of the shared `CLAUDE_CODE_*` /
   `AI_AGENT` base set, so a session always starts as a fresh top-level run.
 

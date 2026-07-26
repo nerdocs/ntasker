@@ -115,6 +115,17 @@
                         <i class="ti ti-plus"></i>
                     </button>
                 </template>
+                {# Quick run: skip the form entirely -- create a throwaway task #}
+                {# in this project and open a live agent session with a blank    #}
+                {# prompt. Hidden when the default agent's CLI isn't launchable. #}
+                <template x-if="proj.name !== '__none__' && agentAvailable(defaultAgent)">
+                    <button type="button" class="btn btn-sm btn-ghost-secondary px-1 py-0 ms-1 project-add-btn"
+                            @click.stop.prevent="quickRunForProject(proj.name)"
+                            :title="$i18n('quick_run_for_project') + ' (' + agentLabel(defaultAgent) + ')'"
+                            :aria-label="$i18n('quick_run_for_project')">
+                        <img :src="agentIconUrl({})" class="claude-logo-icon" alt="">
+                    </button>
+                </template>
             </label>
         </template>
 

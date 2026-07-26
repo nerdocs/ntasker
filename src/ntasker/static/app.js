@@ -542,6 +542,31 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             });
         },
 
+        // Sidebar agent logo on a project row: "I need an agent in this project
+        // *now*". Creates a throwaway task (fixed title, straight to wip -- no
+        // form, no typing) and drops the caret into a live session with a blank
+        // prompt: no `/task <id>` seed, so the agent waits for what you type.
+        // The placeholder title is localised -- it is what the user reads on the
+        // card until they rename it.
+        async quickRunForProject(name) {
+            const r = await fetch('/api/tasks', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    project: name,
+                    title: _i('quick_task_title'),
+                    phase: 'wip',
+                }),
+            });
+            if (!r.ok) {
+                this.showToast(await this._errorDetail(r, 'create_failed'), 'danger');
+                return;
+            }
+            const created = await r.json();
+            await this.refreshAll();
+            this.openClaudeRun(created, true);
+        },
+
         // Static column definitions for the kanban board. ``key`` is either
         // a phase value or the literal 'done'. Labels resolve at render time
         // via $i18n. Icons use only glyphs known to be in the vendored
@@ -1814,7 +1839,12 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // `/task <id>` seed for a fresh session, then drives the #/run/<id> hash
         // which shows the tab and attaches the socket -- starting the server-side
         // session if one isn't already running.
-        async openClaudeRun(task) {
+        //
+        // ``quick`` (sidebar quick run, see quickRunForProject): start with a
+        // blank prompt instead of the `/task <id>` seed, and always reveal the
+        // terminal -- the whole point is to type into it right away, so the
+        // background-start setting does not apply.
+        async openClaudeRun(task, quick = false) {
             const id = task.id;
             if (this.claudeTabs.some(t => t.taskId === id)) {
                 this.activateTab(id);   // already open -> just switch to its tab
@@ -1829,21 +1859,21 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             let cwd = '', seed = '';
             try {
                 const r = await fetch(`/api/tasks/${id}/claude-run/defaults`);
-                if (r.ok) { const d = await r.json(); cwd = d.cwd || ''; seed = d.seed || ''; }
+                if (r.ok) { const d = await r.json(); cwd = d.cwd || ''; if (!quick) seed = d.seed || ''; }
             } catch (_e) { /* defaults are best-effort */ }
             this._addTab(id, task.title || '', task.project || '');
             // Background start: attach the session but stay on the board. The
             // tab's xterm host still renders (hidden) via the claudeTabs x-for,
             // so the socket attaches and the server-side PTY starts; opening the
             // tab later (clicking the running task) reattaches and fits it.
-            if (!this.claudeOpenTerminal) {
+            if (!this.claudeOpenTerminal && !quick) {
                 this.$nextTick(() => this._claudeConnect(id, cwd, seed));
                 this.showToast(_i('claude_started_background', { id }), 'success');
                 return;
             }
             this.claudeView = id;
             location.hash = '#/run/' + id;   // record in history (idempotent _applyRoute)
-            this.$nextTick(() => this._claudeConnect(id, cwd, seed));
+            this.$nextTick(() => this._claudeConnect(id, cwd, seed, false, quick));
         },
 
         // Reopen a finished task's Claude session in the web terminal
@@ -1922,7 +1952,10 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // Create the xterm terminal + WebSocket bridge for a task's tab. Attaches
         // to the per-tab host node (#claude-term-<id>) and stores the live handles
         // in the module-level _claudeTerms map.
-        _claudeConnect(taskId, cwd, seed, resume = false) {
+        // ``quick`` is forwarded to the server's attach: it starts the session
+        // with a blank prompt and briefs the agent to name the placeholder task
+        // itself (see quick_run_system_prompt in claude_runner.py).
+        _claudeConnect(taskId, cwd, seed, resume = false, quick = false) {
             if (_claudeTerms.has(taskId)) return;   // don't double-connect a tab
             const el = document.getElementById('claude-term-' + taskId);
             if (!el || typeof Terminal === 'undefined') {
@@ -1954,7 +1987,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             let opened = false, ended = false;
             ws.onopen = () => {
                 opened = true;
-                ws.send(JSON.stringify({ type: 'attach', cwd, seed, resume }));
+                ws.send(JSON.stringify({ type: 'attach', cwd, seed, resume, quick }));
                 this._fitAndSync(taskId);
                 this._setTabStatus(taskId, 'running');
                 this.loadClaudeSessions();

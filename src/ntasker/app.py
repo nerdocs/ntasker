@@ -578,7 +578,13 @@ def build_js_strings() -> dict[str, str]:
             "Two agents in one project can conflict and cause inconsistencies. "
             "Start another anyway?"
         ),
-        "new_task_for_project": _("New task for this project"),
+        "new_task_for_project": _("New task in this project -- opens the form to fill in"),
+        "quick_run_for_project": _(
+            "Start an agent in this project right away -- creates a task "
+            "and opens a session with an empty prompt"
+        ),
+        # Placeholder title for the task the quick run creates on the fly.
+        "quick_task_title": _("New task"),
         # New-task / edit -- agent picker
         "agent_label": _("Agent"),
         "agent_not_installed_hint": _("not installed"),

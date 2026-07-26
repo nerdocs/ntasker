@@ -49,6 +49,25 @@ loader's project-mismatch warning and does not pull in ntasker's `SKILL.md` know
    permission prompts, type follow-ups, `Ctrl-C` to interrupt.
 3. **Stop** terminates the session (kills the process group). **Back** returns to the list/kanban.
 
+## Quick run -- an agent in a project, right now
+
+Sometimes there is no task yet, just the urge to work in a project. Every project row in the sidebar carries the
+**default agent's logo** next to its `+`. One click:
+
+1. creates a task in that project (placeholder title, straight to `phase=wip`) so the session has something to hang on,
+2. opens the terminal and starts the agent in the project directory **with a completely empty prompt** -- no
+   `/task <id>` seed, nothing typed, caret in the terminal,
+3. briefs the agent -- via the *system* prompt, so the input line stays empty -- to give that placeholder task a real
+   title itself as soon as your request is clear (`ntasker patch <id> --title "..."`).
+
+The button only shows when the default agent's CLI is launchable, and the "another agent is already live in this
+project" warning applies as for any run. Agents without a system-prompt flag (`AgentSpec.system_prompt_flag`, today
+Claude's `--append-system-prompt`) start the same way, they just never get the naming hint -- the task then keeps its
+placeholder title until you rename it.
+
+The setting **open terminal on run** does not apply here: a quick run always reveals and focuses the terminal, because
+typing into it immediately is the whole point.
+
 ## Identical context
 
 Because the session is the real `claude` binary launched in the project directory, it reads exactly what your own
@@ -114,7 +133,8 @@ included** -- gated solely by that loopback bind. Keep the bind local (never `0.
 
 * Backend (`src/ntasker/claude_runner.py`): spawns `claude` in a POSIX pseudo-terminal and bridges the PTY to a
   WebSocket (`/ws/claude/<task_id>`) -- output down (base64), keystrokes / resize / stop up. Sessions and a bounded
-  replay buffer live in a module-level registry.
+  replay buffer live in a module-level registry. The `attach` message carries `cwd` / `seed` / `resume` / `quick`; only
+  the client that *starts* a session supplies them (they are ignored on reattach).
 * Frontend: xterm.js + the fit addon, vendored through the CDN/SRI asset manifest in `src/ntasker/assets.py` (no
   build step), driving the terminal in `static/app.js`.
 * Endpoints: `GET /api/claude/status` (CLI + PTY available?), `GET /api/claude/sessions` (`{active, waiting}` task-id

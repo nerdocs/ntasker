@@ -232,6 +232,28 @@ def _compact_seed(task: dict) -> str:
     return "\n".join(lines)
 
 
+def quick_run_system_prompt(task_id: int) -> str:
+    """Briefing for a quick-run session: name the task once it is clear.
+
+    A quick run starts with a *blank* prompt (that is its whole point), so the
+    hint cannot go into the seed -- it is appended to the agent's system prompt
+    instead (:attr:`~ntasker.agents.AgentSpec.system_prompt_flag`), which costs
+    no extra turn and leaves the input line empty. The task exists only so the
+    session has something to hang on and carries a placeholder title; the agent
+    replaces it once it knows what the user actually wants. Agents without such
+    a flag simply never see this -- the task then keeps its placeholder title.
+    """
+    return (
+        f"This session was started from nTasker's project quick-run. nTasker created "
+        f"task #{task_id} (already phase=wip) with a placeholder title just so the "
+        f"session is tracked -- the user deliberately started with an empty prompt. "
+        f"As soon as their request is clear, give that task a real title, once and "
+        f'without asking: `ntasker patch {task_id} --title "<concise title>"`. '
+        f"Then get on with the work. This applies to task #{task_id} only; every "
+        f"other nTasker rule stays as it is."
+    )
+
+
 # ---------------------------------------------------------------------------
 # Session registry
 # ---------------------------------------------------------------------------
@@ -356,7 +378,11 @@ def _stored_session_id(task_id: int) -> str | None:
 
 
 def _start_session(
-    task_id: int, cwd: str | None, seed: str | None, resume: bool = False
+    task_id: int,
+    cwd: str | None,
+    seed: str | None,
+    resume: bool = False,
+    quick: bool = False,
 ) -> TermSession:
     """Spawn a fresh agent session in a PTY and register it with a live reader.
 
@@ -365,6 +391,10 @@ def _start_session(
     including permission/auto flags and how the ``/task`` seed is attached
     (positional vs ``--prompt``) -- and which env markers get stripped. The cwd
     is always set on the subprocess (uniform across agents).
+
+    ``quick`` marks a session started from the sidebar quick run: it has no seed
+    at all, and gets the "name this task once you know what it is" briefing via
+    the system prompt (see :func:`quick_run_system_prompt`).
     """
     from ntasker.settings import get_compact_seed  # noqa: PLC0415 -- lazy: avoid cycle
 
@@ -374,16 +404,17 @@ def _start_session(
     # when the agent supports it and an id was captured on a previous run --
     # otherwise fall through to a fresh session.
     resume_id = _stored_session_id(task_id) if (resume and spec.resume_flag) else None
+    sys_prompt = quick_run_system_prompt(task_id) if quick else None
     if resume_id:
         args = spec.build_spawn(None, resume_id=resume_id)
     elif spec.session_flag:
         # Fresh run: force a known session id so it can be resumed later, and
         # persist it. uuid4 is what --session-id expects (a canonical UUID).
         forced_id = str(uuid.uuid4())
-        args = spec.build_spawn(seed, session_id=forced_id)
+        args = spec.build_spawn(seed, session_id=forced_id, system_prompt=sys_prompt)
         _store_session_id(task_id, forced_id)
     else:
-        args = spec.build_spawn(seed)
+        args = spec.build_spawn(seed, system_prompt=sys_prompt)
     # Compact-seed sessions bypass the /task loader, so the phase=wip move it
     # normally performs happens here instead. A resume reopens finished work --
     # never resurrect its phase.
@@ -569,9 +600,11 @@ async def serve(websocket: WebSocket, task_id: int) -> None:
 
     Protocol (JSON):
 
-    * client -> ``{"type":"attach", "cwd", "seed", "resume"}`` (cwd/seed/resume
-      only used when a session has to be started; ignored on reattach. ``resume``
-      truthy reopens the task's stored session id instead of seeding a fresh one)
+    * client -> ``{"type":"attach", "cwd", "seed", "resume", "quick"}``
+      (cwd/seed/resume/quick only used when a session has to be started; ignored
+      on reattach. ``resume`` truthy reopens the task's stored session id instead
+      of seeding a fresh one; ``quick`` marks a sidebar quick run -- blank prompt
+      plus the "name this task" briefing, see :func:`quick_run_system_prompt`)
     * client -> ``{"type":"input", "data"}`` (keystrokes, written to the PTY)
     * client -> ``{"type":"file", "name", "data"}`` (base64 file bytes; saved to
       a temp file whose path is typed into the PTY -- like a terminal drag-drop)
@@ -599,7 +632,8 @@ async def serve(websocket: WebSocket, task_id: int) -> None:
         cwd = (first.get("cwd") or "").strip() or None
         seed = (first.get("seed") or "").strip() or None
         resume = bool(first.get("resume"))
-        sess = _start_session(task_id, cwd, seed, resume=resume)
+        quick = bool(first.get("quick"))
+        sess = _start_session(task_id, cwd, seed, resume=resume, quick=quick)
 
     queue: asyncio.Queue = asyncio.Queue(maxsize=2000)
     sess.subscribers.add(queue)

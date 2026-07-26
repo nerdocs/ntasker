@@ -5,7 +5,8 @@ All notable changes to ntasker.
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
 ## [2.18.0] — 2026-07-26
-Quick run: the agent logo on a sidebar project row starts an agent there with an empty prompt; it names the task itself.
+Quick run: the agent logo on a sidebar project row starts an agent there with an empty prompt; it names the
+task itself (Claude Code and pi).
 
 ## [2.17.1] — 2026-07-20
 Enlarged the edit-task modal (xl width) and its description field; drag-dropped files are accepted in the agent terminal.

@@ -228,6 +228,7 @@ AGENTS: dict[str, AgentSpec] = {
         command_template="task.generic.md.template",
         helper_ref_dir="~/.pi/agent/prompts",
         seed_mode="positional",
+        system_prompt_flag="--append-system-prompt",
         extra_strip_env=("PI_CODING_AGENT", "PI_SESSION_ID"),
     ),
 }

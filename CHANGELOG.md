@@ -4,6 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [2.19.1] — 2026-07-26
+Packaging metadata: PyPI keywords, trove classifiers, author, readme and an AI-agent-oriented description.
+
 ## [2.19.0] — 2026-07-26
 Tasks in a project that already has a live agent session are shown desaturated and faded, with a tooltip — advisory
 only, they stay fully interactive.

@@ -1,12 +1,43 @@
 [project]
 name = "ntasker"
-version = "2.19.0"
-description = "Lightweight local task tracker. Single-user, FastAPI + SQLite, Tabler.io UI."
+version = "2.19.1"
+description = "Lightweight local task tracker for AI agents like Claude code, Pi.dev or OpenCode. Single-user, FastAPI + SQLite, Tabler.io UI."
+authors = [{ name = "Christian González", email = "christian.gonzalez@nerdocs.at" }]
+readme = "README.md"
 requires-python = ">=3.12"
 license = "AGPL-3.0-or-later"
 license-files = ["LICENSE"]
+keywords = [
+    "task-tracker",
+    "todo",
+    "kanban",
+    "issue-tracker",
+    "ai-agents",
+    "claude-code",
+    "opencode",
+    "fastapi",
+    "sqlite",
+    "self-hosted",
+    "localhost",
+    "cli",
+]
 classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Environment :: Web Environment",
+    "Framework :: FastAPI",
+    "Intended Audience :: Developers",
     "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+    "Natural Language :: English",
+    "Natural Language :: German",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Office/Business :: Scheduling",
+    "Topic :: Software Development :: Bug Tracking",
+    "Topic :: Utilities",
 ]
 dependencies = [
     "fastapi>=0.115",

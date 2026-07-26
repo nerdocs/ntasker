@@ -4,6 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [2.19.3] — 2026-07-26
+Info page wording: tracker for your "AI coding agent tasks" instead of "Claude Code tasks".
+
 ## [2.19.2] — 2026-07-26
 Real branding: logo in the navbar of every page, brand lockup on the info page (light/dark variant).
 

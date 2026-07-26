@@ -516,3 +516,17 @@ a.running-chip-link:hover {
 .edit-description {
     min-height: 45vh;
 }
+
+/* ---------------- Brand lockup (info page) ----------------
+ * brand.svg is drawn in dark greys on transparent -- unreadable on a dark
+ * card. Ship a light-on-dark twin and swap by theme (a <picture> can only
+ * switch on prefers-color-scheme, not on Tabler's data-bs-theme toggle). */
+.brand-lockup-dark {
+    display: none;
+}
+[data-bs-theme="dark"] .brand-lockup-light {
+    display: none;
+}
+[data-bs-theme="dark"] .brand-lockup-dark {
+    display: block;
+}

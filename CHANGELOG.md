@@ -4,6 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [2.19.2] — 2026-07-26
+Real branding: logo in the navbar of every page, brand lockup on the info page (light/dark variant).
+
 ## [2.19.1] — 2026-07-26
 Packaging metadata: PyPI keywords, trove classifiers, author, readme and an AI-agent-oriented description.
 

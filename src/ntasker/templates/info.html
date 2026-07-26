@@ -23,7 +23,8 @@
         <div class="container-fluid">
             <h1 class="navbar-brand navbar-brand-autodark d-flex align-items-center mb-0">
                 <a href="/" class="text-reset text-decoration-none d-flex align-items-center">
-                    <i class="ti ti-checkbox me-2 fs-2"></i>
+                    <img src="/static/logo.svg?v={{ static_bust('logo.svg') }}"
+                         alt="" width="28" height="28" class="me-2">
                     ntasker
                     <span class="badge bg-secondary-lt ms-2 font-monospace small align-middle">v{{ version }}</span>
                 </a>
@@ -116,10 +117,17 @@
                     </div>
                     <div class="card-body">
                         <div class="d-flex align-items-center mb-3">
-                            <i class="ti ti-checkbox fs-1 me-3 text-primary"></i>
+                            {# Brand lockup carries the wordmark itself -- no repeated "ntasker" heading here. #}
+                            {# Two files, one per theme: the light lockup's dark greys vanish on a dark card. #}
+                            <img src="/static/brand.svg?v={{ static_bust('brand.svg') }}"
+                                 alt="ntasker" width="140" height="140"
+                                 class="me-3 flex-shrink-0 brand-lockup brand-lockup-light">
+                            <img src="/static/brand-dark.svg?v={{ static_bust('brand-dark.svg') }}"
+                                 alt="ntasker" width="140" height="140"
+                                 class="me-3 flex-shrink-0 brand-lockup brand-lockup-dark">
                             <div>
-                                <div class="h2 mb-0">ntasker
-                                    <span class="badge bg-secondary-lt ms-1 font-monospace small align-middle">v{{ version }}{% if commit %}.{{ commit }}{% endif %}</span>
+                                <div class="mb-1">
+                                    <span class="badge bg-secondary-lt font-monospace small">v{{ version }}{% if commit %}.{{ commit }}{% endif %}</span>
                                 </div>
                                 <div class="text-secondary">{{ t('ntasker is a lightweight, single-user tracker for your Claude Code tasks -- FastAPI + SQLite, Tabler.io UI, no build step.') }}</div>
                             </div>

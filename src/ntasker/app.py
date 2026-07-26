@@ -578,6 +578,10 @@ def build_js_strings() -> dict[str, str]:
             "Two agents in one project can conflict and cause inconsistencies. "
             "Start another anyway?"
         ),
+        "project_busy_hint": _(
+            "An agent is already running in this project -- a second one can get "
+            "in its way. You can still start this task if you want to."
+        ),
         "new_task_for_project": _("New task in this project -- opens the form to fill in"),
         "quick_run_for_project": _(
             "Start an agent in this project right away -- creates a task "

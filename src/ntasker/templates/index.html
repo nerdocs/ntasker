@@ -650,8 +650,10 @@
                             <div class="list-group-item"
                                  :class="{'task-session-running': taskRunPhase(task.id) === 'running',
                                           'task-session-waiting': taskRunPhase(task.id) === 'waiting',
+                                          'task-project-busy': taskProjectBusy(task),
                                           'drop-before': dragOverTaskId === task.id && dragOverBefore,
                                           'drop-after': dragOverTaskId === task.id && !dragOverBefore}"
+                                 :title="taskProjectBusy(task) ? $i18n('project_busy_hint') : ''"
                                  @dragover.prevent="onCardDragOver($event, task, null)"
                                  @drop.prevent="onCardDrop($event, task, null)">
                                 <div class="row align-items-start">
@@ -925,7 +927,9 @@
                                                       'drop-before': dragOverTaskId === task.id && dragOverBefore,
                                                       'drop-after': dragOverTaskId === task.id && !dragOverBefore,
                                                       'task-session-running': taskRunPhase(task.id) === 'running',
-                                                      'task-session-waiting': taskRunPhase(task.id) === 'waiting'}"
+                                                      'task-session-waiting': taskRunPhase(task.id) === 'waiting',
+                                                      'task-project-busy': taskProjectBusy(task)}"
+                                             :title="taskProjectBusy(task) ? $i18n('project_busy_hint') : ''"
                                              draggable="true"
                                              @dragstart="onCardDragStart($event, task)"
                                              @dragend="onCardDragEnd($event)"

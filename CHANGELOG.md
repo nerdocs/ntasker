@@ -4,6 +4,10 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [2.19.0] — 2026-07-26
+Tasks in a project that already has a live agent session are shown desaturated and faded, with a tooltip — advisory
+only, they stay fully interactive.
+
 ## [2.18.0] — 2026-07-26
 Quick run: the agent logo on a sidebar project row starts an agent there with an empty prompt; it names the
 task itself (Claude Code and pi).

@@ -466,6 +466,21 @@ a.running-chip-link:hover {
     border-left: 3px solid var(--tblr-warning);
 }
 
+/* Another agent is already live in this task's project (taskProjectBusy):
+ * desaturate + fade so "don't start a second one here" reads at a glance.
+ * Advisory only -- nothing is disabled, and hover/focus restores full colour
+ * so the row stays comfortable to work with once you decide to use it. */
+.task-project-busy {
+    filter: saturate(0.25);
+    opacity: 0.55;
+    transition: filter 0.15s ease, opacity 0.15s ease;
+}
+.task-project-busy:hover,
+.task-project-busy:focus-within {
+    filter: none;
+    opacity: 1;
+}
+
 /* Stale-page banner (_topnav.html): shown when /healthz reports a newer
  * server version than the one this page was rendered with (after a
  * `self-update` restart). Fixed top-center overlay above the navbar; the

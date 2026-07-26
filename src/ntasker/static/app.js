@@ -1754,6 +1754,10 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             if (phase === 'waiting') return _i('claude_waiting');
             const agent = ' (' + this.agentLabel(this.taskAgentKey(task)) + ')';
             if (phase === 'running') return _i('claude_switch_session') + agent;
+            // Damped task: lead with why it looks faded before the plain "run".
+            if (this.taskProjectBusy(task)) {
+                return _i('project_busy_hint') + '\n' + _i('claude_run') + agent;
+            }
             return _i('claude_run') + agent;
         },
 
@@ -1791,6 +1795,18 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 id !== exceptTaskId &&
                 (this.claudeSessionProjects[String(id)] || null) === project
             );
+        },
+
+        // True when this task should be visually damped: its project already has
+        // a live session on a *different* task, so starting this one would put a
+        // second agent into the same working dir. Purely advisory -- the task
+        // stays fully interactive (see `.task-project-busy` in style.css); the
+        // hard stop is the confirm() in openClaudeRun. Never damps the running
+        // task itself, a done task, or a cross-project (null) task.
+        taskProjectBusy(task) {
+            if (!task || task.status === 'done') return false;
+            if (this.taskRunPhase(task.id)) return false;
+            return this._projectHasOtherSession(task.project, task.id);
         },
 
         // The tab object for the currently active run, or null.

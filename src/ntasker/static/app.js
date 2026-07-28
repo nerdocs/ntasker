@@ -178,6 +178,9 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // Resolved agent key of each active session, keyed by task id (string
         // keys). Feeds the agent logo on each running-session link.
         claudeSessionAgents: {},
+        // Current title of each active session, keyed by task id (string keys).
+        // Keeps the run-view tabs in sync when a task is renamed mid-session.
+        claudeSessionTitles: {},
 
         // Multi-value project filter. Empty list = no filter (all tasks).
         // Special value '__none__' = include cross-project tasks (project IS NULL).
@@ -1698,13 +1701,14 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                     this.claudeWaiting = d.waiting || [];
                     this.claudeSessionProjects = d.projects || {};
                     this.claudeSessionAgents = d.agents || {};
+                    this.claudeSessionTitles = d.titles || {};
                     this._syncTabsFromSessions();
                 }
             } catch (_e) { /* leave the last known set */ }
         },
 
         // Mirror the live-session set into claudeTabs: add a tab for every active
-        // session we don't track yet, refresh each tab's status (waiting/running)
+        // session we don't track yet, refresh each tab's title/project/status
         // and drop tabs whose session has ended -- except the one you're viewing
         // (kept as 'exited' so you can read the final output) and a just-opened
         // tab that hasn't registered as a session yet ('connecting').
@@ -1714,12 +1718,17 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             for (const id of this.claudeSessions) {
                 if (!this.claudeTabs.some(t => t.taskId === id)) {
                     this.claudeTabs.push({ taskId: id, taskTitle: '', project: '', status: waiting.has(id) ? 'waiting' : 'running' });
-                    this._fetchTabTitle(id);
                 }
             }
             this.claudeTabs = this.claudeTabs.filter(tab => {
                 if (active.has(tab.taskId)) {
                     tab.status = waiting.has(tab.taskId) ? 'waiting' : 'running';
+                    // Title + project come straight from the poll, so a task
+                    // renamed mid-session (placeholder -> real title) shows up
+                    // on the tab within one poll interval.
+                    const key = String(tab.taskId);
+                    if (key in this.claudeSessionTitles) tab.taskTitle = this.claudeSessionTitles[key];
+                    tab.project = this.claudeSessionProjects[key] || '';
                     return true;
                 }
                 if (tab.taskId === this.claudeView) { tab.status = 'exited'; return true; }
@@ -1727,17 +1736,6 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 this._teardownTerm(tab.taskId);
                 return false;
             });
-        },
-
-        // Fill in a tab's title + project once we know its id (auto-added session tabs).
-        async _fetchTabTitle(id) {
-            try {
-                const r = await fetch(`/api/tasks/${id}`);
-                if (!r.ok) return;
-                const t = await r.json();
-                const tab = this.claudeTabs.find(x => x.taskId === id);
-                if (tab) { tab.taskTitle = t.title || ''; tab.project = t.project || ''; }
-            } catch (_e) { /* leave blank */ }
         },
 
         // 'waiting' (blocked on a prompt) > 'running' (live session) > null.

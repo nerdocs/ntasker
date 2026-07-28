@@ -1082,27 +1082,32 @@ def api_claude_sessions() -> JSONResponse:
     each active task (id -> name|null) -- feeds the running-projects chips and
     the same-project parallel-run warning on the frontend. ``agents``: the
     resolved agent key of each active task (id -> key) -- feeds the agent logo
-    on each running-session link.
+    on each running-session link. ``titles``: the current title of each active
+    task (id -> title) -- lets the run-view tab strip follow a title that
+    changes mid-session (e.g. a placeholder task getting its real name).
     """
     states = session_states()
     active = list(states.keys())
     projects: dict[int, str | None] = {}
     agents: dict[int, str] = {}
+    titles: dict[int, str] = {}
     if active:
         placeholders = ",".join("?" * len(active))
         with get_conn() as conn:
             rows = conn.execute(
-                f"SELECT id, project, agent FROM tasks WHERE id IN ({placeholders})",
+                f"SELECT id, title, project, agent FROM tasks WHERE id IN ({placeholders})",
                 active,
             ).fetchall()
         projects = {row["id"]: row["project"] for row in rows}
         agents = {row["id"]: resolve_agent_key(row["agent"]) for row in rows}
+        titles = {row["id"]: row["title"] for row in rows}
     return JSONResponse(
         {
             "active": active,
             "waiting": [tid for tid, st in states.items() if st == "waiting"],
             "agents": agents,
             "projects": projects,
+            "titles": titles,
         }
     )
 

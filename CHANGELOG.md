@@ -4,6 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [2.19.4] — 2026-07-28
+Run-view tabs follow a task title that changes mid-session (placeholder task getting its real name).
+
 ## [2.19.3] — 2026-07-26
 Info page wording: tracker for your "AI coding agent tasks" instead of "Claude Code tasks".
 

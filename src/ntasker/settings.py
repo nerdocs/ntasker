@@ -281,12 +281,47 @@ def validate_compact_seed(value: str) -> str:
     )
 
 
+def _make_workspace_dir_validator(key: str) -> Validator:
+    """Build the validator for one ``workspace_*_dir`` setting.
+
+    These point the ``/workspace`` page at the directories holding skills,
+    knowledge-base notes, and team personas. Like ``projects_base``, ``~`` is
+    stored verbatim and expanded per-machine at read time, so a settings DB
+    stays portable between hosts.
+
+    Existence is deliberately NOT enforced: a path on an external drive or a
+    cloud-synced folder may be temporarily absent, and rejecting the write
+    would strand the user. The scanners report ``exists: false`` instead and
+    the UI says so.
+    """
+
+    def _validate(value: str) -> str:
+        norm = (value or "").strip()
+        if not norm:
+            raise ValueError(
+                _("{key} must not be empty -- unset it to clear.").format(key=key)
+            )
+        if not os.path.isabs(os.path.expanduser(norm)):
+            raise ValueError(
+                _("{key} must be an absolute path (got {value!r}).").format(
+                    key=key, value=value
+                )
+            )
+        return norm
+
+    return _validate
+
+
 VALIDATORS: dict[str, Validator] = {
     "assets_mode": validate_assets_mode,
     "language": validate_language,
     "default_view": validate_default_view,
     "default_agent": validate_default_agent,
     "projects_base": validate_projects_base,
+    "workspace_skills_dir": _make_workspace_dir_validator("workspace_skills_dir"),
+    "workspace_wiki_dir": _make_workspace_dir_validator("workspace_wiki_dir"),
+    "workspace_team_dir": _make_workspace_dir_validator("workspace_team_dir"),
+    "workspace_docs_dir": _make_workspace_dir_validator("workspace_docs_dir"),
     "claude_idle_seconds": validate_claude_idle_seconds,
     "claude_auto_mode": validate_claude_auto_mode,
     "claude_permission_mode": validate_claude_permission_mode,
@@ -365,6 +400,26 @@ HINTS: dict[str, object] = {
         "Shell command run by 'self-update' to upgrade ntasker "
         "(e.g. `uv tool upgrade ntasker`). Unset to auto-detect how ntasker "
         "was installed."
+    ),
+    "workspace_skills_dir": _lazy(
+        "Directory holding your Claude Code skills, shown on the Workspace "
+        "page with a load/broken verdict per skill. Defaults to "
+        "~/.claude/skills when unset."
+    ),
+    "workspace_wiki_dir": _lazy(
+        "Root of your Markdown knowledge base (e.g. an Obsidian vault). The "
+        "Workspace page lists its areas with note counts and links straight "
+        "into Obsidian. Unset hides the card."
+    ),
+    "workspace_team_dir": _lazy(
+        "Directory of agent-persona Markdown files (one file per persona, "
+        "its role in front matter or as a bold 'Role:' line). Unset hides "
+        "the card."
+    ),
+    "workspace_docs_dir": _lazy(
+        "Output folder for generated documents (offers, reviews, exports). "
+        "The Workspace page lists them newest-first and previews Markdown, "
+        "text and CSV files in place. Unset hides the card."
     ),
 }
 

@@ -46,6 +46,7 @@ from ntasker.db import (
     DepError,
     get_conn,
     init_db,
+    load_context_for,
     load_deps_for,
     load_tags_for,
     normalize_dep_ids,
@@ -121,6 +122,16 @@ def _print_task_detail(t: dict) -> None:
     print(f"  {_('Created'):<14}{t.get('created_at') or '-'}")
     if t.get("completed_at"):
         print(f"  {_('Completed'):<14}{t['completed_at']}")
+    context = t.get("context") or []
+    if context:
+        print()
+        print(f"  --- {_('Attached context')} ---")
+        for entry in context:
+            missing = "" if entry.get("exists", True) else f"  [{_('missing')}]"
+            print(f"  [{entry['kind']}] {entry['label']}{missing}")
+            print(f"      {entry['path']}")
+            if entry.get("note"):
+                print(f"      {entry['note']}")
     if t.get("description"):
         print()
         print(f"  --- {_('Description')} ---")
@@ -445,13 +456,23 @@ def cmd_stop(args: argparse.Namespace) -> int:
 
     base = f"http://{args.host}:{args.port}"
 
+    # Probe the raw port BEFORE /healthz, not after. Both probes open a
+    # TCP connection, and a foreign listener that never accept()s -- the
+    # exact case this diagnosis exists for -- holds each one in its
+    # backlog. With a backlog of 1 (a plain `listen(1)`), the /healthz
+    # attempt fills the queue and the follow-up probe then cannot connect,
+    # so ntasker reported "no server running" about a port that was
+    # visibly occupied. Asking the cheap question first keeps the answer
+    # independent of how deep the other process's backlog happens to be.
+    listening = _port_in_use(args.host, args.port)
+
     if not _healthz_ok(args.host, args.port):
         # /healthz silent: either the port is truly empty (nothing to
         # stop, exit 0) -- or something *is* there but does not speak
         # our protocol (pre-v1.4.0 ntasker, or a foreign process). In
         # the latter case we cannot POST /shutdown, so we tell the user
         # exactly that instead of a misleading "no server running".
-        if _port_in_use(args.host, args.port):
+        if listening:
             print(
                 _(
                     "ntasker: something is listening on {host}:{port} but does not "
@@ -524,7 +545,8 @@ def cmd_show(args: argparse.Namespace) -> int:
             return 1
         tags = load_tags_for(conn, args.task_id)
         depends = load_deps_for(conn, args.task_id)
-    task = row_to_task(row, tags, depends)
+        context = load_context_for(conn, args.task_id)
+    task = row_to_task(row, tags, depends, context)
     if args.json:
         _print_json(task)
     else:

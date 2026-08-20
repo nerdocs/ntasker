@@ -370,8 +370,18 @@ def main() -> int:
         assert_ok(rr, 201)
         assert "sort_order" in rr.json(), "task payload must expose sort_order"
         so_ids.append(rr.json()["id"])
+
+    # Every query below asks for `sort=manual`. sort_order is deliberately
+    # IGNORED by the default `sort=priority` ordering (see _query_tasks:
+    # priority ranks critical->low with id DESC as tie-break, so the result
+    # stays deterministic regardless of drag&drop). Without the parameter
+    # this block asserted against priority order and only appeared to pass:
+    # for same-priority tasks, id DESC happens to match "newest first", so
+    # the first assert held while the reorder asserts below could not.
+    so_list = "/api/tasks?project=so-proj&status=open&archived=false&sort=manual"
+
     # Freshly created -> newest first (reverse insertion order).
-    listed = client.get("/api/tasks?project=so-proj&status=open&archived=false").json()
+    listed = client.get(so_list).json()
     order = [t["id"] for t in listed]
     assert order == list(reversed(so_ids)), f"new tasks must sort newest-first, got {order}"
     print(f"OK POST /api/tasks seeds sort_order -> newest-first {order}")
@@ -381,19 +391,24 @@ def main() -> int:
     top_so = listed[0]["sort_order"]
     r = client.patch(f"/api/tasks/{so_ids[0]}", json={"sort_order": top_so + 1})
     assert_ok(r)
-    moved = [t["id"] for t in
-             client.get("/api/tasks?project=so-proj&status=open&archived=false").json()]
+    moved = [t["id"] for t in client.get(so_list).json()]
     assert moved[0] == so_ids[0], f"reordered task must be first, got {moved}"
     print(f"OK PATCH sort_order reorders the list -> {moved}")
 
     # Fractional insert: drop so_ids[1] between the top two; it must land 2nd.
-    rows = client.get("/api/tasks?project=so-proj&status=open&archived=false").json()
+    rows = client.get(so_list).json()
     between = (rows[0]["sort_order"] + rows[1]["sort_order"]) / 2
     client.patch(f"/api/tasks/{so_ids[1]}", json={"sort_order": between})
-    final = [t["id"] for t in
-             client.get("/api/tasks?project=so-proj&status=open&archived=false").json()]
+    final = [t["id"] for t in client.get(so_list).json()]
     assert final[1] == so_ids[1], f"fractional insert must land 2nd, got {final}"
     print(f"OK fractional sort_order insert -> {final}")
+
+    # The default ordering must stay untouched by all that shuffling --
+    # that is the contract the reorder feature relies on.
+    prio = [t["id"] for t in
+            client.get("/api/tasks?project=so-proj&status=open&archived=false").json()]
+    assert prio == list(reversed(so_ids)), f"sort=priority must ignore sort_order, got {prio}"
+    print(f"OK default sort=priority ignores sort_order -> {prio}")
 
     # ------------------------------------------------------------------
     # Settings module (new in v1.0.0)

@@ -193,7 +193,48 @@ def render(data: dict) -> str:
             data.get("description") or "_(keine Beschreibung)_",
         ]
     )
+    lines.extend(render_context(data.get("context") or []))
     return "\n".join(lines)
+
+
+#: Wie eine angehaengte Workspace-Datei im Task-Kopf benannt wird.
+CONTEXT_LABELS = {
+    "member": "Teammitglied",
+    "skill": "Skill",
+    "note": "Wissensdatenbank",
+    "doc": "Dokument",
+}
+
+
+def render_context(context: list) -> list:
+    """Angehaengte Workspace-Dateien als Markdown-Block.
+
+    Es werden Pfade uebergeben, keine Inhalte -- eine Persona-Datei oder
+    eine Notiz kann sehr lang sein, und der Agent hat ein Read-Tool. Was er
+    nicht raten kann, ist *welche* Dateien zaehlen; genau das hat der User
+    durch das Anhaengen festgelegt.
+    """
+    if not context:
+        return []
+    out = [
+        "",
+        "### Angehaengter Kontext",
+        "",
+        "Der User hat diese Workspace-Dateien an die Aufgabe angehaengt. "
+        "Lies die relevanten, bevor du loslegst -- sie tragen die "
+        "Konventionen, den Hintergrund und die Vorarbeiten dieser Aufgabe.",
+        "",
+    ]
+    for entry in context:
+        kind = CONTEXT_LABELS.get(entry.get("kind", ""), "Datei")
+        label = entry.get("label") or "?"
+        line = f'- **{kind}: {label}** -- `{entry.get("path", "")}`'
+        if not entry.get("exists", True):
+            line += "  _(Datei nicht gefunden -- sag das, statt zu raten)_"
+        out.append(line)
+        if entry.get("note"):
+            out.append(f'  - {entry["note"]}')
+    return out
 
 
 def main(argv: list[str]) -> int:

@@ -13,12 +13,14 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import functools
+import os
 import sqlite3
 import subprocess
 from datetime import datetime
 from importlib.resources import files
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request, WebSocket
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -47,11 +49,15 @@ from ntasker.claude_runner import serve as claude_serve
 from ntasker.projects import discover_claude_projects
 from ntasker import db as _db_module
 from ntasker.db import (
+    CONTEXT_KINDS,
     DepError,
+    add_context,
     cleanup_database,
     delete_tags,
     get_conn,
     init_db,
+    load_context_bulk,
+    load_context_for,
     load_deps_bulk,
     load_deps_for,
     load_tags_bulk,
@@ -59,6 +65,7 @@ from ntasker.db import (
     merge_tags,
     normalize_dep_ids,
     normalize_tags,
+    remove_context,
     row_to_task,
     set_db_path,
     set_task_deps,
@@ -77,6 +84,7 @@ from ntasker.i18n import (
 from ntasker.middleware import LanguageMiddleware
 from ntasker import service
 from ntasker import updates
+from ntasker import workspace
 from ntasker.settings import (
     FIELD_CHOICES,
     FIELD_DEFAULTS,
@@ -88,6 +96,7 @@ from ntasker.settings import (
     get_claude_open_terminal,
     get_default_agent,
     get_default_view,
+    get_setting,
     get_setting_raw,
     list_settings,
     set_setting,
@@ -179,6 +188,15 @@ Phase = Literal["planned", "wip", "review"]
 Priority = Literal["low", "normal", "high", "critical"]
 
 
+class ContextAdd(BaseModel):
+    """One workspace file to attach to a task."""
+
+    kind: str
+    path: str
+    label: str = ""
+    note: str = ""
+
+
 class TaskCreate(BaseModel):
     project: str | None = None
     # Optional: an empty/omitted title falls back to the start of the
@@ -199,6 +217,10 @@ class TaskCreate(BaseModel):
     # Task ids this task depends on. Validated (existence + no cycles) on
     # insert; an invalid set yields HTTP 400.
     depends: list[int] = Field(default_factory=list)
+    # Workspace files attached at creation time -- same shape and the same
+    # root-confinement checks as POST /api/tasks/{id}/context, validated
+    # *before* the insert so a bad path never leaves a half-created task.
+    context: list[ContextAdd] = Field(default_factory=list)
 
 
 class TaskUpdate(BaseModel):
@@ -586,6 +608,14 @@ def build_js_strings() -> dict[str, str]:
         ),
         # Placeholder title for the task the quick run creates on the fly.
         "quick_task_title": _("New task"),
+        # Sidebar project categories
+        "assign_category": _("Assign category"),
+        "uncategorized": _("Uncategorized"),
+        "category_placeholder": _("Category -- empty removes"),
+        # Sidebar project hiding
+        "hide_project": _("Hide this project -- tasks are kept, only the sidebar entry disappears"),
+        "restore_project": _("Show this project again"),
+        "show_hidden_projects": _("Show hidden projects"),
         # New-task / edit -- agent picker
         "agent_label": _("Agent"),
         "agent_not_installed_hint": _("not installed"),
@@ -636,6 +666,99 @@ def build_js_strings() -> dict[str, str]:
         "license_label": _("License"),
         "open_github": _("View on GitHub"),
         "report_issue": _("Report an issue"),
+        # Workspace
+        "workspace": _("Workspace"),
+        "ws_skills": _("Skills"),
+        "ws_knowledge": _("Knowledge base"),
+        "ws_team": _("Team"),
+        "ws_documents": _("Documents"),
+        "ws_tooling": _("Tooling"),
+        "ws_not_configured": _("Not configured"),
+        "ws_configure_hint": _(
+            "Set this directory in the settings to fill this section."
+        ),
+        "ws_open_settings": _("Open settings"),
+        "ws_missing_dir": _("The configured directory does not exist:"),
+        # Counts carry their noun so the msgid stays unambiguous -- bare
+        # words like "loads" / "broken" / "notes" already exist in this
+        # catalog with unrelated meanings ("broken" -> "Blockiert").
+        "ws_loads": _("{n} load correctly"),
+        "ws_broken": _("{n} will not load"),
+        "ws_skill_ok": _("Loads correctly"),
+        "ws_skill_broken": _("Will not load"),
+        "ws_notes": _("{n} notes"),
+        "ws_areas": _("Areas"),
+        "ws_indexes": _("Index notes"),
+        "ws_open_obsidian": _("Open in Obsidian"),
+        "ws_members": _("{n} personas"),
+        "ws_no_role": _("No role stated"),
+        "ws_search": _("Search..."),
+        "ws_no_match": _("Nothing matches your search."),
+        "ws_empty": _("This directory is empty."),
+        "ws_all_kinds": _("All types"),
+        "ws_modified": _("Modified"),
+        "ws_size": _("Size"),
+        "ws_preview": _("Preview"),
+        "ws_preview_unavailable": _("This file type cannot be previewed."),
+        "ws_preview_failed": _("Could not load the file."),
+        "ws_truncated": _("Preview truncated -- the file is larger."),
+        "ws_copy_path": _("Copy path"),
+        "ws_copied": _("Copied"),
+        "ws_close": _("Close"),
+        "ws_loading": _("Loading..."),
+        "ws_mcp_servers": _("MCP servers"),
+        "ws_runtimes": _("Runtimes"),
+        "ws_available": _("Available"),
+        "ws_unavailable": _("Not found"),
+        "ws_runtime_missing": _(
+            "This server cannot start -- its runtime is not on PATH."
+        ),
+        "ws_transport": _("Transport"),
+        "ws_secret_inline": _("Value stored in the config file"),
+        "ws_secret_env": _("Read from an environment variable"),
+        "ws_secret_empty": _("Empty value"),
+        "ws_config_missing": _("No Claude Code config found at"),
+        # Workspace: editing, browsing, attaching
+        "ws_edit": _("Edit"),
+        "ws_view": _("View"),
+        "ws_save": _("Save"),
+        "ws_cancel": _("Cancel"),
+        "ws_create": _("Create"),
+        "ws_done": _("Done"),
+        "ws_delete": _("Move to trash"),
+        "ws_rename": _("Rename"),
+        "ws_open_external": _("Open in the default app"),
+        "ws_open_page": _("Open the workspace page"),
+        "ws_up": _("One level up"),
+        "ws_browse_root": _("Browse all notes"),
+        "ws_new_note": _("New note"),
+        "ws_new_note_prompt": _("Name of the new note:"),
+        "ws_new_note_placeholder": _("Name of the new note (.md is added)"),
+        "ws_rename_prompt": _("New name:"),
+        "ws_save_hint": _("Cmd/Ctrl+S saves"),
+        "ws_saved": _("Saved"),
+        "ws_and_more": _("{n} more..."),
+        # Deletes name the trash they went to -- "deleted" from a browser
+        # is alarming enough that the user deserves to know it is
+        # recoverable, and from where.
+        "ws_confirm_delete": _("Move {name} to the trash?"),
+        "ws_trashed_os": _("{name} moved to the trash."),
+        "ws_trashed_folder": _("{name} moved to the .ntasker-trash folder."),
+        "ws_save_failed": _("Could not save the file."),
+        "ws_delete_failed": _("Could not delete it."),
+        "ws_rename_failed": _("Could not rename it."),
+        "ws_create_failed": _("Could not create it."),
+        "ws_open_failed": _("Could not open it."),
+        # Task context attachments
+        "ws_attach_context": _("Attach context"),
+        "ws_attach_failed": _("Could not attach it."),
+        "ws_detach_failed": _("Could not detach it."),
+        "ws_detach": _("Detach"),
+        "ws_no_context": _("Nothing attached yet."),
+        "ws_context_missing": _("This file no longer exists at that path."),
+        "ws_note_placeholder": _("Why is this attached? (optional)"),
+        "ws_plugin": _("Plugin"),
+        "ws_bundles": _("Bundles:"),
     }
 
 # Mount the user-data vendor cache at ``/static/vendor`` *before* the
@@ -976,6 +1099,242 @@ def info_page(request: Request) -> HTMLResponse:
     return response
 
 
+@app.get("/workspace", response_class=HTMLResponse)
+def workspace_page(request: Request) -> HTMLResponse:
+    """Workspace page: skills, knowledge base, team personas, tooling.
+
+    The context around the tasks -- what automates work (skills), what it
+    draws on (knowledge base), who it is delegated to (personas), and what
+    has to be installed for any of it to run (tooling).
+    """
+    response = templates.TemplateResponse(
+        request,
+        "workspace.html",
+        context={
+            "version": VERSION,
+            "language": get_active_language(),
+            "js_strings": build_js_strings(),
+            "links": LINKS,
+        },
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.get("/api/workspace")
+def api_workspace() -> JSONResponse:
+    """Return the full workspace inventory.
+
+    Read-only filesystem scan driven by the ``workspace_*_dir`` settings.
+    Unconfigured or missing directories yield empty sections with
+    ``configured`` / ``exists`` flags rather than an error -- having none of
+    them set up is the normal state for most installs.
+    """
+    return JSONResponse(
+        workspace.collect(
+            skills_dir=get_setting("workspace_skills_dir"),
+            wiki_dir=get_setting("workspace_wiki_dir"),
+            team_dir=get_setting("workspace_team_dir"),
+            docs_dir=get_setting("workspace_docs_dir"),
+        )
+    )
+
+
+@app.get("/api/workspace/file")
+def api_workspace_file(path: str = Query(..., description="Absolute file path")) -> JSONResponse:
+    """Return one file's content for the in-page previewer.
+
+    Reads are confined to the configured ``workspace_*_dir`` directories
+    (see :func:`ntasker.workspace.allowed_roots`). A path outside all of
+    them is refused with 403 -- binding to localhost is not an access
+    control, and this endpoint would otherwise expose the entire
+    filesystem to anything that can reach the port.
+    """
+    roots = workspace.allowed_roots(
+        skills_dir=get_setting("workspace_skills_dir"),
+        wiki_dir=get_setting("workspace_wiki_dir"),
+        team_dir=get_setting("workspace_team_dir"),
+        docs_dir=get_setting("workspace_docs_dir"),
+    )
+    try:
+        return JSONResponse(workspace.read_file(path, roots))
+    except workspace.PreviewError as exc:
+        status = {"forbidden": 403, "not_found": 404, "too_large": 413}.get(
+            exc.reason, 400
+        )
+        raise HTTPException(status_code=status, detail=str(exc)) from exc
+
+
+@app.get("/api/workspace/browse")
+def api_workspace_browse(
+    path: str = Query(..., description="Absolute directory path"),
+) -> JSONResponse:
+    """List one directory inside the configured workspace directories.
+
+    Lets the UI walk into a knowledge base rather than only summarising it
+    -- the section scan says "Publikationen: 372 notes", this is how the
+    user gets to note 214.
+    """
+    roots = _workspace_roots()
+    try:
+        return JSONResponse(workspace.browse(path, roots))
+    except workspace.PreviewError as exc:
+        status = {"forbidden": 403, "not_found": 404, "too_large": 413}.get(
+            exc.reason, 400
+        )
+        raise HTTPException(status_code=status, detail=str(exc)) from exc
+
+
+def _workspace_roots() -> list:
+    """The configured workspace directories -- the boundary for every
+    filesystem operation the workspace endpoints perform."""
+    return workspace.allowed_roots(
+        skills_dir=get_setting("workspace_skills_dir"),
+        wiki_dir=get_setting("workspace_wiki_dir"),
+        team_dir=get_setting("workspace_team_dir"),
+        docs_dir=get_setting("workspace_docs_dir"),
+    )
+
+
+#: Maps a :class:`~ntasker.workspace.WriteError` reason to its HTTP status.
+_WRITE_STATUS = {
+    "forbidden": 403,
+    "not_found": 404,
+    "exists": 409,
+    "too_large": 413,
+    "invalid": 400,
+}
+
+
+def _require_local_origin(request: Request) -> None:
+    """Reject cross-site requests to the filesystem-mutating endpoints.
+
+    ntasker has no auth -- it does not need any for its own data, which
+    never leaves the machine. These endpoints are different: they rename and
+    trash real files, and any page the user happens to have open could fire
+    a ``fetch()`` at ``127.0.0.1:8766`` in the background. A browser always
+    stamps such a request with its own ``Origin``, so requiring the origin
+    to be either absent (curl, the CLI, a WebView with no origin) or one of
+    ours is enough to shut that door.
+    """
+    origin = request.headers.get("origin")
+    if not origin:
+        return
+    host = urlsplit(origin).hostname or ""
+    if host in {"127.0.0.1", "localhost", "::1", "[::1]"}:
+        return
+    raise HTTPException(
+        status_code=403,
+        detail=_("Cross-site requests may not change files."),
+    )
+
+
+def _write_guard(exc: "workspace.WriteError") -> HTTPException:
+    """Turn a WriteError into the matching HTTPException."""
+    return HTTPException(
+        status_code=_WRITE_STATUS.get(exc.reason, 400), detail=str(exc)
+    )
+
+
+class WorkspaceWrite(BaseModel):
+    """Full new content for an existing text file."""
+
+    path: str
+    text: str = ""
+
+
+class WorkspaceCreate(BaseModel):
+    """A new file or directory inside ``parent``."""
+
+    parent: str
+    name: str
+    directory: bool = False
+
+
+class WorkspaceRename(BaseModel):
+    """A new name for an entry, staying in its current directory."""
+
+    path: str
+    name: str
+
+
+class WorkspacePath(BaseModel):
+    """A single target path (delete / reveal)."""
+
+    path: str
+
+
+@app.put("/api/workspace/file")
+def api_workspace_write(request: Request, payload: WorkspaceWrite) -> JSONResponse:
+    """Overwrite one text file inside the configured workspace directories."""
+    _require_local_origin(request)
+    try:
+        return JSONResponse(
+            workspace.write_file(payload.path, payload.text, _workspace_roots())
+        )
+    except workspace.WriteError as exc:
+        raise _write_guard(exc) from exc
+    except workspace.PreviewError as exc:
+        # write_file re-reads the file to hand the fresh content back. Every
+        # editable suffix is also previewable, so the only way to land here
+        # is the file vanishing between the two steps.
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/api/workspace/entry", status_code=201)
+def api_workspace_create(request: Request, payload: WorkspaceCreate) -> JSONResponse:
+    """Create an empty note (or a folder) inside a workspace directory."""
+    _require_local_origin(request)
+    try:
+        return JSONResponse(
+            workspace.create_entry(
+                payload.parent, payload.name, _workspace_roots(), payload.directory
+            ),
+            status_code=201,
+        )
+    except workspace.WriteError as exc:
+        raise _write_guard(exc) from exc
+
+
+@app.post("/api/workspace/rename")
+def api_workspace_rename(request: Request, payload: WorkspaceRename) -> JSONResponse:
+    """Rename a file or folder in place."""
+    _require_local_origin(request)
+    try:
+        return JSONResponse(
+            workspace.rename_entry(payload.path, payload.name, _workspace_roots())
+        )
+    except workspace.WriteError as exc:
+        raise _write_guard(exc) from exc
+
+
+@app.post("/api/workspace/delete")
+def api_workspace_delete(request: Request, payload: WorkspacePath) -> JSONResponse:
+    """Move a file or folder to the trash.
+
+    POST rather than DELETE so the target path travels in the body: paths
+    here routinely contain spaces, umlauts and ``#`` (OneDrive's
+    "OneDrive-Persönlich" alone breaks naive query-string handling), and a
+    body sidesteps every layer of URL escaping between the browser and
+    Starlette's router.
+    """
+    _require_local_origin(request)
+    try:
+        return JSONResponse(workspace.delete_entry(payload.path, _workspace_roots()))
+    except workspace.WriteError as exc:
+        raise _write_guard(exc) from exc
+
+
+@app.post("/api/workspace/reveal")
+def api_workspace_reveal(request: Request, payload: WorkspacePath) -> JSONResponse:
+    """Hand a file to the desktop's default application."""
+    _require_local_origin(request)
+    try:
+        return JSONResponse(workspace.reveal(payload.path, _workspace_roots()))
+    except workspace.WriteError as exc:
+        raise _write_guard(exc) from exc
+
+
 @app.get("/api/update-check")
 def api_update_check() -> JSONResponse:
     """Report whether a newer ntasker release is on PyPI.
@@ -1178,7 +1537,13 @@ def api_projects() -> JSONResponse:
             GROUP BY project
             """
         ).fetchall()
+        cat_rows = conn.execute(
+            "SELECT project, category FROM project_categories"
+        ).fetchall()
+        hidden_rows = conn.execute("SELECT project FROM hidden_projects").fetchall()
     counts: dict[str | None, int] = {row["project"]: int(row["c"]) for row in count_rows}
+    categories: dict[str, str] = {row["project"]: row["category"] for row in cat_rows}
+    hidden: set[str] = {row["project"] for row in hidden_rows}
 
     # Union of Claude-discovered projects and names already on a task.
     # Defensively drop the reserved sentinels so a task that accidentally
@@ -1189,12 +1554,93 @@ def api_projects() -> JSONResponse:
     }
 
     out: list[dict] = [
-        {"name": PROJECT_NONE_SENTINEL, "open_count": counts.get(None, 0)},
+        {
+            "name": PROJECT_NONE_SENTINEL,
+            "open_count": counts.get(None, 0),
+            "category": None,
+            "hidden": False,
+        },
     ]
     for name in sorted(names, key=str.casefold):
-        out.append({"name": name, "open_count": counts.get(name, 0)})
+        out.append(
+            {
+                "name": name,
+                "open_count": counts.get(name, 0),
+                "category": categories.get(name),
+                "hidden": name in hidden,
+            }
+        )
 
     return JSONResponse(out)
+
+
+class ProjectCategorySet(BaseModel):
+    """Assign (or clear) the sidebar category of one project."""
+
+    project: str
+    # None or blank clears the assignment -- the project goes back to the
+    # uncategorized group.
+    category: str | None = None
+
+
+@app.put("/api/projects/category")
+def api_set_project_category(payload: ProjectCategorySet) -> JSONResponse:
+    """Set or clear a project's sidebar category.
+
+    Body-based (not a path parameter) because project names may contain
+    slashes (``Code/Heimprojekte/Poolterrasse``). The category is a free-form
+    string -- the set of categories is exactly the set currently in use,
+    nothing is pre-registered. No existence check on the project: categories
+    may be assigned to discovered (task-less) projects too.
+    """
+    project = payload.project.strip()
+    if not project or project == PROJECT_NONE_SENTINEL:
+        raise HTTPException(status_code=400, detail=_("Invalid project name"))
+    category = (payload.category or "").strip()
+    with get_conn() as conn:
+        if category:
+            conn.execute(
+                """
+                INSERT INTO project_categories (project, category) VALUES (?, ?)
+                ON CONFLICT (project) DO UPDATE SET category = excluded.category
+                """,
+                (project, category),
+            )
+        else:
+            conn.execute(
+                "DELETE FROM project_categories WHERE project = ?", (project,)
+            )
+    return JSONResponse({"project": project, "category": category or None})
+
+
+class ProjectHiddenSet(BaseModel):
+    """Hide a project from the sidebar entirely, or restore it."""
+
+    project: str
+    hidden: bool
+
+
+@app.put("/api/projects/hidden")
+def api_set_project_hidden(payload: ProjectHiddenSet) -> JSONResponse:
+    """Hide or restore one project in the sidebar feed.
+
+    Hiding is a persisted veto, not a delete: tasks keep their ``project``
+    value untouched and discovered directories stay on disk -- the name is
+    only excluded from the sidebar until restored. Body-based like the
+    category endpoint, because project names may contain slashes.
+    """
+    project = payload.project.strip()
+    if not project or project == PROJECT_NONE_SENTINEL:
+        raise HTTPException(status_code=400, detail=_("Invalid project name"))
+    with get_conn() as conn:
+        if payload.hidden:
+            conn.execute(
+                "INSERT OR IGNORE INTO hidden_projects (project) VALUES (?)",
+                (project,),
+            )
+        else:
+            conn.execute("DELETE FROM hidden_projects WHERE project = ?", (project,))
+    return JSONResponse({"project": project, "hidden": payload.hidden})
 
 
 @app.get("/api/tags")
@@ -1498,12 +1944,14 @@ def api_list_tasks(
     with get_conn() as conn:
         tags_by_id = load_tags_bulk(conn, ids)
         deps_by_id = load_deps_bulk(conn, ids)
+        context_by_id = load_context_bulk(conn, ids)
     return JSONResponse(
         [
             row_to_task(
                 r,
                 tags_by_id.get(int(r["id"]), []),
                 deps_by_id.get(int(r["id"]), []),
+                context_by_id.get(int(r["id"]), []),
             )
             for r in rows
         ]
@@ -1614,7 +2062,8 @@ def api_get_task(task_id: int) -> JSONResponse:
             raise HTTPException(status_code=404, detail=_("Task not found"))
         tags = load_tags_for(conn, task_id)
         depends = load_deps_for(conn, task_id)
-    return JSONResponse(row_to_task(row, tags, depends))
+        context = load_context_for(conn, task_id)
+    return JSONResponse(row_to_task(row, tags, depends, context))
 
 
 def _dep_error_detail(e: DepError) -> str:
@@ -1652,6 +2101,9 @@ def api_create_task(payload: TaskCreate) -> JSONResponse:
     project_value = _normalize_project(payload.project)
     # Title is optional: fall back to the start of the description.
     title_value = payload.title.strip() or title_from_description(payload.description)
+    # Validate attachments up front -- a bad path aborts the create before
+    # anything is written, so no half-created task is left behind.
+    resolved_context = [_resolve_context_add(c) for c in payload.context]
     with get_conn() as conn:
         cur = conn.execute(
             """
@@ -1679,10 +2131,13 @@ def api_create_task(payload: TaskCreate) -> JSONResponse:
             except DepError as e:
                 raise HTTPException(status_code=400, detail=_dep_error_detail(e))
             set_task_deps(conn, new_id, dep_ids)
+        for kind, path, label, note in resolved_context:
+            add_context(conn, new_id, kind, path, label, note)
         row = conn.execute("SELECT * FROM tasks WHERE id = ?", (new_id,)).fetchone()
         tags = load_tags_for(conn, new_id)
         depends = load_deps_for(conn, new_id)
-    return JSONResponse(row_to_task(row, tags, depends), status_code=201)
+        context = load_context_for(conn, new_id) if resolved_context else []
+    return JSONResponse(row_to_task(row, tags, depends, context), status_code=201)
 
 
 @app.patch("/api/tasks/{task_id}")
@@ -1762,12 +2217,87 @@ def api_update_task(task_id: int, payload: TaskUpdate) -> JSONResponse:
         row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         tags = load_tags_for(conn, task_id)
         depends = load_deps_for(conn, task_id)
+        context = load_context_for(conn, task_id)
 
     # The task is finished -- tear down its interactive Claude session, if any.
     if fields.get("status") == "done":
         stop_session(task_id)
 
-    return JSONResponse(row_to_task(row, tags, depends))
+    return JSONResponse(row_to_task(row, tags, depends, context))
+
+
+def _resolve_context_add(payload: ContextAdd) -> tuple[str, str, str, str]:
+    """Validate one attachment request; return ``(kind, path, label, note)``.
+
+    The path is confined to the configured workspace roots -- the same
+    boundary the file endpoints use. Without that check any caller could
+    seed a task with a pointer to ``~/.ssh/id_rsa`` and have the agent
+    briefing read it out at the next run. Shared by the attach endpoint
+    and task creation so the two can never drift apart.
+    """
+    if payload.kind not in CONTEXT_KINDS:
+        raise HTTPException(
+            status_code=400,
+            detail=_("Unknown context kind: {kind}").format(kind=payload.kind),
+        )
+
+    roots = _workspace_roots()
+    try:
+        target = Path(
+            os.path.expandvars(os.path.expanduser(payload.path.strip()))
+        ).resolve()
+    except (OSError, RuntimeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not roots or not workspace.within_roots(target, roots):
+        raise HTTPException(
+            status_code=403,
+            detail=_("Path lies outside every configured workspace directory."),
+        )
+    if not target.exists():
+        raise HTTPException(status_code=404, detail=_("No such file or directory."))
+
+    # An empty label is the common case (the UI attaches straight from a
+    # list where the file name *is* the label) -- derive it rather than
+    # storing a blank the frontend would have to paper over.
+    label = payload.label.strip() or target.stem
+    return payload.kind, str(target), label, payload.note.strip()
+
+
+def _require_task(conn, task_id: int) -> None:
+    """404 unless the task exists."""
+    if conn.execute("SELECT 1 FROM tasks WHERE id = ?", (task_id,)).fetchone() is None:
+        raise HTTPException(status_code=404, detail=_("Task not found"))
+
+
+@app.get("/api/tasks/{task_id}/context")
+def api_list_context(task_id: int) -> JSONResponse:
+    """The workspace files attached to one task."""
+    with get_conn() as conn:
+        _require_task(conn, task_id)
+        return JSONResponse(load_context_for(conn, task_id))
+
+
+@app.post("/api/tasks/{task_id}/context", status_code=201)
+def api_add_context(task_id: int, payload: ContextAdd) -> JSONResponse:
+    """Attach a workspace file to a task.
+
+    Validation (kind whitelist + workspace-root confinement) lives in
+    :func:`_resolve_context_add`, shared with task creation.
+    """
+    kind, path, label, note = _resolve_context_add(payload)
+    with get_conn() as conn:
+        _require_task(conn, task_id)
+        entry = add_context(conn, task_id, kind, path, label, note)
+    return JSONResponse(entry, status_code=201)
+
+
+@app.delete("/api/tasks/{task_id}/context/{context_id}", status_code=204)
+def api_remove_context(task_id: int, context_id: int) -> None:
+    """Detach a workspace file. The file itself is never touched."""
+    with get_conn() as conn:
+        _require_task(conn, task_id)
+        if not remove_context(conn, task_id, context_id):
+            raise HTTPException(status_code=404, detail=_("Attachment not found"))
 
 
 @app.delete("/api/tasks/{task_id}", status_code=204)

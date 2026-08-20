@@ -13,6 +13,7 @@ threads through every request without function-arg plumbing.
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -96,6 +97,45 @@ CREATE TABLE IF NOT EXISTS task_deps (
     PRIMARY KEY (task_id, depends_on_id)
 );
 CREATE INDEX IF NOT EXISTS idx_task_deps_dep ON task_deps(depends_on_id);
+
+-- Workspace context attached to a task: the skills, notes, team personas
+-- and generated documents an agent should have in hand when it starts.
+-- Paths, not copies -- the file stays the single source of truth and keeps
+-- being editable in Obsidian or on the workspace page. A row whose file
+-- was moved away simply stops resolving; the attachment is then shown as
+-- missing rather than silently dropped.
+CREATE TABLE IF NOT EXISTS task_context (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id    INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    -- One of CONTEXT_KINDS: skill | note | member | doc.
+    kind       TEXT NOT NULL,
+    path       TEXT NOT NULL,
+    label      TEXT NOT NULL,
+    -- Free-form "why is this attached", surfaced to the agent verbatim.
+    note       TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    -- The same file attached twice to one task is always a mistake.
+    UNIQUE (task_id, path)
+);
+CREATE INDEX IF NOT EXISTS idx_task_context_task ON task_context(task_id);
+
+-- User-chosen sidebar category per project ("Coding", "Heim", ...). Projects
+-- themselves stay derived (tasks + Claude discovery); this table only adds
+-- a grouping label on top. No FK -- a project is just a name, and a category
+-- row for a project that currently has no tasks is fine (it groups the
+-- discovered entry). Uncategorized projects simply have no row.
+CREATE TABLE IF NOT EXISTS project_categories (
+    project  TEXT PRIMARY KEY,
+    category TEXT NOT NULL
+);
+
+-- Projects the user has hidden from the sidebar entirely -- discovered
+-- entries reappear on every scan, so "remove" has to be a persisted veto
+-- rather than a delete. Hiding never touches tasks; it only takes the name
+-- out of the project list until the user restores it.
+CREATE TABLE IF NOT EXISTS hidden_projects (
+    project TEXT PRIMARY KEY
+);
 
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
@@ -237,6 +277,7 @@ def row_to_task(
     row: sqlite3.Row,
     tags: list[str] | None = None,
     depends: list[dict] | None = None,
+    context: list[dict] | None = None,
 ) -> dict:
     """Convert a sqlite3.Row to a JSON-serialisable dict.
 
@@ -244,6 +285,11 @@ def row_to_task(
     one depends on), resolved by the caller. A task is "blocked" as long as
     any of its dependencies is not ``done`` -- the frontend derives that
     from the ``done`` flags.
+
+    ``context`` is the list of attached workspace files (see
+    :data:`CONTEXT_KINDS`), also resolved by the caller. Both default to
+    empty so callers that do not care about them can keep passing a row
+    alone.
     """
     return {
         "id": row["id"],
@@ -261,7 +307,119 @@ def row_to_task(
         "sort_order": row["sort_order"],
         "tags": tags or [],
         "depends": depends or [],
+        "context": context or [],
     }
+
+
+# ---------------------------------------------------------------------------
+# Workspace context helpers
+# ---------------------------------------------------------------------------
+
+#: What kind of workspace file an attachment points at. Purely descriptive
+#: -- it drives the icon in the UI and the wording in the agent briefing,
+#: never any filesystem behaviour.
+CONTEXT_KINDS: tuple[str, ...] = ("skill", "note", "member", "doc")
+
+
+def load_context_for(conn: sqlite3.Connection, task_id: int) -> list[dict]:
+    """Return a task's attached workspace files, oldest attachment first.
+
+    ``exists`` is resolved on read rather than stored: the files live in
+    OneDrive and Obsidian vaults that move around, and a stale flag in the
+    DB would be wrong more often than right.
+    """
+    rows = conn.execute(
+        """
+        SELECT id, kind, path, label, note, created_at
+        FROM task_context WHERE task_id = ?
+        ORDER BY id ASC
+        """,
+        (task_id,),
+    ).fetchall()
+    return [_context_row(r) for r in rows]
+
+
+def load_context_bulk(
+    conn: sqlite3.Connection, task_ids: list[int]
+) -> dict[int, list[dict]]:
+    """Bulk lookup: task_id -> list of attachment dicts."""
+    if not task_ids:
+        return {}
+    placeholders = ", ".join("?" for _ in task_ids)
+    rows = conn.execute(
+        f"""
+        SELECT task_id, id, kind, path, label, note, created_at
+        FROM task_context WHERE task_id IN ({placeholders})
+        ORDER BY id ASC
+        """,
+        task_ids,
+    ).fetchall()
+    out: dict[int, list[dict]] = {tid: [] for tid in task_ids}
+    for r in rows:
+        out[int(r["task_id"])].append(_context_row(r))
+    return out
+
+
+def _context_row(row: sqlite3.Row) -> dict:
+    """Shape one ``task_context`` row for the API."""
+    path = row["path"]
+    return {
+        "id": int(row["id"]),
+        "kind": row["kind"],
+        "path": path,
+        "label": row["label"],
+        "note": row["note"] or "",
+        "created_at": row["created_at"],
+        "exists": os.path.exists(path),
+    }
+
+
+def add_context(
+    conn: sqlite3.Connection,
+    task_id: int,
+    kind: str,
+    path: str,
+    label: str,
+    note: str = "",
+) -> dict:
+    """Attach one workspace file to a task; re-attaching updates in place.
+
+    ``INSERT .. ON CONFLICT`` rather than a failure, because attaching a
+    file that is already attached is how a user edits its note -- refusing
+    would make them detach and re-add for a one-word change.
+    """
+    conn.execute(
+        """
+        INSERT INTO task_context (task_id, kind, path, label, note)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT (task_id, path) DO UPDATE SET
+            kind = excluded.kind,
+            label = excluded.label,
+            note = excluded.note
+        """,
+        (task_id, kind, path, label, note or None),
+    )
+    row = conn.execute(
+        """
+        SELECT id, kind, path, label, note, created_at
+        FROM task_context WHERE task_id = ? AND path = ?
+        """,
+        (task_id, path),
+    ).fetchone()
+    return _context_row(row)
+
+
+def remove_context(conn: sqlite3.Connection, task_id: int, context_id: int) -> bool:
+    """Detach one attachment. Returns False if it was not on this task.
+
+    Detaching never touches the file itself -- the row is a pointer, and
+    dropping a pointer is not a delete.
+    """
+    cur = conn.execute(
+        "DELETE FROM task_context WHERE id = ? AND task_id = ?",
+        (context_id, task_id),
+    )
+    return cur.rowcount > 0
 
 
 # ---------------------------------------------------------------------------

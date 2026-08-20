@@ -530,3 +530,266 @@ a.running-chip-link:hover {
 [data-bs-theme="dark"] .brand-lockup-dark {
     display: block;
 }
+
+/* ---------------- Workspace: rendered Markdown ----------------
+ * marked emits plain semantic HTML with no classes, so Tabler's resets
+ * leave headings and code blocks unstyled inside the preview modal.
+ * Scoped to .markdown-body so nothing here leaks into the app chrome. */
+.markdown-body {
+    line-height: 1.6;
+    overflow-wrap: break-word;
+}
+
+.markdown-body > *:first-child {
+    margin-top: 0;
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4 {
+    margin: 1.4em 0 0.6em;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+.markdown-body h1 { font-size: 1.6rem; }
+.markdown-body h2 { font-size: 1.35rem; }
+.markdown-body h3 { font-size: 1.15rem; }
+.markdown-body h4 { font-size: 1rem; }
+
+.markdown-body h1,
+.markdown-body h2 {
+    padding-bottom: 0.3em;
+    border-bottom: 1px solid var(--tblr-border-color);
+}
+
+.markdown-body p,
+.markdown-body ul,
+.markdown-body ol,
+.markdown-body blockquote {
+    margin-bottom: 1em;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+    padding-left: 1.5em;
+}
+
+.markdown-body li + li {
+    margin-top: 0.25em;
+}
+
+.markdown-body blockquote {
+    padding: 0.4em 1em;
+    border-left: 3px solid var(--tblr-border-color);
+    color: var(--tblr-secondary);
+}
+
+.markdown-body code {
+    padding: 0.15em 0.4em;
+    font-size: 0.875em;
+    background: var(--tblr-bg-surface-secondary);
+    border-radius: 3px;
+}
+
+.markdown-body pre {
+    padding: 1em;
+    overflow-x: auto;
+    background: var(--tblr-bg-surface-secondary);
+    border: 1px solid var(--tblr-border-color);
+    border-radius: 4px;
+}
+
+/* A <code> inside <pre> already sits on the block's background. */
+.markdown-body pre code {
+    padding: 0;
+    background: none;
+}
+
+/* Tables in notes are frequently wider than the modal -- let them scroll
+ * inside their own box rather than stretching the dialog. */
+.markdown-body table {
+    display: block;
+    width: fit-content;
+    max-width: 100%;
+    overflow-x: auto;
+    margin-bottom: 1em;
+    border-collapse: collapse;
+}
+
+.markdown-body th,
+.markdown-body td {
+    padding: 0.4em 0.75em;
+    border: 1px solid var(--tblr-border-color);
+}
+
+.markdown-body th {
+    background: var(--tblr-bg-surface-secondary);
+    font-weight: 600;
+    text-align: left;
+}
+
+.markdown-body img {
+    max-width: 100%;
+    height: auto;
+}
+
+.markdown-body hr {
+    margin: 1.5em 0;
+    border-top: 1px solid var(--tblr-border-color);
+}
+
+/* Rows and cards that open a preview on click. */
+.cursor-pointer {
+    cursor: pointer;
+}
+
+/* A flex child defaults to min-width:auto, which makes it refuse to shrink
+ * below its content -- so `text-truncate` on a long filesystem path inside
+ * a flex row does nothing and the text escapes the card. Bootstrap 5 ships
+ * no min-width utility, hence this one. */
+.min-w-0 {
+    min-width: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   Sidebar sections (collapsible) + workspace entries
+   --------------------------------------------------------------------------- */
+
+/* A section header is a <button> so it is keyboard-reachable and announces
+   its expanded state, but it must read as a heading, not as a control --
+   hence no button chrome at all. */
+.sidebar-section-toggle {
+    background: transparent;
+    box-shadow: none;
+    /* Tabler's .btn is a centering flex container -- without this the
+       section labels drift to the middle and the carets stop lining up
+       into a column. `text-start` alone cannot fix that: it sets
+       text-align, which a flex container ignores for its items. */
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+}
+.sidebar-section-toggle:hover .text-secondary,
+.sidebar-section-toggle:focus-visible .text-secondary {
+    color: var(--tblr-body-color) !important;
+}
+
+/* The caret sits tight against the section icon; Tabler's fs-3 would
+   otherwise push the label out of line with the checkbox rows below. */
+.sidebar-caret {
+    width: 1rem;
+    margin-left: -0.25rem;
+    vertical-align: -0.1em;
+}
+
+/* Workspace entries are dense rows, not buttons: the sidebar shows up to
+   twelve per section and Tabler's default button padding would double the
+   height of every one of them. */
+.sidebar-ws-item {
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    font-size: 0.8125rem;
+    line-height: 1.25rem;
+    min-height: 1.5rem;
+    background: transparent;
+    box-shadow: none;
+}
+.sidebar-ws-item > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.sidebar-ws-item:hover {
+    background-color: var(--tblr-bg-surface-tertiary, rgba(0, 0, 0, 0.04));
+}
+
+/* The workspace file editor. Monospace comes from the utility class; what
+   matters here is that a long note gets a usable amount of height without
+   the modal growing past the viewport. */
+.ws-editor {
+    min-height: 24rem;
+    max-height: 60vh;
+    resize: vertical;
+    tab-size: 4;
+}
+
+/* Context chips (attached workspace files) in the edit modal.
+   Both controls are real <button>s so they are keyboard-reachable, but
+   inside a badge they must carry no button chrome at all -- Tabler's
+   .btn-close renders at its own fixed size and bursts a 20px chip. */
+.context-chip-label,
+.context-chip-close {
+    background: none;
+    border: 0;
+    padding: 0;
+    color: inherit;
+    font: inherit;
+    line-height: 1;
+    cursor: pointer;
+}
+.context-chip-label:hover,
+.context-chip-close:hover {
+    text-decoration: underline;
+}
+.context-chip-close {
+    display: inline-flex;
+    align-items: center;
+    opacity: 0.55;
+    text-decoration: none;
+}
+.context-chip-close:hover {
+    opacity: 1;
+    text-decoration: none;
+}
+.context-chip-close .ti {
+    font-size: 0.875em;
+}
+
+/* A row in the directory browser. Same reason as .sidebar-section-toggle:
+   Tabler's .btn centers its content, and a file name centered in a
+   full-width row reads as a heading rather than as a list entry. */
+.ws-dir-entry {
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    min-width: 0;
+}
+
+/* Sidebar layout. Formerly inline on the <aside>; moved here because the
+   Alpine :style binding (dragged width) replaces the whole style attribute
+   and would silently drop inline declarations. `position: sticky` doubles
+   as the containing block for the absolute resize handle below. */
+.tracker-sidebar {
+    width: 280px; /* overridden by the :style width once Alpine boots */
+    flex-shrink: 0;
+    position: sticky;
+    top: 0;
+    align-self: flex-start;
+    max-height: 100vh;
+    overflow-y: auto;
+    background-color: var(--tblr-bg-surface-secondary, var(--tblr-bg-surface));
+}
+
+/* Sidebar resize handle: a 6px splitter column between the sidebar and
+   the main content. Sticky so it spans the visible viewport regardless of
+   how far either side has scrolled. The negative margin lets it straddle
+   the sidebar's border, so visually it is the border that is draggable. */
+.sidebar-resize-handle {
+    flex-shrink: 0;
+    width: 6px;
+    margin-left: -6px;
+    position: sticky;
+    top: 0;
+    align-self: flex-start;
+    height: 100vh;
+    cursor: col-resize;
+    touch-action: none;
+    z-index: 10;
+}
+.sidebar-resize-handle:hover,
+.sidebar-resize-handle:active {
+    background: var(--tblr-border-color-active, var(--tblr-border-color));
+}

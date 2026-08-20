@@ -4,6 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [2.20.0] — 2026-08-20
+Workspace integration: sidebar sections for team personas, skills, knowledge base and generated documents; attach workspace files as task context (also at creation); project categories with collapsible sidebar groups; one-click project hiding; draggable sidebar width; workspace root dirs configurable in settings.
+
 ## [2.19.4] — 2026-07-28
 Run-view tabs follow a task title that changes mid-session (placeholder task getting its real name).
 

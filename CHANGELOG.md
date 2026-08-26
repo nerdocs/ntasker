@@ -4,6 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [2.19.5] — 2026-08-26
+Skill description trimmed to 928 chars so it stays under the 1024-char frontmatter limit.
+
 ## [2.19.4] — 2026-07-28
 Run-view tabs follow a task title that changes mid-session (placeholder task getting its real name).
 

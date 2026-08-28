@@ -58,6 +58,7 @@ from ntasker.db import (
     validate_deps,
 )
 from ntasker.i18n import _, resolve_for_cli, set_active_language
+from ntasker.middleware import ALLOWED_HOSTS_ENV, LOOPBACK_HOSTS
 from ntasker.paths import resolve_db_path, warn_if_missing
 from ntasker.settings import (
     delete_setting,
@@ -371,6 +372,13 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
     if _db.DB_PATH is not None:
         os.environ["NTASKER_DB"] = str(_db.DB_PATH)
+
+    # The origin guard only trusts loopback hosts by default. Binding
+    # elsewhere on purpose (``--host``) must not lock the operator out, so
+    # propagate that host into the guard's allow-list -- via ENV, because
+    # ``--reload`` runs the app in a subprocess that never sees `args`.
+    if args.host not in LOOPBACK_HOSTS:
+        os.environ[ALLOWED_HOSTS_ENV] = args.host
 
     if getattr(args, "detach", False):
         if args.reload:

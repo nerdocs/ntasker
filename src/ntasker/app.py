@@ -74,7 +74,7 @@ from ntasker.i18n import (
     gettext_for_jinja,
     ngettext_for_jinja,
 )
-from ntasker.middleware import LanguageMiddleware
+from ntasker.middleware import LanguageMiddleware, OriginGuardMiddleware
 from ntasker import service
 from ntasker import updates
 from ntasker.settings import (
@@ -658,6 +658,11 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 # Starlette stack, which is exactly what we want (template rendering and
 # every endpoint sees the resolved language).
 app.add_middleware(LanguageMiddleware)
+
+# Origin guard -- added last, so it runs *outermost* and rejects a hostile
+# request before anything else touches it (including the WebSocket route,
+# which hands out an interactive shell). See :mod:`ntasker.middleware`.
+app.add_middleware(OriginGuardMiddleware)
 
 
 @app.on_event("startup")

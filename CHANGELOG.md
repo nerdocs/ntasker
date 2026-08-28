@@ -4,6 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [2.20.0] — 2026-08-28
+Security: origin guard rejects cross-origin writes and WebSocket upgrades (CSRF + DNS rebinding).
+
 ## [2.19.5] — 2026-08-26
 Skill description trimmed to 928 chars so it stays under the 1024-char frontmatter limit.
 

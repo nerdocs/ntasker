@@ -23,7 +23,7 @@ from collections.abc import Callable
 from datetime import datetime
 
 from ntasker.agents import AGENT_KEYS, DEFAULT_AGENT
-from ntasker.assets import validate_assets_mode
+from ntasker.assets import ResolvedMode, validate_assets_mode
 from ntasker.db import get_conn
 from ntasker.i18n import AVAILABLE_LANGUAGES, _, _lazy
 
@@ -532,7 +532,7 @@ def delete_setting(key: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def get_assets_mode_resolved() -> str:
+def get_assets_mode_resolved() -> ResolvedMode:
     """Return the *resolved* asset-loading mode (``cdn`` or ``local``).
 
     Reads the ``assets_mode`` setting (ENV ``NTASKER_ASSETS_MODE`` first),

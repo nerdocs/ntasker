@@ -26,7 +26,7 @@ import argparse
 import json
 import sys
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 from ntasker import __version__
 from ntasker.assets import (
@@ -592,7 +592,9 @@ def cmd_add(args: argparse.Namespace) -> int:
             "VALUES (?, ?, ?, ?, ?, ?)",
             (args.project, title_value, args.description, phase_value, args.priority, args.agent),
         )
-        new_id = int(cur.lastrowid)
+        # sqlite3 types lastrowid as ``int | None``; after a successful INSERT
+        # on a rowid table it is always set, so narrow instead of coercing.
+        new_id = cast(int, cur.lastrowid)
         if norm_tags:
             set_task_tags(conn, new_id, norm_tags)
         if dep_ids:

@@ -64,3 +64,8 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # A re-pushed tag rebuilds an already-published version; PyPI
+          # rejects the upload with 400. Skip those files instead of
+          # failing the run -- a genuinely new version still uploads.
+          skip-existing: true

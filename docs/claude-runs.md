@@ -49,6 +49,14 @@ loader's project-mismatch warning and does not pull in ntasker's `SKILL.md` know
    permission prompts, type follow-ups, `Ctrl-C` to interrupt.
 3. **Stop** terminates the session (kills the process group). **Back** returns to the list/kanban.
 
+### Working directory
+
+The run starts in the task's project directory. A directory that does not exist yet is created when it lies inside
+`projects_base` (a "new project" starts in a fresh dir). Everything else -- a task without a project, or a project
+path outside the base -- falls back to the **`no_project_dir`** setting, then to `projects_base`, then to your home
+directory. Keep a real directory configured: Claude Code treats the home directory as an untrusted workspace and
+parks the session on its trust prompt, which looks like a run that never starts.
+
 ## Quick run -- an agent in a project, right now
 
 Sometimes there is no task yet, just the urge to work in a project. Every project row in the sidebar carries the

@@ -118,6 +118,30 @@ def projects_base_dir() -> Path | None:
     return Path(os.path.abspath(os.path.expanduser(raw)))
 
 
+def no_project_dir() -> str:
+    """Start directory for a run without a usable project directory.
+
+    Precedence: the ``no_project_dir`` setting (ENV ``NTASKER_NO_PROJECT_DIR``
+    first) -> the configured ``projects_base`` -> the home directory. A
+    configured path that does not exist is skipped rather than honoured -- the
+    agent must always get a directory it can actually start in.
+
+    The home directory is the last resort on purpose: Claude Code treats it as
+    an untrusted workspace and blocks the session on its trust prompt, so a
+    configured base is preferred whenever there is one.
+    """
+    from ntasker.settings import get_setting  # noqa: PLC0415
+
+    raw = get_setting("no_project_dir", env_var="NTASKER_NO_PROJECT_DIR")
+    for candidate in (raw, str(projects_base_dir() or "")):
+        if not candidate:
+            continue
+        path = os.path.abspath(os.path.expanduser(candidate.strip()))
+        if os.path.isdir(path):
+            return path
+    return os.path.expanduser("~")
+
+
 def default_cwd_for_project(project: str | None) -> str | None:
     """Best-effort working directory for a task's ``project`` name.
 
@@ -144,13 +168,12 @@ def resolve_run_cwd(cwd: str | None) -> str:
     2. ``cwd`` inside the configured ``projects_base`` -> create it (``mkdir
        -p``) and use it. This realises a "new project": the agent starts in a
        fresh directory inside the configured base.
-    3. Otherwise the home directory -- a best-effort fallback so the agent
+    3. Otherwise :func:`no_project_dir` -- a best-effort fallback so the agent
        always starts. A path outside the base, or no ``projects_base``
        configured at all, is never silently created.
     """
-    home = os.path.expanduser("~")
     if not cwd:
-        return home
+        return no_project_dir()
     if os.path.isdir(cwd):
         return cwd
     base = projects_base_dir()
@@ -163,7 +186,7 @@ def resolve_run_cwd(cwd: str | None) -> str:
                 return str(target)
         except OSError:
             pass
-    return home
+    return no_project_dir()
 
 
 def seed_command_for_task(task: dict) -> str:

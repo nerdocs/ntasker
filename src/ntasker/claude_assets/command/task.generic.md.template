@@ -24,6 +24,12 @@ Then work the task:
 
    If you could not finish (blocker, missing info, failed verification), do
    NOT move to review -- leave the phase as-is and report the blocker.
+5. Attached team members ("Teammitglied:" entries under "Angehaengter
+   Kontext") are roles, not reading material: for each one, run a dedicated
+   subagent that reads the role file and adopts its activation prompt, give
+   it the task description plus relevant files, and merge its results into
+   your report. Other attachment kinds stay read-only context; a "Datei:"
+   entry is a file on this machine -- read it before relying on it.
 
 **Hard rules:**
 

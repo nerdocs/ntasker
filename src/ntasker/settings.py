@@ -312,6 +312,22 @@ def _make_workspace_dir_validator(key: str) -> Validator:
     return _validate
 
 
+def validate_brain_server(value: str) -> str:
+    """Validator for the ``brain_server`` setting.
+
+    Name of the HTTP MCP server entry in ``~/.claude.json`` that ntasker
+    calls for JCBrain (OpenBrain) notes. Existence in the file is not
+    enforced -- the entry may be added later; until then the JCBrain tab
+    in the context picker reports "not configured".
+    """
+    norm = (value or "").strip()
+    if not norm:
+        raise ValueError(
+            _("brain_server must not be empty -- unset it to use the default.")
+        )
+    return norm
+
+
 VALIDATORS: dict[str, Validator] = {
     "assets_mode": validate_assets_mode,
     "language": validate_language,
@@ -322,6 +338,7 @@ VALIDATORS: dict[str, Validator] = {
     "workspace_wiki_dir": _make_workspace_dir_validator("workspace_wiki_dir"),
     "workspace_team_dir": _make_workspace_dir_validator("workspace_team_dir"),
     "workspace_docs_dir": _make_workspace_dir_validator("workspace_docs_dir"),
+    "brain_server": validate_brain_server,
     "claude_idle_seconds": validate_claude_idle_seconds,
     "claude_auto_mode": validate_claude_auto_mode,
     "claude_permission_mode": validate_claude_permission_mode,
@@ -421,6 +438,12 @@ HINTS: dict[str, object] = {
         "The Workspace page lists them newest-first and previews Markdown, "
         "text and CSV files in place. Unset hides the card."
     ),
+    "brain_server": _lazy(
+        "Name of the HTTP MCP server in ~/.claude.json that serves your "
+        "JCBrain (OpenBrain) notes; its URL and auth header are reused, no "
+        "second key to maintain. Notes found there can be attached to tasks "
+        "as context and are handed to the agent in full. Default: open-brain."
+    ),
 }
 
 
@@ -448,6 +471,7 @@ FIELD_CHOICES: dict[str, list[tuple[str, object, object]]] = {
 FIELD_DEFAULTS: dict[str, str] = {
     "assets_mode": "auto",
     "default_view": DEFAULT_VIEW_FALLBACK,
+    "brain_server": "open-brain",
 }
 
 

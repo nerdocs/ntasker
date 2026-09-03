@@ -54,6 +54,14 @@ You have been handed task #$ARGUMENTS from nTasker.
    - If you could not finish (blocker, missing info, failed
      verification), do NOT move to review -- leave the phase as-is and
      report the blocker.
+5. **Attached team members are roles, not reading material.** For every
+   entry labelled `Teammitglied:` under "Angehaengter Kontext", spawn a
+   dedicated subagent (Agent tool) that reads the role file and adopts its
+   activation prompt; hand it the task description plus the relevant files,
+   and merge its results into your report. Attachments of the other kinds
+   (`Wissensdatenbank`, `Dokument`, `Datei`, `Skill`, ...) stay read-only
+   context -- a `Datei:` entry is a file on this machine; read it with your
+   Read tool before relying on it.
 
 **Hard rules:**
 

@@ -359,7 +359,7 @@ wheels = [
 
 [[package]]
 name = "ntasker"
-version = "2.19.4"
+version = "2.20.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },

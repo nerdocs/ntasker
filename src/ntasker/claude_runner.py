@@ -200,15 +200,26 @@ def context_briefing(context: list[dict]) -> list[str]:
     Attachments whose file has since moved are marked instead of dropped:
     an agent that knows a reference is dangling can say so, while a silently
     shortened list just looks like the user never attached anything.
+
+    JCBrain notes are the exception to "paths, not contents": they are
+    remote, the agent has no Read tool for them, and a thought is usually
+    a paragraph -- so the text is fetched here and inlined (capped; see
+    :data:`ntasker.brain.BRIEFING_MAX_CHARS`). If the fetch fails the agent
+    is told the id so it can try the ``open-brain`` MCP ``fetch`` tool.
     """
     if not context:
         return []
+
+    from ntasker import brain  # noqa: PLC0415 -- lazy: avoid cycle
 
     labels = {
         "member": "Team persona",
         "skill": "Skill",
         "note": "Knowledge base",
         "doc": "Document",
+        "file": "File",
+        "brain": "JCBrain note",
+        "mcp": "MCP server",
     }
     lines = [
         "",
@@ -221,12 +232,38 @@ def context_briefing(context: list[dict]) -> list[str]:
     ]
     for entry in context:
         kind = labels.get(entry.get("kind", ""), "File")
-        line = f"- **{kind}: {entry.get('label') or '?'}** -- `{entry.get('path', '')}`"
+        path = entry.get("path", "")
+        line = f"- **{kind}: {entry.get('label') or '?'}** -- `{path}`"
         if not entry.get("exists", True):
             line += "  _(file not found -- mention this rather than guessing)_"
         lines.append(line)
         if entry.get("note"):
             lines.append(f"  - {entry['note']}")
+        if entry.get("kind") == "file":
+            if os.path.isdir(path):
+                lines.append(
+                    "  - This is a folder: list it first, then read what the task needs."
+                )
+            else:
+                lines.append(
+                    "  - Read this file with your Read tool before you rely on it "
+                    "(PDFs and images included)."
+                )
+        if entry.get("kind") == "mcp":
+            lines.append(
+                "  - Use the tools of this MCP server for the task (ToolSearch by its "
+                "name if they are deferred). If the server is not connected, say so."
+            )
+        if entry.get("kind") == "brain":
+            text = brain.briefing_text(path)
+            if text:
+                lines += ["", "  > " + text.replace("\n", "\n  > "), ""]
+            else:
+                lines.append(
+                    f"  - _(could not load the note -- fetch id "
+                    f"`{brain.thought_id(path)}` via the open-brain MCP `fetch` tool, "
+                    "or say so)_"
+                )
     return lines
 
 

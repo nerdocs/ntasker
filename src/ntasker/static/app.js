@@ -541,11 +541,16 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         },
 
         async wsRevealFile(path) {
-            const res = await fetch('/api/workspace/reveal', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ path }),
-            });
+            // A "file" attachment lives outside the workspace roots; its
+            // open goes through the attachment row instead.
+            const ext = this.wsViewer.file && this.wsViewer.file.path === path && this.wsViewer.file.external;
+            const res = ext
+                ? await fetch(`/api/tasks/${ext.taskId}/context/${ext.contextId}/reveal`, { method: 'POST' })
+                : await fetch('/api/workspace/reveal', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path }),
+                });
             if (!res.ok) {
                 this.showToast(await WS.errorDetail(res, _i('ws_open_failed')), 'danger');
             }
@@ -580,14 +585,280 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // Picker state. `target` is the task the picked file attaches to;
         // null = draft mode, picks collect in form.context until createTask
         // sends them along with the new task.
-        picker: { open: false, target: null, tab: 'team', q: '', note: '', busy: false },
+        picker: { open: false, target: null, tab: 'files', q: '', note: '', busy: false, path: '', picking: false },
+
+        // Can the server open a native file dialog on this desktop? null =
+        // not asked yet; the buttons stay hidden until it says yes.
+        pickerNative: null,
+
+        // JCBrain tab state. Unlike the file tabs there is no inventory to
+        // filter client-side: every query is a semantic search on the
+        // server, so results live here, keyed by the query they answer.
+        brain: { status: null, results: [], forQuery: '', loading: false, error: '' },
 
         openPicker(task) {
-            this.picker = { open: true, target: task || null, tab: 'team', q: '', note: '', busy: false };
+            this.picker = { open: true, target: task || null, tab: 'files', q: '', note: '', busy: false, path: '', picking: false };
+            this.brain.results = [];
+            this.brain.forQuery = '';
+            this.brain.error = '';
             this.loadWorkspace();
+            this.loadBrainStatus();
+            this.loadPickerNative();
+        },
+
+        // The picker's tabs. "Files" is always there -- it needs no
+        // workspace directory, just this machine. The workspace tabs only
+        // appear once their directory is configured, so a fresh install
+        // is not a row of empty lists.
+        get pickerTabs() {
+            const ws = this.ws;
+            const has = k => !!(ws && ws[k] && ws[k].exists);
+            const tabs = [{ id: 'files', label: 'ws_files', icon: 'ti-file' }];
+            if (has('team')) tabs.push({ id: 'team', label: 'ws_team', icon: 'ti-users' });
+            if (has('skills')) tabs.push({ id: 'skills', label: 'ws_skills', icon: 'ti-puzzle' });
+            if (has('wiki')) tabs.push({ id: 'wiki', label: 'ws_knowledge', icon: 'ti-book' });
+            if (has('docs')) tabs.push({ id: 'docs', label: 'ws_documents', icon: 'ti-files' });
+            tabs.push({ id: 'brain', label: 'ws_brain', icon: 'ti-brain' });
+            tabs.push({ id: 'mcp', label: 'ws_mcp', icon: 'ti-plug-connected' });
+            return tabs;
+        },
+
+        async loadPickerNative() {
+            if (this.pickerNative !== null) return;
+            try {
+                const res = await fetch('/api/fs/pick');
+                this.pickerNative = res.ok ? !!(await res.json()).available : false;
+            } catch (e) {
+                this.pickerNative = false;
+            }
+        },
+
+        // Chip icon: a folder attachment shows as a folder, everything
+        // else by its kind.
+        contextChipIcon(c) {
+            return WS.contextIcon(c && c.is_dir ? 'folder' : (c && c.kind));
+        },
+
+        // ---- Local files as context ----------------------------------
+        //
+        // The browser cannot tell us where a dropped file lives, so there
+        // are two ways in: paste a path (one per line), or let the server
+        // open the OS dialog -- it runs on the same desktop, so it can.
+
+        // Attach every non-empty line of the path box. Each path is
+        // resolved server-side first so a typo shows up now, not at
+        // Create time (draft mode sends nothing until then).
+        async attachPaths(text) {
+            const lines = String(text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+            if (!lines.length) return;
+            if (this.picker.busy) return;
+            this.picker.busy = true;
+            // Lines that did not resolve stay in the box for a second look;
+            // the ones that landed are cleared out from under them.
+            const failed = [];
+            try {
+                for (const raw of lines) {
+                    const res = await fetch('/api/fs/resolve?path=' + encodeURIComponent(raw));
+                    if (!res.ok) {
+                        this.showToast(`${raw}: ${await WS.errorDetail(res, _i('ws_attach_failed'))}`, 'danger');
+                        failed.push(raw);
+                        continue;
+                    }
+                    const info = await res.json();
+                    this.picker.busy = false;   // attachContext has its own guard
+                    await this.attachContext({ kind: 'file', path: info.path, label: info.name, is_dir: info.is_dir });
+                    this.picker.busy = true;
+                }
+            } finally {
+                this.picker.busy = false;
+            }
+            this.picker.path = failed.join('\n');
+        },
+
+        // Native OS dialog via the server; blocks until the user picks.
+        async pickNative(folder) {
+            if (this.picker.picking) return;
+            this.picker.picking = true;
+            try {
+                const res = await fetch('/api/fs/pick', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ folder: !!folder }),
+                });
+                if (!res.ok) {
+                    this.showToast(await WS.errorDetail(res, _i('ws_file_pick_failed')), 'danger');
+                    if (res.status === 501) this.pickerNative = false;
+                    return;
+                }
+                const paths = (await res.json()).paths || [];
+                if (paths.length) await this.attachPaths(paths.join('\n'));
+            } catch (e) {
+                this.showToast(_i('ws_file_pick_failed'), 'danger');
+            } finally {
+                this.picker.picking = false;
+            }
+        },
+
+        // Preview of a "file" attachment goes through the attachment row,
+        // not the workspace reader -- the path is outside every root.
+        async contextFilePreview(c) {
+            const task = this.picker.target || this.editing;
+            const taskId = c.task_id || (task && task.id);
+            if (!c.id || !taskId) {
+                this.showToast(_i('ws_file_preview_after_create'), 'info');
+                return;
+            }
+            Object.assign(this.wsViewer, {
+                open: true, loading: true, error: '', file: null, dir: null,
+                mode: 'none', html: '', rows: [], editing: false, draft: '',
+            });
+            try {
+                const res = await fetch(`/api/tasks/${taskId}/context/${c.id}/file`);
+                if (!res.ok) {
+                    this.wsViewer.error = await WS.errorDetail(res, _i('ws_preview_failed'));
+                    return;
+                }
+                const file = await res.json();
+                // `external` keeps the viewer read-only (no rename/delete/
+                // edit -- those endpoints are root-confined) and routes
+                // "open" through the attachment endpoint.
+                file.external = { taskId, contextId: c.id };
+                this.wsViewer.file = file;
+                Object.assign(this.wsViewer, WS.renderFile(file));
+            } catch (e) {
+                this.wsViewer.error = _i('ws_preview_failed');
+            } finally {
+                this.wsViewer.loading = false;
+            }
+        },
+
+        async loadBrainStatus() {
+            if (this.brain.status) return;
+            try {
+                const res = await fetch('/api/brain/status');
+                if (res.ok) this.brain.status = await res.json();
+            } catch (e) {
+                // Leave null: the tab then shows the not-configured hint.
+            }
+        },
+
+        // Debounced from the picker's search box while the JCBrain tab is
+        // active. A stale reply (typed on before it landed) is dropped by
+        // comparing against the query it was issued for.
+        async brainSearch() {
+            const q = this.picker.q.trim();
+            if (this.picker.tab !== 'brain') return;
+            if (!q) {
+                this.brain.results = [];
+                this.brain.forQuery = '';
+                this.brain.error = '';
+                return;
+            }
+            if (q === this.brain.forQuery) return;
+            this.brain.loading = true;
+            this.brain.error = '';
+            try {
+                const res = await fetch('/api/brain/search?q=' + encodeURIComponent(q));
+                if (q !== this.picker.q.trim()) return;
+                if (!res.ok) {
+                    this.brain.error = await WS.errorDetail(res, _i('ws_brain_failed'));
+                    this.brain.results = [];
+                    return;
+                }
+                const data = await res.json();
+                this.brain.results = data.results || [];
+                this.brain.forQuery = q;
+            } catch (e) {
+                this.brain.error = _i('ws_brain_failed');
+                this.brain.results = [];
+            } finally {
+                this.brain.loading = false;
+            }
+        },
+
+        // Open an attachment: files go to the workspace viewer, JCBrain
+        // notes are fetched through the server proxy into the same modal.
+        openContext(c) {
+            if (c.kind === 'brain') return this.brainPreview(c.path);
+            if (c.kind === 'mcp') return this.mcpPreview(c.path);
+            if (c.kind === 'file') return this.contextFilePreview(c);
+            return this.wsPreview(c.path);
+        },
+
+        // An MCP server has no body to show -- the viewer gets a short
+        // fact sheet from the inventory (never the config's env values).
+        async mcpPreview(path) {
+            const name = String(path || '').replace(/^mcp:\/\//, '');
+            Object.assign(this.wsViewer, {
+                open: true, loading: true, error: '', file: null, dir: null,
+                mode: 'none', html: '', rows: [], editing: false, draft: '',
+            });
+            try {
+                await this.loadWorkspace();
+                const servers = (this.ws && this.ws.tooling && this.ws.tooling.servers) || [];
+                const s = servers.find(x => x.name === name);
+                if (!s) {
+                    this.wsViewer.error = _i('ws_mcp_gone');
+                    return;
+                }
+                const lines = [`**${_i('ws_mcp_transport')}:** ${s.transport}`];
+                if (s.command) lines.push(`**${_i('ws_mcp_command')}:** \`${s.command}\``);
+                if (s.runtime && !s.runtime_ok) lines.push(`_${_i('ws_mcp_runtime_missing')}: ${s.runtime}_`);
+                if (s.env && s.env.length) lines.push('**env:** ' + s.env.map(e => e.key).join(', '));
+                const file = { name: name, path: path, kind: 'markdown', suffix: '', text: lines.join('\n\n'), remote: true };
+                this.wsViewer.file = file;
+                Object.assign(this.wsViewer, WS.renderFile(file));
+            } finally {
+                this.wsViewer.loading = false;
+            }
+        },
+
+        async brainPreview(path) {
+            const id = String(path || '').replace(/^brain:\/\//, '');
+            Object.assign(this.wsViewer, {
+                open: true, loading: true, error: '', file: null, dir: null,
+                mode: 'none', html: '', rows: [], editing: false, draft: '',
+            });
+            try {
+                const res = await fetch('/api/brain/thoughts/' + encodeURIComponent(id));
+                if (!res.ok) {
+                    this.wsViewer.error = await WS.errorDetail(res, _i('ws_brain_failed'));
+                    return;
+                }
+                const doc = await res.json();
+                const meta = doc.metadata || {};
+                // Shaped like a workspace file so renderFile + the header
+                // work unchanged; `remote` hides the file-only actions
+                // (rename/delete/reveal) and `suffix: ''` keeps it read-only.
+                const file = {
+                    name: doc.title || _i('ws_brain_note'),
+                    path: path,
+                    kind: 'markdown',
+                    suffix: '',
+                    text: doc.text || '',
+                    remote: true,
+                    captured: meta.created_at || '',
+                };
+                this.wsViewer.file = file;
+                Object.assign(this.wsViewer, WS.renderFile(file));
+            } catch (e) {
+                this.wsViewer.error = _i('ws_brain_failed');
+            } finally {
+                this.wsViewer.loading = false;
+            }
         },
 
         get pickerItems() {
+            if (this.picker.tab === 'files') {
+                // No inventory to browse -- the list is what is attached
+                // already, so a second look confirms the path landed.
+                const list = this.picker.target
+                    ? (this.picker.target.context || [])
+                    : this.form.context;
+                return list.filter(c => c.kind === 'file').map(c => ({
+                    kind: c.kind, label: c.label, sub: c.path, path: c.path, is_dir: c.is_dir,
+                }));
+            }
             if (!this.ws) return [];
             const q = this.picker.q;
             if (this.picker.tab === 'team') {
@@ -601,6 +872,28 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             if (this.picker.tab === 'docs') {
                 return WS.filterItems(this.ws.docs.docs, q, ['stem', 'name'])
                     .map(d => ({ kind: 'doc', label: d.stem, sub: d.name, path: d.path }));
+            }
+            if (this.picker.tab === 'mcp') {
+                const servers = (this.ws.tooling && this.ws.tooling.servers) || [];
+                return WS.filterItems(servers, q, ['name', 'transport', 'command']).map(s => ({
+                    kind: 'mcp',
+                    label: s.name,
+                    sub: s.transport + (s.runtime_ok ? '' : ' -- ' + _i('ws_mcp_runtime_missing')),
+                    path: 'mcp://' + s.name,
+                }));
+            }
+            if (this.picker.tab === 'brain') {
+                // Server-side search results; the title the edge function
+                // builds is "<date> - <first 80 chars>", split for display.
+                return this.brain.results.map(r => {
+                    const m = /^(\S+)\s+-\s+(.*)$/.exec(r.title || '');
+                    return {
+                        kind: 'brain',
+                        label: m ? m[2] : (r.title || r.id),
+                        sub: m ? `${_i('ws_brain_captured')} ${m[1]}` : '',
+                        path: r.path,
+                    };
+                });
             }
             // Knowledge base: areas and root index notes. Individual notes
             // are reached by browsing -- listing 481 of them in a picker
@@ -629,7 +922,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             if (!task) {
                 this.form.context = [
                     ...this.form.context.filter(c => c.path !== item.path),
-                    { kind: item.kind, path: item.path, label: item.label, note: this.picker.note },
+                    { kind: item.kind, path: item.path, label: item.label, note: this.picker.note, is_dir: !!item.is_dir },
                 ];
                 this.picker.note = '';
                 return;

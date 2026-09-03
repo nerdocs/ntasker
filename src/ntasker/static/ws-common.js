@@ -28,6 +28,10 @@
         skill: 'ti-puzzle',
         note: 'ti-book',
         doc: 'ti-file-text',
+        file: 'ti-file',
+        folder: 'ti-folder',
+        brain: 'ti-brain',
+        mcp: 'ti-plug-connected',
     };
 
     // Empty inventory used until the first fetch lands, so every template

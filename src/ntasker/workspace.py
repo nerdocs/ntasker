@@ -795,6 +795,33 @@ def read_file(path: str, roots: list[Path]) -> dict[str, Any]:
             "forbidden",
             _("Path lies outside every configured workspace directory."),
         )
+    return describe_file(target)
+
+
+def describe_file(target: Path) -> dict[str, Any]:
+    """Preview payload for an already-resolved, already-authorised path.
+
+    The root check lives in :func:`read_file`; this half is shared with the
+    task-attachment preview, whose authorisation is "the user attached this
+    exact path to a task" rather than "it lies under a workspace root".
+    A directory is reported with ``kind="folder"`` and no text -- the UI
+    hands it to the desktop instead of rendering it.
+    """
+    if target.is_dir():
+        try:
+            stat = target.stat()
+        except OSError as exc:
+            raise PreviewError("not_found", str(exc)) from exc
+        return {
+            "name": target.name,
+            "path": str(target),
+            "suffix": "",
+            "kind": "folder",
+            "size": 0,
+            "modified": stat.st_mtime,
+            "text": None,
+            "truncated": False,
+        }
     if not target.is_file():
         raise PreviewError("not_found", _("No such file."))
 
@@ -1223,14 +1250,23 @@ def reveal(path: str, roots: list[Path]) -> dict[str, Any]:
     as every other operation -- the point is opening the user's own notes,
     not turning ntasker into a launcher for arbitrary paths.
     """
-    import subprocess  # noqa: PLC0415 -- only needed on this path
-    import sys  # noqa: PLC0415
-
     target = _resolve(path)
     if not roots or not within_roots(target, roots):
         raise WriteError(
             "forbidden", _("Path lies outside every configured workspace directory.")
         )
+    return open_with_desktop(target)
+
+
+def open_with_desktop(target: Path) -> dict[str, Any]:
+    """Hand an already-authorised path to the desktop's default application.
+
+    Shared by :func:`reveal` (workspace roots) and the task-attachment
+    endpoint (paths the user attached explicitly).
+    """
+    import subprocess  # noqa: PLC0415 -- only needed on this path
+    import sys  # noqa: PLC0415
+
     if not target.exists():
         raise WriteError("not_found", _("No such file or directory."))
 
@@ -1253,6 +1289,105 @@ def reveal(path: str, roots: list[Path]) -> dict[str, Any]:
             "invalid", _("Could not open it: {error}").format(error=exc)
         ) from exc
     return {"path": str(target), "opened": True}
+
+
+# ---------------------------------------------------------------------------
+# Native file dialog
+# ---------------------------------------------------------------------------
+
+#: How long a native file dialog may stay open before the request gives up.
+PICK_TIMEOUT_SECONDS = 600
+
+
+def picker_available() -> bool:
+    """True if this machine can show a native file dialog for the browser.
+
+    The server runs on the same desktop as the browser, which is what makes
+    this possible at all: a web page cannot learn a picked file's path, but
+    a local process can open the OS dialog and report it. macOS has
+    ``osascript``; Linux needs ``zenity``. Anything else falls back to the
+    pasted-path input.
+    """
+    import sys  # noqa: PLC0415
+
+    if sys.platform == "darwin":
+        return os.path.exists("/usr/bin/osascript")
+    if sys.platform.startswith("linux"):
+        return shutil.which("zenity") is not None
+    return False
+
+
+def pick_paths(folder: bool = False, prompt: str = "") -> list[str]:
+    """Open the OS file (or folder) dialog and return the chosen absolute paths.
+
+    Blocks until the user picks or cancels; a cancel is an empty list, not
+    an error. Raises :class:`WriteError` (``invalid``) when no dialog is
+    available on this platform or it failed to start.
+    """
+    import subprocess  # noqa: PLC0415 -- only needed on this path
+    import sys  # noqa: PLC0415
+
+    if not picker_available():
+        raise WriteError("invalid", _("No native file dialog is available here."))
+
+    if sys.platform == "darwin":
+        # `activate` first, so the dialog comes to the front instead of
+        # hiding behind the browser that asked for it. `choose file` returns
+        # a list of aliases; POSIX path is the form every other endpoint uses.
+        safe_prompt = prompt.replace("\\", "\\\\").replace('"', '\\"')
+        chooser = (
+            f'choose folder with prompt "{safe_prompt}"'
+            if folder
+            else f'choose file with prompt "{safe_prompt}" '
+            "with multiple selections allowed"
+        )
+        script = "\n".join(
+            [
+                "activate",
+                f"set picked to {chooser}",
+                "if class of picked is not list then set picked to {picked}",
+                'set out to ""',
+                "repeat with f in picked",
+                "set out to out & POSIX path of f & linefeed",
+                "end repeat",
+                "return out",
+            ]
+        )
+        argv = ["/usr/bin/osascript", "-e", script]
+    else:
+        argv = [shutil.which("zenity") or "zenity", "--file-selection", "--separator=\n"]
+        if folder:
+            argv.append("--directory")
+        else:
+            argv.append("--multiple")
+        if prompt:
+            argv.append(f"--title={prompt}")
+
+    try:
+        proc = subprocess.run(  # noqa: S603 -- fixed binary, prompt passed as data
+            argv,
+            capture_output=True,
+            text=True,
+            timeout=PICK_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise WriteError(
+            "invalid", _("Could not open the file dialog: {error}").format(error=exc)
+        ) from exc
+
+    if proc.returncode != 0:
+        # osascript exits 1 with "User canceled. (-128)"; zenity exits 1 on
+        # cancel as well. Either way there is nothing to attach.
+        return []
+    paths: list[str] = []
+    for line in proc.stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        # `POSIX path of` yields a trailing slash for folders; normalise.
+        paths.append(line.rstrip("/") or "/")
+    return paths
 
 
 # ---------------------------------------------------------------------------

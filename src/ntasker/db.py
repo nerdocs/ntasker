@@ -107,7 +107,11 @@ CREATE INDEX IF NOT EXISTS idx_task_deps_dep ON task_deps(depends_on_id);
 CREATE TABLE IF NOT EXISTS task_context (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     task_id    INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-    -- One of CONTEXT_KINDS: skill | note | member | doc.
+    -- One of CONTEXT_KINDS: skill | note | member | doc | file | brain | mcp.
+    -- brain (a JCBrain thought) stores ``brain://<uuid>``, mcp (an MCP
+    -- server from ~/.claude.json) stores ``mcp://<name>`` -- neither is a file.
+    -- file is any path on this machine the user pointed at explicitly; it is
+    -- the one kind that is not confined to the workspace directories.
     kind       TEXT NOT NULL,
     path       TEXT NOT NULL,
     label      TEXT NOT NULL,
@@ -318,7 +322,14 @@ def row_to_task(
 #: What kind of workspace file an attachment points at. Purely descriptive
 #: -- it drives the icon in the UI and the wording in the agent briefing,
 #: never any filesystem behaviour.
-CONTEXT_KINDS: tuple[str, ...] = ("skill", "note", "member", "doc")
+CONTEXT_KINDS: tuple[str, ...] = ("skill", "note", "member", "doc", "file", "brain", "mcp")
+
+#: ``task_context.path`` prefix of a remote JCBrain note (see :mod:`ntasker.brain`).
+BRAIN_SCHEME = "brain://"
+#: ``task_context.path`` prefix of an MCP server attachment (``mcp://<name>``).
+MCP_SCHEME = "mcp://"
+#: Path prefixes that are pointers, not files on disk.
+REMOTE_SCHEMES = (BRAIN_SCHEME, MCP_SCHEME)
 
 
 def load_context_for(conn: sqlite3.Connection, task_id: int) -> list[dict]:
@@ -330,7 +341,7 @@ def load_context_for(conn: sqlite3.Connection, task_id: int) -> list[dict]:
     """
     rows = conn.execute(
         """
-        SELECT id, kind, path, label, note, created_at
+        SELECT task_id, id, kind, path, label, note, created_at
         FROM task_context WHERE task_id = ?
         ORDER BY id ASC
         """,
@@ -363,14 +374,23 @@ def load_context_bulk(
 def _context_row(row: sqlite3.Row) -> dict:
     """Shape one ``task_context`` row for the API."""
     path = row["path"]
+    # A JCBrain note or an MCP server is remote -- there is no file to go
+    # missing locally, and probing per row would make every task list a
+    # network round trip. It reports as present; a deleted thought or a
+    # removed server surfaces when opened or at briefing time.
+    remote = path.startswith(REMOTE_SCHEMES)
     return {
         "id": int(row["id"]),
+        "task_id": int(row["task_id"]),
         "kind": row["kind"],
         "path": path,
         "label": row["label"],
         "note": row["note"] or "",
         "created_at": row["created_at"],
-        "exists": os.path.exists(path),
+        "exists": True if remote else os.path.exists(path),
+        "remote": remote,
+        # A "file" attachment may point at a folder; the UI icons it so.
+        "is_dir": False if remote else os.path.isdir(path),
     }
 
 
@@ -401,7 +421,7 @@ def add_context(
     )
     row = conn.execute(
         """
-        SELECT id, kind, path, label, note, created_at
+        SELECT task_id, id, kind, path, label, note, created_at
         FROM task_context WHERE task_id = ? AND path = ?
         """,
         (task_id, path),

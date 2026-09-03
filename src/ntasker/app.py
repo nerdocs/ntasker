@@ -50,6 +50,7 @@ from ntasker.projects import discover_claude_projects
 from ntasker import db as _db_module
 from ntasker.db import (
     CONTEXT_KINDS,
+    MCP_SCHEME,
     DepError,
     add_context,
     cleanup_database,
@@ -85,6 +86,7 @@ from ntasker.middleware import LanguageMiddleware
 from ntasker import service
 from ntasker import updates
 from ntasker import workspace
+from ntasker import brain
 from ntasker.settings import (
     FIELD_CHOICES,
     FIELD_DEFAULTS,
@@ -189,7 +191,8 @@ Priority = Literal["low", "normal", "high", "critical"]
 
 
 class ContextAdd(BaseModel):
-    """One workspace file to attach to a task."""
+    """One workspace file -- or, for ``kind="brain"``, one JCBrain note
+    (``path`` = ``brain://<uuid>`` or the bare uuid) -- to attach to a task."""
 
     kind: str
     path: str
@@ -757,6 +760,42 @@ def build_js_strings() -> dict[str, str]:
         "ws_no_context": _("Nothing attached yet."),
         "ws_context_missing": _("This file no longer exists at that path."),
         "ws_note_placeholder": _("Why is this attached? (optional)"),
+        # Local files as context
+        "ws_files": _("Files"),
+        "ws_file": _("File"),
+        "ws_file_hint": _(
+            "Any file or folder on this computer. The agent gets the path and "
+            "reads it when it needs to -- no more pasting paths into the description."
+        ),
+        "ws_file_path_placeholder": _("Paste a path, e.g. ~/Desktop/report.pdf (one per line)"),
+        "ws_file_add": _("Add"),
+        "ws_file_choose": _("Choose files…"),
+        "ws_file_choose_folder": _("Choose folder…"),
+        "ws_file_picking": _("Waiting for the file dialog…"),
+        "ws_file_pick_failed": _("Could not open the file dialog."),
+        "ws_file_none": _("No files attached yet."),
+        "ws_file_preview_after_create": _("Create the task first -- then the file opens from here."),
+        "ws_folder": _("Folder"),
+        # JCBrain notes as context
+        "ws_brain": _("JCBrain"),
+        "ws_brain_note": _("JCBrain note"),
+        "ws_brain_search_hint": _("Type to search your JCBrain notes by meaning."),
+        "ws_brain_searching": _("Searching JCBrain…"),
+        "ws_brain_no_results": _("No notes match."),
+        "ws_brain_not_configured": _(
+            "JCBrain is not configured -- add the MCP server to ~/.claude.json "
+            "(setting: brain_server)."
+        ),
+        "ws_brain_failed": _("Could not reach JCBrain."),
+        "ws_brain_captured": _("Captured"),
+        # MCP servers as context
+        "ws_mcp": _("MCP servers"),
+        "ws_mcp_server": _("MCP server"),
+        "ws_mcp_hint": _("Servers declared in ~/.claude.json. Attaching one tells the agent to use its tools for this task."),
+        "ws_mcp_runtime_missing": _("runtime missing"),
+        "ws_mcp_transport": _("Transport"),
+        "ws_mcp_command": _("Command"),
+        "ws_mcp_gone": _("This server is no longer declared in ~/.claude.json."),
         "ws_plugin": _("Plugin"),
         "ws_bundles": _("Bundles:"),
     }
@@ -2091,7 +2130,9 @@ def _normalize_project(value: str | None) -> str | None:
 
 
 @app.post("/api/tasks", status_code=201)
-def api_create_task(payload: TaskCreate) -> JSONResponse:
+def api_create_task(request: Request, payload: TaskCreate) -> JSONResponse:
+    if any(c.kind == "file" for c in payload.context):
+        _require_local_origin(request)
     if payload.priority not in PRIORITY_VALID:
         raise HTTPException(status_code=400, detail=_("Invalid priority"))
     if payload.agent is not None and payload.agent not in AGENT_KEYS:
@@ -2241,13 +2282,70 @@ def _resolve_context_add(payload: ContextAdd) -> tuple[str, str, str, str]:
             detail=_("Unknown context kind: {kind}").format(kind=payload.kind),
         )
 
-    roots = _workspace_roots()
+    if payload.kind == "brain":
+        # A JCBrain note lives on the server, not on disk: the only thing
+        # to validate is the id's shape. Existence is not probed here --
+        # attaching must work offline and the picker only offers ids the
+        # server just returned. The label comes from the picker (the
+        # thought's title); the bare id is the honest fallback.
+        raw = payload.path.strip()
+        tid = brain.thought_id(raw) if brain.is_brain_path(raw) else raw
+        if not brain.is_valid_id(tid):
+            raise HTTPException(
+                status_code=400,
+                detail=_("Not a JCBrain thought id: {value}").format(value=raw),
+            )
+        label = payload.label.strip() or f"JCBrain {tid[:8]}"
+        return payload.kind, brain.thought_path(tid), label, payload.note.strip()
+    if brain.is_brain_path(payload.path):
+        raise HTTPException(
+            status_code=400,
+            detail=_("A brain:// path needs kind 'brain'."),
+        )
+
+    if payload.kind == "mcp":
+        # An MCP server is referenced by the name of its entry in
+        # ~/.claude.json; it must exist there now, otherwise the agent
+        # would be told to use tools it cannot have.
+        raw = payload.path.strip()
+        name = raw[len(MCP_SCHEME) :] if raw.startswith(MCP_SCHEME) else raw
+        name = name.strip()
+        if not name or name not in _mcp_server_names():
+            raise HTTPException(
+                status_code=404,
+                detail=_("No MCP server named {name} in ~/.claude.json.").format(name=name),
+            )
+        label = payload.label.strip() or name
+        return payload.kind, f"{MCP_SCHEME}{name}", label, payload.note.strip()
+    if payload.path.strip().startswith(MCP_SCHEME):
+        raise HTTPException(
+            status_code=400,
+            detail=_("An mcp:// path needs kind 'mcp'."),
+        )
+
     try:
         target = Path(
             os.path.expandvars(os.path.expanduser(payload.path.strip()))
         ).resolve()
     except (OSError, RuntimeError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if payload.kind == "file":
+        # Any file or folder on this machine, named by the user explicitly
+        # -- the one kind that is *not* confined to the workspace roots,
+        # because "the spreadsheet on my Desktop" is exactly what it is
+        # for. The endpoints that accept it require a local Origin (see
+        # ``_require_local_origin``) so a foreign page cannot plant one.
+        # The full name (with suffix) is the honest label: "report.pdf"
+        # and "report.xlsx" side by side must stay tellable apart.
+        if not payload.path.strip():
+            raise HTTPException(status_code=400, detail=_("No such file or directory."))
+        if not target.exists():
+            raise HTTPException(status_code=404, detail=_("No such file or directory."))
+        label = payload.label.strip() or target.name or str(target)
+        return payload.kind, str(target), label, payload.note.strip()
+
+    roots = _workspace_roots()
     if not roots or not workspace.within_roots(target, roots):
         raise HTTPException(
             status_code=403,
@@ -2261,6 +2359,11 @@ def _resolve_context_add(payload: ContextAdd) -> tuple[str, str, str, str]:
     # storing a blank the frontend would have to paper over.
     label = payload.label.strip() or target.stem
     return payload.kind, str(target), label, payload.note.strip()
+
+
+def _mcp_server_names() -> set[str]:
+    """Names of the MCP servers currently declared in ``~/.claude.json``."""
+    return {s["name"] for s in workspace.scan_tooling().get("servers", [])}
 
 
 def _require_task(conn, task_id: int) -> None:
@@ -2278,17 +2381,64 @@ def api_list_context(task_id: int) -> JSONResponse:
 
 
 @app.post("/api/tasks/{task_id}/context", status_code=201)
-def api_add_context(task_id: int, payload: ContextAdd) -> JSONResponse:
+def api_add_context(request: Request, task_id: int, payload: ContextAdd) -> JSONResponse:
     """Attach a workspace file to a task.
 
     Validation (kind whitelist + workspace-root confinement) lives in
-    :func:`_resolve_context_add`, shared with task creation.
+    :func:`_resolve_context_add`, shared with task creation. A ``file``
+    attachment escapes the roots by design, so it must come from our own
+    page (or a script with no Origin), never from a foreign site.
     """
+    if payload.kind == "file":
+        _require_local_origin(request)
     kind, path, label, note = _resolve_context_add(payload)
     with get_conn() as conn:
         _require_task(conn, task_id)
         entry = add_context(conn, task_id, kind, path, label, note)
     return JSONResponse(entry, status_code=201)
+
+
+# ---------------------------------------------------------------------------
+# JCBrain (OpenBrain) notes -- remote context source
+# ---------------------------------------------------------------------------
+#
+# Thin proxy over the MCP server declared in ``~/.claude.json`` so the
+# browser never sees the key and the ``/task`` loader can resolve a note
+# without speaking MCP itself. Read-only: search + fetch, nothing else.
+
+
+@app.get("/api/brain/status")
+def api_brain_status() -> JSONResponse:
+    """Whether a JCBrain server is configured (never returns the key)."""
+    return JSONResponse(brain.status())
+
+
+@app.get("/api/brain/search")
+def api_brain_search(q: str = "") -> JSONResponse:
+    """Semantic search; ``{query, results: [{id, title, url, path}]}``."""
+    query = (q or "").strip()
+    if not query:
+        return JSONResponse({"query": "", "results": []})
+    try:
+        results = brain.search(query)
+    except brain.BrainError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+    return JSONResponse({"query": query, "results": results})
+
+
+@app.get("/api/brain/thoughts/{thought_id}")
+def api_brain_thought(thought_id: str) -> JSONResponse:
+    """One note in full -- the chip viewer and the loader read this."""
+    if not brain.is_valid_id(thought_id):
+        raise HTTPException(
+            status_code=400,
+            detail=_("Not a JCBrain thought id: {value}").format(value=thought_id),
+        )
+    try:
+        doc = brain.fetch(thought_id)
+    except brain.BrainError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+    return JSONResponse(doc)
 
 
 @app.delete("/api/tasks/{task_id}/context/{context_id}", status_code=204)
@@ -2298,6 +2448,123 @@ def api_remove_context(task_id: int, context_id: int) -> None:
         _require_task(conn, task_id)
         if not remove_context(conn, task_id, context_id):
             raise HTTPException(status_code=404, detail=_("Attachment not found"))
+
+
+@app.get("/api/tasks/{task_id}/context/{context_id}/file")
+def api_context_file(task_id: int, context_id: int) -> JSONResponse:
+    """Preview payload for one attachment's file, wherever it lives.
+
+    The workspace preview refuses paths outside the configured roots; an
+    attachment of kind ``file`` is outside them by definition. Here the
+    authorisation is the attachment row itself -- the user put that exact
+    path on this task -- so the preview reads what the row points at and
+    nothing else (no ``path`` parameter to steer).
+    """
+    with get_conn() as conn:
+        _require_task(conn, task_id)
+        entry = next(
+            (c for c in load_context_for(conn, task_id) if c["id"] == context_id), None
+        )
+    if entry is None:
+        raise HTTPException(status_code=404, detail=_("Attachment not found"))
+    if entry["remote"]:
+        raise HTTPException(status_code=400, detail=_("This attachment is not a file."))
+    try:
+        return JSONResponse(workspace.describe_file(Path(entry["path"])))
+    except workspace.PreviewError as exc:
+        status = {"forbidden": 403, "not_found": 404, "too_large": 413}.get(
+            exc.reason, 400
+        )
+        raise HTTPException(status_code=status, detail=str(exc)) from exc
+
+
+@app.post("/api/tasks/{task_id}/context/{context_id}/reveal")
+def api_context_reveal(request: Request, task_id: int, context_id: int) -> JSONResponse:
+    """Open one attachment's file in the desktop's default application."""
+    _require_local_origin(request)
+    with get_conn() as conn:
+        _require_task(conn, task_id)
+        entry = next(
+            (c for c in load_context_for(conn, task_id) if c["id"] == context_id), None
+        )
+    if entry is None:
+        raise HTTPException(status_code=404, detail=_("Attachment not found"))
+    if entry["remote"]:
+        raise HTTPException(status_code=400, detail=_("This attachment is not a file."))
+    try:
+        return JSONResponse(workspace.open_with_desktop(Path(entry["path"])))
+    except workspace.WriteError as exc:
+        raise _write_guard(exc) from exc
+
+
+# ---------------------------------------------------------------------------
+# Local filesystem helpers for "file" attachments
+# ---------------------------------------------------------------------------
+
+
+class PickRequest(BaseModel):
+    """Options for the native file dialog."""
+
+    folder: bool = False
+
+
+@app.get("/api/fs/pick")
+def api_fs_pick_available() -> JSONResponse:
+    """Whether this machine can show a native file dialog (see POST)."""
+    return JSONResponse({"available": workspace.picker_available()})
+
+
+@app.post("/api/fs/pick")
+def api_fs_pick(request: Request, payload: PickRequest) -> JSONResponse:
+    """Open the OS file dialog on this desktop and return the chosen paths.
+
+    Works because server and browser share a desktop: the page cannot learn
+    a dropped file's path, but the local process can ask the OS. Blocks
+    until the user picks or cancels (cancel = empty list). 501 when no
+    dialog is available on this platform.
+    """
+    _require_local_origin(request)
+    if not workspace.picker_available():
+        raise HTTPException(
+            status_code=501, detail=_("No native file dialog is available here.")
+        )
+    prompt = _("Choose a folder to attach") if payload.folder else _("Choose files to attach")
+    try:
+        paths = workspace.pick_paths(folder=payload.folder, prompt=prompt)
+    except workspace.WriteError as exc:
+        raise _write_guard(exc) from exc
+    return JSONResponse({"paths": paths})
+
+
+@app.get("/api/fs/resolve")
+def api_fs_resolve(
+    request: Request,
+    path: str = Query(..., description="A path as typed or pasted by the user"),
+) -> JSONResponse:
+    """Normalise a user-typed path and say whether it exists.
+
+    Lets the picker validate a pasted path before it lands in a draft task
+    (where nothing is sent to the server until Create). Only existence and
+    the resolved form are reported -- never contents.
+    """
+    _require_local_origin(request)
+    raw = path.strip()
+    if not raw:
+        raise HTTPException(status_code=400, detail=_("No such file or directory."))
+    try:
+        target = Path(os.path.expandvars(os.path.expanduser(raw))).resolve()
+    except (OSError, RuntimeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not target.exists():
+        raise HTTPException(status_code=404, detail=_("No such file or directory."))
+    return JSONResponse(
+        {
+            "path": str(target),
+            "name": target.name or str(target),
+            "is_dir": target.is_dir(),
+            "exists": True,
+        }
+    )
 
 
 @app.delete("/api/tasks/{task_id}", status_code=204)

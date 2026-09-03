@@ -203,7 +203,33 @@ CONTEXT_LABELS = {
     "skill": "Skill",
     "note": "Wissensdatenbank",
     "doc": "Dokument",
+    "file": "Datei",
+    "brain": "JCBrain-Notiz",
+    "mcp": "MCP-Server",
 }
+
+BRAIN_URL = "http://127.0.0.1:8766/api/brain/thoughts/{tid}"
+BRAIN_SCHEME = "brain://"
+BRAIN_MAX_CHARS = 6000
+
+
+def fetch_brain_note(path: str) -> str:
+    """Text einer JCBrain-Notiz ueber den ntasker-Server; leer bei Fehler.
+
+    JCBrain-Notizen liegen nicht auf der Platte -- der Agent kann sie
+    nicht per Read oeffnen, also wird der Text hier eingebettet. Der
+    Server haelt den Schluessel; der Loader spricht nur mit 127.0.0.1.
+    """
+    tid = path[len(BRAIN_SCHEME):] if path.startswith(BRAIN_SCHEME) else path
+    try:
+        with urllib.request.urlopen(BRAIN_URL.format(tid=tid), timeout=15) as r:
+            doc = json.loads(r.read().decode("utf-8"))
+    except Exception:  # noqa: BLE001 -- ein Netzfehler darf den Task-Load nie blockieren
+        return ""
+    text = str(doc.get("text") or "").strip()
+    if len(text) > BRAIN_MAX_CHARS:
+        text = text[:BRAIN_MAX_CHARS].rstrip() + "\n[... gekuerzt]"
+    return text
 
 
 def render_context(context: list) -> list:
@@ -222,18 +248,56 @@ def render_context(context: list) -> list:
         "",
         "Der User hat diese Workspace-Dateien an die Aufgabe angehaengt. "
         "Lies die relevanten, bevor du loslegst -- sie tragen die "
-        "Konventionen, den Hintergrund und die Vorarbeiten dieser Aufgabe.",
+        "Konventionen, den Hintergrund und die Vorarbeiten dieser Aufgabe. "
+        "Ausnahme: Eintraege vom Typ *Teammitglied* sind Rollen, die du "
+        "als eigene Subagenten aktivierst (siehe Hinweis am Eintrag).",
         "",
     ]
     for entry in context:
         kind = CONTEXT_LABELS.get(entry.get("kind", ""), "Datei")
         label = entry.get("label") or "?"
-        line = f'- **{kind}: {label}** -- `{entry.get("path", "")}`'
+        path = entry.get("path", "")
+        line = f'- **{kind}: {label}** -- `{path}`'
         if not entry.get("exists", True):
             line += "  _(Datei nicht gefunden -- sag das, statt zu raten)_"
         out.append(line)
         if entry.get("note"):
             out.append(f'  - {entry["note"]}')
+        if entry.get("kind") == "file":
+            if os.path.isdir(path):
+                out.append(
+                    "  - Das ist ein Ordner: erst auflisten, dann lesen, was die "
+                    "Aufgabe braucht."
+                )
+            else:
+                out.append(
+                    "  - Lies diese Datei mit dem Read-Tool, bevor du dich darauf "
+                    "stuetzt (auch PDFs und Bilder)."
+                )
+        if entry.get("kind") == "member":
+            out.append(
+                "  - Das ist eine Rolle, keine Lektuere: starte dafuer einen "
+                "eigenen Subagenten (Agent-Tool), der die Rollen-Datei liest "
+                "und deren Aktivierungs-Prompt uebernimmt; gib ihm "
+                "Task-Beschreibung + relevante Dateien mit und fuehre sein "
+                "Ergebnis im Bericht zusammen."
+            )
+        if entry.get("kind") == "mcp":
+            out.append(
+                "  - Nutze die Tools dieses MCP-Servers fuer die Aufgabe (bei "
+                "deferred Tools per ToolSearch nach dem Servernamen suchen). "
+                "Ist der Server nicht verbunden, sag das."
+            )
+        if entry.get("kind") == "brain":
+            text = fetch_brain_note(path)
+            if text:
+                out += ["", "  > " + text.replace("\n", "\n  > "), ""]
+            else:
+                tid = path[len(BRAIN_SCHEME):] if path.startswith(BRAIN_SCHEME) else path
+                out.append(
+                    f"  - _(Notiz konnte nicht geladen werden -- hol sie mit dem "
+                    f"open-brain-MCP-Tool `fetch` (id `{tid}`) oder sag das.)_"
+                )
     return out
 
 

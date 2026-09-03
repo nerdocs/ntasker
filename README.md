@@ -256,7 +256,9 @@ DNS-rebinding write surface). Full reference: [docs/agents.md](docs/agents.md).
 | Command                     | What it does                                                  |
 |-----------------------------|---------------------------------------------------------------|
 | `ntasker init`              | Create / migrate the schema at the active DB path             |
-| `ntasker serve`             | Run the FastAPI server (defaults: 127.0.0.1:8766)             |
+| `ntasker serve` / `start`   | Run the FastAPI server (defaults: 127.0.0.1:8766); `start` is an alias |
+| `ntasker stop`              | Shut down a running server over HTTP (`POST /shutdown`)       |
+| `ntasker restart`           | Stop a running server, then start it again (same flags as `serve`) |
 | `ntasker list [filters]`    | List tasks; supports `--project`, `--tag`, `--phase`, ...     |
 | `ntasker show <id>`         | Show a single task; pair with `--json` for raw output         |
 | `ntasker add --title=...`   | Create a task; optional `--project --phase --priority --tag --agent` |

@@ -4,6 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [2.21.0] — 2026-09-03
+CLI: `ntasker start` as an alias for `serve`, plus a new `ntasker restart` (stop + start).
+
 ## [2.20.1] — 2026-09-02
 Runs without a project start in `no_project_dir` / `projects_base` instead of home, where Claude blocks on its trust prompt.
 

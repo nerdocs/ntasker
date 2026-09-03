@@ -513,6 +513,20 @@ def cmd_stop(args: argparse.Namespace) -> int:
     return 1
 
 
+def cmd_restart(args: argparse.Namespace) -> int:
+    """Stop a running server (if any), then start a fresh one.
+
+    Delegates to :func:`cmd_stop` and :func:`cmd_serve` unchanged, so both
+    halves keep their exit semantics. ``cmd_stop`` already waits for the
+    old server to disappear before returning, which keeps the new one from
+    racing it for the port; a failed stop aborts the restart.
+    """
+    rc = cmd_stop(args)
+    if rc != 0:
+        return rc
+    return cmd_serve(args)
+
+
 def cmd_list(args: argparse.Namespace) -> int:
     """Read-only listing."""
     tasks = _query_tasks(args)
@@ -1487,18 +1501,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("init", help=_("Create / migrate the schema")).set_defaults(func=cmd_init)
 
-    sp_serve = sub.add_parser("serve", help=_("Run the FastAPI server"))
+    detach_help = _(
+        "Start the server as a detached background process. "
+        "Idempotent: returns 0 if a server is already answering /healthz."
+    )
+
+    sp_serve = sub.add_parser(
+        "serve", aliases=["start"], help=_("Run the FastAPI server")
+    )
     sp_serve.add_argument("--host", default="127.0.0.1")
     sp_serve.add_argument("--port", type=int, default=8766)
     sp_serve.add_argument("--reload", action="store_true")
-    sp_serve.add_argument(
-        "--detach",
-        action="store_true",
-        help=_(
-            "Start the server as a detached background process. "
-            "Idempotent: returns 0 if a server is already answering /healthz."
-        ),
-    )
+    sp_serve.add_argument("--detach", action="store_true", help=detach_help)
     sp_serve.set_defaults(func=cmd_serve)
 
     # stop ----------------------------------------------------------------
@@ -1509,6 +1523,17 @@ def build_parser() -> argparse.ArgumentParser:
     sp_stop.add_argument("--host", default="127.0.0.1")
     sp_stop.add_argument("--port", type=int, default=8766)
     sp_stop.set_defaults(func=cmd_stop)
+
+    # restart --------------------------------------------------------------
+    sp_restart = sub.add_parser(
+        "restart",
+        help=_("Stop a running ntasker server, then start it again."),
+    )
+    sp_restart.add_argument("--host", default="127.0.0.1")
+    sp_restart.add_argument("--port", type=int, default=8766)
+    sp_restart.add_argument("--reload", action="store_true")
+    sp_restart.add_argument("--detach", action="store_true", help=detach_help)
+    sp_restart.set_defaults(func=cmd_restart)
 
     # list ----------------------------------------------------------------
     sp_list = sub.add_parser("list", help=_("List tasks"))

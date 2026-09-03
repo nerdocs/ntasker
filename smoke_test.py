@@ -1582,32 +1582,6 @@ def main() -> int:
         r = client.get("/api/fs/resolve", params={"path": "~"})
         assert_ok(r)
         assert r.json()["is_dir"] is True
-        # Finder-style browser: lists any directory, names only, local
-        # Origin required; places are the sidebar shortcuts.
-        r = client.get("/api/fs/browse", params={"path": _td})
-        assert_ok(r)
-        bd = r.json()
-        names = {e["name"]: e for e in bd["entries"]}
-        assert "data" in names and names["data"]["directory"] is True, bd
-        assert "report.txt" in names and names["report.txt"]["directory"] is False, bd
-        assert bd["parent"] == str(Path(_td).resolve().parent), bd
-        r = client.get("/api/fs/browse", params={"path": ""})
-        assert_ok(r)
-        assert r.json()["path"] == str(Path.home().resolve()), r.json()
-        r = client.get("/api/fs/browse", params={"path": "/"})
-        assert_ok(r)
-        assert r.json()["parent"] == "" and r.json()["is_root"] is True, r.json()
-        r = client.get("/api/fs/browse", params={"path": str(_f)})
-        assert r.status_code == 404, r.text
-        r = client.get("/api/fs/browse", params={"path": _td}, headers={"Origin": "https://evil.example"})
-        assert r.status_code == 403, r.text
-        r = client.get("/api/fs/places")
-        assert_ok(r)
-        pl = r.json()
-        assert pl and pl[0]["path"] == str(Path.home().resolve()) and {"name", "path", "icon"} <= set(pl[0]), pl
-        assert any(x["path"] == "/" for x in pl), pl
-        r = client.get("/api/fs/places", headers={"Origin": "https://evil.example"})
-        assert r.status_code == 403, r.text
         # Native picker availability is a plain boolean; never opened here.
         r = client.get("/api/fs/pick")
         assert_ok(r)

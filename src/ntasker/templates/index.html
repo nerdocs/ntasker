@@ -1939,7 +1939,7 @@
 {# ---- Context picker: attach a workspace file to a task ---------------- #}
 <div class="modal modal-blur" :class="{ 'show d-block': picker.open }" x-cloak
      @keydown.escape.window="picker.open = false">
-    <div class="modal-dialog modal-xl modal-dialog-scrollable" role="document">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable" role="document">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">
@@ -1971,122 +1971,42 @@
                        x-show="picker.tab !== 'files'"
                        @input.debounce.400ms="brainSearch()"
                        :placeholder="$i18n('ws_search')">
-                {# Local files: a Finder in the modal. Places on the left,  #}
-                {# breadcrumb + listing on the right; folders open on click, #}
-                {# files attach on click, a folder attaches via its clip.    #}
-                {# Below it the fallbacks: paste a path, or the OS dialog.   #}
+                {# Local files: the OS dialog does the browsing -- server and  #}
+                {# browser share a desktop, so the server can open it and     #}
+                {# report the path. Fallback for everything else: paste one.  #}
                 <template x-if="picker.tab === 'files'">
                     <div class="mb-3">
                         <div class="small text-secondary mb-2" x-text="$i18n('ws_file_hint')"></div>
-                        <div class="row g-2">
-                            <div class="col-12 col-md-3">
-                                <div class="small text-uppercase text-secondary fw-bold mb-1 px-1"
-                                     x-text="$i18n('ws_fs_places')"></div>
-                                <div class="list-group list-group-flush fs-places">
-                                    <template x-for="pl in fsPlaces" :key="pl.path">
-                                        <button type="button"
-                                                class="list-group-item list-group-item-action py-1 px-2 text-truncate"
-                                                :class="{ 'active': fsb.path === pl.path }"
-                                                :title="pl.path" @click="fsBrowse(pl.path)">
-                                            <i class="ti me-2" :class="pl.icon"></i>
-                                            <span x-text="pl.name"></span>
-                                        </button>
-                                    </template>
-                                </div>
+                        <template x-if="pickerNative">
+                            <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+                                <button type="button" class="btn btn-primary"
+                                        :disabled="picker.picking || picker.busy" @click="pickNative(false)">
+                                    <i class="ti ti-folder-open me-1"></i>
+                                    <span x-text="$i18n('ws_file_choose')"></span>
+                                </button>
+                                <button type="button" class="btn btn-primary"
+                                        :disabled="picker.picking || picker.busy" @click="pickNative(true)">
+                                    <i class="ti ti-folder me-1"></i>
+                                    <span x-text="$i18n('ws_file_choose_folder')"></span>
+                                </button>
+                                <span class="small text-secondary" x-show="picker.picking">
+                                    <span class="spinner-border spinner-border-sm me-1"></span>
+                                    <span x-text="$i18n('ws_file_picking')"></span>
+                                </span>
                             </div>
-                            <div class="col-12 col-md-9">
-                                {# Path bar: up + clickable breadcrumb. #}
-                                <div class="d-flex align-items-center gap-1 mb-1">
-                                    <button type="button" class="btn btn-sm btn-ghost-secondary px-2"
-                                            :disabled="!fsb.parent || fsb.loading"
-                                            :title="$i18n('ws_fs_up')" @click="fsBrowse(fsb.parent)">
-                                        <i class="ti ti-arrow-up"></i>
-                                    </button>
-                                    <div class="flex-fill min-w-0 text-truncate small fs-crumbs">
-                                        <template x-for="(c, i) in fsCrumbs" :key="c.path">
-                                            <span>
-                                                <button type="button" class="context-chip-label"
-                                                        :class="i === fsCrumbs.length - 1 ? 'fw-bold' : 'text-secondary'"
-                                                        @click="fsBrowse(c.path)" x-text="c.name"></button>
-                                                <span class="text-secondary mx-1" x-show="i > 0 && i < fsCrumbs.length - 1">›</span>
-                                            </span>
-                                        </template>
-                                    </div>
-                                    <button type="button" class="btn btn-sm btn-ghost-primary px-2"
-                                            :disabled="!fsb.path || picker.busy"
-                                            :title="$i18n('ws_fs_attach_folder')" @click="fsAttach({ path: fsb.path, name: fsb.name || fsb.path, directory: true })">
-                                        <i class="ti ti-paperclip"></i>
-                                        <i class="ti ti-check text-green ms-1" x-show="isAttached(fsb.path)"></i>
-                                    </button>
-                                </div>
-                                <input type="search" class="form-control form-control-sm mb-1" x-model="picker.q"
-                                       :placeholder="$i18n('ws_fs_filter')">
-                                <div class="text-danger small mb-1" x-show="fsb.error" x-text="fsb.error"></div>
-                                <div class="list-group list-group-flush border rounded fs-listing">
-                                    <template x-for="e in fsEntries" :key="e.path">
-                                        <div class="list-group-item d-flex align-items-center py-1 px-2">
-                                            <button type="button"
-                                                    class="btn btn-ghost-secondary btn-sm flex-fill text-truncate text-start px-1 ws-dir-entry"
-                                                    :disabled="picker.busy" @click="fsOpen(e)" :title="e.path">
-                                                <i class="ti me-2" :class="e.directory ? 'ti-folder text-yellow' : wsIcon(e.kind) + ' text-secondary'"></i>
-                                                <span x-text="e.name"></span>
-                                            </button>
-                                            {# x-if, not x-show: .d-md-inline is !important and #}
-                                            {# would override Alpine's display:none.            #}
-                                            <template x-if="!e.directory">
-                                                <span class="text-secondary small font-monospace me-2 d-none d-md-inline"
-                                                      x-text="wsSize(e.size)"></span>
-                                            </template>
-                                            <i class="ti ti-check text-green fs-3 me-1" x-show="isAttached(e.path)"></i>
-                                            <button type="button" class="btn btn-sm btn-ghost-primary px-1" x-show="e.directory"
-                                                    :disabled="picker.busy" :title="$i18n('ws_fs_attach_folder')"
-                                                    @click.stop="fsAttach(e)">
-                                                <i class="ti ti-paperclip"></i>
-                                            </button>
-                                            <i class="ti ti-chevron-right text-secondary" x-show="e.directory"></i>
-                                        </div>
-                                    </template>
-                                    <div class="list-group-item text-secondary text-center small"
-                                         x-show="!fsb.loading && !fsEntries.length"
-                                         x-text="picker.q ? $i18n('ws_no_match') : $i18n('ws_fs_empty')"></div>
-                                    <div class="list-group-item text-secondary text-center small" x-show="fsb.loading">
-                                        <span class="spinner-border spinner-border-sm"></span>
-                                    </div>
-                                </div>
-                                <div class="small text-secondary mt-1" x-show="fsb.truncated"
-                                     x-text="$i18n('ws_fs_truncated', { n: 500 })"></div>
-                            </div>
-                        </div>
-                        {# Fallbacks: paste a path, or the native dialog. #}
-                        <div class="d-flex flex-wrap gap-2 align-items-center mt-2">
-                            <span class="small text-secondary" x-text="$i18n('ws_fs_or_path')"></span>
-                            <input type="text" class="form-control form-control-sm font-monospace flex-fill" style="min-width: 16rem"
+                        </template>
+                        <div class="small text-secondary mb-1" x-show="pickerNative" x-text="$i18n('ws_fs_or_path')"></div>
+                        <div class="input-group">
+                            <input type="text" class="form-control font-monospace"
                                    x-model="picker.path" :placeholder="$i18n('ws_file_path_placeholder')"
                                    @keydown.enter.prevent="attachPaths(picker.path)">
-                            <button type="button" class="btn btn-sm btn-primary"
+                            <button type="button" class="btn"
+                                    :class="pickerNative ? 'btn-outline-secondary' : 'btn-primary'"
                                     :disabled="picker.busy || !picker.path.trim()"
                                     @click="attachPaths(picker.path)">
                                 <i class="ti ti-plus me-1"></i>
                                 <span x-text="$i18n('ws_file_add')"></span>
                             </button>
-                            <template x-if="pickerNative">
-                                <span class="d-inline-flex gap-2">
-                                    <button type="button" class="btn btn-sm btn-outline-secondary"
-                                            :disabled="picker.picking || picker.busy" @click="pickNative(false)">
-                                        <i class="ti ti-folder-open me-1"></i>
-                                        <span x-text="$i18n('ws_file_choose')"></span>
-                                    </button>
-                                    <button type="button" class="btn btn-sm btn-outline-secondary"
-                                            :disabled="picker.picking || picker.busy" @click="pickNative(true)">
-                                        <i class="ti ti-folder me-1"></i>
-                                        <span x-text="$i18n('ws_file_choose_folder')"></span>
-                                    </button>
-                                </span>
-                            </template>
-                            <span class="small text-secondary" x-show="picker.picking">
-                                <span class="spinner-border spinner-border-sm me-1"></span>
-                                <span x-text="$i18n('ws_file_picking')"></span>
-                            </span>
                         </div>
                     </div>
                 </template>

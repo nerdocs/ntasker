@@ -794,13 +794,3 @@ a.running-chip-link:hover {
     background: var(--tblr-border-color-active, var(--tblr-border-color));
 }
 
-/* File picker (Files tab): Finder-style places + listing. Fixed height so
-   a 500-entry folder scrolls inside the modal instead of stretching it. */
-.fs-places,
-.fs-listing {
-    max-height: 40vh;
-    overflow-y: auto;
-}
-.fs-crumbs .context-chip-label:hover {
-    text-decoration: underline;
-}

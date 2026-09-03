@@ -26,7 +26,7 @@ import argparse
 import json
 import sys
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 from ntasker import __version__
 from ntasker.assets import (
@@ -59,6 +59,7 @@ from ntasker.db import (
     validate_deps,
 )
 from ntasker.i18n import _, resolve_for_cli, set_active_language
+from ntasker.middleware import ALLOWED_HOSTS_ENV, LOOPBACK_HOSTS
 from ntasker.paths import resolve_db_path, warn_if_missing
 from ntasker.settings import (
     delete_setting,
@@ -383,6 +384,13 @@ def cmd_serve(args: argparse.Namespace) -> int:
     if _db.DB_PATH is not None:
         os.environ["NTASKER_DB"] = str(_db.DB_PATH)
 
+    # The origin guard only trusts loopback hosts by default. Binding
+    # elsewhere on purpose (``--host``) must not lock the operator out, so
+    # propagate that host into the guard's allow-list -- via ENV, because
+    # ``--reload`` runs the app in a subprocess that never sees `args`.
+    if args.host not in LOOPBACK_HOSTS:
+        os.environ[ALLOWED_HOSTS_ENV] = args.host
+
     if getattr(args, "detach", False):
         if args.reload:
             print(
@@ -606,7 +614,9 @@ def cmd_add(args: argparse.Namespace) -> int:
             "VALUES (?, ?, ?, ?, ?, ?)",
             (args.project, title_value, args.description, phase_value, args.priority, args.agent),
         )
-        new_id = int(cur.lastrowid)
+        # sqlite3 types lastrowid as ``int | None``; after a successful INSERT
+        # on a rowid table it is always set, so narrow instead of coercing.
+        new_id = cast(int, cur.lastrowid)
         if norm_tags:
             set_task_tags(conn, new_id, norm_tags)
         if dep_ids:

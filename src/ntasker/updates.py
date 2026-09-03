@@ -84,8 +84,9 @@ def check(force: bool = False) -> dict:
     """
     global _cache, _checked_at
     with _lock:
-        fresh = _cache is not None and (time.time() - _checked_at) < _TTL
-        if fresh and not force:
+        # Inlined rather than held in a `fresh` flag so the None-check
+        # actually narrows `_cache` for the return below.
+        if _cache is not None and not force and (time.time() - _checked_at) < _TTL:
             return dict(_cache)
         _cache = _fetch()
         _checked_at = time.time()

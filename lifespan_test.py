@@ -83,7 +83,7 @@ def test_a_direct_import() -> None:
             # point of this test is that the app boots without a prior bind.
             from ntasker.app import app
 
-            with TestClient(app) as client:
+            with TestClient(app, base_url="http://127.0.0.1") as client:
                 r = client.get("/")
                 if r.status_code != 200:
                     print(f"FAIL status={r.status_code} body={r.text[:200]}")

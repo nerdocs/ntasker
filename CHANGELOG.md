@@ -4,8 +4,17 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
-## [2.20.0] — 2026-08-20
+## [Unreleased]
 Workspace integration: sidebar sections for team personas, skills, knowledge base and generated documents; attach workspace files as task context (also at creation); project categories with collapsible sidebar groups; one-click project hiding; draggable sidebar width; workspace root dirs configurable in settings.
+
+## [2.20.1] — 2026-09-02
+Runs without a project start in `no_project_dir` / `projects_base` instead of home, where Claude blocks on its trust prompt.
+
+## [2.20.0] — 2026-08-28
+Security: origin guard rejects cross-origin writes and WebSocket upgrades (CSRF + DNS rebinding).
+
+## [2.19.5] — 2026-08-26
+Skill description trimmed to 928 chars so it stays under the 1024-char frontmatter limit.
 
 ## [2.19.4] — 2026-07-28
 Run-view tabs follow a task title that changes mid-session (placeholder task getting its real name).

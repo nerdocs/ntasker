@@ -18,6 +18,7 @@ import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import cast
 
 # Module-level "current DB" — set once at startup by paths.resolve_db_path()
 # via :func:`set_db_path`. The smoke test rebinds it to a tempfile.
@@ -473,7 +474,10 @@ def ensure_tags(conn: sqlite3.Connection, names: list[str]) -> list[int]:
         row = cur.fetchone()
         if row is None:
             cur = conn.execute("INSERT INTO tags (name) VALUES (?)", (n,))
-            ids.append(int(cur.lastrowid))
+            # sqlite3 types lastrowid as ``int | None``; after a successful
+            # INSERT on a rowid table it is always set, so narrow instead
+            # of coercing (``int(None)`` would raise).
+            ids.append(cast(int, cur.lastrowid))
         else:
             ids.append(int(row["id"]))
     return ids

@@ -25,7 +25,7 @@ db_module.init_db()
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-client = TestClient(app)
+client = TestClient(app, base_url="http://127.0.0.1:8766")
 
 
 def assert_ok(resp, expected_status: int = 200) -> None:

@@ -19,7 +19,7 @@ import subprocess
 from datetime import datetime
 from importlib.resources import files
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 from urllib.parse import urlsplit
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request, WebSocket
@@ -82,7 +82,7 @@ from ntasker.i18n import (
     gettext_for_jinja,
     ngettext_for_jinja,
 )
-from ntasker.middleware import LanguageMiddleware
+from ntasker.middleware import LanguageMiddleware, OriginGuardMiddleware
 from ntasker import service
 from ntasker import updates
 from ntasker import workspace
@@ -284,7 +284,9 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 # placeholders. We deliberately bind callables (not pre-resolved strings)
 # so each call goes through the active-language context-var.
 templates.env.add_extension("jinja2.ext.i18n")
-templates.env.install_gettext_callables(
+# ``install_gettext_callables`` is grafted onto the Environment by the i18n
+# extension loaded above, so it is invisible to the type stubs.
+templates.env.install_gettext_callables(  # type: ignore[attr-defined]
     gettext=gettext_for_jinja,
     ngettext=ngettext_for_jinja,
     newstyle=True,
@@ -327,7 +329,9 @@ def _static_bust(name: str) -> str:
     """
     try:
         path = STATIC_DIR / name
-        mtime = int(path.stat().st_mtime)
+        # Traversable has no ``stat`` in the stubs; the AttributeError that
+        # a zipped wheel would raise is caught below on purpose.
+        mtime = int(path.stat().st_mtime)  # type: ignore[attr-defined]
     except (OSError, AttributeError):
         # ``files()`` over a zipped wheel returns a Traversable that may
         # not support ``.stat()``. Fall back to just the version -- the
@@ -829,6 +833,11 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 # every endpoint sees the resolved language).
 app.add_middleware(LanguageMiddleware)
 
+# Origin guard -- added last, so it runs *outermost* and rejects a hostile
+# request before anything else touches it (including the WebSocket route,
+# which hands out an interactive shell). See :mod:`ntasker.middleware`.
+app.add_middleware(OriginGuardMiddleware)
+
 
 @app.on_event("startup")
 def on_startup() -> None:
@@ -1276,7 +1285,7 @@ def _require_local_origin(request: Request) -> None:
     )
 
 
-def _write_guard(exc: "workspace.WriteError") -> HTTPException:
+def _write_guard(exc: workspace.WriteError) -> HTTPException:
     """Turn a WriteError into the matching HTTPException."""
     return HTTPException(
         status_code=_WRITE_STATUS.get(exc.reason, 400), detail=str(exc)
@@ -2070,8 +2079,12 @@ def api_changes() -> JSONResponse:
     land in the ``-wal`` sidecar and the main-file mtime would lag until a
     checkpoint -- ntasker does not enable WAL.
     """
+    db_path = _db_module.DB_PATH
     try:
-        token = _db_module.DB_PATH.stat().st_mtime_ns
+        # DB_PATH is None until the startup hook binds it; an unbound path
+        # would raise AttributeError, which the OSError clause below would
+        # *not* catch -- so check it explicitly.
+        token = db_path.stat().st_mtime_ns if db_path is not None else 0
     except OSError:
         token = 0
     return JSONResponse({"v": token})
@@ -2170,7 +2183,9 @@ def api_create_task(request: Request, payload: TaskCreate) -> JSONResponse:
                 payload.agent,
             ),
         )
-        new_id = int(cur.lastrowid)
+        # sqlite3 types lastrowid as ``int | None``; after a successful INSERT
+        # on a rowid table it is always set, so narrow instead of coercing.
+        new_id = cast(int, cur.lastrowid)
         if norm_tags:
             set_task_tags(conn, new_id, norm_tags)
         dep_ids = normalize_dep_ids(payload.depends)

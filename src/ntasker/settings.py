@@ -23,7 +23,7 @@ from collections.abc import Callable
 from datetime import datetime
 
 from ntasker.agents import AGENT_KEYS, DEFAULT_AGENT
-from ntasker.assets import validate_assets_mode
+from ntasker.assets import ResolvedMode, validate_assets_mode
 from ntasker.db import get_conn
 from ntasker.i18n import AVAILABLE_LANGUAGES, _, _lazy
 
@@ -123,6 +123,25 @@ def validate_projects_base(value: str) -> str:
     if not os.path.isabs(os.path.expanduser(norm)):
         raise ValueError(
             _("projects_base must be an absolute path (got {value!r}).").format(value=value)
+        )
+    return norm
+
+
+def validate_no_project_dir(value: str) -> str:
+    """Validator for the ``no_project_dir`` setting.
+
+    The directory a run starts in when the task has no usable project directory
+    (see :func:`ntasker.claude_runner.resolve_run_cwd`). Same rules as
+    :func:`validate_projects_base`: ``~`` is kept verbatim and only required to
+    expand to an *absolute* path; existence is checked at run time, not here.
+    To clear it, unset/DELETE the key rather than storing an empty string.
+    """
+    norm = (value or "").strip()
+    if not norm:
+        raise ValueError(_("no_project_dir must not be empty -- unset it to clear."))
+    if not os.path.isabs(os.path.expanduser(norm)):
+        raise ValueError(
+            _("no_project_dir must be an absolute path (got {value!r}).").format(value=value)
         )
     return norm
 
@@ -339,6 +358,7 @@ VALIDATORS: dict[str, Validator] = {
     "workspace_team_dir": _make_workspace_dir_validator("workspace_team_dir"),
     "workspace_docs_dir": _make_workspace_dir_validator("workspace_docs_dir"),
     "brain_server": validate_brain_server,
+    "no_project_dir": validate_no_project_dir,
     "claude_idle_seconds": validate_claude_idle_seconds,
     "claude_auto_mode": validate_claude_auto_mode,
     "claude_permission_mode": validate_claude_permission_mode,
@@ -379,6 +399,13 @@ HINTS: dict[str, object] = {
         "the base becomes the project name) instead of relative to your home "
         "directory. Unset to fall back to home-relative names. "
         "ENV: NTASKER_PROJECTS_BASE."
+    ),
+    "no_project_dir": _lazy(
+        "Start directory for a run whose task has no project (or whose project "
+        "directory does not exist and cannot be created), e.g. '~/Projekte'. "
+        "Unset falls back to the projects base, then to your home directory -- "
+        "note that Claude Code refuses to work in the home directory until you "
+        "answer its trust prompt. ENV: NTASKER_NO_PROJECT_DIR."
     ),
     "default_agent": _lazy(
         "Default AI coding agent for new tasks (and the fallback for any task "
@@ -611,7 +638,7 @@ def delete_setting(key: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def get_assets_mode_resolved() -> str:
+def get_assets_mode_resolved() -> ResolvedMode:
     """Return the *resolved* asset-loading mode (``cdn`` or ``local``).
 
     Reads the ``assets_mode`` setting (ENV ``NTASKER_ASSETS_MODE`` first),

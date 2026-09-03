@@ -1,6 +1,6 @@
 [project]
 name = "ntasker"
-version = "2.20.0"
+version = "2.20.1"
 description = "Lightweight local task tracker for AI agents like Claude code, Pi.dev or OpenCode. Single-user, FastAPI + SQLite, Tabler.io UI."
 authors = [{ name = "Christian González", email = "christian.gonzalez@nerdocs.at" }]
 readme = "README.md"
@@ -78,7 +78,11 @@ dev = [
     # Used for `pybabel extract / init / update / compile` -- see Makefile.
     # Runtime translation uses the stdlib ``gettext`` only; Babel is dev-only.
     "babel>=2.16",
+    "pytest>=8.0",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ntasker"]

@@ -1,30 +1,19 @@
 ---
 name: ntasker
 description: >
-  ntasker -- lightweight local task tracker (FastAPI + SQLite).
-  ALWAYS load this skill BEFORE running any `ntasker` CLI command or
-  calling http://127.0.0.1:8766 -- never drive the tracker from
-  `--help` output or from memory.
-  Load whenever tasks, todos or Aufgaben are in play as trackable items,
-  in English or German, any casing/inflection/prefix: "task", "ntask",
-  "nTask", "ntasker", "nTasker", "Aufgabe", "Aufgaben", "todo", "TODO",
-  "Tracker", "tasks.db", "nerdocs-tracker" (legacy alias), #<digits>,
-  Task #N, TODO #N, "Aufgaben-Liste" -- and any write-command ("create a
-  task", "add a todo", "leg einen Task an", "trag das ein", "neuer
-  Task", "erstelle einen ntask", "als Task/ntask anlegen", "der
-  ntask/Task ist das Deliverable").
-  Also load when the user asks for open tasks or what to do next in the
-  current project ("offene Tasks", "open tasks", "was soll ich als
-  nächstes machen", "what should I work on next", "what's next", "nächste
-  Aufgabe", "woran arbeiten", "todo in diesem Projekt") -- then suggest
-  the next tasks ranked by urgency (see section 3.1).
-  When in doubt whether "task"/"Aufgabe" refers to the tracker: load the
-  skill anyway -- loading is cheap, missing it is not.
-  Hard rule: NO agent creates, deletes or closes tasks autonomously. The
-  autonomous writes are moving a task to phase=wip when started via /task
-  (since v2.2.0) and to phase=review on completion (since v1.5.0);
-  status=done is allowed ONLY on the user's explicit instruction, archival
-  stays user-only.
+  ntasker -- lightweight local task tracker (FastAPI + SQLite). ALWAYS load
+  BEFORE any `ntasker` CLI command or call to http://127.0.0.1:8766 -- never
+  drive the tracker from `--help` or memory. Load whenever tasks/todos/Aufgaben
+  are in play as trackable items, EN or DE, any casing/inflection: task, ntask,
+  nTasker, Aufgabe(n), todo, Tracker, tasks.db, nerdocs-tracker (legacy),
+  #<digits>, Task #N -- including write commands ("create a task", "leg einen
+  Task an", "neuer Task", "als ntask anlegen"). Also load when asked for open
+  tasks or what to do next in this project ("offene Tasks", "was soll ich als
+  nächstes machen", "what's next") -- then rank by urgency (section 3.1). In
+  doubt, load anyway. Hard rule: NO agent creates, deletes or closes tasks
+  autonomously. Allowed autonomous writes: phase=wip when started via /task,
+  phase=review on completion. status=done only on explicit user instruction;
+  archival stays user-only.
 ---
 
 # ntasker Skill

@@ -896,6 +896,16 @@ def browse(path: str, roots: list[Path]) -> dict[str, Any]:
             "forbidden",
             _("Path lies outside every configured workspace directory."),
         )
+    return list_directory(target, is_root=any(target == root for root in roots))
+
+
+def list_directory(target: Path, is_root: bool = False) -> dict[str, Any]:
+    """Listing payload for an already-resolved, already-authorised directory.
+
+    Shared by :func:`browse` (workspace roots) and the file picker's
+    machine-wide browser, where the only boundary is the filesystem root.
+    ``is_root`` marks the point where "up" stops (``parent`` is ``""``).
+    """
     if not target.is_dir():
         raise PreviewError("not_found", _("No such directory."))
 
@@ -929,7 +939,8 @@ def browse(path: str, roots: list[Path]) -> dict[str, Any]:
         )
 
     entries.sort(key=lambda e: (not e["directory"], e["name"].lower()))
-    is_root = any(target == root for root in roots)
+    if target.parent == target:
+        is_root = True
     return {
         "path": str(target),
         "name": target.name,
@@ -1289,6 +1300,63 @@ def open_with_desktop(target: Path) -> dict[str, Any]:
             "invalid", _("Could not open it: {error}").format(error=exc)
         ) from exc
     return {"path": str(target), "opened": True}
+
+
+# ---------------------------------------------------------------------------
+# Places -- Finder-style shortcuts for the machine-wide file browser
+# ---------------------------------------------------------------------------
+
+
+def fs_places(roots: list[Path] | None = None) -> list[dict[str, str]]:
+    """Sidebar entries for the file picker: home folders, cloud drives,
+    the configured workspace roots and mounted volumes -- only those that
+    exist. Mirrors what the Finder sidebar shows, because that is the
+    mental map the user already has for where a file lives."""
+    import sys  # noqa: PLC0415
+
+    home = Path.home()
+    out: list[dict[str, str]] = []
+    seen: set[str] = set()
+
+    def add(name: str, path: Path, icon: str) -> None:
+        try:
+            if not path.is_dir():
+                return
+            key = str(path.resolve())
+        except OSError:
+            return
+        if key in seen:
+            return
+        seen.add(key)
+        out.append({"name": name, "path": key, "icon": icon})
+
+    add(N_("Home"), home, "ti-home")
+    add(N_("Desktop"), home / "Desktop", "ti-device-desktop")
+    add(N_("Documents"), home / "Documents", "ti-file-text")
+    add(N_("Downloads"), home / "Downloads", "ti-download")
+    add("Code", home / "Code", "ti-code")
+    add("iCloud Drive", home / "Library" / "Mobile Documents" / "com~apple~CloudDocs", "ti-cloud")
+    cloud = home / "Library" / "CloudStorage"
+    if cloud.is_dir():
+        try:
+            for entry in sorted(cloud.iterdir(), key=lambda p: p.name.lower()):
+                if entry.is_dir() and not entry.name.startswith("."):
+                    add(entry.name, entry, "ti-cloud")
+        except OSError:
+            pass
+    for root in roots or []:
+        add(root.name or str(root), root, "ti-folder-star")
+    if sys.platform == "darwin":
+        volumes = Path("/Volumes")
+        if volumes.is_dir():
+            try:
+                for entry in sorted(volumes.iterdir(), key=lambda p: p.name.lower()):
+                    if entry.is_dir() and not entry.name.startswith("."):
+                        add(entry.name, entry, "ti-database")
+            except OSError:
+                pass
+    add("/", Path("/"), "ti-server")
+    return out
 
 
 # ---------------------------------------------------------------------------

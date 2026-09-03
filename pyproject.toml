@@ -86,3 +86,9 @@ packages = ["src/ntasker"]
 # including ``locale/<lang>/LC_MESSAGES/ntasker.{po,mo}`` and ``ntasker.pot``.
 # Listed explicitly only for visibility -- no force-include trick (lesson
 # learned in v1.2.2/v1.2.3: force-include duplicates files in the wheel).
+
+[tool.uv]
+# `uv tool install <this dir>` caches the built wheel and only rebuilds
+# when pyproject.toml changes -- so an uncommitted source edit at the
+# same version would be installed stale. Key the cache on the sources too.
+cache-keys = [{ file = "pyproject.toml" }, { file = "src/**/*" }]

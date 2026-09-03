@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: ntasker 1.3.0\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-09-03 10:30+0200\n"
+"POT-Creation-Date: 2026-09-03 11:20+0200\n"
 "PO-Revision-Date: 2026-05-02 09:19+0200\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: de\n"
@@ -970,7 +970,7 @@ msgstr "Wissensdatenbank"
 msgid "Team"
 msgstr "Team"
 
-#: src/ntasker/app.py:677
+#: src/ntasker/app.py:677 src/ntasker/workspace.py:1335
 msgid "Documents"
 msgstr "Dokumente"
 
@@ -1088,7 +1088,7 @@ msgstr "Pfad kopieren"
 msgid "Copied"
 msgstr "Kopiert"
 
-#: src/ntasker/app.py:712 src/ntasker/app.py:792
+#: src/ntasker/app.py:712 src/ntasker/app.py:800
 msgid "MCP servers"
 msgstr "MCP-Server"
 
@@ -1110,7 +1110,7 @@ msgstr ""
 "Dieser Server kann nicht starten – seine Laufzeitumgebung liegt nicht im "
 "PATH."
 
-#: src/ntasker/app.py:719 src/ntasker/app.py:796
+#: src/ntasker/app.py:719 src/ntasker/app.py:804
 msgid "Transport"
 msgstr "Transport"
 
@@ -1262,11 +1262,14 @@ msgstr "Datei"
 msgid ""
 "Any file or folder on this computer. The agent gets the path and reads it"
 " when it needs to -- no more pasting paths into the description."
-msgstr "Beliebige Datei oder Ordner auf diesem Rechner. Der Agent bekommt den Pfad und liest die Datei bei Bedarf -- kein Pfad-Kopieren in die Beschreibung mehr."
+msgstr ""
+"Beliebige Datei oder Ordner auf diesem Rechner. Der Agent bekommt den "
+"Pfad und liest die Datei bei Bedarf -- kein Pfad-Kopieren in die "
+"Beschreibung mehr."
 
 #: src/ntasker/app.py:770
-msgid "Paste a path, e.g. ~/Desktop/report.pdf (one per line)"
-msgstr "Pfad einfügen, z. B. ~/Desktop/Bericht.pdf (einer pro Zeile)"
+msgid "Paste a path, e.g. ~/Desktop/report.pdf"
+msgstr "Pfad einfügen, z. B. ~/Desktop/Bericht.pdf"
 
 #: src/ntasker/app.py:771
 msgid "Add"
@@ -1300,27 +1303,60 @@ msgstr "Erst den Task anlegen -- danach öffnet sich die Datei von hier aus."
 msgid "Folder"
 msgstr "Ordner"
 
+#: src/ntasker/app.py:779
+msgid "Places"
+msgstr "Orte"
+
 #: src/ntasker/app.py:780
+msgid "Up one level"
+msgstr "Eine Ebene nach oben"
+
+#: src/ntasker/app.py:781
+msgid "Attach this folder"
+msgstr "Diesen Ordner anhängen"
+
+#: src/ntasker/app.py:782
+msgid "Filter this folder…"
+msgstr "In diesem Ordner filtern…"
+
+#: src/ntasker/app.py:783
+msgid "This folder is empty."
+msgstr "Dieser Ordner ist leer."
+
+#: src/ntasker/app.py:784
+#, python-brace-format
+msgid "Only the first {n} entries are shown."
+msgstr "Nur die ersten {n} Einträge werden angezeigt."
+
+#: src/ntasker/app.py:785
+msgid "Could not open that folder."
+msgstr "Der Ordner konnte nicht geöffnet werden."
+
+#: src/ntasker/app.py:786
+msgid "Or paste a path:"
+msgstr "Oder Pfad einfügen:"
+
+#: src/ntasker/app.py:788
 msgid "JCBrain"
 msgstr "JCBrain"
 
-#: src/ntasker/app.py:781
+#: src/ntasker/app.py:789
 msgid "JCBrain note"
 msgstr "JCBrain-Notiz"
 
-#: src/ntasker/app.py:782
+#: src/ntasker/app.py:790
 msgid "Type to search your JCBrain notes by meaning."
 msgstr "Tippen, um JCBrain-Notizen nach Bedeutung zu durchsuchen."
 
-#: src/ntasker/app.py:783
+#: src/ntasker/app.py:791
 msgid "Searching JCBrain…"
 msgstr "JCBrain wird durchsucht…"
 
-#: src/ntasker/app.py:784
+#: src/ntasker/app.py:792
 msgid "No notes match."
 msgstr "Keine passenden Notizen."
 
-#: src/ntasker/app.py:786
+#: src/ntasker/app.py:794
 msgid ""
 "JCBrain is not configured -- add the MCP server to ~/.claude.json "
 "(setting: brain_server)."
@@ -1328,19 +1364,19 @@ msgstr ""
 "JCBrain ist nicht konfiguriert -- MCP-Server in ~/.claude.json eintragen "
 "(Einstellung: brain_server)."
 
-#: src/ntasker/app.py:789
+#: src/ntasker/app.py:797
 msgid "Could not reach JCBrain."
 msgstr "JCBrain ist nicht erreichbar."
 
-#: src/ntasker/app.py:790
+#: src/ntasker/app.py:798
 msgid "Captured"
 msgstr "Erfasst"
 
-#: src/ntasker/app.py:793
+#: src/ntasker/app.py:801
 msgid "MCP server"
 msgstr "MCP-Server"
 
-#: src/ntasker/app.py:794
+#: src/ntasker/app.py:802
 msgid ""
 "Servers declared in ~/.claude.json. Attaching one tells the agent to use "
 "its tools for this task."
@@ -1348,134 +1384,139 @@ msgstr ""
 "In ~/.claude.json eingetragene Server. Ein Anhang sagt dem Agenten, die "
 "Tools dieses Servers für die Aufgabe zu nutzen."
 
-#: src/ntasker/app.py:795
+#: src/ntasker/app.py:803
 msgid "runtime missing"
 msgstr "Runtime fehlt"
 
-#: src/ntasker/app.py:797
+#: src/ntasker/app.py:805
 msgid "Command"
 msgstr "Befehl"
 
-#: src/ntasker/app.py:798
+#: src/ntasker/app.py:806
 msgid "This server is no longer declared in ~/.claude.json."
 msgstr "Dieser Server ist nicht mehr in ~/.claude.json eingetragen."
 
-#: src/ntasker/app.py:799
+#: src/ntasker/app.py:807
 msgid "Plugin"
 msgstr "Plugin"
 
-#: src/ntasker/app.py:800
+#: src/ntasker/app.py:808
 msgid "Bundles:"
 msgstr "Enthält:"
 
-#: src/ntasker/app.py:1267
+#: src/ntasker/app.py:1275
 msgid "Cross-site requests may not change files."
 msgstr "Cross-Site-Anfragen dürfen keine Dateien ändern."
 
-#: src/ntasker/app.py:1403 src/ntasker/app.py:1419
+#: src/ntasker/app.py:1411 src/ntasker/app.py:1427
 msgid "Setting not found"
 msgstr "Setting nicht gefunden"
 
-#: src/ntasker/app.py:1519 src/ntasker/app.py:2101 src/ntasker/app.py:2241
-#: src/ntasker/app.py:2245 src/ntasker/app.py:2372 src/ntasker/app.py:2575
+#: src/ntasker/app.py:1527 src/ntasker/app.py:2109 src/ntasker/app.py:2249
+#: src/ntasker/app.py:2253 src/ntasker/app.py:2380 src/ntasker/app.py:2619
 msgid "Task not found"
 msgstr "Aufgabe nicht gefunden"
 
-#: src/ntasker/app.py:1637 src/ntasker/app.py:1673
+#: src/ntasker/app.py:1645 src/ntasker/app.py:1681
 msgid "Invalid project name"
 msgstr "Ungültiger Projektname"
 
-#: src/ntasker/app.py:1760
+#: src/ntasker/app.py:1768
 msgid "Target tag is empty."
 msgstr "Ziel-Tag ist leer."
 
-#: src/ntasker/app.py:2111
+#: src/ntasker/app.py:2119
 msgid "A task cannot depend on itself."
 msgstr "Eine Aufgabe kann nicht von sich selbst abhängen."
 
-#: src/ntasker/app.py:2113
+#: src/ntasker/app.py:2121
 #, python-brace-format
 msgid "Dependency task #{id} does not exist."
 msgstr "Abhängigkeit: Aufgabe #{id} existiert nicht."
 
-#: src/ntasker/app.py:2115
+#: src/ntasker/app.py:2123
 #, python-brace-format
 msgid "That dependency would create a cycle (via task #{id})."
 msgstr "Diese Abhängigkeit würde einen Zyklus erzeugen (über Aufgabe #{id})."
 
-#: src/ntasker/app.py:2137 src/ntasker/app.py:2194
+#: src/ntasker/app.py:2145 src/ntasker/app.py:2202
 msgid "Invalid priority"
 msgstr "Ungültige Priorität"
 
-#: src/ntasker/app.py:2139 src/ntasker/app.py:2197
+#: src/ntasker/app.py:2147 src/ntasker/app.py:2205
 msgid "Invalid agent"
 msgstr "Ungültiger Agent"
 
-#: src/ntasker/app.py:2188
+#: src/ntasker/app.py:2196
 msgid "No fields to update"
 msgstr "Keine Felder zum Aktualisieren"
 
-#: src/ntasker/app.py:2207
+#: src/ntasker/app.py:2215
 msgid "Invalid phase"
 msgstr "Ungültige Phase"
 
-#: src/ntasker/app.py:2282
+#: src/ntasker/app.py:2290
 #, python-brace-format
 msgid "Unknown context kind: {kind}"
 msgstr "Unbekannte Kontextart: {kind}"
 
-#: src/ntasker/app.py:2296 src/ntasker/app.py:2435 src/ntasker/brain.py:279
+#: src/ntasker/app.py:2304 src/ntasker/app.py:2443 src/ntasker/brain.py:279
 #, python-brace-format
 msgid "Not a JCBrain thought id: {value}"
 msgstr "Keine JCBrain-Notiz-ID: {value}"
 
-#: src/ntasker/app.py:2303
+#: src/ntasker/app.py:2311
 msgid "A brain:// path needs kind 'brain'."
 msgstr "Ein brain://-Pfad braucht die Art 'brain'."
 
-#: src/ntasker/app.py:2316
+#: src/ntasker/app.py:2324
 #, python-brace-format
 msgid "No MCP server named {name} in ~/.claude.json."
 msgstr "Kein MCP-Server namens {name} in ~/.claude.json."
 
-#: src/ntasker/app.py:2323
+#: src/ntasker/app.py:2331
 msgid "An mcp:// path needs kind 'mcp'."
 msgstr "Ein mcp://-Pfad braucht die Art 'mcp'."
 
-#: src/ntasker/app.py:2342 src/ntasker/app.py:2344 src/ntasker/app.py:2355
-#: src/ntasker/app.py:2553 src/ntasker/app.py:2559
-#: src/ntasker/workspace.py:1145 src/ntasker/workspace.py:1175
-#: src/ntasker/workspace.py:1271
+#: src/ntasker/app.py:2350 src/ntasker/app.py:2352 src/ntasker/app.py:2363
+#: src/ntasker/app.py:2597 src/ntasker/app.py:2603
+#: src/ntasker/workspace.py:1156 src/ntasker/workspace.py:1186
+#: src/ntasker/workspace.py:1282
 msgid "No such file or directory."
 msgstr "Datei oder Verzeichnis nicht gefunden."
 
-#: src/ntasker/app.py:2352 src/ntasker/workspace.py:796
-#: src/ntasker/workspace.py:897 src/ntasker/workspace.py:1006
-#: src/ntasker/workspace.py:1109 src/ntasker/workspace.py:1256
+#: src/ntasker/app.py:2360 src/ntasker/workspace.py:796
+#: src/ntasker/workspace.py:897 src/ntasker/workspace.py:1017
+#: src/ntasker/workspace.py:1120 src/ntasker/workspace.py:1267
 msgid "Path lies outside every configured workspace directory."
 msgstr ""
 "Der Pfad liegt außerhalb aller konfigurierten Arbeitsumgebungs-"
 "Verzeichnisse."
 
-#: src/ntasker/app.py:2450 src/ntasker/app.py:2469 src/ntasker/app.py:2491
+#: src/ntasker/app.py:2458 src/ntasker/app.py:2477 src/ntasker/app.py:2499
 msgid "Attachment not found"
 msgstr "Anhang nicht gefunden"
 
-#: src/ntasker/app.py:2471 src/ntasker/app.py:2493
+#: src/ntasker/app.py:2479 src/ntasker/app.py:2501
 msgid "This attachment is not a file."
 msgstr "Dieser Anhang ist keine Datei."
 
-#: src/ntasker/app.py:2529 src/ntasker/workspace.py:1331
+#: src/ntasker/app.py:2537 src/ntasker/workspace.py:1399
 msgid "No native file dialog is available here."
 msgstr "Auf diesem System gibt es keinen nativen Datei-Dialog."
 
-#: src/ntasker/app.py:2531
+#: src/ntasker/app.py:2539
 msgid "Choose a folder to attach"
 msgstr "Ordner zum Anhängen wählen"
 
-#: src/ntasker/app.py:2531
+#: src/ntasker/app.py:2539
 msgid "Choose files to attach"
 msgstr "Dateien zum Anhängen wählen"
+
+#: src/ntasker/app.py:2552
+#, fuzzy
+msgid "name"
+msgstr "Umbenennen"
 
 #: src/ntasker/brain.py:153
 msgid "JCBrain returned an empty reply."
@@ -2609,12 +2650,12 @@ msgstr ""
 "nichts gelesen werden."
 
 #: src/ntasker/workspace.py:790 src/ntasker/workspace.py:891
-#: src/ntasker/workspace.py:987
+#: src/ntasker/workspace.py:998
 #, python-brace-format
 msgid "Path cannot be resolved: {error}"
 msgstr "Pfad kann nicht aufgelöst werden: {error}"
 
-#: src/ntasker/workspace.py:826 src/ntasker/workspace.py:1047
+#: src/ntasker/workspace.py:826 src/ntasker/workspace.py:1058
 msgid "No such file."
 msgstr "Datei nicht gefunden."
 
@@ -2623,17 +2664,17 @@ msgstr "Datei nicht gefunden."
 msgid "File is {size} bytes; the preview limit is {limit}."
 msgstr "Die Datei hat {size} Bytes; das Vorschau-Limit liegt bei {limit}."
 
-#: src/ntasker/workspace.py:900 src/ntasker/workspace.py:1112
+#: src/ntasker/workspace.py:910 src/ntasker/workspace.py:1123
 msgid "No such directory."
 msgstr "Verzeichnis nicht gefunden."
 
-#: src/ntasker/workspace.py:1001 src/ntasker/workspace.py:1104
+#: src/ntasker/workspace.py:1012 src/ntasker/workspace.py:1115
 msgid "No workspace directories are configured, so nothing may be changed."
 msgstr ""
 "Es sind keine Arbeitsumgebungs-Verzeichnisse konfiguriert, also darf "
 "nichts geändert werden."
 
-#: src/ntasker/workspace.py:1011
+#: src/ntasker/workspace.py:1022
 msgid ""
 "This is a configured workspace directory itself -- it cannot be renamed "
 "or deleted from here."
@@ -2641,68 +2682,80 @@ msgstr ""
 "Das ist selbst ein konfiguriertes Arbeitsumgebungs-Verzeichnis -- es "
 "lässt sich von hier aus nicht umbenennen oder löschen."
 
-#: src/ntasker/workspace.py:1021
+#: src/ntasker/workspace.py:1032
 msgid "The name must not be empty."
 msgstr "Der Name darf nicht leer sein."
 
-#: src/ntasker/workspace.py:1023
+#: src/ntasker/workspace.py:1034
 msgid "That name is reserved."
 msgstr "Dieser Name ist reserviert."
 
-#: src/ntasker/workspace.py:1027
+#: src/ntasker/workspace.py:1038
 #, python-brace-format
 msgid "The name must not contain any of: {chars}"
 msgstr "Der Name darf keines dieser Zeichen enthalten: {chars}"
 
-#: src/ntasker/workspace.py:1032
+#: src/ntasker/workspace.py:1043
 msgid "The name is too long (max 255 characters)."
 msgstr "Der Name ist zu lang (maximal 255 Zeichen)."
 
-#: src/ntasker/workspace.py:1051
+#: src/ntasker/workspace.py:1062
 #, python-brace-format
 msgid "Files of type {suffix} cannot be edited here."
 msgstr "Dateien vom Typ {suffix} lassen sich hier nicht bearbeiten."
 
-#: src/ntasker/workspace.py:1061
+#: src/ntasker/workspace.py:1072
 #, python-brace-format
 msgid "File is {size} bytes; the write limit is {limit}."
 msgstr "Die Datei hat {size} Bytes; das Schreib-Limit liegt bei {limit}."
 
-#: src/ntasker/workspace.py:1089
+#: src/ntasker/workspace.py:1100
 #, python-brace-format
 msgid "Could not write the file: {error}"
 msgstr "Schreiben fehlgeschlagen: {error}"
 
-#: src/ntasker/workspace.py:1121 src/ntasker/workspace.py:1152
+#: src/ntasker/workspace.py:1132 src/ntasker/workspace.py:1163
 #, python-brace-format
 msgid "{name} already exists here."
 msgstr "{name} gibt es hier schon."
 
-#: src/ntasker/workspace.py:1130
+#: src/ntasker/workspace.py:1141
 #, python-brace-format
 msgid "Could not create it: {error}"
 msgstr "Anlegen fehlgeschlagen: {error}"
 
-#: src/ntasker/workspace.py:1158
+#: src/ntasker/workspace.py:1169
 #, python-brace-format
 msgid "Could not rename it: {error}"
 msgstr "Umbenennen fehlgeschlagen: {error}"
 
-#: src/ntasker/workspace.py:1239
+#: src/ntasker/workspace.py:1250
 #, python-brace-format
 msgid "Could not move it to the trash: {error}"
 msgstr "Verschieben in den Papierkorb fehlgeschlagen: {error}"
 
-#: src/ntasker/workspace.py:1280
+#: src/ntasker/workspace.py:1291
 msgid "No desktop opener (xdg-open) is available."
 msgstr "Es ist kein Desktop-Öffner (xdg-open) verfügbar."
 
-#: src/ntasker/workspace.py:1289
+#: src/ntasker/workspace.py:1300
 #, python-brace-format
 msgid "Could not open it: {error}"
 msgstr "Öffnen fehlgeschlagen: {error}"
 
-#: src/ntasker/workspace.py:1376
+#: src/ntasker/workspace.py:1333
+msgid "Home"
+msgstr "Benutzerordner"
+
+#: src/ntasker/workspace.py:1334
+msgid "Desktop"
+msgstr "Schreibtisch"
+
+#: src/ntasker/workspace.py:1336
+msgid "Downloads"
+msgstr "Downloads"
+
+#: src/ntasker/workspace.py:1444
 #, python-brace-format
 msgid "Could not open the file dialog: {error}"
 msgstr "Der Datei-Dialog konnte nicht geöffnet werden: {error}"

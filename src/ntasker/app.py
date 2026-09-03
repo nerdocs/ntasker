@@ -767,7 +767,7 @@ def build_js_strings() -> dict[str, str]:
             "Any file or folder on this computer. The agent gets the path and "
             "reads it when it needs to -- no more pasting paths into the description."
         ),
-        "ws_file_path_placeholder": _("Paste a path, e.g. ~/Desktop/report.pdf (one per line)"),
+        "ws_file_path_placeholder": _("Paste a path, e.g. ~/Desktop/report.pdf"),
         "ws_file_add": _("Add"),
         "ws_file_choose": _("Choose files…"),
         "ws_file_choose_folder": _("Choose folder…"),
@@ -776,6 +776,14 @@ def build_js_strings() -> dict[str, str]:
         "ws_file_none": _("No files attached yet."),
         "ws_file_preview_after_create": _("Create the task first -- then the file opens from here."),
         "ws_folder": _("Folder"),
+        "ws_fs_places": _("Places"),
+        "ws_fs_up": _("Up one level"),
+        "ws_fs_attach_folder": _("Attach this folder"),
+        "ws_fs_filter": _("Filter this folder…"),
+        "ws_fs_empty": _("This folder is empty."),
+        "ws_fs_truncated": _("Only the first {n} entries are shown."),
+        "ws_fs_browse_failed": _("Could not open that folder."),
+        "ws_fs_or_path": _("Or paste a path:"),
         # JCBrain notes as context
         "ws_brain": _("JCBrain"),
         "ws_brain_note": _("JCBrain note"),
@@ -2534,6 +2542,42 @@ def api_fs_pick(request: Request, payload: PickRequest) -> JSONResponse:
     except workspace.WriteError as exc:
         raise _write_guard(exc) from exc
     return JSONResponse({"paths": paths})
+
+
+@app.get("/api/fs/places")
+def api_fs_places(request: Request) -> JSONResponse:
+    """Finder-style shortcuts for the file picker's browser."""
+    _require_local_origin(request)
+    places = workspace.fs_places(_workspace_roots())
+    return JSONResponse([{**p, "name": _(p["name"])} for p in places])
+
+
+@app.get("/api/fs/browse")
+def api_fs_browse(
+    request: Request,
+    path: str = Query("", description="Directory to list; empty = home"),
+) -> JSONResponse:
+    """List any directory on this machine for the file picker.
+
+    The workspace browser stops at the configured roots; this one is the
+    Finder in the modal -- the whole point of a ``file`` attachment is
+    reaching the spreadsheet on the Desktop. Same Origin rule as the
+    other filesystem endpoints, and names only: contents still go
+    through the attachment-row preview.
+    """
+    _require_local_origin(request)
+    raw = path.strip() or "~"
+    try:
+        target = Path(os.path.expandvars(os.path.expanduser(raw))).resolve()
+    except (OSError, RuntimeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    try:
+        return JSONResponse(workspace.list_directory(target))
+    except workspace.PreviewError as exc:
+        status = {"forbidden": 403, "not_found": 404, "too_large": 413}.get(
+            exc.reason, 400
+        )
+        raise HTTPException(status_code=status, detail=str(exc)) from exc
 
 
 @app.get("/api/fs/resolve")

@@ -591,6 +591,13 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // not asked yet; the buttons stay hidden until it says yes.
         pickerNative: null,
 
+        // Finder-style browser inside the Files tab: the listing of one
+        // directory plus the sidebar of places. `path` is the directory
+        // shown; the last one visited is remembered per browser so the
+        // picker reopens where the user left off.
+        fsb: { path: '', name: '', parent: '', entries: [], loading: false, error: '', truncated: false },
+        fsPlaces: [],
+
         // JCBrain tab state. Unlike the file tabs there is no inventory to
         // filter client-side: every query is a semantic search on the
         // server, so results live here, keyed by the query they answer.
@@ -604,6 +611,82 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             this.loadWorkspace();
             this.loadBrainStatus();
             this.loadPickerNative();
+            this.loadFsPlaces();
+            this.fsBrowse(this.fsb.path || this._fsLastDir() || '');
+        },
+
+        _fsLastDir() {
+            try { return localStorage.getItem('ntasker.fs.lastDir') || ''; } catch (e) { return ''; }
+        },
+
+        async loadFsPlaces() {
+            if (this.fsPlaces.length) return;
+            try {
+                const res = await fetch('/api/fs/places');
+                if (res.ok) this.fsPlaces = await res.json();
+            } catch (e) {
+                // No places -- the breadcrumb and path box still work.
+            }
+        },
+
+        // List one directory. A failure keeps the previous listing on
+        // screen with the error above it, so a dead path does not strand
+        // the user in an empty modal.
+        async fsBrowse(path) {
+            this.fsb.loading = true;
+            this.fsb.error = '';
+            try {
+                const res = await fetch('/api/fs/browse?path=' + encodeURIComponent(path || ''));
+                if (!res.ok) {
+                    this.fsb.error = await WS.errorDetail(res, _i('ws_fs_browse_failed'));
+                    return;
+                }
+                const dir = await res.json();
+                Object.assign(this.fsb, {
+                    path: dir.path, name: dir.name, parent: dir.parent,
+                    entries: dir.entries, truncated: dir.truncated,
+                });
+                this.picker.q = '';
+                try { localStorage.setItem('ntasker.fs.lastDir', dir.path); } catch (e) { /* private mode */ }
+            } catch (e) {
+                this.fsb.error = _i('ws_fs_browse_failed');
+            } finally {
+                this.fsb.loading = false;
+            }
+        },
+
+        // Breadcrumb segments for the current directory -- each one is a
+        // click target, like the Finder's path bar.
+        get fsCrumbs() {
+            const p = this.fsb.path || '';
+            if (!p) return [];
+            const parts = p.split('/').filter(Boolean);
+            const crumbs = [{ name: '/', path: '/' }];
+            let acc = '';
+            for (const part of parts) {
+                acc += '/' + part;
+                crumbs.push({ name: part, path: acc });
+            }
+            return crumbs;
+        },
+
+        // Entries of the current directory, narrowed by the filter box.
+        get fsEntries() {
+            const q = (this.picker.q || '').trim().toLowerCase();
+            const all = this.fsb.entries || [];
+            if (!q) return all;
+            return all.filter(e => e.name.toLowerCase().includes(q));
+        },
+
+        // Click on a row: folders open, files attach. The folder itself is
+        // attached through its own paperclip button.
+        fsOpen(entry) {
+            if (entry.directory) return this.fsBrowse(entry.path);
+            return this.fsAttach(entry);
+        },
+
+        fsAttach(entry) {
+            return this.attachContext({ kind: 'file', path: entry.path, label: entry.name, is_dir: !!entry.directory });
         },
 
         // The picker's tabs. "Files" is always there -- it needs no
@@ -849,16 +932,8 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         },
 
         get pickerItems() {
-            if (this.picker.tab === 'files') {
-                // No inventory to browse -- the list is what is attached
-                // already, so a second look confirms the path landed.
-                const list = this.picker.target
-                    ? (this.picker.target.context || [])
-                    : this.form.context;
-                return list.filter(c => c.kind === 'file').map(c => ({
-                    kind: c.kind, label: c.label, sub: c.path, path: c.path, is_dir: c.is_dir,
-                }));
-            }
+            // The Files tab has its own browser (fsEntries), not a list.
+            if (this.picker.tab === 'files') return [];
             if (!this.ws) return [];
             const q = this.picker.q;
             if (this.picker.tab === 'team') {

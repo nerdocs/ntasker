@@ -56,21 +56,35 @@
     {# Sticky-positioned aside outside the .page wrapper. Tabler/Bootstrap surface vars #}
     {# drive the bg so dark-mode behaves. Sidebar has its own scroll context; the main #}
     {# page-wrapper scrolls independently. #}
+    {# Layout styles live on .tracker-sidebar in style.css -- the :style   #}
+    {# binding replaces the whole style attribute, so anything inline here #}
+    {# would be lost the moment Alpine sets the dragged width.             #}
     <aside class="tracker-sidebar d-none d-md-flex flex-column border-end p-3"
-           style="width: 280px; flex-shrink: 0; position: sticky; top: 0; align-self: flex-start; max-height: 100vh; overflow-y: auto; background-color: var(--tblr-bg-surface-secondary, var(--tblr-bg-surface));">
+           :style="'width:' + sidebarWidth + 'px'">
 
-        {# Projects section #}
+        {# Projects section. Every sidebar block follows the same shape: a #}
+        {# clickable header that toggles sectionOpen[key] (persisted), and  #}
+        {# a body wrapped in x-show. See toggleSection() in app.js.         #}
         <div class="d-flex align-items-center justify-content-between mb-2">
-            <span class="text-secondary text-uppercase small fw-bold">
-                <i class="ti ti-folders me-1"></i>
-                {{ t('Projects') }}
-            </span>
+            <button type="button" class="btn btn-ghost-secondary px-0 py-0 border-0 flex-fill text-start sidebar-section-toggle"
+                    @click="toggleSection('projects')"
+                    :aria-expanded="sectionOpen.projects">
+                <span class="text-secondary text-uppercase small fw-bold">
+                    <i class="ti fs-3 sidebar-caret"
+                       :class="sectionOpen.projects ? 'ti-chevron-down' : 'ti-chevron-right'"></i>
+                    <i class="ti ti-folders me-1"></i>
+                    {{ t('Projects') }}
+                </span>
+            </button>
             <button type="button" class="btn btn-sm btn-ghost-secondary px-2 py-0"
+                    x-show="sectionOpen.projects"
                     @click="toggleAllProjects()"
                     :title="allProjectsActive ? $i18n('deselect_all') : $i18n('select_all')">
                 <i class="ti fs-3" :class="allProjectsActive ? 'ti-square-off' : 'ti-square-check'"></i>
             </button>
         </div>
+
+        <div x-show="sectionOpen.projects">
 
         {# Projects with no open tasks are hidden by default to cut clutter; #}
         {# this switch (persisted) reveals them. Only shown when there is at #}
@@ -82,72 +96,173 @@
             <span class="form-check-label small text-secondary">{{ t('Show empty projects') }}</span>
         </label>
 
+        {# Reveal switch for hidden projects -- restore-mode, not persisted. #}
+        {# Only offered once something is actually hidden.                   #}
+        <label class="form-check form-switch mb-2" x-show="hasHiddenProjects" x-cloak>
+            <input class="form-check-input" type="checkbox" x-model="showHiddenProjects">
+            <span class="form-check-label small text-secondary"
+                  x-text="$i18n('show_hidden_projects')"></span>
+        </label>
+
         <div class="text-muted small mb-2" x-show="projectFilter.length === 0 && tagFilter.length === 0">
             {{ t('No filter active -- all tasks visible.') }}
         </div>
 
-        {# Cross-project sentinel #}
-        <template x-for="proj in visibleProjects" :key="proj.name">
+        {# Cross-project sentinel: always ungrouped at the top. #}
+        <template x-if="crossProjectRow">
             <label class="form-check d-flex align-items-center w-100 mb-1"
-                   :title="proj.name === '__none__' ? $i18n('tasks_without_project') : proj.name">
+                   :title="$i18n('tasks_without_project')">
                 <input type="checkbox" class="form-check-input"
-                       :checked="projectFilter.includes(proj.name)"
-                       @change="toggleProject(proj.name)">
-                <span class="form-check-label ms-2 text-truncate flex-fill d-flex align-items-center">
-                    <template x-if="proj.name === '__none__'">
-                        <span>
-                            <i class="ti ti-asterisk me-1 text-secondary"></i>
-                            <span x-text="$i18n('cross_project')"></span>
-                        </span>
-                    </template>
-                    <template x-if="proj.name !== '__none__'">
-                        <span x-text="proj.name"></span>
-                    </template>
+                       :checked="projectFilter.includes('__none__')"
+                       @change="toggleProject('__none__')">
+                <span class="form-check-label ms-2 text-truncate flex-fill">
+                    <i class="ti ti-asterisk me-1 text-secondary"></i>
+                    <span x-text="$i18n('cross_project')"></span>
                 </span>
-                <span class="badge bg-secondary-lt ms-2" x-text="proj.open_count"></span>
-                {# Quick "+": open the new-task form pre-filled with this project. #}
-                {# Skipped for the cross-project sentinel (no project to seed). #}
-                <template x-if="proj.name !== '__none__'">
-                    <button type="button" class="btn btn-sm btn-ghost-secondary px-1 py-0 ms-1 project-add-btn"
-                            @click.stop.prevent="newTaskForProject(proj.name)"
-                            :title="$i18n('new_task_for_project')"
-                            :aria-label="$i18n('new_task_for_project')">
-                        <i class="ti ti-plus"></i>
-                    </button>
-                </template>
-                {# Quick run: skip the form entirely -- create a throwaway task #}
-                {# in this project and open a live agent session with a blank    #}
-                {# prompt. Hidden when the default agent's CLI isn't launchable. #}
-                <template x-if="proj.name !== '__none__' && agentAvailable(defaultAgent)">
-                    <button type="button" class="btn btn-sm btn-ghost-secondary px-1 py-0 ms-1 project-add-btn"
-                            @click.stop.prevent="quickRunForProject(proj.name)"
-                            :title="$i18n('quick_run_for_project') + ' (' + agentLabel(defaultAgent) + ')'"
-                            :aria-label="$i18n('quick_run_for_project')">
-                        <img :src="agentIconUrl({})" class="claude-logo-icon" alt="">
-                    </button>
-                </template>
+                <span class="badge bg-secondary-lt ms-2" x-text="crossProjectRow.open_count"></span>
             </label>
+        </template>
+
+        {# Existing category names feed the inline editor's autocomplete. #}
+        <datalist id="project-cat-list">
+            <template x-for="c in knownCategories" :key="c">
+                <option :value="c"></option>
+            </template>
+        </datalist>
+
+        {# Projects, grouped by user-chosen category. While no category is #}
+        {# assigned anywhere, the grouping layer disappears entirely and the #}
+        {# list renders flat, exactly as before. Uncategorized projects form #}
+        {# the trailing group.                                                #}
+        <template x-for="group in projectGroups" :key="group.name ?? '__uncat__'">
+            <div>
+                <template x-if="hasProjectCategories">
+                    <button type="button"
+                            class="btn btn-ghost-secondary px-0 py-0 border-0 w-100 text-start sidebar-section-toggle mb-1"
+                            @click="toggleCatGroup(group.name)"
+                            :aria-expanded="catGroupOpen(group.name)">
+                        <span class="text-secondary small fw-bold">
+                            <i class="ti fs-3 sidebar-caret"
+                               :class="catGroupOpen(group.name) ? 'ti-chevron-down' : 'ti-chevron-right'"></i>
+                            <span x-text="group.name ?? $i18n('uncategorized')"
+                                  :class="!group.name && 'fst-italic'"></span>
+                        </span>
+                        <span class="badge bg-secondary-lt ms-1" x-text="group.projects.length"></span>
+                    </button>
+                </template>
+                <div x-show="!hasProjectCategories || catGroupOpen(group.name)"
+                     :class="hasProjectCategories && 'ps-2'">
+                <template x-for="proj in group.projects" :key="proj.name">
+                    <label class="form-check d-flex align-items-center w-100 mb-1"
+                           :title="proj.category ? `${proj.name} — ${proj.category}` : proj.name">
+                        <input type="checkbox" class="form-check-input"
+                               :checked="projectFilter.includes(proj.name)"
+                               @change="toggleProject(proj.name)">
+                        {# Inline category editor: replaces the name while open. #}
+                        <template x-if="catEditing === proj.name">
+                            <input type="text" class="form-control form-control-sm ms-2"
+                                   x-model="catInput" list="project-cat-list"
+                                   :placeholder="$i18n('category_placeholder')"
+                                   x-init="$nextTick(() => $el.focus())"
+                                   @click.stop.prevent
+                                   @keydown.enter.prevent="saveCategory(proj)"
+                                   @keydown.escape.stop="catEditing = null"
+                                   @blur="saveCategory(proj)">
+                        </template>
+                        <template x-if="catEditing !== proj.name">
+                            <span class="form-check-label ms-2 text-truncate flex-fill"
+                                  :class="proj.hidden && 'text-secondary fst-italic'">
+                                <span x-text="proj.name"></span>
+                            </span>
+                        </template>
+                        <span class="badge bg-secondary-lt ms-2" x-text="proj.open_count"
+                              x-show="catEditing !== proj.name"></span>
+                        {# Restore a hidden project -- only reachable while the #}
+                        {# reveal switch shows hidden rows at all.               #}
+                        <template x-if="proj.hidden">
+                            <button type="button" class="btn btn-sm btn-ghost-secondary px-1 py-0 ms-1"
+                                    @click.stop.prevent="setProjectHidden(proj, false)"
+                                    :title="$i18n('restore_project')"
+                                    :aria-label="$i18n('restore_project')">
+                                <i class="ti ti-eye"></i>
+                            </button>
+                        </template>
+                        {# Assign / change the category -- hover-revealed like the #}
+                        {# quick buttons below.                                     #}
+                        <button type="button" class="btn btn-sm btn-ghost-secondary px-1 py-0 ms-1 project-add-btn"
+                                x-show="catEditing !== proj.name && !proj.hidden"
+                                @click.stop.prevent="editCategory(proj)"
+                                :title="$i18n('assign_category')"
+                                :aria-label="$i18n('assign_category')">
+                            <i class="ti ti-category"></i>
+                        </button>
+                        {# One-click hide: takes the project out of the sidebar #}
+                        {# entirely (persisted), tasks stay untouched.           #}
+                        <button type="button" class="btn btn-sm btn-ghost-secondary px-1 py-0 ms-1 project-add-btn"
+                                x-show="catEditing !== proj.name && !proj.hidden"
+                                @click.stop.prevent="setProjectHidden(proj, true)"
+                                :title="$i18n('hide_project')"
+                                :aria-label="$i18n('hide_project')">
+                            <i class="ti ti-eye-off"></i>
+                        </button>
+                        {# Quick "+": open the new-task form pre-filled with this project. #}
+                        <button type="button" class="btn btn-sm btn-ghost-secondary px-1 py-0 ms-1 project-add-btn"
+                                x-show="catEditing !== proj.name && !proj.hidden"
+                                @click.stop.prevent="newTaskForProject(proj.name)"
+                                :title="$i18n('new_task_for_project')"
+                                :aria-label="$i18n('new_task_for_project')">
+                            <i class="ti ti-plus"></i>
+                        </button>
+                        {# Quick run: skip the form entirely -- create a throwaway task #}
+                        {# in this project and open a live agent session with a blank    #}
+                        {# prompt. Hidden when the default agent's CLI isn't launchable. #}
+                        <template x-if="agentAvailable(defaultAgent)">
+                            <button type="button" class="btn btn-sm btn-ghost-secondary px-1 py-0 ms-1 project-add-btn"
+                                    x-show="catEditing !== proj.name && !proj.hidden"
+                                    @click.stop.prevent="quickRunForProject(proj.name)"
+                                    :title="$i18n('quick_run_for_project') + ' (' + agentLabel(defaultAgent) + ')'"
+                                    :aria-label="$i18n('quick_run_for_project')">
+                                <img :src="agentIconUrl({})" class="claude-logo-icon" alt="">
+                            </button>
+                        </template>
+                    </label>
+                </template>
+                </div>
+            </div>
         </template>
 
         <div class="text-muted small mt-3" x-show="projects.length <= 1">
             {{ t('No project symlinks found.') }}
         </div>
+        </div>
 
-        {# Phases section -- always visible, fixed order (workflow) #}
+        {# Phases section -- fixed order (workflow) #}
         <hr class="my-3">
         <div class="d-flex align-items-center justify-content-between mb-2">
-            <span class="text-secondary text-uppercase small fw-bold">
-                <i class="ti ti-flag me-1"></i>
-                {{ t('Phases') }}
-            </span>
+            <button type="button" class="btn btn-ghost-secondary px-0 py-0 border-0 flex-fill text-start sidebar-section-toggle"
+                    @click="toggleSection('phases')"
+                    :aria-expanded="sectionOpen.phases">
+                <span class="text-secondary text-uppercase small fw-bold">
+                    <i class="ti fs-3 sidebar-caret"
+                       :class="sectionOpen.phases ? 'ti-chevron-down' : 'ti-chevron-right'"></i>
+                    <i class="ti ti-flag me-1"></i>
+                    {{ t('Phases') }}
+                </span>
+            </button>
+            {# Badge on a collapsed section: the filter stays in force while #}
+            {# hidden, and a silently active filter is a support ticket.     #}
+            <span class="badge bg-primary-lt ms-1" x-cloak
+                  x-show="!sectionOpen.phases && phaseFilter.length"
+                  x-text="phaseFilter.length"></span>
             <button type="button" class="btn btn-sm btn-ghost-secondary px-2 py-0"
-                    x-show="phaseFilter.length > 0"
+                    x-show="sectionOpen.phases && phaseFilter.length > 0"
                     @click="clearPhaseFilter()"
                     :title="$i18n('clear_phase_filter')">
                 <i class="ti ti-x fs-3"></i>
             </button>
         </div>
 
+        <div x-show="sectionOpen.phases">
         <template x-for="ph in phases" :key="ph.value">
             <label class="form-check d-flex align-items-center w-100 mb-1" :title="ph.label">
                 <input type="checkbox" class="form-check-input"
@@ -166,21 +281,33 @@
             </label>
         </template>
 
-        {# Priorities section -- always visible, fixed order (highest first) #}
+        </div>
+
+        {# Priorities section -- fixed order (highest first) #}
         <hr class="my-3">
         <div class="d-flex align-items-center justify-content-between mb-2">
-            <span class="text-secondary text-uppercase small fw-bold">
-                <i class="ti ti-flame me-1"></i>
-                {{ t('Priority') }}
-            </span>
+            <button type="button" class="btn btn-ghost-secondary px-0 py-0 border-0 flex-fill text-start sidebar-section-toggle"
+                    @click="toggleSection('priorities')"
+                    :aria-expanded="sectionOpen.priorities">
+                <span class="text-secondary text-uppercase small fw-bold">
+                    <i class="ti fs-3 sidebar-caret"
+                       :class="sectionOpen.priorities ? 'ti-chevron-down' : 'ti-chevron-right'"></i>
+                    <i class="ti ti-flame me-1"></i>
+                    {{ t('Priority') }}
+                </span>
+            </button>
+            <span class="badge bg-primary-lt ms-1" x-cloak
+                  x-show="!sectionOpen.priorities && priorityFilter.length"
+                  x-text="priorityFilter.length"></span>
             <button type="button" class="btn btn-sm btn-ghost-secondary px-2 py-0"
-                    x-show="priorityFilter.length > 0"
+                    x-show="sectionOpen.priorities && priorityFilter.length > 0"
                     @click="clearPriorityFilter()"
                     :title="$i18n('clear_priority_filter')">
                 <i class="ti ti-x fs-3"></i>
             </button>
         </div>
 
+        <div x-show="sectionOpen.priorities">
         <template x-for="pr in priorities" :key="pr.value">
             <label class="form-check d-flex align-items-center w-100 mb-1" :title="pr.label">
                 <input type="checkbox" class="form-check-input"
@@ -200,30 +327,41 @@
             </label>
         </template>
 
+        </div>
+
         {# Tags section -- only visible if any tag exists #}
         <template x-if="tags.length > 0">
             <div>
                 <hr class="my-3">
                 <div class="d-flex align-items-center justify-content-between mb-2">
-                    <span class="d-flex align-items-center">
+                    <button type="button" class="btn btn-ghost-secondary px-0 py-0 border-0 flex-fill text-start sidebar-section-toggle"
+                            @click="toggleSection('tags')"
+                            :aria-expanded="sectionOpen.tags">
                         <span class="text-secondary text-uppercase small fw-bold">
+                            <i class="ti fs-3 sidebar-caret"
+                               :class="sectionOpen.tags ? 'ti-chevron-down' : 'ti-chevron-right'"></i>
                             <i class="ti ti-tags me-1"></i>
                             {{ t('Tags') }}
                         </span>
-                        {# Cog -> dedicated tag-management page (rename/merge/delete/cleanup). #}
-                        <a href="/tags" class="btn btn-sm btn-ghost-secondary px-2 py-0"
-                           :title="$i18n('manage_tags')">
-                            <i class="ti ti-settings fs-3"></i>
-                        </a>
-                    </span>
+                    </button>
+                    <span class="badge bg-primary-lt ms-1" x-cloak
+                          x-show="!sectionOpen.tags && tagFilter.length"
+                          x-text="tagFilter.length"></span>
+                    {# Cog -> dedicated tag-management page (rename/merge/delete/cleanup). #}
+                    <a href="/tags" class="btn btn-sm btn-ghost-secondary px-2 py-0"
+                       x-show="sectionOpen.tags"
+                       :title="$i18n('manage_tags')">
+                        <i class="ti ti-settings fs-3"></i>
+                    </a>
                     <button type="button" class="btn btn-sm btn-ghost-secondary px-2 py-0"
-                            x-show="tagFilter.length > 0"
+                            x-show="sectionOpen.tags && tagFilter.length > 0"
                             @click="clearTagFilter()"
                             :title="$i18n('clear_tag_filter')">
                         <i class="ti ti-x fs-3"></i>
                     </button>
                 </div>
 
+                <div x-show="sectionOpen.tags">
                 {# Type-ahead filter over the tag list (display-only; does not filter tasks). #}
                 <div class="input-icon search-box mb-2" x-show="tags.length > 0" x-cloak>
                     <span class="input-icon-addon"><i class="ti ti-search"></i></span>
@@ -247,9 +385,204 @@
                         <span class="badge bg-secondary-lt ms-2" x-text="t.open_count"></span>
                     </label>
                 </template>
+                </div>
+            </div>
+        </template>
+
+        {# ---- Workspace sections -------------------------------------- #}
+        {# The context around the tasks: who to think as (team), what     #}
+        {# automates the work (skills), what it draws on (knowledge base) #}
+        {# and what came out of it (documents). Only rendered once at     #}
+        {# least one directory is configured -- on an install with none,  #}
+        {# the sidebar looks exactly as it always did.                    #}
+        <template x-if="wsConfigured">
+            <div>
+                <hr class="my-3">
+                <div class="d-flex align-items-center mb-2">
+                    <span class="text-secondary text-uppercase small fw-bold flex-fill">
+                        <i class="ti ti-layout-grid me-1"></i>
+                        {{ t('Workspace') }}
+                    </span>
+                    <a href="/workspace" class="btn btn-sm btn-ghost-secondary px-2 py-0"
+                       :title="$i18n('ws_open_page')">
+                        <i class="ti ti-arrow-up-right fs-3"></i>
+                    </a>
+                </div>
+
+                {# --- Team --- #}
+                <template x-if="ws.team.exists">
+                    <div class="mb-1">
+                        <div class="d-flex align-items-center">
+                            <button type="button"
+                                    class="btn btn-ghost-secondary px-0 py-0 border-0 flex-fill text-start sidebar-section-toggle"
+                                    @click="toggleSection('team')" :aria-expanded="sectionOpen.team">
+                                <span class="text-secondary small fw-bold">
+                                    <i class="ti fs-3 sidebar-caret"
+                                       :class="sectionOpen.team ? 'ti-chevron-down' : 'ti-chevron-right'"></i>
+                                    <i class="ti ti-users me-1"></i>
+                                    <span x-text="$i18n('ws_team')"></span>
+                                </span>
+                            </button>
+                            <span class="badge bg-secondary-lt ms-1" x-text="ws.team.total"></span>
+                        </div>
+                        <div x-show="sectionOpen.team" x-cloak class="ps-2 pt-1">
+                            <input type="search" class="form-control form-control-sm mb-1"
+                                   x-show="ws.team.total > 8" x-model="wsQuery.team"
+                                   :placeholder="$i18n('ws_search')">
+                            <template x-for="m in wsSlice(ws.team.members, wsQuery.team, ['name','role','title'])"
+                                      :key="m.path">
+                                <button type="button"
+                                        class="btn btn-ghost-secondary btn-sm w-100 text-start px-2 py-1 sidebar-ws-item"
+                                        @click="wsPreview(m.path)" :title="m.role || m.name">
+                                    <i class="ti ti-user me-1 text-secondary"></i>
+                                    <span class="text-truncate" x-text="m.name"></span>
+                                </button>
+                            </template>
+                            {# x-show sits on a plain wrapper: `.d-block` is !important #}
+                            {# and would win over Alpine's inline display:none.          #}
+                            <div x-show="wsMore(ws.team.members, wsQuery.team, ['name','role','title'])" x-cloak>
+                                <a href="/workspace#team" class="d-block small text-secondary px-2 pt-1"
+                                   x-text="$i18n('ws_and_more', { n: wsMore(ws.team.members, wsQuery.team, ['name','role','title']) })"></a>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+
+                {# --- Skills. The badge is loading/total, because a skill --- #}
+                {# that silently fails to load is the whole reason this    --- #}
+                {# section shows a count at all.                           --- #}
+                <template x-if="ws.skills.exists">
+                    <div class="mb-1">
+                        <div class="d-flex align-items-center">
+                            <button type="button"
+                                    class="btn btn-ghost-secondary px-0 py-0 border-0 flex-fill text-start sidebar-section-toggle"
+                                    @click="toggleSection('skills')" :aria-expanded="sectionOpen.skills">
+                                <span class="text-secondary small fw-bold">
+                                    <i class="ti fs-3 sidebar-caret"
+                                       :class="sectionOpen.skills ? 'ti-chevron-down' : 'ti-chevron-right'"></i>
+                                    <i class="ti ti-puzzle me-1"></i>
+                                    <span x-text="$i18n('ws_skills')"></span>
+                                </span>
+                            </button>
+                            <span class="badge ms-1"
+                                  :class="ws.skills.broken ? 'bg-orange-lt' : 'bg-secondary-lt'"
+                                  x-text="ws.skills.broken ? `${ws.skills.loading}/${ws.skills.total}` : ws.skills.total"></span>
+                        </div>
+                        <div x-show="sectionOpen.skills" x-cloak class="ps-2 pt-1">
+                            <template x-for="s in wsSlice(ws.skills.skills, wsQuery.skills, ['name','description'])"
+                                      :key="s.path">
+                                <button type="button"
+                                        class="btn btn-ghost-secondary btn-sm w-100 text-start px-2 py-1 sidebar-ws-item"
+                                        @click="wsBrowse(s.path)"
+                                        :title="s.loads ? (s.description || s.name) : s.problem">
+                                    <i class="ti me-1"
+                                       :class="!s.loads ? 'ti-alert-triangle text-orange'
+                                               : (s.kind === 'plugin' ? 'ti-plug text-secondary' : 'ti-puzzle text-secondary')"></i>
+                                    <span class="text-truncate" x-text="s.name"></span>
+                                </button>
+                            </template>
+                            {# x-show sits on a plain wrapper: `.d-block` is !important #}
+                            {# and would win over Alpine's inline display:none.          #}
+                            <div x-show="wsMore(ws.skills.skills, wsQuery.skills, ['name','description'])" x-cloak>
+                                <a href="/workspace#skills" class="d-block small text-secondary px-2 pt-1"
+                                   x-text="$i18n('ws_and_more', { n: wsMore(ws.skills.skills, wsQuery.skills, ['name','description']) })"></a>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+
+                {# --- Knowledge base: areas, browsable into the notes --- #}
+                <template x-if="ws.wiki.exists">
+                    <div class="mb-1">
+                        <div class="d-flex align-items-center">
+                            <button type="button"
+                                    class="btn btn-ghost-secondary px-0 py-0 border-0 flex-fill text-start sidebar-section-toggle"
+                                    @click="toggleSection('wiki')" :aria-expanded="sectionOpen.wiki">
+                                <span class="text-secondary small fw-bold">
+                                    <i class="ti fs-3 sidebar-caret"
+                                       :class="sectionOpen.wiki ? 'ti-chevron-down' : 'ti-chevron-right'"></i>
+                                    <i class="ti ti-book me-1"></i>
+                                    <span x-text="$i18n('ws_knowledge')"></span>
+                                </span>
+                            </button>
+                            <span class="badge bg-secondary-lt ms-1" x-text="ws.wiki.total_notes"></span>
+                        </div>
+                        <div x-show="sectionOpen.wiki" x-cloak class="ps-2 pt-1">
+                            <template x-for="a in wsSlice(ws.wiki.areas, wsQuery.wiki, ['name'])" :key="a.path">
+                                <button type="button"
+                                        class="btn btn-ghost-secondary btn-sm w-100 text-start px-2 py-1 sidebar-ws-item"
+                                        @click="wsBrowse(a.path)" :title="a.name">
+                                    <i class="ti ti-folder me-1 text-secondary"></i>
+                                    <span class="text-truncate flex-fill" x-text="a.name"></span>
+                                    <span class="badge bg-secondary-lt ms-1" x-text="a.notes"></span>
+                                </button>
+                            </template>
+                            <button type="button"
+                                    class="btn btn-ghost-secondary btn-sm w-100 text-start px-2 py-1 sidebar-ws-item"
+                                    @click="wsBrowse(ws.wiki.path)">
+                                <i class="ti ti-folder-open me-1 text-secondary"></i>
+                                <span class="text-truncate" x-text="$i18n('ws_browse_root')"></span>
+                            </button>
+                        </div>
+                    </div>
+                </template>
+
+                {# --- Generated documents, newest first --- #}
+                <template x-if="ws.docs.exists">
+                    <div class="mb-1">
+                        <div class="d-flex align-items-center">
+                            <button type="button"
+                                    class="btn btn-ghost-secondary px-0 py-0 border-0 flex-fill text-start sidebar-section-toggle"
+                                    @click="toggleSection('docs')" :aria-expanded="sectionOpen.docs">
+                                <span class="text-secondary small fw-bold">
+                                    <i class="ti fs-3 sidebar-caret"
+                                       :class="sectionOpen.docs ? 'ti-chevron-down' : 'ti-chevron-right'"></i>
+                                    <i class="ti ti-files me-1"></i>
+                                    <span x-text="$i18n('ws_documents')"></span>
+                                </span>
+                            </button>
+                            <button type="button" class="btn btn-sm btn-ghost-secondary px-1 py-0 ms-1"
+                                    x-show="sectionOpen.docs"
+                                    @click.stop="wsCreateNote(ws.docs.path)"
+                                    :title="$i18n('ws_new_note')">
+                                <i class="ti ti-plus"></i>
+                            </button>
+                            <span class="badge bg-secondary-lt ms-1" x-text="ws.docs.total"></span>
+                        </div>
+                        <div x-show="sectionOpen.docs" x-cloak class="ps-2 pt-1">
+                            <input type="search" class="form-control form-control-sm mb-1"
+                                   x-show="ws.docs.total > 8" x-model="wsQuery.docs"
+                                   :placeholder="$i18n('ws_search')">
+                            <template x-for="d in wsSlice(ws.docs.docs, wsQuery.docs, ['stem','name','suffix'])"
+                                      :key="d.path">
+                                <button type="button"
+                                        class="btn btn-ghost-secondary btn-sm w-100 text-start px-2 py-1 sidebar-ws-item"
+                                        @click="d.previewable ? wsPreview(d.path) : wsRevealFile(d.path)"
+                                        :title="d.name">
+                                    <i class="ti me-1 text-secondary" :class="wsIcon(d.kind)"></i>
+                                    <span class="text-truncate" x-text="d.stem"></span>
+                                </button>
+                            </template>
+                            {# x-show sits on a plain wrapper: `.d-block` is !important #}
+                            {# and would win over Alpine's inline display:none.          #}
+                            <div x-show="wsMore(ws.docs.docs, wsQuery.docs, ['stem','name','suffix'])" x-cloak>
+                                <a href="/workspace#docs" class="d-block small text-secondary px-2 pt-1"
+                                   x-text="$i18n('ws_and_more', { n: wsMore(ws.docs.docs, wsQuery.docs, ['stem','name','suffix']) })"></a>
+                            </div>
+                        </div>
+                    </div>
+                </template>
             </div>
         </template>
     </aside>
+
+    {# Splitter between sidebar and main content: drag to resize the       #}
+    {# sidebar (persisted). A sibling flex column rather than a child of   #}
+    {# the aside, so it spans the full viewport height and never scrolls   #}
+    {# away with the sidebar content.                                      #}
+    <div class="sidebar-resize-handle d-none d-md-block"
+         @pointerdown="startSidebarResize($event)"></div>
+
 
     {# Main content (full-width inside its column) #}
     <div class="page flex-fill" style="min-width: 0;"
@@ -537,6 +870,44 @@
                                         </div>
                                     </div>
                                 </div>
+                                {# Attach context (local files / team / skills / knowledge / #}
+                                {# docs) to the task being created. Draft mode: picks collect  #}
+                                {# in form.context and are sent with the create request --     #}
+                                {# there is no task id to attach to yet. Always shown: the     #}
+                                {# Files tab needs no workspace directory.                     #}
+                                <div class="col-12">
+                                    <label class="form-label d-flex align-items-center mb-1">
+                                        <span>{{ t('Attached context') }}</span>
+                                        <span class="badge bg-azure-lt ms-2" x-show="form.context.length"
+                                              x-text="form.context.length"></span>
+                                        {# A real button, not a ghost link: attaching is the #}
+                                        {# second most common thing done here after typing. #}
+                                        <button type="button" class="btn btn-sm btn-outline-primary ms-auto"
+                                                @click="openPicker(null)">
+                                            <i class="ti ti-paperclip me-1"></i>
+                                            {{ t('Attach') }}
+                                        </button>
+                                    </label>
+                                    {# x-show on a neutral wrapper -- .d-flex is !important #}
+                                    {# and would override Alpine's display:none.            #}
+                                    <div x-show="form.context.length" x-cloak>
+                                    <div class="d-flex flex-wrap gap-1">
+                                        <template x-for="(c, idx) in form.context" :key="c.path">
+                                            <span class="badge d-inline-flex align-items-center context-chip bg-azure-lt"
+                                                  :title="c.note ? `${c.path}\n${c.note}` : c.path">
+                                                <i class="ti me-1" :class="contextChipIcon(c)"></i>
+                                                <button type="button" class="context-chip-label"
+                                                        @click="openContext(c)" x-text="c.label"></button>
+                                                <button type="button" class="context-chip-close ms-1"
+                                                        :aria-label="$i18n('ws_detach')"
+                                                        @click.stop="form.context.splice(idx, 1)">
+                                                    <i class="ti ti-x"></i>
+                                                </button>
+                                            </span>
+                                        </template>
+                                    </div>
+                                    </div>
+                                </div>
                                 <div class="col-12 text-end">
                                     <button type="submit" class="btn btn-sm btn-primary" :disabled="!form.title.trim()">
                                         <i class="ti ti-plus me-1 fs-3"></i>
@@ -780,6 +1151,21 @@
                                                       style="cursor: pointer"
                                                       :title="$i18n('filter_tag', {name: tag})"
                                                       @click.stop="toggleTag(tag)">#<span x-text="tag"></span></span>
+                                            </template>
+
+                                            {# Attached workspace context -- click opens the file. #}
+                                            {# Shown on the card because "which persona / which     #}
+                                            {# notes does this task run with" is exactly the kind   #}
+                                            {# of thing you want to see without opening anything.   #}
+                                            <template x-for="c in (task.context || [])" :key="c.id">
+                                                <span class="badge d-inline-flex align-items-center"
+                                                      :class="c.exists ? 'bg-azure-lt' : 'bg-red-lt'"
+                                                      role="button" style="cursor: pointer"
+                                                      :title="c.note ? `${c.path}\n${c.note}` : c.path"
+                                                      @click.stop="c.exists ? openContext(c) : null">
+                                                    <i class="ti me-1" :class="contextChipIcon(c)"></i>
+                                                    <span x-text="c.label"></span>
+                                                </span>
                                             </template>
 
                                             {# Blocked badge -- names the still-open dependencies that block this task. #}
@@ -1027,6 +1413,18 @@
                                                     <span class="badge bg-purple-lt">#<span x-text="tag"></span></span>
                                                 </template>
 
+                                                {# Attached workspace context -- same chips as the list view. #}
+                                                <template x-for="c in (task.context || [])" :key="c.id">
+                                                    <span class="badge d-inline-flex align-items-center"
+                                                          :class="c.exists ? 'bg-azure-lt' : 'bg-red-lt'"
+                                                          role="button" style="cursor: pointer"
+                                                          :title="c.note ? `${c.path}\n${c.note}` : c.path"
+                                                          @click.stop="c.exists ? openContext(c) : null">
+                                                        <i class="ti me-1" :class="contextChipIcon(c)"></i>
+                                                        <span x-text="c.label"></span>
+                                                    </span>
+                                                </template>
+
                                                 <template x-if="isBlocked(task)">
                                                     <span class="badge bg-danger-lt" :title="$i18n('blocked_hint')">
                                                         <i class="ti ti-lock me-1"></i><span x-text="$i18n('blocked_by')"></span>
@@ -1123,8 +1521,14 @@
          :class="editing ? 'show d-block' : ''"
          :style="editing ? 'background-color: rgba(0,0,0,0.4)' : ''"
          @keydown.enter="onDialogEnter($event, () => saveEdit())"
-         @keydown.escape.window="editing = null">
-        <div class="modal-dialog modal-xl edit-modal-dialog" role="document" x-show="editing" @click.outside="editing = null">
+         {# Both close handlers stand down while a modal opened *from* this #}
+         {# one is up: the picker and the file viewer live outside this     #}
+         {# dialog in the DOM, so every click in them reads as "outside"    #}
+         {# and Escape would otherwise close the edit modal underneath      #}
+         {# instead of the thing the user is actually looking at.           #}
+         @keydown.escape.window="if (!picker.open && !wsViewer.open) editing = null">
+        <div class="modal-dialog modal-xl edit-modal-dialog" role="document" x-show="editing"
+             @click.outside="if (!picker.open && !wsViewer.open) editing = null">
             <div class="modal-content" x-show="editing">
                 <div class="modal-header">
                     <h5 class="modal-title">
@@ -1309,6 +1713,48 @@
                             </div>
                         </div>
                     </div>
+                    <div class="mb-2">
+                        <label class="form-label d-flex align-items-center">
+                            <span>{{ t('Attached context') }}</span>
+                            <span class="badge bg-azure-lt ms-2" x-show="(editing.context || []).length"
+                                  x-text="(editing.context || []).length"></span>
+                            {# Attachments are written straight through, not #}
+                            {# on Save -- so this button works even before   #}
+                            {# the rest of the form is valid.                #}
+                            <button type="button" class="btn btn-sm btn-outline-primary ms-auto"
+                                    @click="openPicker(editing)">
+                                <i class="ti ti-paperclip me-1"></i>
+                                {{ t('Attach') }}
+                            </button>
+                        </label>
+                        {# Same trap: the x-show goes on a neutral wrapper, never on #}
+                        {# the .d-flex element itself.                                #}
+                        <div x-show="(editing.context || []).length">
+                        <div class="d-flex flex-wrap gap-1">
+                            <template x-for="c in editing.context" :key="c.id">
+                                <span class="badge d-inline-flex align-items-center context-chip"
+                                      :class="c.exists ? 'bg-azure-lt' : 'bg-red-lt'"
+                                      :title="c.note ? `${c.path}\n${c.note}` : c.path">
+                                    <i class="ti me-1" :class="contextChipIcon(c)"></i>
+                                    {# The label opens the file; the x detaches it. Both are #}
+                                    {# real buttons for keyboard reach, styled flat -- inside #}
+                                    {# a badge, Tabler's button chrome would swallow the chip. #}
+                                    <button type="button" class="context-chip-label"
+                                            @click="openContext(c)" x-text="c.label"></button>
+                                    <i class="ti ti-alert-triangle ms-1" x-show="!c.exists"
+                                       :title="$i18n('ws_context_missing')"></i>
+                                    <button type="button" class="context-chip-close ms-1"
+                                            :aria-label="$i18n('ws_detach')"
+                                            @click.stop="detachContext(editing, c)">
+                                        <i class="ti ti-x"></i>
+                                    </button>
+                                </span>
+                            </template>
+                        </div>
+                        </div>
+                        <div class="text-secondary small" x-show="!(editing.context || []).length"
+                             x-text="$i18n('ws_no_context')"></div>
+                    </div>
                 </div>
                 </template>
                 <div class="modal-footer">
@@ -1333,6 +1779,271 @@
         </div>
     </div>
 
+{# ---- Workspace viewer: one file, or one directory listing ------------- #}
+{# Opened from the sidebar and from a task's context chips. Shows the same #}
+{# read/edit/rename/delete affordances as the /workspace page, so the two  #}
+{# never disagree about what can be done to a file.                        #}
+<div class="modal modal-blur" :class="{ 'show d-block': wsViewer.open }" x-cloak
+     @keydown.escape.window="wsViewer.open = false">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="min-w-0">
+                    <h5 class="modal-title text-truncate"
+                        x-text="wsViewer.dir ? (wsViewer.dir.name || wsViewer.dir.path) : (wsViewer.file?.name || '')"></h5>
+                    <div class="text-secondary small font-monospace text-truncate"
+                         x-text="wsViewer.dir ? wsViewer.dir.path : (wsViewer.file?.path || '')"></div>
+                    <div class="text-secondary small" x-show="wsViewer.file?.remote && wsViewer.file?.captured"
+                         x-text="$i18n('ws_brain_captured') + ': ' + String(wsViewer.file?.captured).slice(0, 10)"></div>
+                </div>
+                <div class="ms-auto d-flex align-items-center gap-1">
+                    {# Directory actions #}
+                    <template x-if="wsViewer.dir">
+                        <span class="d-flex align-items-center gap-1">
+                            <button class="btn btn-sm btn-ghost-secondary"
+                                    x-show="wsViewer.dir.parent"
+                                    @click="wsBrowse(wsViewer.dir.parent)"
+                                    :title="$i18n('ws_up')">
+                                <i class="ti ti-arrow-up"></i>
+                            </button>
+                            <button class="btn btn-sm btn-ghost-primary"
+                                    @click="wsCreateNote(wsViewer.dir.path)"
+                                    :title="$i18n('ws_new_note')">
+                                <i class="ti ti-file-plus"></i>
+                            </button>
+                        </span>
+                    </template>
+                    {# File actions -- a JCBrain note (remote) is read-only here: #}
+                    {# nothing to reveal, rename or delete on disk.              #}
+                    <template x-if="wsViewer.file && !wsViewer.file.remote">
+                        <span class="d-flex align-items-center gap-1">
+                            <button class="btn btn-sm" x-show="wsEditable(wsViewer.file) && !wsViewer.file.external"
+                                    :class="wsViewer.editing ? 'btn-ghost-secondary' : 'btn-ghost-primary'"
+                                    @click="wsToggleEdit()">
+                                <i class="ti me-1" :class="wsViewer.editing ? 'ti-eye' : 'ti-pencil'"></i>
+                                <span x-text="wsViewer.editing ? $i18n('ws_view') : $i18n('ws_edit')"></span>
+                            </button>
+                            <button class="btn btn-sm btn-ghost-secondary"
+                                    @click="wsRevealFile(wsViewer.file.path)"
+                                    :title="$i18n('ws_open_external')">
+                                <i class="ti ti-external-link"></i>
+                            </button>
+                            <button class="btn btn-sm btn-ghost-secondary" x-show="!wsViewer.file.external"
+                                    @click="wsRename(wsViewer.file.path, wsViewer.file.name)"
+                                    :title="$i18n('ws_rename')">
+                                <i class="ti ti-cursor-text"></i>
+                            </button>
+                            <button class="btn btn-sm btn-ghost-danger" x-show="!wsViewer.file.external"
+                                    @click="wsDelete(wsViewer.file.path, wsViewer.file.name)"
+                                    :title="$i18n('ws_delete')">
+                                <i class="ti ti-trash"></i>
+                            </button>
+                        </span>
+                    </template>
+                    <button type="button" class="btn-close ms-1" @click="wsViewer.open = false"
+                            :aria-label="$i18n('close')"></button>
+                </div>
+            </div>
+            <div class="modal-body">
+                <div class="text-secondary text-center py-4" x-show="wsViewer.loading">
+                    <span class="spinner-border spinner-border-sm me-2"></span>
+                    <span x-text="$i18n('ws_loading')"></span>
+                </div>
+                <div class="alert alert-danger" x-show="wsViewer.error" x-text="wsViewer.error"></div>
+
+                {# Directory listing #}
+                <template x-if="wsViewer.dir">
+                    <div class="list-group list-group-flush">
+                        <template x-for="e in wsViewer.dir.entries" :key="e.path">
+                            <div class="list-group-item d-flex align-items-center">
+                                <button type="button"
+                                        class="btn btn-ghost-secondary btn-sm flex-fill text-truncate px-1 ws-dir-entry"
+                                        @click="wsOpen(e)">
+                                    <i class="ti me-2 text-secondary" :class="wsIcon(e.kind)"></i>
+                                    <span x-text="e.name"></span>
+                                </button>
+                                <span class="text-secondary small font-monospace me-2 d-none d-md-inline"
+                                      x-show="!e.directory" x-text="wsSize(e.size)"></span>
+                                <button class="btn btn-sm btn-ghost-secondary px-1"
+                                        @click="wsRename(e.path, e.name)" :title="$i18n('ws_rename')">
+                                    <i class="ti ti-cursor-text"></i>
+                                </button>
+                                <button class="btn btn-sm btn-ghost-danger px-1"
+                                        @click="wsDelete(e.path, e.name)" :title="$i18n('ws_delete')">
+                                    <i class="ti ti-trash"></i>
+                                </button>
+                            </div>
+                        </template>
+                        <div class="list-group-item text-secondary text-center"
+                             x-show="!wsViewer.dir.entries.length" x-text="$i18n('ws_empty')"></div>
+                    </div>
+                </template>
+
+                {# Editor #}
+                <div x-show="wsViewer.editing" x-cloak>
+                    <textarea class="form-control font-monospace ws-editor" rows="24"
+                              x-model="wsViewer.draft"
+                              @keydown.meta.s.prevent="wsSave()"
+                              @keydown.ctrl.s.prevent="wsSave()"></textarea>
+                    <div class="d-flex align-items-center mt-2">
+                        <span class="text-secondary small" x-text="$i18n('ws_save_hint')"></span>
+                        <button class="btn btn-sm btn-ghost-secondary ms-auto me-2"
+                                @click="wsToggleEdit()" x-text="$i18n('cancel')"></button>
+                        <button class="btn btn-sm btn-primary" @click="wsSave()" :disabled="wsViewer.saving">
+                            <i class="ti ti-device-floppy me-1"></i>
+                            <span x-text="$i18n('ws_save')"></span>
+                        </button>
+                    </div>
+                </div>
+
+                {# Rendered file. Sanitized in ws-common.js before it lands here. #}
+                <div class="markdown-body" x-show="!wsViewer.editing && wsViewer.mode === 'markdown'"
+                     x-html="wsViewer.html"></div>
+                <div class="table-responsive" x-show="!wsViewer.editing && wsViewer.mode === 'csv'">
+                    <table class="table table-sm table-bordered table-vcenter">
+                        <thead>
+                        <tr>
+                            <template x-for="(h, i) in wsViewer.rows[0] || []" :key="i">
+                                <th x-text="h"></th>
+                            </template>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        <template x-for="(row, ri) in wsViewer.rows.slice(1)" :key="ri">
+                            <tr>
+                                <template x-for="(cell, ci) in row" :key="ci">
+                                    <td class="text-nowrap" x-text="cell"></td>
+                                </template>
+                            </tr>
+                        </template>
+                        </tbody>
+                    </table>
+                </div>
+                <pre class="border rounded p-3 bg-secondary-lt"
+                     x-show="!wsViewer.editing && wsViewer.mode === 'text'"
+                     style="white-space: pre-wrap;"><code x-text="wsViewer.file?.text || ''"></code></pre>
+                <div class="text-center py-4"
+                     x-show="!wsViewer.dir && !wsViewer.editing && !wsViewer.loading && wsViewer.mode === 'none'">
+                    <div class="text-secondary mb-2" x-text="$i18n('ws_preview_unavailable')"></div>
+                    <button class="btn btn-sm btn-primary" @click="wsRevealFile(wsViewer.file?.path)">
+                        <i class="ti ti-external-link me-1"></i>
+                        <span x-text="$i18n('ws_open_external')"></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="modal-backdrop fade show" x-show="wsViewer.open" x-cloak @click="wsViewer.open = false"></div>
+
+{# ---- Context picker: attach a workspace file to a task ---------------- #}
+<div class="modal modal-blur" :class="{ 'show d-block': picker.open }" x-cloak
+     @keydown.escape.window="picker.open = false">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="ti ti-paperclip me-2"></i>
+                    <span x-text="$i18n('ws_attach_context')"></span>
+                    {# Draft mode (no target yet): picks land in the new-task form. #}
+                    <span class="text-secondary ms-2"
+                          :class="picker.target && 'font-monospace'"
+                          x-text="picker.target ? '#' + picker.target.id : $i18n('new_task')"></span>
+                </h5>
+                <button type="button" class="btn-close" @click="picker.open = false"
+                        :aria-label="$i18n('close')"></button>
+            </div>
+            <div class="modal-body">
+                <ul class="nav nav-bordered mb-3" role="tablist">
+                    <template x-for="tab in pickerTabs" :key="tab.id">
+                        <li class="nav-item">
+                            <a href="#" class="nav-link" role="tab"
+                               :class="{ 'active': picker.tab === tab.id }"
+                               @click.prevent="picker.tab = tab.id; picker.q = ''">
+                                <i class="ti me-1" :class="tab.icon"></i>
+                                <span x-text="$i18n(tab.label)"></span>
+                            </a>
+                        </li>
+                    </template>
+                </ul>
+
+                <input type="search" class="form-control mb-2" x-model="picker.q"
+                       x-show="picker.tab !== 'files'"
+                       @input.debounce.400ms="brainSearch()"
+                       :placeholder="$i18n('ws_search')">
+                {# Local files: the OS dialog does the browsing -- server and  #}
+                {# browser share a desktop, so the server can open it and     #}
+                {# report the path. Fallback for everything else: paste one.  #}
+                <template x-if="picker.tab === 'files'">
+                    <div class="mb-3">
+                        <div class="small text-secondary mb-2" x-text="$i18n('ws_file_hint')"></div>
+                        <template x-if="pickerNative">
+                            <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+                                <button type="button" class="btn btn-primary"
+                                        :disabled="picker.picking || picker.busy" @click="pickNative(false)">
+                                    <i class="ti ti-folder-open me-1"></i>
+                                    <span x-text="$i18n('ws_file_choose')"></span>
+                                </button>
+                                <button type="button" class="btn btn-primary"
+                                        :disabled="picker.picking || picker.busy" @click="pickNative(true)">
+                                    <i class="ti ti-folder me-1"></i>
+                                    <span x-text="$i18n('ws_file_choose_folder')"></span>
+                                </button>
+                                <span class="small text-secondary" x-show="picker.picking">
+                                    <span class="spinner-border spinner-border-sm me-1"></span>
+                                    <span x-text="$i18n('ws_file_picking')"></span>
+                                </span>
+                            </div>
+                        </template>
+                        <div class="small text-secondary mb-1" x-show="pickerNative" x-text="$i18n('ws_fs_or_path')"></div>
+                        <div class="input-group">
+                            <input type="text" class="form-control font-monospace"
+                                   x-model="picker.path" :placeholder="$i18n('ws_file_path_placeholder')"
+                                   @keydown.enter.prevent="attachPaths(picker.path)">
+                            <button type="button" class="btn"
+                                    :class="pickerNative ? 'btn-outline-secondary' : 'btn-primary'"
+                                    :disabled="picker.busy || !picker.path.trim()"
+                                    @click="attachPaths(picker.path)">
+                                <i class="ti ti-plus me-1"></i>
+                                <span x-text="$i18n('ws_file_add')"></span>
+                            </button>
+                        </div>
+                    </div>
+                </template>
+                {# One note applies to the next attachment -- "why is this  #}
+                {# here" is what the agent reads, and typing it once per    #}
+                {# file is the realistic amount of effort a user will give. #}
+                <input type="text" class="form-control mb-3" x-model="picker.note"
+                       :placeholder="$i18n('ws_note_placeholder')">
+
+                <div class="list-group list-group-flush" x-show="picker.tab !== 'files'">
+                    <template x-for="item in pickerItems.slice(0, 100)" :key="item.path">
+                        <button type="button" class="list-group-item list-group-item-action d-flex align-items-center"
+                                :disabled="picker.busy" @click="attachContext(item)">
+                            <i class="ti me-2 text-secondary" :class="contextChipIcon(item)"></i>
+                            <span class="flex-fill min-w-0">
+                                <span class="d-block text-truncate fw-bold" x-text="item.label"></span>
+                                <span class="d-block text-truncate text-secondary small" x-text="item.sub"></span>
+                            </span>
+                            <i class="ti ti-check text-green fs-2 ms-2" x-show="isAttached(item.path)"></i>
+                            <i class="ti ti-plus text-secondary ms-2" x-show="!isAttached(item.path)"></i>
+                        </button>
+                    </template>
+                    <div class="list-group-item text-secondary text-center"
+                         x-show="!pickerItems.length && !(picker.tab === 'brain' && (!picker.q.trim() || brain.loading || brain.error))"
+                         x-text="picker.tab === 'brain' ? $i18n('ws_brain_no_results') : (picker.tab === 'files' ? $i18n('ws_file_none') : $i18n('ws_no_match'))"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-primary" @click="picker.open = false"
+                        x-text="$i18n('ws_done')"></button>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="modal-backdrop fade show" x-show="picker.open" x-cloak @click="picker.open = false"></div>
+
+
 </div>
 
 
@@ -1350,6 +2061,13 @@
         integrity="{{ asset_sri('xterm-addon-fit') }}" crossorigin="anonymous"></script>
 <script src="{{ asset('alpine-js') }}"
         integrity="{{ asset_sri('alpine-js') }}" crossorigin="anonymous" defer></script>
+{# Markdown pipeline for the workspace file viewer. marked renders, #}
+{# DOMPurify sanitizes -- see ws-common.js, which never skips either. #}
+<script src="{{ asset('marked-js') }}" integrity="{{ asset_sri('marked-js') }}"
+        crossorigin="anonymous"></script>
+<script src="{{ asset('dompurify-js') }}" integrity="{{ asset_sri('dompurify-js') }}"
+        crossorigin="anonymous"></script>
+<script src="/static/ws-common.js?v={{ static_bust('ws-common.js') }}"></script>
 <script src="/static/topnav.js?v={{ static_bust('topnav.js') }}"></script>
 <script src="/static/app.js?v={{ static_bust('app.js') }}"></script>
 </body>

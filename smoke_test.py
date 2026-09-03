@@ -25,7 +25,7 @@ db_module.init_db()
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-client = TestClient(app)
+client = TestClient(app, base_url="http://127.0.0.1:8766")
 
 
 def assert_ok(resp, expected_status: int = 200) -> None:
@@ -370,8 +370,18 @@ def main() -> int:
         assert_ok(rr, 201)
         assert "sort_order" in rr.json(), "task payload must expose sort_order"
         so_ids.append(rr.json()["id"])
+
+    # Every query below asks for `sort=manual`. sort_order is deliberately
+    # IGNORED by the default `sort=priority` ordering (see _query_tasks:
+    # priority ranks critical->low with id DESC as tie-break, so the result
+    # stays deterministic regardless of drag&drop). Without the parameter
+    # this block asserted against priority order and only appeared to pass:
+    # for same-priority tasks, id DESC happens to match "newest first", so
+    # the first assert held while the reorder asserts below could not.
+    so_list = "/api/tasks?project=so-proj&status=open&archived=false&sort=manual"
+
     # Freshly created -> newest first (reverse insertion order).
-    listed = client.get("/api/tasks?project=so-proj&status=open&archived=false").json()
+    listed = client.get(so_list).json()
     order = [t["id"] for t in listed]
     assert order == list(reversed(so_ids)), f"new tasks must sort newest-first, got {order}"
     print(f"OK POST /api/tasks seeds sort_order -> newest-first {order}")
@@ -381,19 +391,24 @@ def main() -> int:
     top_so = listed[0]["sort_order"]
     r = client.patch(f"/api/tasks/{so_ids[0]}", json={"sort_order": top_so + 1})
     assert_ok(r)
-    moved = [t["id"] for t in
-             client.get("/api/tasks?project=so-proj&status=open&archived=false").json()]
+    moved = [t["id"] for t in client.get(so_list).json()]
     assert moved[0] == so_ids[0], f"reordered task must be first, got {moved}"
     print(f"OK PATCH sort_order reorders the list -> {moved}")
 
     # Fractional insert: drop so_ids[1] between the top two; it must land 2nd.
-    rows = client.get("/api/tasks?project=so-proj&status=open&archived=false").json()
+    rows = client.get(so_list).json()
     between = (rows[0]["sort_order"] + rows[1]["sort_order"]) / 2
     client.patch(f"/api/tasks/{so_ids[1]}", json={"sort_order": between})
-    final = [t["id"] for t in
-             client.get("/api/tasks?project=so-proj&status=open&archived=false").json()]
+    final = [t["id"] for t in client.get(so_list).json()]
     assert final[1] == so_ids[1], f"fractional insert must land 2nd, got {final}"
     print(f"OK fractional sort_order insert -> {final}")
+
+    # The default ordering must stay untouched by all that shuffling --
+    # that is the contract the reorder feature relies on.
+    prio = [t["id"] for t in
+            client.get("/api/tasks?project=so-proj&status=open&archived=false").json()]
+    assert prio == list(reversed(so_ids)), f"sort=priority must ignore sort_order, got {prio}"
+    print(f"OK default sort=priority ignores sort_order -> {prio}")
 
     # ------------------------------------------------------------------
     # Settings module (new in v1.0.0)
@@ -1324,8 +1339,14 @@ def main() -> int:
             except ProcessLookupError:
                 pass  # already gone
 
-    # 50. boot_drift_warning returns None on a clean install.
-    os.environ["NTASKER_CLAUDE_HOME"] = str(test_home)
+    # 50. boot_drift_warning returns None on a clean install. It scans
+    # every agent's home, so all three are pointed at the temp dir -- the
+    # developer's real ~/.config/opencode would otherwise leak in and
+    # report drift after any change to the packaged loader.
+    _agent_home_envs = ("NTASKER_CLAUDE_HOME", "OPENCODE_CONFIG_DIR", "PI_CODING_AGENT_DIR")
+    _saved_homes = {k: os.environ.get(k) for k in _agent_home_envs}
+    for _k in _agent_home_envs:
+        os.environ[_k] = str(test_home)
     try:
         _ca.install_assets(_claude_spec, test_home, "task", force=True)
         assert _ca.boot_drift_warning() is None
@@ -1336,7 +1357,239 @@ def main() -> int:
         assert warn is not None and "out of date" in warn
         print("OK boot_drift_warning fires only on installed+drift state")
     finally:
-        del os.environ["NTASKER_CLAUDE_HOME"]
+        for _k, _v in _saved_homes.items():
+            if _v is None:
+                os.environ.pop(_k, None)
+            else:
+                os.environ[_k] = _v
+
+    # 51. JCBrain (OpenBrain) notes as task context -- kind "brain".
+    from ntasker import brain as _brain  # noqa: PLC0415
+
+    r = client.get("/api/brain/status")
+    assert_ok(r)
+    st = r.json()
+    assert {"configured", "server", "url", "has_auth"} <= set(st), st
+    assert "key" not in st and "headers" not in st, "status must never leak auth"
+    print("OK GET /api/brain/status")
+
+    rr = client.post("/api/tasks", json={"title": "brain-ctx"})
+    assert_ok(rr, 201)
+    brain_task = rr.json()["id"]
+    uuid_ok = "6fd1393a-1519-4f59-a710-03fd08eb7866"
+    # Bad id -> 400; a brain:// path under a file kind -> 400.
+    r = client.post(f"/api/tasks/{brain_task}/context", json={"kind": "brain", "path": "nope"})
+    assert r.status_code == 400, r.text
+    r = client.post(
+        f"/api/tasks/{brain_task}/context", json={"kind": "doc", "path": f"brain://{uuid_ok}"}
+    )
+    assert r.status_code == 400, r.text
+    # Bare uuid and brain:// form both normalise to brain://<uuid>; no
+    # network call is made on attach (works offline).
+    r = client.post(
+        f"/api/tasks/{brain_task}/context",
+        json={"kind": "brain", "path": uuid_ok.upper(), "label": "Report v2", "note": "why"},
+    )
+    assert_ok(r, 201)
+    entry = r.json()
+    assert entry["path"] == f"brain://{uuid_ok}", entry
+    assert entry["exists"] is True and entry["remote"] is True, entry
+    assert entry["label"] == "Report v2" and entry["note"] == "why"
+    r = client.post(
+        f"/api/tasks/{brain_task}/context", json={"kind": "brain", "path": f"brain://{uuid_ok}"}
+    )
+    assert_ok(r, 201)
+    assert r.json()["id"] == entry["id"], "re-attach must update in place"
+    assert r.json()["label"].startswith("JCBrain "), "empty label falls back to id prefix"
+    r = client.get(f"/api/tasks/{brain_task}")
+    assert_ok(r)
+    assert [c["kind"] for c in r.json()["context"]] == ["brain"]
+    r = client.delete(f"/api/tasks/{brain_task}/context/{entry['id']}")
+    assert_ok(r, 204)
+    # Proxy endpoints validate before touching the network.
+    r = client.get("/api/brain/thoughts/not-a-uuid")
+    assert r.status_code == 400
+    r = client.get("/api/brain/search?q=")
+    assert_ok(r)
+    assert r.json()["results"] == []
+    print("OK brain context attach/normalise/detach + proxy validation")
+
+    # 51b. Transport: SSE and JSON replies, error mapping, search/fetch shapes.
+    import io as _io  # noqa: PLC0415
+
+    class _Resp(_io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def _opener_for(body: str):
+        def _open(req, timeout):
+            assert req.get_header("X-brain-key") == "k1", "config headers must be forwarded"
+            assert "text/event-stream" in req.get_header("Accept")
+            return _Resp(body.encode("utf-8"))
+        return _open
+
+    orig_spec = _brain.server_spec
+    _brain.server_spec = lambda name=None: {"url": "https://x.invalid/mcp", "headers": {"x-brain-key": "k1"}}
+    try:
+        sse = (
+            'event: message\ndata: {"result":{"content":[{"type":"text","text":'
+            '"{\\"results\\":[{\\"id\\":\\"' + uuid_ok + '\\",\\"title\\":\\"7/31/2026 - Report v2\\",'
+            '\\"url\\":\\"https://openbrain.local/thoughts/' + uuid_ok + '\\"}]}"}]},"jsonrpc":"2.0","id":1}\n\n'
+        )
+        hits = _brain.search("report", opener=_opener_for(sse))
+        assert hits == [{"id": uuid_ok, "title": "7/31/2026 - Report v2",
+                         "url": f"https://openbrain.local/thoughts/{uuid_ok}",
+                         "path": f"brain://{uuid_ok}"}], hits
+        js = ('{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":'
+              '"{\\"id\\":\\"' + uuid_ok + '\\",\\"title\\":\\"T\\",\\"text\\":\\"Body\\",\\"url\\":\\"u\\",'
+              '\\"metadata\\":{\\"type\\":\\"idea\\"}}"}]}}')
+        doc = _brain.fetch(uuid_ok, opener=_opener_for(js))
+        assert doc["text"] == "Body" and doc["metadata"] == {"type": "idea"} and doc["path"] == f"brain://{uuid_ok}"
+        assert _brain.briefing_text(f"brain://{uuid_ok}", opener=_opener_for(js)) == "Body"
+        # Tool-level error -> BrainError; missing row -> 404.
+        err = '{"jsonrpc":"2.0","id":1,"result":{"isError":true,"content":[{"type":"text","text":"Search error: boom"}]}}'
+        try:
+            _brain.search("x", opener=_opener_for(err))
+            raise AssertionError("isError must raise")
+        except _brain.BrainError as exc:
+            assert "boom" in str(exc)
+        gone = '{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"Fetch error: no rows"}]}}'
+        try:
+            _brain.fetch(uuid_ok, opener=_opener_for(gone))
+            raise AssertionError("missing row must raise")
+        except _brain.BrainError as exc:
+            assert exc.status == 404
+        assert _brain.briefing_text(f"brain://{uuid_ok}", opener=_opener_for(gone)) == ""
+        # Not configured -> 503 through the API.
+        _brain.server_spec = lambda name=None: None
+        r = client.get("/api/brain/search?q=hello")
+        assert r.status_code == 503, r.text
+    finally:
+        _brain.server_spec = orig_spec
+    print("OK brain transport (SSE/JSON parse, auth header, error mapping)")
+
+    # 51c. Briefing inlines the note text; falls back to the MCP hint.
+    from ntasker.claude_runner import context_briefing as _cb  # noqa: PLC0415
+
+    orig_bt = _brain.briefing_text
+    try:
+        _brain.briefing_text = lambda path, **kw: "Line one\nLine two"
+        out = "\n".join(_cb([{"kind": "brain", "label": "N", "path": f"brain://{uuid_ok}", "exists": True}]))
+        assert "JCBrain note: N" in out and "  > Line one\n  > Line two" in out, out
+        _brain.briefing_text = lambda path, **kw: ""
+        out = "\n".join(_cb([{"kind": "brain", "label": "N", "path": f"brain://{uuid_ok}", "exists": True}]))
+        assert uuid_ok in out and "open-brain" in out, out
+    finally:
+        _brain.briefing_text = orig_bt
+    print("OK context_briefing inlines JCBrain notes")
+
+    # 52. MCP servers as context -- kind "mcp", validated against ~/.claude.json.
+    import ntasker.app as _app  # noqa: PLC0415
+
+    orig_names = _app._mcp_server_names
+    _app._mcp_server_names = lambda: {"open-brain", "playwright"}
+    try:
+        r = client.post(f"/api/tasks/{brain_task}/context", json={"kind": "mcp", "path": "nope"})
+        assert r.status_code == 404, r.text
+        r = client.post(f"/api/tasks/{brain_task}/context", json={"kind": "doc", "path": "mcp://playwright"})
+        assert r.status_code == 400, r.text
+        r = client.post(f"/api/tasks/{brain_task}/context", json={"kind": "mcp", "path": "playwright", "note": "UI"})
+        assert_ok(r, 201)
+        e = r.json()
+        assert e["path"] == "mcp://playwright" and e["label"] == "playwright" and e["remote"] is True and e["exists"] is True, e
+        r = client.post(f"/api/tasks/{brain_task}/context", json={"kind": "mcp", "path": "mcp://playwright", "label": "Browser"})
+        assert_ok(r, 201)
+        assert r.json()["id"] == e["id"] and r.json()["label"] == "Browser"
+        out = "\n".join(_cb([{"kind": "mcp", "label": "Browser", "path": "mcp://playwright", "exists": True}]))
+        assert "MCP server: Browser" in out and "Use the tools of this MCP server" in out, out
+        r = client.delete(f"/api/tasks/{brain_task}/context/{e['id']}")
+        assert_ok(r, 204)
+    finally:
+        _app._mcp_server_names = orig_names
+    print("OK mcp context attach/validate/briefing")
+
+    # 53. Local files as context -- kind "file": any path on this machine,
+    # not confined to the workspace roots, validated for existence only.
+    import tempfile as _tempfile  # noqa: PLC0415
+
+    with _tempfile.TemporaryDirectory() as _td:
+        _f = Path(_td) / "report.txt"
+        _f.write_text("hello attachment\n", encoding="utf-8")
+        _sub = Path(_td) / "data"
+        _sub.mkdir()
+        # A workspace kind still refuses the path (outside every root) ...
+        r = client.post(f"/api/tasks/{brain_task}/context", json={"kind": "doc", "path": str(_f)})
+        assert r.status_code == 403, r.text
+        # ... a file kind takes it, labelled with the full file name.
+        r = client.post(f"/api/tasks/{brain_task}/context", json={"kind": "file", "path": str(_f), "note": "numbers"})
+        assert_ok(r, 201)
+        fe = r.json()
+        assert fe["kind"] == "file" and fe["label"] == "report.txt" and fe["exists"] is True, fe
+        assert fe["remote"] is False and fe["is_dir"] is False and fe["task_id"] == brain_task, fe
+        assert fe["path"] == str(_f.resolve()), fe
+        # Folders attach too and are flagged as such.
+        r = client.post(f"/api/tasks/{brain_task}/context", json={"kind": "file", "path": str(_sub)})
+        assert_ok(r, 201)
+        de = r.json()
+        assert de["is_dir"] is True and de["label"] == "data", de
+        # Missing path -> 404; a foreign Origin may not plant a file pointer.
+        r = client.post(f"/api/tasks/{brain_task}/context", json={"kind": "file", "path": str(_f) + ".nope"})
+        assert r.status_code == 404, r.text
+        r = client.post(
+            f"/api/tasks/{brain_task}/context",
+            json={"kind": "file", "path": str(_f)},
+            headers={"Origin": "https://evil.example"},
+        )
+        assert r.status_code == 403, r.text
+        r = client.post(
+            "/api/tasks",
+            json={"title": "x", "context": [{"kind": "file", "path": str(_f)}]},
+            headers={"Origin": "https://evil.example"},
+        )
+        assert r.status_code == 403, r.text
+        # Create with a file attachment from our own page works.
+        r = client.post(
+            "/api/tasks",
+            json={"title": "file-ctx", "context": [{"kind": "file", "path": str(_f)}]},
+            headers={"Origin": "http://127.0.0.1:8766"},
+        )
+        assert_ok(r, 201)
+        assert [c["kind"] for c in r.json()["context"]] == ["file"]
+        # Preview through the attachment row (no path parameter to steer).
+        r = client.get(f"/api/tasks/{brain_task}/context/{fe['id']}/file")
+        assert_ok(r)
+        pv = r.json()
+        assert pv["text"] == "hello attachment\n" and pv["name"] == "report.txt", pv
+        r = client.get(f"/api/tasks/{brain_task}/context/{de['id']}/file")
+        assert_ok(r)
+        assert r.json()["kind"] == "folder" and r.json()["text"] is None, r.json()
+        r = client.get(f"/api/tasks/{brain_task}/context/999999/file")
+        assert r.status_code == 404, r.text
+        # Briefing names the kind and tells the agent to read it.
+        out = "\n".join(_cb([{"kind": "file", "label": "report.txt", "path": str(_f), "exists": True}]))
+        assert "File: report.txt" in out and "Read this file" in out, out
+        out = "\n".join(_cb([{"kind": "file", "label": "data", "path": str(_sub), "exists": True}]))
+        assert "This is a folder" in out, out
+        # Path resolver for the picker: expands ~, reports existence only.
+        r = client.get("/api/fs/resolve", params={"path": str(_f)})
+        assert_ok(r)
+        assert r.json()["name"] == "report.txt" and r.json()["is_dir"] is False, r.json()
+        r = client.get("/api/fs/resolve", params={"path": str(_f) + ".nope"})
+        assert r.status_code == 404, r.text
+        r = client.get("/api/fs/resolve", params={"path": "~"})
+        assert_ok(r)
+        assert r.json()["is_dir"] is True
+        # Native picker availability is a plain boolean; never opened here.
+        r = client.get("/api/fs/pick")
+        assert_ok(r)
+        assert isinstance(r.json()["available"], bool)
+        for e in (fe, de):
+            r = client.delete(f"/api/tasks/{brain_task}/context/{e['id']}")
+            assert_ok(r, 204)
+    print("OK file context attach/preview/resolve")
 
     print("\nAll smoke checks passed.")
     return 0

@@ -300,12 +300,64 @@ def validate_compact_seed(value: str) -> str:
     )
 
 
+def _make_workspace_dir_validator(key: str) -> Validator:
+    """Build the validator for one ``workspace_*_dir`` setting.
+
+    These point the ``/workspace`` page at the directories holding skills,
+    knowledge-base notes, and team personas. Like ``projects_base``, ``~`` is
+    stored verbatim and expanded per-machine at read time, so a settings DB
+    stays portable between hosts.
+
+    Existence is deliberately NOT enforced: a path on an external drive or a
+    cloud-synced folder may be temporarily absent, and rejecting the write
+    would strand the user. The scanners report ``exists: false`` instead and
+    the UI says so.
+    """
+
+    def _validate(value: str) -> str:
+        norm = (value or "").strip()
+        if not norm:
+            raise ValueError(
+                _("{key} must not be empty -- unset it to clear.").format(key=key)
+            )
+        if not os.path.isabs(os.path.expanduser(norm)):
+            raise ValueError(
+                _("{key} must be an absolute path (got {value!r}).").format(
+                    key=key, value=value
+                )
+            )
+        return norm
+
+    return _validate
+
+
+def validate_brain_server(value: str) -> str:
+    """Validator for the ``brain_server`` setting.
+
+    Name of the HTTP MCP server entry in ``~/.claude.json`` that ntasker
+    calls for JCBrain (OpenBrain) notes. Existence in the file is not
+    enforced -- the entry may be added later; until then the JCBrain tab
+    in the context picker reports "not configured".
+    """
+    norm = (value or "").strip()
+    if not norm:
+        raise ValueError(
+            _("brain_server must not be empty -- unset it to use the default.")
+        )
+    return norm
+
+
 VALIDATORS: dict[str, Validator] = {
     "assets_mode": validate_assets_mode,
     "language": validate_language,
     "default_view": validate_default_view,
     "default_agent": validate_default_agent,
     "projects_base": validate_projects_base,
+    "workspace_skills_dir": _make_workspace_dir_validator("workspace_skills_dir"),
+    "workspace_wiki_dir": _make_workspace_dir_validator("workspace_wiki_dir"),
+    "workspace_team_dir": _make_workspace_dir_validator("workspace_team_dir"),
+    "workspace_docs_dir": _make_workspace_dir_validator("workspace_docs_dir"),
+    "brain_server": validate_brain_server,
     "no_project_dir": validate_no_project_dir,
     "claude_idle_seconds": validate_claude_idle_seconds,
     "claude_auto_mode": validate_claude_auto_mode,
@@ -393,6 +445,32 @@ HINTS: dict[str, object] = {
         "(e.g. `uv tool upgrade ntasker`). Unset to auto-detect how ntasker "
         "was installed."
     ),
+    "workspace_skills_dir": _lazy(
+        "Directory holding your Claude Code skills, shown on the Workspace "
+        "page with a load/broken verdict per skill. Defaults to "
+        "~/.claude/skills when unset."
+    ),
+    "workspace_wiki_dir": _lazy(
+        "Root of your Markdown knowledge base (e.g. an Obsidian vault). The "
+        "Workspace page lists its areas with note counts and links straight "
+        "into Obsidian. Unset hides the card."
+    ),
+    "workspace_team_dir": _lazy(
+        "Directory of agent-persona Markdown files (one file per persona, "
+        "its role in front matter or as a bold 'Role:' line). Unset hides "
+        "the card."
+    ),
+    "workspace_docs_dir": _lazy(
+        "Output folder for generated documents (offers, reviews, exports). "
+        "The Workspace page lists them newest-first and previews Markdown, "
+        "text and CSV files in place. Unset hides the card."
+    ),
+    "brain_server": _lazy(
+        "Name of the HTTP MCP server in ~/.claude.json that serves your "
+        "JCBrain (OpenBrain) notes; its URL and auth header are reused, no "
+        "second key to maintain. Notes found there can be attached to tasks "
+        "as context and are handed to the agent in full. Default: open-brain."
+    ),
 }
 
 
@@ -420,6 +498,7 @@ FIELD_CHOICES: dict[str, list[tuple[str, object, object]]] = {
 FIELD_DEFAULTS: dict[str, str] = {
     "assets_mode": "auto",
     "default_view": DEFAULT_VIEW_FALLBACK,
+    "brain_server": "open-brain",
 }
 
 

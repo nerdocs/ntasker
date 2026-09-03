@@ -1,0 +1,553 @@
+<!doctype html>
+<html lang="{{ language }}" data-bs-theme="light">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ntasker — {{ t('Workspace') }}</title>
+    {# Vendor-Assets über asset()-Helper -- siehe index.html für Details. #}
+    <link rel="stylesheet" href="{{ asset('tabler-css') }}"
+          integrity="{{ asset_sri('tabler-css') }}" crossorigin="anonymous">
+    <link rel="stylesheet" href="{{ asset('tabler-icons-css') }}"
+          integrity="{{ asset_sri('tabler-icons-css') }}" crossorigin="anonymous">
+    <link rel="stylesheet" href="/static/style.css?v={{ static_bust('style.css') }}">
+
+    {# i18n data bridge -- registration + page logic live in workspace.js. #}
+    <script>
+        window.__i18n = {{ js_strings | tojson }};
+    </script>
+</head>
+<body>
+<div class="page" x-data="workspacePage()" x-init="init()">
+
+    <header class="navbar navbar-expand-md d-print-none">
+        <div class="container-fluid">
+            <h1 class="navbar-brand navbar-brand-autodark d-flex align-items-center mb-0">
+                <a href="/" class="text-reset text-decoration-none d-flex align-items-center">
+                    <img src="/static/logo.svg?v={{ static_bust('logo.svg') }}"
+                         alt="" width="28" height="28" class="me-2">
+                    ntasker
+                    <span class="badge bg-secondary-lt ms-2 font-monospace small align-middle">v{{ version }}</span>
+                </a>
+            </h1>
+            {% include "_topnav.html" %}
+        </div>
+    </header>
+
+    <div class="page-wrapper">
+        <div class="page-header d-print-none">
+            <div class="container-fluid">
+                <div class="row g-2 align-items-center">
+                    <div class="col">
+                        <h2 class="page-title">
+                            <i class="ti ti-layout-grid me-2 fs-2"></i>
+                            {{ t('Workspace') }}
+                        </h2>
+                    </div>
+                    <div class="col-auto">
+                        <a href="/" class="btn btn-sm btn-ghost-secondary">
+                            <i class="ti ti-arrow-left me-1 fs-3"></i>
+                            {{ t('back to tasks') }}
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="page-body">
+            <div class="container-fluid">
+
+                {# ---- Tab bar. Counts come from the scan, so an empty ---- #}
+                {# ---- section is visibly empty rather than just absent. -- #}
+                <ul class="nav nav-bordered mb-3" role="tablist">
+                    <template x-for="tab in tabs" :key="tab.id">
+                        <li class="nav-item">
+                            <a href="#" class="nav-link" role="tab"
+                               :class="{ 'active': active === tab.id }"
+                               @click.prevent="active = tab.id">
+                                <i class="ti me-1 fs-3" :class="tab.icon"></i>
+                                <span x-text="$i18n(tab.label)"></span>
+                                <span class="badge bg-secondary-lt ms-2" x-show="tab.count !== null"
+                                      x-text="tab.count"></span>
+                            </a>
+                        </li>
+                    </template>
+                </ul>
+
+                {# Transient confirmation after a delete -- says which trash #}
+                {# the file went to, so "deleted" reads as recoverable.       #}
+                <div class="alert alert-success py-2" x-show="flash" x-cloak x-text="flash"></div>
+
+                {# Inline create form. Opened from a section's "+" button, #}
+                {# which passes the directory the note should land in.     #}
+                <div class="card mb-3" x-show="creating.open" x-cloak>
+                    <div class="card-body py-2">
+                        <div class="d-flex align-items-center gap-2">
+                            <i class="ti ti-file-plus fs-2 text-secondary"></i>
+                            <input type="text" class="form-control form-control-sm"
+                                   x-model="creating.name" x-ref="newName"
+                                   @keydown.enter.prevent="createNote()"
+                                   @keydown.escape="creating.open = false"
+                                   :placeholder="$i18n('ws_new_note_placeholder')">
+                            <button class="btn btn-sm btn-primary" @click="createNote()"
+                                    :disabled="!creating.name.trim() || creating.busy">
+                                <span x-text="$i18n('ws_create')"></span>
+                            </button>
+                            <button class="btn btn-sm btn-ghost-secondary" @click="creating.open = false"
+                                    x-text="$i18n('ws_cancel')"></button>
+                        </div>
+                        <div class="text-secondary small font-monospace mt-1 text-truncate"
+                             x-text="creating.parent"></div>
+                        <div class="text-danger small mt-1" x-show="creating.error" x-text="creating.error"></div>
+                    </div>
+                </div>
+
+                <div class="text-secondary py-5 text-center" x-show="loading" x-cloak>
+                    <span class="spinner-border spinner-border-sm me-2"></span>
+                    <span x-text="$i18n('ws_loading')"></span>
+                </div>
+
+                <div x-show="!loading" x-cloak>
+
+                    {# ================= Skills ================= #}
+                    <div x-show="active === 'skills'">
+                        <template x-if="!data.skills.exists">
+                            <div class="card">
+                                <div class="card-body" x-html="missingNotice(data.skills)"></div>
+                            </div>
+                        </template>
+                        <template x-if="data.skills.exists">
+                            <div>
+                                <div class="row g-2 mb-3 align-items-center">
+                                    <div class="col-auto">
+                                        <span class="badge bg-green-lt"
+                                              x-text="$i18n('ws_loads', { n: data.skills.loading })"></span>
+                                    </div>
+                                    <div class="col-auto" x-show="data.skills.broken">
+                                        <span class="badge bg-red-lt"
+                                              x-text="$i18n('ws_broken', { n: data.skills.broken })"></span>
+                                    </div>
+                                    <div class="col">
+                                        <input type="search" class="form-control form-control-sm"
+                                               :placeholder="$i18n('ws_search')" x-model="q.skills">
+                                    </div>
+                                </div>
+                                <div class="row row-cards">
+                                    <template x-for="s in filtered(data.skills.skills, q.skills, ['name','description'])"
+                                              :key="s.path">
+                                        <div class="col-md-6 col-xl-4">
+                                            <div class="card h-100"
+                                                 :class="s.loads ? 'border-start border-2 border-green' : 'border-start border-2 border-red'">
+                                                <div class="card-body">
+                                                    <div class="d-flex align-items-start mb-2">
+                                                        <i class="ti fs-2 me-2 mt-1"
+                                                           :class="s.loads ? 'ti-circle-check text-green' : 'ti-alert-triangle text-red'"
+                                                           :title="s.loads ? $i18n('ws_skill_ok') : $i18n('ws_skill_broken')"></i>
+                                                        {# flex-fill + min-w-0: without the grow/shrink pair the #}
+                                                        {# long path sets this column's width and squeezes the   #}
+                                                        {# badge beside it down to a few letters.                #}
+                                                        <div class="min-w-0 flex-fill">
+                                                            <div class="fw-bold text-truncate" x-text="s.name"></div>
+                                                            <div class="text-secondary small font-monospace text-truncate"
+                                                                 x-text="s.path" :title="s.path"></div>
+                                                        </div>
+                                                        {# A plugin has no SKILL.md of its own -- saying so #}
+                                                        {# keeps the green tick from reading as "this is a  #}
+                                                        {# skill just like the others".                     #}
+                                                        <span class="badge bg-azure-lt ms-auto flex-shrink-0"
+                                                              x-show="s.kind === 'plugin'"
+                                                              x-text="$i18n('ws_plugin')"></span>
+                                                    </div>
+                                                    <p class="text-secondary small mb-2" x-show="s.description"
+                                                       x-text="s.description"></p>
+                                                    <div x-show="s.bundled.length">
+                                                        <div class="text-secondary small mb-1"
+                                                             x-text="$i18n('ws_bundles')"></div>
+                                                        <div class="d-flex flex-wrap gap-1 mb-2">
+                                                            <template x-for="b in s.bundled" :key="b">
+                                                                <span class="badge bg-secondary-lt">
+                                                                    <i class="ti me-1"
+                                                                       :class="b.startsWith('skill:') ? 'ti-puzzle' : 'ti-terminal-2'"></i>
+                                                                    <span x-text="b.split(':').slice(1).join(':')"></span>
+                                                                </span>
+                                                            </template>
+                                                        </div>
+                                                    </div>
+                                                    <div class="alert alert-danger py-2 px-3 mb-0 small"
+                                                         x-show="s.problem" x-text="s.problem"></div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                                <div class="text-secondary text-center py-4"
+                                     x-show="!filtered(data.skills.skills, q.skills, ['name','description']).length"
+                                     x-text="$i18n('ws_no_match')"></div>
+                            </div>
+                        </template>
+                    </div>
+
+                    {# ================= Knowledge base ================= #}
+                    <div x-show="active === 'wiki'">
+                        <template x-if="!data.wiki.exists">
+                            <div class="card">
+                                <div class="card-body" x-html="missingNotice(data.wiki)"></div>
+                            </div>
+                        </template>
+                        <template x-if="data.wiki.exists">
+                            <div>
+                                <div class="row row-cards mb-4">
+                                    <template x-for="a in data.wiki.areas" :key="a.path">
+                                        <div class="col-6 col-md-4 col-xl-3">
+                                            <div class="card h-100">
+                                                <div class="card-body text-center">
+                                                    <div class="h1 mb-0" x-text="a.notes"></div>
+                                                    <div class="text-secondary small mb-2"
+                                                         x-text="$i18n('ws_notes', { n: '' }).trim()"></div>
+                                                    <div class="fw-bold text-truncate mb-2" x-text="a.name"
+                                                         :title="a.name"></div>
+                                                    <a :href="a.uri" class="btn btn-sm btn-ghost-secondary w-100"
+                                                       :title="$i18n('ws_open_obsidian')">
+                                                        <i class="ti ti-external-link me-1"></i>
+                                                        Obsidian
+                                                    </a>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                                <div class="card" x-show="data.wiki.indexes.length">
+                                    <div class="card-header">
+                                        <h3 class="card-title" x-text="$i18n('ws_indexes')"></h3>
+                                    </div>
+                                    <div class="list-group list-group-flush">
+                                        <template x-for="f in data.wiki.indexes" :key="f.path">
+                                            <a href="#" class="list-group-item list-group-item-action d-flex align-items-center"
+                                               @click.prevent="preview(f.path)">
+                                                <i class="ti ti-markdown fs-2 me-2 text-secondary"></i>
+                                                <span x-text="f.name"></span>
+                                                <i class="ti ti-eye ms-auto text-secondary"></i>
+                                            </a>
+                                        </template>
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+
+                    {# ================= Team ================= #}
+                    <div x-show="active === 'team'">
+                        <template x-if="!data.team.exists">
+                            <div class="card">
+                                <div class="card-body" x-html="missingNotice(data.team)"></div>
+                            </div>
+                        </template>
+                        <template x-if="data.team.exists">
+                            <div>
+                                <input type="search" class="form-control form-control-sm mb-3"
+                                       :placeholder="$i18n('ws_search')" x-model="q.team">
+                                <div class="row row-cards">
+                                    <template x-for="m in filtered(data.team.members, q.team, ['name','role','title'])"
+                                              :key="m.path">
+                                        <div class="col-md-6 col-xl-4">
+                                            <div class="card h-100 cursor-pointer" @click="preview(m.path)">
+                                                <div class="card-body">
+                                                    <div class="d-flex align-items-center mb-2">
+                                                        <span class="avatar avatar-sm bg-primary-lt me-2"
+                                                              x-text="m.name.slice(0,2).toUpperCase()"></span>
+                                                        <div class="fw-bold" x-text="m.name"></div>
+                                                        <i class="ti ti-eye ms-auto text-secondary"></i>
+                                                    </div>
+                                                    <p class="text-secondary small mb-0"
+                                                       x-text="m.role || $i18n('ws_no_role')"></p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                                <div class="text-secondary text-center py-4"
+                                     x-show="!filtered(data.team.members, q.team, ['name','role','title']).length"
+                                     x-text="$i18n('ws_no_match')"></div>
+                            </div>
+                        </template>
+                    </div>
+
+                    {# ================= Documents ================= #}
+                    <div x-show="active === 'docs'">
+                        <template x-if="!data.docs.exists">
+                            <div class="card">
+                                <div class="card-body" x-html="missingNotice(data.docs)"></div>
+                            </div>
+                        </template>
+                        <template x-if="data.docs.exists">
+                            <div class="card">
+                                <div class="card-header">
+                                    <div class="row g-2 w-100 align-items-center">
+                                        <div class="col">
+                                            <input type="search" class="form-control form-control-sm"
+                                                   :placeholder="$i18n('ws_search')" x-model="q.docs">
+                                        </div>
+                                        <div class="col-auto">
+                                            <select class="form-select form-select-sm" x-model="kindFilter">
+                                                <option value="" x-text="$i18n('ws_all_kinds')"></option>
+                                                <template x-for="(n, k) in data.docs.kinds" :key="k">
+                                                    <option :value="k" x-text="`${k} (${n})`"></option>
+                                                </template>
+                                            </select>
+                                        </div>
+                                        <div class="col-auto">
+                                            <button class="btn btn-sm btn-primary"
+                                                    @click="startCreate(data.docs.path)"
+                                                    :title="$i18n('ws_new_note')">
+                                                <i class="ti ti-plus"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="table-responsive">
+                                    <table class="table table-vcenter card-table table-hover">
+                                        <thead>
+                                        <tr>
+                                            <th></th>
+                                            <th x-text="$i18n('ws_documents')"></th>
+                                            <th class="w-1" x-text="$i18n('ws_modified')"></th>
+                                            <th class="w-1 text-end" x-text="$i18n('ws_size')"></th>
+                                            <th class="w-1"></th>
+                                        </tr>
+                                        </thead>
+                                        <tbody>
+                                        <template x-for="d in visibleDocs()" :key="d.path">
+                                            <tr :class="d.previewable ? 'cursor-pointer' : ''"
+                                                @click="d.previewable && preview(d.path)">
+                                                <td class="text-secondary">
+                                                    <i class="ti fs-2" :class="iconFor(d.kind)"></i>
+                                                </td>
+                                                <td>
+                                                    <div class="text-truncate" x-text="d.stem"></div>
+                                                    <div class="text-secondary small font-monospace"
+                                                         x-text="d.suffix"></div>
+                                                </td>
+                                                <td class="text-secondary text-nowrap"
+                                                    x-text="d.date || fmtDate(d.modified)"></td>
+                                                <td class="text-secondary text-end text-nowrap"
+                                                    x-text="fmtSize(d.size)"></td>
+                                                <td>
+                                                    <i class="ti ti-eye text-secondary" x-show="d.previewable"></i>
+                                                </td>
+                                            </tr>
+                                        </template>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div class="card-body text-secondary text-center" x-show="!visibleDocs().length"
+                                     x-text="$i18n('ws_no_match')"></div>
+                            </div>
+                        </template>
+                    </div>
+
+                    {# ================= Tooling ================= #}
+                    <div x-show="active === 'tooling'">
+                        <div class="row row-cards">
+                            <div class="col-lg-5">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h3 class="card-title" x-text="$i18n('ws_runtimes')"></h3>
+                                    </div>
+                                    <div class="list-group list-group-flush">
+                                        <template x-for="t in data.tooling.tools" :key="t.name">
+                                            <div class="list-group-item d-flex align-items-center">
+                                                <i class="ti fs-2 me-2"
+                                                   :class="t.available ? 'ti-circle-check text-green' : 'ti-circle-x text-red'"></i>
+                                                <div class="min-w-0">
+                                                    <div class="fw-bold font-monospace" x-text="t.name"></div>
+                                                    <div class="text-secondary small" x-text="t.purpose"></div>
+                                                    <div class="text-secondary small font-monospace text-truncate"
+                                                         x-show="t.path" x-text="t.path"></div>
+                                                </div>
+                                                <span class="badge ms-auto"
+                                                      :class="t.available ? 'bg-green-lt' : 'bg-red-lt'"
+                                                      x-text="t.available ? $i18n('ws_available') : $i18n('ws_unavailable')"></span>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-lg-7">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h3 class="card-title" x-text="$i18n('ws_mcp_servers')"></h3>
+                                    </div>
+                                    <div class="card-body text-secondary" x-show="!data.tooling.config_found">
+                                        <span x-text="$i18n('ws_config_missing')"></span>
+                                        <code x-text="data.tooling.config_path"></code>
+                                    </div>
+                                    <div class="list-group list-group-flush" x-show="data.tooling.config_found">
+                                        <template x-for="s in data.tooling.servers" :key="s.name">
+                                            <div class="list-group-item">
+                                                <div class="d-flex align-items-center">
+                                                    <i class="ti fs-2 me-2"
+                                                       :class="s.runtime_ok ? 'ti-plug-connected text-green' : 'ti-plug-connected-x text-red'"></i>
+                                                    <div class="min-w-0">
+                                                        <div class="fw-bold" x-text="s.name"></div>
+                                                        <div class="text-secondary small font-monospace text-truncate"
+                                                             x-text="s.command || s.transport" :title="s.command"></div>
+                                                    </div>
+                                                    <span class="badge bg-secondary-lt ms-auto"
+                                                          x-text="s.transport"></span>
+                                                </div>
+                                                <div class="alert alert-warning py-1 px-2 mt-2 mb-0 small"
+                                                     x-show="!s.runtime_ok">
+                                                    <span x-text="$i18n('ws_runtime_missing')"></span>
+                                                    <code x-text="s.runtime"></code>
+                                                </div>
+                                                <div class="mt-2" x-show="s.env.length">
+                                                    <template x-for="e in s.env" :key="e.key">
+                                                        <span class="badge me-1"
+                                                              :class="e.from_env ? 'bg-green-lt' : 'bg-yellow-lt'"
+                                                              :title="e.empty ? $i18n('ws_secret_empty') : (e.from_env ? $i18n('ws_secret_env') : $i18n('ws_secret_inline'))">
+                                                            <i class="ti me-1"
+                                                               :class="e.from_env ? 'ti-shield-check' : 'ti-shield-exclamation'"></i>
+                                                            <span class="font-monospace" x-text="e.key"></span>
+                                                        </span>
+                                                    </template>
+                                                </div>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# ================= Preview modal ================= #}
+    <div class="modal modal-blur" :class="{ 'show d-block': viewer.open }" x-cloak
+         @keydown.escape.window="viewer.open = false">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div class="min-w-0">
+                        <h5 class="modal-title text-truncate" x-text="viewer.file?.name || ''"></h5>
+                        <div class="text-secondary small font-monospace text-truncate"
+                             x-text="viewer.file?.path || ''"></div>
+                    </div>
+                    <div class="ms-auto d-flex align-items-center gap-1">
+                        {# Edit only for the suffixes the server will accept a #}
+                        {# write for -- offering it on a .pdf would be a lie.  #}
+                        <button class="btn btn-sm" x-show="editable(viewer.file)"
+                                :class="viewer.editing ? 'btn-ghost-secondary' : 'btn-ghost-primary'"
+                                @click="toggleEdit()">
+                            <i class="ti me-1" :class="viewer.editing ? 'ti-eye' : 'ti-pencil'"></i>
+                            <span x-text="viewer.editing ? $i18n('ws_view') : $i18n('ws_edit')"></span>
+                        </button>
+                        <button class="btn btn-sm btn-ghost-secondary" @click="openExternally()"
+                                :title="$i18n('ws_open_external')">
+                            <i class="ti ti-external-link"></i>
+                        </button>
+                        <button class="btn btn-sm btn-ghost-secondary" @click="renameFile()"
+                                :title="$i18n('ws_rename')">
+                            <i class="ti ti-cursor-text"></i>
+                        </button>
+                        <button class="btn btn-sm btn-ghost-danger" @click="deleteFile()"
+                                :title="$i18n('ws_delete')">
+                            <i class="ti ti-trash"></i>
+                        </button>
+                        <button class="btn btn-sm btn-ghost-secondary" @click="copyPath()">
+                            <i class="ti ti-copy me-1"></i>
+                            <span x-text="viewer.copied ? $i18n('ws_copied') : $i18n('ws_copy_path')"></span>
+                        </button>
+                        <button type="button" class="btn-close ms-1" @click="viewer.open = false"
+                                :aria-label="$i18n('ws_close')"></button>
+                    </div>
+                </div>
+                <div class="modal-body">
+                    <div class="text-secondary text-center py-4" x-show="viewer.loading">
+                        <span class="spinner-border spinner-border-sm me-2"></span>
+                        <span x-text="$i18n('ws_loading')"></span>
+                    </div>
+                    <div class="alert alert-danger" x-show="viewer.error" x-text="viewer.error"></div>
+
+                    {# Editor. Replaces the rendered view rather than sitting #}
+                    {# beside it -- a split view in a modal leaves neither     #}
+                    {# half wide enough to be worth reading.                   #}
+                    <div x-show="viewer.editing" x-cloak>
+                        <textarea class="form-control font-monospace ws-editor" rows="24"
+                                  x-model="viewer.draft"
+                                  @keydown.meta.s.prevent="saveFile()"
+                                  @keydown.ctrl.s.prevent="saveFile()"></textarea>
+                        <div class="d-flex align-items-center mt-2">
+                            <span class="text-secondary small" x-text="$i18n('ws_save_hint')"></span>
+                            <button class="btn btn-sm btn-ghost-secondary ms-auto me-2"
+                                    @click="toggleEdit()" x-text="$i18n('ws_cancel')"></button>
+                            <button class="btn btn-sm btn-primary" @click="saveFile()"
+                                    :disabled="viewer.saving">
+                                <span class="spinner-border spinner-border-sm me-1"
+                                      x-show="viewer.saving" x-cloak></span>
+                                <i class="ti ti-device-floppy me-1" x-show="!viewer.saving"></i>
+                                <span x-text="$i18n('ws_save')"></span>
+                            </button>
+                        </div>
+                    </div>
+
+                    {# Rendered Markdown. Sanitized in ws-common.js before it lands here. #}
+                    <div class="markdown-body" x-show="!viewer.editing && viewer.mode === 'markdown'"
+                         x-html="viewer.html"></div>
+
+                    {# CSV rendered as a real table -- these are exports, and a #}
+                    {# wall of semicolons is unreadable.                        #}
+                    <div class="table-responsive" x-show="!viewer.editing && viewer.mode === 'csv'">
+                        <table class="table table-sm table-bordered table-vcenter">
+                            <thead>
+                            <tr>
+                                <template x-for="(h, i) in viewer.rows[0] || []" :key="i">
+                                    <th x-text="h"></th>
+                                </template>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            <template x-for="(row, ri) in viewer.rows.slice(1)" :key="ri">
+                                <tr>
+                                    <template x-for="(cell, ci) in row" :key="ci">
+                                        <td class="text-nowrap" x-text="cell"></td>
+                                    </template>
+                                </tr>
+                            </template>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <pre class="border rounded p-3 bg-secondary-lt" x-show="!viewer.editing && viewer.mode === 'text'"
+                         style="white-space: pre-wrap;"><code x-text="viewer.file?.text || ''"></code></pre>
+
+                    <div class="text-center py-4" x-show="!viewer.editing && viewer.mode === 'none'">
+                        <div class="text-secondary mb-2" x-text="$i18n('ws_preview_unavailable')"></div>
+                        <button class="btn btn-sm btn-primary" @click="openExternally()">
+                            <i class="ti ti-external-link me-1"></i>
+                            <span x-text="$i18n('ws_open_external')"></span>
+                        </button>
+                    </div>
+
+                    <div class="alert alert-info mt-3 mb-0" x-show="viewer.file?.truncated"
+                         x-text="$i18n('ws_truncated')"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show" x-show="viewer.open" x-cloak @click="viewer.open = false"></div>
+
+</div>
+
+<script src="{{ asset('alpine-js') }}" integrity="{{ asset_sri('alpine-js') }}"
+        crossorigin="anonymous" defer></script>
+<script src="{{ asset('marked-js') }}" integrity="{{ asset_sri('marked-js') }}"
+        crossorigin="anonymous"></script>
+<script src="{{ asset('dompurify-js') }}" integrity="{{ asset_sri('dompurify-js') }}"
+        crossorigin="anonymous"></script>
+<script src="/static/topnav.js?v={{ static_bust('topnav.js') }}"></script>
+<script src="/static/ws-common.js?v={{ static_bust('ws-common.js') }}"></script>
+<script src="/static/workspace.js?v={{ static_bust('workspace.js') }}"></script>
+</body>
+</html>

@@ -20,6 +20,25 @@ const LS_KEY_VIEW_MODE = 'ntasker.viewMode';
 const LS_KEY_SORT_MODE = 'ntasker.sortMode';
 const LS_KEY_KANBAN_DONE_COLLAPSED = 'ntasker.kanbanDoneCollapsed';
 const LS_KEY_SHOW_EMPTY_PROJECTS = 'ntasker.showEmptyProjects';
+// Collapse state of every sidebar section, as {sectionKey: bool}.
+const SECTIONS_KEY = 'ntasker.sidebarSections';
+// User-dragged sidebar width in px; absent = the 280px default.
+const LS_KEY_SIDEBAR_WIDTH = 'ntasker.sidebarWidth';
+// Collapse state of the project category groups, as {category: bool}.
+const LS_KEY_PROJECT_CATS = 'ntasker.projectCatOpen';
+// Sidebar width clamp: below ~200px the checkboxes wrap, above ~600px the
+// sidebar starts eating the task list on a laptop screen.
+const SIDEBAR_MIN_W = 200;
+const SIDEBAR_MAX_W = 600;
+// Sidebar sections fed by /api/workspace -- opening any of them triggers
+// the (single, cached) inventory fetch.
+const WS_SECTIONS = ['team', 'skills', 'wiki', 'docs'];
+// How many entries a workspace section shows before deferring to the
+// full /workspace page. The sidebar is a jumping-off point, not a
+// file manager: 481 knowledge-base notes must never render in it.
+const WS_SIDEBAR_MAX = 12;
+// Shared workspace helpers (ws-common.js), loaded before this file.
+const WS = window.ntaskerWs;
 
 // Legacy keys used pre-1.0. Migrated to the ntasker.* namespace once.
 const LEGACY_KEYS = {
@@ -126,6 +145,18 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // Sidebar: hide projects with 0 open tasks by default; this switch
         // (persisted) flips them back into view.
         showEmptyProjects: localStorage.getItem(LS_KEY_SHOW_EMPTY_PROJECTS) === '1',
+        // Sidebar width in px, draggable via the resize handle (persisted).
+        sidebarWidth: parseInt(localStorage.getItem(LS_KEY_SIDEBAR_WIDTH), 10) || 280,
+        // Reveal projects the user hid from the sidebar. Deliberately NOT
+        // persisted: revealing is a maintenance mode you enter to restore
+        // something, not a state to live in.
+        showHiddenProjects: false,
+        // Collapse state per project category ({name: bool}, default open).
+        projectCatOpen: JSON.parse(localStorage.getItem(LS_KEY_PROJECT_CATS) || '{}'),
+        // Project whose category is being edited inline (null = none) and
+        // the text in that editor.
+        catEditing: null,
+        catInput: '',
         // Drag&drop state. ``draggedTaskId`` is captured on dragstart so the
         // drop handler can identify the moving task without parsing dataTransfer
         // (Firefox is picky about reading text/plain mid-drag). ``dragOverColumn``
@@ -215,6 +246,9 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             tagInput: '',      // current text in the tag-input
             depends: [],       // committed dependencies: [{id, title, done}]
             depInput: '',      // current text in the dependency-input
+            context: [],       // workspace files to attach on create:
+                               // [{kind, path, label, note}] -- sent with
+                               // POST /api/tasks, not attached one by one.
         },
         // Dependency autocomplete suggestions for the currently focused
         // input (form or edit -- only one is open at a time).
@@ -235,6 +269,14 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             this.restoreTagFilter();
             this.restorePhaseFilter();
             this.restorePriorityFilter();
+            this.restoreSections();
+            this.ws = WS.emptyInventory();
+            // Fetched on every load, not lazily on first expand: whether the
+            // workspace block appears at all depends on what the scan finds,
+            // so deferring it would hide the block until someone expanded a
+            // section they cannot see. The scan costs ~10ms and is not
+            // awaited, so it never delays the task list.
+            this.loadWorkspace();
             await Promise.all([
                 this.loadProjects(),
                 this.loadTags(),
@@ -265,6 +307,662 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             this._applyRoute();
         },
 
+        // ---- Sidebar sections: collapse state ------------------------
+        //
+        // The sidebar grew from three filter blocks to seven blocks that
+        // also carry the workspace, which is far more than fits on screen
+        // at once. Every block collapses, and the state is remembered --
+        // a sidebar that reopened fully expanded on every reload would
+        // undo the tidying on each visit.
+
+        // Defaults: the task filters stay open (that is what the sidebar
+        // was for), the workspace sections start closed so the page looks
+        // the way it always did until the user goes looking.
+        sectionOpen: {
+            projects: true, phases: true, priorities: true, tags: true,
+            team: false, skills: false, wiki: false, docs: false,
+        },
+
+        restoreSections() {
+            try {
+                const raw = localStorage.getItem(SECTIONS_KEY);
+                if (!raw) return;
+                const saved = JSON.parse(raw);
+                if (saved && typeof saved === 'object') {
+                    // Merge rather than replace: a stored state written by an
+                    // older version has no key for a section added since, and
+                    // that section would otherwise come back undefined.
+                    for (const [k, v] of Object.entries(saved)) {
+                        if (k in this.sectionOpen) this.sectionOpen[k] = !!v;
+                    }
+                }
+            } catch (e) {
+                // Corrupt or unavailable storage -- keep the defaults.
+            }
+        },
+
+        toggleSection(key) {
+            this.sectionOpen[key] = !this.sectionOpen[key];
+            try {
+                localStorage.setItem(SECTIONS_KEY, JSON.stringify(this.sectionOpen));
+            } catch (e) {
+                // Private mode / quota -- collapsing still works this session.
+            }
+            // Expanding a workspace section after the initial fetch failed
+            // (server restarting, say) is a natural moment to retry.
+            if (!this.wsLoaded && WS_SECTIONS.includes(key) && this.sectionOpen[key]) {
+                this.loadWorkspace();
+            }
+        },
+
+        // ---- Workspace inventory in the sidebar ----------------------
+
+        ws: null,               // inventory; null until the first fetch
+        wsLoaded: false,
+        wsLoading: false,
+        wsQuery: { team: '', skills: '', wiki: '', docs: '' },
+
+        async loadWorkspace(force) {
+            if (this.wsLoading || (this.wsLoaded && !force)) return;
+            this.wsLoading = true;
+            try {
+                const res = await fetch('/api/workspace');
+                if (res.ok) {
+                    this.ws = await res.json();
+                    this.wsLoaded = true;
+                }
+            } catch (e) {
+                // Leave `ws` as the empty scaffold -- every section then
+                // renders its "not configured" hint instead of blowing up.
+            } finally {
+                this.wsLoading = false;
+            }
+        },
+
+        // Sidebar lists stay short on purpose: it is a jumping-off point,
+        // not a file manager. Anything past the cap is reachable via the
+        // section's "show all" link into /workspace.
+        wsSlice(items, query, fields) {
+            return WS.filterItems(items, query, fields).slice(0, WS_SIDEBAR_MAX);
+        },
+
+        wsMore(items, query, fields) {
+            return Math.max(0, WS.filterItems(items, query, fields).length - WS_SIDEBAR_MAX);
+        },
+
+        wsIcon(kind) { return WS.iconFor(kind); },
+        wsContextIcon(kind) { return WS.contextIcon(kind); },
+        wsSize(bytes) { return WS.fmtSize(bytes); },
+
+        // True when at least one workspace directory is configured. Drives
+        // whether the sidebar shows the workspace block at all -- on an
+        // install with none of them set, it never appears.
+        get wsConfigured() {
+            if (!this.ws) return false;
+            return ['skills', 'wiki', 'team', 'docs'].some(k => this.ws[k] && this.ws[k].exists);
+        },
+
+        // ---- Workspace file viewer (sidebar + context chips) ---------
+
+        wsViewer: {
+            open: false, loading: false, error: '',
+            file: null, mode: 'none', html: '', rows: [],
+            editing: false, draft: '', saving: false,
+            // Set while browsing a directory instead of showing a file.
+            dir: null,
+        },
+
+        async wsPreview(path) {
+            Object.assign(this.wsViewer, {
+                open: true, loading: true, error: '', file: null, dir: null,
+                mode: 'none', html: '', rows: [], editing: false, draft: '',
+            });
+            try {
+                const res = await fetch('/api/workspace/file?path=' + encodeURIComponent(path));
+                if (!res.ok) {
+                    this.wsViewer.error = await WS.errorDetail(res, _i('ws_preview_failed'));
+                    return;
+                }
+                const file = await res.json();
+                this.wsViewer.file = file;
+                Object.assign(this.wsViewer, WS.renderFile(file));
+            } catch (e) {
+                this.wsViewer.error = _i('ws_preview_failed');
+            } finally {
+                this.wsViewer.loading = false;
+            }
+        },
+
+        async wsBrowse(path) {
+            Object.assign(this.wsViewer, {
+                open: true, loading: true, error: '', file: null, dir: null,
+                mode: 'none', html: '', rows: [], editing: false, draft: '',
+            });
+            try {
+                const res = await fetch('/api/workspace/browse?path=' + encodeURIComponent(path));
+                if (!res.ok) {
+                    this.wsViewer.error = await WS.errorDetail(res, _i('ws_preview_failed'));
+                    return;
+                }
+                this.wsViewer.dir = await res.json();
+            } catch (e) {
+                this.wsViewer.error = _i('ws_preview_failed');
+            } finally {
+                this.wsViewer.loading = false;
+            }
+        },
+
+        // One click handler for both kinds of row in a directory listing.
+        wsOpen(entry) {
+            if (entry.directory) return this.wsBrowse(entry.path);
+            if (entry.previewable) return this.wsPreview(entry.path);
+            return this.wsRevealFile(entry.path);
+        },
+
+        wsToggleEdit() {
+            if (this.wsViewer.editing) {
+                this.wsViewer.editing = false;
+                this.wsViewer.draft = '';
+                return;
+            }
+            this.wsViewer.draft = this.wsViewer.file?.text ?? '';
+            this.wsViewer.editing = true;
+        },
+
+        wsEditable(file) { return WS.isEditable(file); },
+
+        async wsSave() {
+            const file = this.wsViewer.file;
+            if (!file || this.wsViewer.saving) return;
+            this.wsViewer.saving = true;
+            try {
+                const res = await fetch('/api/workspace/file', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: file.path, text: this.wsViewer.draft }),
+                });
+                if (!res.ok) {
+                    this.showToast(await WS.errorDetail(res, _i('ws_save_failed')), 'danger');
+                    return;
+                }
+                const fresh = await res.json();
+                this.wsViewer.file = fresh;
+                Object.assign(this.wsViewer, WS.renderFile(fresh));
+                this.wsViewer.editing = false;
+                this.wsViewer.draft = '';
+                this.showToast(_i('ws_saved'), 'success');
+            } finally {
+                this.wsViewer.saving = false;
+            }
+        },
+
+        async wsRename(path, currentName) {
+            const next = prompt(_i('ws_rename_prompt'), currentName);
+            if (next === null || next.trim() === currentName) return;
+            const res = await fetch('/api/workspace/rename', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path, name: next }),
+            });
+            if (!res.ok) {
+                this.showToast(await WS.errorDetail(res, _i('ws_rename_failed')), 'danger');
+                return;
+            }
+            const moved = await res.json();
+            await this.loadWorkspace(true);
+            if (this.wsViewer.dir) await this.wsBrowse(this.wsViewer.dir.path);
+            else await this.wsPreview(moved.path);
+        },
+
+        async wsDelete(path, name) {
+            if (!confirm(_i('ws_confirm_delete', { name }))) return;
+            const res = await fetch('/api/workspace/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path }),
+            });
+            if (!res.ok) {
+                this.showToast(await WS.errorDetail(res, _i('ws_delete_failed')), 'danger');
+                return;
+            }
+            const result = await res.json();
+            // Name the trash the file landed in -- "deleted" from a browser
+            // is alarming enough that the user deserves to know it is
+            // recoverable, and from where.
+            this.showToast(
+                result.method === 'os'
+                    ? _i('ws_trashed_os', { name: result.name })
+                    : _i('ws_trashed_folder', { name: result.name }),
+                'success',
+            );
+            await this.loadWorkspace(true);
+            if (this.wsViewer.dir) await this.wsBrowse(this.wsViewer.dir.path);
+            else this.wsViewer.open = false;
+        },
+
+        async wsRevealFile(path) {
+            // A "file" attachment lives outside the workspace roots; its
+            // open goes through the attachment row instead.
+            const ext = this.wsViewer.file && this.wsViewer.file.path === path && this.wsViewer.file.external;
+            const res = ext
+                ? await fetch(`/api/tasks/${ext.taskId}/context/${ext.contextId}/reveal`, { method: 'POST' })
+                : await fetch('/api/workspace/reveal', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path }),
+                });
+            if (!res.ok) {
+                this.showToast(await WS.errorDetail(res, _i('ws_open_failed')), 'danger');
+            }
+        },
+
+        async wsCreateNote(parent) {
+            const name = prompt(_i('ws_new_note_prompt'), '');
+            if (!name || !name.trim()) return;
+            const res = await fetch('/api/workspace/entry', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ parent, name }),
+            });
+            if (!res.ok) {
+                this.showToast(await WS.errorDetail(res, _i('ws_create_failed')), 'danger');
+                return;
+            }
+            const created = await res.json();
+            await this.loadWorkspace(true);
+            await this.wsPreview(created.path);
+            this.wsToggleEdit();
+        },
+
+        // ---- Task context attachments --------------------------------
+        //
+        // A task carries pointers to workspace files -- the persona to
+        // think as, the skill that applies, the note holding the prior
+        // art. They are handed to the agent at spawn (see
+        // claude_runner.context_briefing), which is the whole point:
+        // otherwise the user re-types the same three paths every run.
+
+        // Picker state. `target` is the task the picked file attaches to;
+        // null = draft mode, picks collect in form.context until createTask
+        // sends them along with the new task.
+        picker: { open: false, target: null, tab: 'files', q: '', note: '', busy: false, path: '', picking: false },
+
+        // Can the server open a native file dialog on this desktop? null =
+        // not asked yet; the buttons stay hidden until it says yes.
+        pickerNative: null,
+
+        // JCBrain tab state. Unlike the file tabs there is no inventory to
+        // filter client-side: every query is a semantic search on the
+        // server, so results live here, keyed by the query they answer.
+        brain: { status: null, results: [], forQuery: '', loading: false, error: '' },
+
+        openPicker(task) {
+            this.picker = { open: true, target: task || null, tab: 'files', q: '', note: '', busy: false, path: '', picking: false };
+            this.brain.results = [];
+            this.brain.forQuery = '';
+            this.brain.error = '';
+            this.loadWorkspace();
+            this.loadBrainStatus();
+            this.loadPickerNative();
+        },
+
+        // The picker's tabs. "Files" is always there -- it needs no
+        // workspace directory, just this machine. The workspace tabs only
+        // appear once their directory is configured, so a fresh install
+        // is not a row of empty lists.
+        get pickerTabs() {
+            const ws = this.ws;
+            const has = k => !!(ws && ws[k] && ws[k].exists);
+            const tabs = [{ id: 'files', label: 'ws_files', icon: 'ti-file' }];
+            if (has('team')) tabs.push({ id: 'team', label: 'ws_team', icon: 'ti-users' });
+            if (has('skills')) tabs.push({ id: 'skills', label: 'ws_skills', icon: 'ti-puzzle' });
+            if (has('wiki')) tabs.push({ id: 'wiki', label: 'ws_knowledge', icon: 'ti-book' });
+            if (has('docs')) tabs.push({ id: 'docs', label: 'ws_documents', icon: 'ti-files' });
+            tabs.push({ id: 'brain', label: 'ws_brain', icon: 'ti-brain' });
+            tabs.push({ id: 'mcp', label: 'ws_mcp', icon: 'ti-plug-connected' });
+            return tabs;
+        },
+
+        async loadPickerNative() {
+            if (this.pickerNative !== null) return;
+            try {
+                const res = await fetch('/api/fs/pick');
+                this.pickerNative = res.ok ? !!(await res.json()).available : false;
+            } catch (e) {
+                this.pickerNative = false;
+            }
+        },
+
+        // Chip icon: a folder attachment shows as a folder, everything
+        // else by its kind.
+        contextChipIcon(c) {
+            return WS.contextIcon(c && c.is_dir ? 'folder' : (c && c.kind));
+        },
+
+        // ---- Local files as context ----------------------------------
+        //
+        // The browser cannot tell us where a dropped file lives, so there
+        // are two ways in: paste a path (one per line), or let the server
+        // open the OS dialog -- it runs on the same desktop, so it can.
+
+        // Attach every non-empty line of the path box. Each path is
+        // resolved server-side first so a typo shows up now, not at
+        // Create time (draft mode sends nothing until then).
+        async attachPaths(text) {
+            const lines = String(text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+            if (!lines.length) return;
+            if (this.picker.busy) return;
+            this.picker.busy = true;
+            // Lines that did not resolve stay in the box for a second look;
+            // the ones that landed are cleared out from under them.
+            const failed = [];
+            try {
+                for (const raw of lines) {
+                    const res = await fetch('/api/fs/resolve?path=' + encodeURIComponent(raw));
+                    if (!res.ok) {
+                        this.showToast(`${raw}: ${await WS.errorDetail(res, _i('ws_attach_failed'))}`, 'danger');
+                        failed.push(raw);
+                        continue;
+                    }
+                    const info = await res.json();
+                    this.picker.busy = false;   // attachContext has its own guard
+                    await this.attachContext({ kind: 'file', path: info.path, label: info.name, is_dir: info.is_dir });
+                    this.picker.busy = true;
+                }
+            } finally {
+                this.picker.busy = false;
+            }
+            this.picker.path = failed.join('\n');
+        },
+
+        // Native OS dialog via the server; blocks until the user picks.
+        async pickNative(folder) {
+            if (this.picker.picking) return;
+            this.picker.picking = true;
+            try {
+                const res = await fetch('/api/fs/pick', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ folder: !!folder }),
+                });
+                if (!res.ok) {
+                    this.showToast(await WS.errorDetail(res, _i('ws_file_pick_failed')), 'danger');
+                    if (res.status === 501) this.pickerNative = false;
+                    return;
+                }
+                const paths = (await res.json()).paths || [];
+                if (paths.length) await this.attachPaths(paths.join('\n'));
+            } catch (e) {
+                this.showToast(_i('ws_file_pick_failed'), 'danger');
+            } finally {
+                this.picker.picking = false;
+            }
+        },
+
+        // Preview of a "file" attachment goes through the attachment row,
+        // not the workspace reader -- the path is outside every root.
+        async contextFilePreview(c) {
+            const task = this.picker.target || this.editing;
+            const taskId = c.task_id || (task && task.id);
+            if (!c.id || !taskId) {
+                this.showToast(_i('ws_file_preview_after_create'), 'info');
+                return;
+            }
+            Object.assign(this.wsViewer, {
+                open: true, loading: true, error: '', file: null, dir: null,
+                mode: 'none', html: '', rows: [], editing: false, draft: '',
+            });
+            try {
+                const res = await fetch(`/api/tasks/${taskId}/context/${c.id}/file`);
+                if (!res.ok) {
+                    this.wsViewer.error = await WS.errorDetail(res, _i('ws_preview_failed'));
+                    return;
+                }
+                const file = await res.json();
+                // `external` keeps the viewer read-only (no rename/delete/
+                // edit -- those endpoints are root-confined) and routes
+                // "open" through the attachment endpoint.
+                file.external = { taskId, contextId: c.id };
+                this.wsViewer.file = file;
+                Object.assign(this.wsViewer, WS.renderFile(file));
+            } catch (e) {
+                this.wsViewer.error = _i('ws_preview_failed');
+            } finally {
+                this.wsViewer.loading = false;
+            }
+        },
+
+        async loadBrainStatus() {
+            if (this.brain.status) return;
+            try {
+                const res = await fetch('/api/brain/status');
+                if (res.ok) this.brain.status = await res.json();
+            } catch (e) {
+                // Leave null: the tab then shows the not-configured hint.
+            }
+        },
+
+        // Debounced from the picker's search box while the JCBrain tab is
+        // active. A stale reply (typed on before it landed) is dropped by
+        // comparing against the query it was issued for.
+        async brainSearch() {
+            const q = this.picker.q.trim();
+            if (this.picker.tab !== 'brain') return;
+            if (!q) {
+                this.brain.results = [];
+                this.brain.forQuery = '';
+                this.brain.error = '';
+                return;
+            }
+            if (q === this.brain.forQuery) return;
+            this.brain.loading = true;
+            this.brain.error = '';
+            try {
+                const res = await fetch('/api/brain/search?q=' + encodeURIComponent(q));
+                if (q !== this.picker.q.trim()) return;
+                if (!res.ok) {
+                    this.brain.error = await WS.errorDetail(res, _i('ws_brain_failed'));
+                    this.brain.results = [];
+                    return;
+                }
+                const data = await res.json();
+                this.brain.results = data.results || [];
+                this.brain.forQuery = q;
+            } catch (e) {
+                this.brain.error = _i('ws_brain_failed');
+                this.brain.results = [];
+            } finally {
+                this.brain.loading = false;
+            }
+        },
+
+        // Open an attachment: files go to the workspace viewer, JCBrain
+        // notes are fetched through the server proxy into the same modal.
+        openContext(c) {
+            if (c.kind === 'brain') return this.brainPreview(c.path);
+            if (c.kind === 'mcp') return this.mcpPreview(c.path);
+            if (c.kind === 'file') return this.contextFilePreview(c);
+            return this.wsPreview(c.path);
+        },
+
+        // An MCP server has no body to show -- the viewer gets a short
+        // fact sheet from the inventory (never the config's env values).
+        async mcpPreview(path) {
+            const name = String(path || '').replace(/^mcp:\/\//, '');
+            Object.assign(this.wsViewer, {
+                open: true, loading: true, error: '', file: null, dir: null,
+                mode: 'none', html: '', rows: [], editing: false, draft: '',
+            });
+            try {
+                await this.loadWorkspace();
+                const servers = (this.ws && this.ws.tooling && this.ws.tooling.servers) || [];
+                const s = servers.find(x => x.name === name);
+                if (!s) {
+                    this.wsViewer.error = _i('ws_mcp_gone');
+                    return;
+                }
+                const lines = [`**${_i('ws_mcp_transport')}:** ${s.transport}`];
+                if (s.command) lines.push(`**${_i('ws_mcp_command')}:** \`${s.command}\``);
+                if (s.runtime && !s.runtime_ok) lines.push(`_${_i('ws_mcp_runtime_missing')}: ${s.runtime}_`);
+                if (s.env && s.env.length) lines.push('**env:** ' + s.env.map(e => e.key).join(', '));
+                const file = { name: name, path: path, kind: 'markdown', suffix: '', text: lines.join('\n\n'), remote: true };
+                this.wsViewer.file = file;
+                Object.assign(this.wsViewer, WS.renderFile(file));
+            } finally {
+                this.wsViewer.loading = false;
+            }
+        },
+
+        async brainPreview(path) {
+            const id = String(path || '').replace(/^brain:\/\//, '');
+            Object.assign(this.wsViewer, {
+                open: true, loading: true, error: '', file: null, dir: null,
+                mode: 'none', html: '', rows: [], editing: false, draft: '',
+            });
+            try {
+                const res = await fetch('/api/brain/thoughts/' + encodeURIComponent(id));
+                if (!res.ok) {
+                    this.wsViewer.error = await WS.errorDetail(res, _i('ws_brain_failed'));
+                    return;
+                }
+                const doc = await res.json();
+                const meta = doc.metadata || {};
+                // Shaped like a workspace file so renderFile + the header
+                // work unchanged; `remote` hides the file-only actions
+                // (rename/delete/reveal) and `suffix: ''` keeps it read-only.
+                const file = {
+                    name: doc.title || _i('ws_brain_note'),
+                    path: path,
+                    kind: 'markdown',
+                    suffix: '',
+                    text: doc.text || '',
+                    remote: true,
+                    captured: meta.created_at || '',
+                };
+                this.wsViewer.file = file;
+                Object.assign(this.wsViewer, WS.renderFile(file));
+            } catch (e) {
+                this.wsViewer.error = _i('ws_brain_failed');
+            } finally {
+                this.wsViewer.loading = false;
+            }
+        },
+
+        get pickerItems() {
+            // The Files tab is buttons and a path box, not a list.
+            if (this.picker.tab === 'files') return [];
+            if (!this.ws) return [];
+            const q = this.picker.q;
+            if (this.picker.tab === 'team') {
+                return WS.filterItems(this.ws.team.members, q, ['name', 'role', 'title'])
+                    .map(m => ({ kind: 'member', label: m.name, sub: m.role, path: m.path }));
+            }
+            if (this.picker.tab === 'skills') {
+                return WS.filterItems(this.ws.skills.skills, q, ['name', 'description'])
+                    .map(s => ({ kind: 'skill', label: s.name, sub: s.description, path: s.path }));
+            }
+            if (this.picker.tab === 'docs') {
+                return WS.filterItems(this.ws.docs.docs, q, ['stem', 'name'])
+                    .map(d => ({ kind: 'doc', label: d.stem, sub: d.name, path: d.path }));
+            }
+            if (this.picker.tab === 'mcp') {
+                const servers = (this.ws.tooling && this.ws.tooling.servers) || [];
+                return WS.filterItems(servers, q, ['name', 'transport', 'command']).map(s => ({
+                    kind: 'mcp',
+                    label: s.name,
+                    sub: s.transport + (s.runtime_ok ? '' : ' -- ' + _i('ws_mcp_runtime_missing')),
+                    path: 'mcp://' + s.name,
+                }));
+            }
+            if (this.picker.tab === 'brain') {
+                // Server-side search results; the title the edge function
+                // builds is "<date> - <first 80 chars>", split for display.
+                return this.brain.results.map(r => {
+                    const m = /^(\S+)\s+-\s+(.*)$/.exec(r.title || '');
+                    return {
+                        kind: 'brain',
+                        label: m ? m[2] : (r.title || r.id),
+                        sub: m ? `${_i('ws_brain_captured')} ${m[1]}` : '',
+                        path: r.path,
+                    };
+                });
+            }
+            // Knowledge base: areas and root index notes. Individual notes
+            // are reached by browsing -- listing 481 of them in a picker
+            // would be a worse search than the one Obsidian already has.
+            const areas = WS.filterItems(this.ws.wiki.areas, q, ['name'])
+                .map(a => ({ kind: 'note', label: a.name, sub: _i('ws_notes', { n: a.notes }), path: a.path }));
+            const indexes = WS.filterItems(this.ws.wiki.indexes, q, ['name'])
+                .map(i => ({ kind: 'note', label: i.name, sub: '', path: i.path }));
+            return [...areas, ...indexes];
+        },
+
+        // Already attached to the picker's task (or, in draft mode, already
+        // collected in the form)? Drives the checkmark, so the user is not
+        // left guessing whether the click registered.
+        isAttached(path) {
+            const list = this.picker.target
+                ? (this.picker.target.context || [])
+                : this.form.context;
+            return list.some(c => c.path === path);
+        },
+
+        async attachContext(item) {
+            const task = this.picker.target;
+            // Draft mode: no task exists yet -- collect locally, createTask
+            // sends the batch. Re-picking the same file updates its note.
+            if (!task) {
+                this.form.context = [
+                    ...this.form.context.filter(c => c.path !== item.path),
+                    { kind: item.kind, path: item.path, label: item.label, note: this.picker.note, is_dir: !!item.is_dir },
+                ];
+                this.picker.note = '';
+                return;
+            }
+            if (this.picker.busy) return;
+            this.picker.busy = true;
+            try {
+                const res = await fetch(`/api/tasks/${task.id}/context`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        kind: item.kind,
+                        path: item.path,
+                        label: item.label,
+                        note: this.picker.note,
+                    }),
+                });
+                if (!res.ok) {
+                    this.showToast(await WS.errorDetail(res, _i('ws_attach_failed')), 'danger');
+                    return;
+                }
+                const entry = await res.json();
+                // Patch the open task object in place. The edit modal holds
+                // a clone, so a refreshAll() would not reach it -- and
+                // reloading mid-edit would drop the user's other changes.
+                task.context = [
+                    ...(task.context || []).filter(c => c.path !== entry.path),
+                    entry,
+                ];
+                this.picker.note = '';
+                await this.refreshAll();
+            } finally {
+                this.picker.busy = false;
+            }
+        },
+
+        async detachContext(task, entry) {
+            const res = await fetch(`/api/tasks/${task.id}/context/${entry.id}`, {
+                method: 'DELETE',
+            });
+            if (!res.ok && res.status !== 404) {
+                this.showToast(_i('ws_detach_failed'), 'danger');
+                return;
+            }
+            task.context = (task.context || []).filter(c => c.id !== entry.id);
+            await this.refreshAll();
+        },
+
         // Convenience: just the project names (for <select> in forms).
         // Excludes the __none__ sentinel.
         get projectNames() {
@@ -292,16 +990,147 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // A project currently in the filter stays visible even when empty, so
         // the user can always un-check it.
         get visibleProjects() {
-            if (this.showEmptyProjects) return this.projects;
-            return this.projects.filter(p =>
+            // Hidden projects are a hard veto -- they stay out even with
+            // "show empty projects" on, unless the reveal switch is active.
+            const pool = this.showHiddenProjects
+                ? this.projects
+                : this.projects.filter(p => !p.hidden);
+            if (this.showEmptyProjects) return pool;
+            return pool.filter(p =>
                 p.open_count > 0 || this.projectFilter.includes(p.name)
             );
+        },
+
+        // Any project hidden at all? Gates the reveal switch.
+        get hasHiddenProjects() {
+            return this.projects.some(p => p.hidden);
+        },
+
+        async setProjectHidden(proj, hidden) {
+            const res = await fetch('/api/projects/hidden', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ project: proj.name, hidden }),
+            });
+            if (!res.ok) {
+                this.showToast(await this._errorDetail(res, 'save_failed'), 'danger');
+                return;
+            }
+            // Un-check a hidden project's filter -- an invisible active
+            // filter would look like tasks silently vanishing.
+            if (hidden && this.projectFilter.includes(proj.name)) {
+                this.toggleProject(proj.name);
+            }
+            await this.loadProjects();
         },
 
         // True when at least one project has no open tasks -- gates the switch
         // so it only appears when it would actually do something.
         get hasEmptyProjects() {
             return this.projects.some(p => p.open_count === 0);
+        },
+
+        // ---- Project categories ----
+        //
+        // Projects grouped by their user-chosen category for the sidebar.
+        // The cross-project sentinel always leads ungrouped; categorized
+        // groups follow sorted by name; uncategorized projects close the
+        // list. While no category exists at all the whole grouping layer
+        // stays invisible (one flat list, as before).
+        get projectGroups() {
+            const cats = new Map();
+            const uncat = [];
+            for (const p of this.visibleProjects) {
+                if (p.name === PROJECT_NONE) continue; // rendered separately
+                if (p.category) {
+                    if (!cats.has(p.category)) cats.set(p.category, []);
+                    cats.get(p.category).push(p);
+                } else {
+                    uncat.push(p);
+                }
+            }
+            const groups = [...cats.keys()]
+                .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+                .map(name => ({ name, projects: cats.get(name) }));
+            if (uncat.length) groups.push({ name: null, projects: uncat });
+            return groups;
+        },
+
+        // Any category assigned at all? Gates the group headers.
+        get hasProjectCategories() {
+            return this.projects.some(p => p.category);
+        },
+
+        // The sentinel row, rendered above the groups.
+        get crossProjectRow() {
+            return this.visibleProjects.find(p => p.name === PROJECT_NONE) || null;
+        },
+
+        // Every category currently in use -- feeds the <datalist> in the
+        // inline editor so assigning an existing category is one click.
+        get knownCategories() {
+            return [...new Set(this.projects.map(p => p.category).filter(Boolean))]
+                .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+        },
+
+        catGroupOpen(name) {
+            // Default open; only an explicit collapse stores false.
+            return this.projectCatOpen[name ?? '__uncat__'] !== false;
+        },
+
+        toggleCatGroup(name) {
+            const key = name ?? '__uncat__';
+            this.projectCatOpen = { ...this.projectCatOpen, [key]: !this.catGroupOpen(name) };
+            localStorage.setItem(LS_KEY_PROJECT_CATS, JSON.stringify(this.projectCatOpen));
+        },
+
+        editCategory(proj) {
+            this.catEditing = proj.name;
+            this.catInput = proj.category || '';
+        },
+
+        async saveCategory(proj) {
+            // Escape closes the editor before blur fires -- don't save then.
+            if (this.catEditing !== proj.name) return;
+            const res = await fetch('/api/projects/category', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ project: proj.name, category: this.catInput }),
+            });
+            this.catEditing = null;
+            if (!res.ok) {
+                this.showToast(await this._errorDetail(res, 'save_failed'), 'danger');
+                return;
+            }
+            await this.loadProjects();
+        },
+
+        // ---- Sidebar resize ----
+        //
+        // Pointer-drag on the sidebar's right edge. Pointer capture keeps
+        // the drag alive when the cursor overshoots the handle; the width
+        // lands in localStorage on release.
+        startSidebarResize(e) {
+            e.preventDefault();
+            const startX = e.clientX;
+            const startW = this.sidebarWidth;
+            const move = ev => {
+                this.sidebarWidth = Math.min(
+                    SIDEBAR_MAX_W,
+                    Math.max(SIDEBAR_MIN_W, startW + (ev.clientX - startX)),
+                );
+            };
+            const up = () => {
+                document.removeEventListener('pointermove', move);
+                document.removeEventListener('pointerup', up);
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+                localStorage.setItem(LS_KEY_SIDEBAR_WIDTH, String(this.sidebarWidth));
+            };
+            document.addEventListener('pointermove', move);
+            document.addEventListener('pointerup', up);
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
         },
 
         // Sidebar tag list: narrowed by the type-ahead query and sorted
@@ -932,6 +1761,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 agent: this.form.agent || null,
                 tags: this.form.tags,
                 depends: this.form.depends.map(d => d.id),
+                context: this.form.context,
             };
             const r = await fetch('/api/tasks', {
                 method: 'POST',
@@ -952,6 +1782,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             this.form.tagInput = '';
             this.form.depends = [];
             this.form.depInput = '';
+            this.form.context = [];
             // Keep project selection for rapid same-project entry.
             await this.refreshAll();
             // Create + Run: hand the fresh task straight to its agent. The run
@@ -1032,6 +1863,11 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 _tagInput: '',
                 depends: (task.depends || []).map(d => ({ ...d })),
                 _depInput: '',
+                // Attachments are written straight through to the server
+                // (they are not part of the PATCH payload), but the array
+                // is still cloned so the list row behind the modal is not
+                // mutated before the refresh lands.
+                context: (task.context || []).map(c => ({ ...c })),
             };
             this.depSuggest = [];
         },

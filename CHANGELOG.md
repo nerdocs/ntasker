@@ -4,6 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [Unreleased]
+Workspace integration: sidebar sections for team personas, skills, knowledge base and generated documents; attach workspace files as task context (also at creation); project categories with collapsible sidebar groups; one-click project hiding; draggable sidebar width; workspace root dirs configurable in settings.
+
 ## [2.20.1] — 2026-09-02
 Runs without a project start in `no_project_dir` / `projects_base` instead of home, where Claude blocks on its trust prompt.
 

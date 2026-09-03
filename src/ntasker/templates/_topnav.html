@@ -21,6 +21,10 @@
         <img src="/static/buymeacoffee.png?v={{ static_bust('buymeacoffee.png') }}"
              alt="Buy me a coffee" height="32">
     </a>
+    <a href="/workspace" class="btn btn-icon btn-sm btn-ghost-secondary me-1"
+       :title="$i18n('workspace')">
+        <i class="ti ti-layout-grid fs-2"></i>
+    </a>
     <a href="/info" class="btn btn-icon btn-sm btn-ghost-secondary position-relative me-1"
        :title="updateAvailable ? $i18n('update_available_short') : $i18n('info')">
         <i class="ti ti-info-circle fs-2"></i>

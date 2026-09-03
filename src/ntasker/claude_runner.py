@@ -211,6 +211,85 @@ def seed_command_for_task(task: dict) -> str:
     return f"/task {task['id']}"
 
 
+def context_briefing(context: list[dict]) -> list[str]:
+    """Render attached workspace files as prompt lines. Empty list if none.
+
+    The agent gets paths, not contents: a persona file or a knowledge-base
+    note can be thousands of tokens, most of which the task will never
+    need, and the agent has a Read tool. What it cannot guess is *which*
+    files matter -- that is exactly what the user encoded by attaching them,
+    so the list is stated as an instruction rather than as trivia.
+
+    Attachments whose file has since moved are marked instead of dropped:
+    an agent that knows a reference is dangling can say so, while a silently
+    shortened list just looks like the user never attached anything.
+
+    JCBrain notes are the exception to "paths, not contents": they are
+    remote, the agent has no Read tool for them, and a thought is usually
+    a paragraph -- so the text is fetched here and inlined (capped; see
+    :data:`ntasker.brain.BRIEFING_MAX_CHARS`). If the fetch fails the agent
+    is told the id so it can try the ``open-brain`` MCP ``fetch`` tool.
+    """
+    if not context:
+        return []
+
+    from ntasker import brain  # noqa: PLC0415 -- lazy: avoid cycle
+
+    labels = {
+        "member": "Team persona",
+        "skill": "Skill",
+        "note": "Knowledge base",
+        "doc": "Document",
+        "file": "File",
+        "brain": "JCBrain note",
+        "mcp": "MCP server",
+    }
+    lines = [
+        "",
+        "## Attached context",
+        "",
+        "The user attached these workspace files to the task. Read the ones "
+        "relevant to what you are doing before you start -- they carry the "
+        "conventions, background and prior art this task depends on.",
+        "",
+    ]
+    for entry in context:
+        kind = labels.get(entry.get("kind", ""), "File")
+        path = entry.get("path", "")
+        line = f"- **{kind}: {entry.get('label') or '?'}** -- `{path}`"
+        if not entry.get("exists", True):
+            line += "  _(file not found -- mention this rather than guessing)_"
+        lines.append(line)
+        if entry.get("note"):
+            lines.append(f"  - {entry['note']}")
+        if entry.get("kind") == "file":
+            if os.path.isdir(path):
+                lines.append(
+                    "  - This is a folder: list it first, then read what the task needs."
+                )
+            else:
+                lines.append(
+                    "  - Read this file with your Read tool before you rely on it "
+                    "(PDFs and images included)."
+                )
+        if entry.get("kind") == "mcp":
+            lines.append(
+                "  - Use the tools of this MCP server for the task (ToolSearch by its "
+                "name if they are deferred). If the server is not connected, say so."
+            )
+        if entry.get("kind") == "brain":
+            text = brain.briefing_text(path)
+            if text:
+                lines += ["", "  > " + text.replace("\n", "\n  > "), ""]
+            else:
+                lines.append(
+                    f"  - _(could not load the note -- fetch id "
+                    f"`{brain.thought_id(path)}` via the open-brain MCP `fetch` tool, "
+                    "or say so)_"
+                )
+    return lines
+
+
 def _compact_seed(task: dict) -> str:
     """Self-contained initial prompt: task data plus the tracker hand-off rules.
 
@@ -219,13 +298,20 @@ def _compact_seed(task: dict) -> str:
     ``phase=wip`` move the loader normally performs happens server-side at
     spawn instead (see :func:`_mark_wip`).
     """
-    from ntasker.db import get_conn, load_tags_for  # noqa: PLC0415 -- lazy: avoid cycle
+    from ntasker.db import (  # noqa: PLC0415 -- lazy: avoid cycle
+        get_conn,
+        load_context_for,
+        load_tags_for,
+    )
 
     try:
         with get_conn() as conn:
-            tags = load_tags_for(conn, int(task["id"]))
-    except Exception:  # noqa: BLE001 -- tags are nice-to-have, never block a spawn
+            tid = int(task["id"])
+            tags = load_tags_for(conn, tid)
+            context = load_context_for(conn, tid)
+    except Exception:  # noqa: BLE001 -- neither blocks a spawn if it fails
         tags = []
+        context = []
 
     facts = [f"Status: {task.get('status') or 'open'}"]
     if task.get("project"):
@@ -240,6 +326,7 @@ def _compact_seed(task: dict) -> str:
     description = (task.get("description") or "").strip()
     if description:
         lines += ["", "## Description", "", description]
+    lines += context_briefing(context)
     lines += [
         "",
         "## Tracker rules",

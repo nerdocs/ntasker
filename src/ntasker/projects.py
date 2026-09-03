@@ -34,6 +34,11 @@ from ntasker.agents import AGENTS, resolve_home
 # first line in practice; the cap just bounds the read for pathological files.
 _CWD_SCAN_LINES = 200
 
+# Path component that marks agent-internal working copies (``<repo>/.claude/
+# worktree/<branch>`` and friends). Such directories are tooling state, not
+# projects a user tracks tasks for -- see :func:`_is_internal`.
+_INTERNAL_COMPONENT = ".claude"
+
 
 def _cwd_from_session(directory: Path) -> str | None:
     """Return the ``cwd`` recorded in the first session ``*.jsonl``, or ``None``."""
@@ -112,6 +117,16 @@ def _decode_dir(entry: Path) -> Path | None:
     return None
 
 
+def _is_internal(path: Path) -> bool:
+    """True for paths living inside a ``.claude`` directory.
+
+    Git worktrees created by agents sit under ``<repo>/.claude/worktree/<name>``
+    and get their own Claude session dir, so discovery would otherwise surface
+    them as separate projects.
+    """
+    return _INTERNAL_COMPONENT in path.parts
+
+
 def _resolve_projects_base() -> Path | None:
     """Read the ``projects_base`` setting as an absolute ``Path`` (or ``None``).
 
@@ -163,6 +178,8 @@ def discover_claude_projects(
     given, else against ``home``. When ``base`` is left ``None`` it is read from
     the setting; pass an explicit ``Path`` to override (or ``home`` only).
 
+    Paths inside a ``.claude`` directory (agent worktrees) are skipped.
+
     Resilient by design: any unreadable entry is skipped and a missing
     ``projects`` directory yields ``[]`` -- discovery must never break the
     sidebar feed it serves.
@@ -183,7 +200,7 @@ def discover_claude_projects(
             if not entry.is_dir():
                 continue
             path = _decode_dir(entry)
-            if path is None:
+            if path is None or _is_internal(path):
                 continue
             name = _path_to_name(path, home, base)
             if name:

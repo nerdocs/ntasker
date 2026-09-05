@@ -647,7 +647,7 @@
                 {# Task list #}
                 <div class="card" x-show="viewMode === 'list'" x-cloak>
                     <div class="list-group list-group-flush" x-show="tasks.length > 0">
-                        <template x-for="task in tasks" :key="task.id">
+                        <template x-for="task in listTasks" :key="task.id">
                             <div class="list-group-item"
                                  :class="{'task-session-running': taskRunPhase(task.id) === 'running',
                                           'task-session-waiting': taskRunPhase(task.id) === 'waiting',
@@ -922,7 +922,7 @@
 
                                 <div class="kanban-column-body"
                                      x-show="!(col.key === 'done' && doneCollapsed)">
-                                    <template x-for="task in kanbanTasksFor(col.key)" :key="task.id">
+                                    <template x-for="task in kanbanColumnTasks(col.key)" :key="task.id">
                                         <div class="kanban-card"
                                              :class="{'kanban-card-dragging': draggedTaskId === task.id,
                                                       'drop-before': dragOverTaskId === task.id && dragOverBefore,

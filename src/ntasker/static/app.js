@@ -61,6 +61,15 @@ function _locale() {
     return (html && html.getAttribute('lang')) || 'en';
 }
 
+// Shallow equality for a task field. Scalars compare by identity; the two
+// list-valued fields (tags, depends) compare by their JSON form. Used to
+// leave an unchanged field untouched so no reactive effect fires for it.
+function _sameValue(a, b) {
+    if (a === b) return true;
+    if (Array.isArray(a) && Array.isArray(b)) return JSON.stringify(a) === JSON.stringify(b);
+    return false;
+}
+
 // Sentinel for cross-project tasks (matches PROJECT_NONE_SENTINEL in app.py).
 const PROJECT_NONE = '__none__';
 
@@ -168,6 +177,9 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // view. Clicking an already-running task still surfaces its terminal.
         claudeOpenTerminal: claudeOpenTerminal !== false,
         claudeSessions: [],
+        // Raw body of the last /api/claude/sessions response -- the poll
+        // compares against it and skips the state update when nothing moved.
+        _sessionsRaw: null,
         // Subset of claudeSessions that has gone silent long enough to look
         // blocked on a prompt -- drives the "waiting for input" highlight.
         claudeWaiting: [],
@@ -593,6 +605,25 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             return this.tasks.filter(t => t.status === 'open' && t.phase === colKey);
         },
 
+        // Cards actually rendered in a column. The Done column is collapsed by
+        // default and holds every done task ever -- rendering those cards into
+        // a hidden column costs thousands of DOM nodes and re-renders for
+        // nothing, so a collapsed Done renders empty. The header badge keeps
+        // using kanbanTasksFor() and still shows the real count.
+        kanbanColumnTasks(colKey) {
+            if (this.viewMode !== 'kanban') return [];
+            if (colKey === 'done' && this.doneCollapsed) return [];
+            return this.kanbanTasksFor(colKey);
+        },
+
+        // Rows rendered by the list view. Both views live in the same document
+        // and are toggled with x-show, so without this gate the inactive one
+        // keeps a full set of rows in the DOM (and re-renders them on every
+        // refresh) while the user looks at the other.
+        get listTasks() {
+            return this.viewMode === 'list' ? this.tasks : [];
+        },
+
         // ---- Drag & Drop (kanban) ----
         onCardDragStart(event, task) {
             this.draggedTaskId = task.id;
@@ -870,10 +901,29 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             }
 
             const r = await fetch('/api/tasks?' + params.toString());
-            this.tasks = await r.json();
-            this.tasks.forEach(t => { t._expanded = false; });
+            this.tasks = this._mergeTasks(await r.json());
 
             await this.loadCounts();
+        },
+
+        // Reconcile freshly fetched rows into the existing task objects instead
+        // of replacing them wholesale. Alpine's keyed x-for skips a row whose
+        // scope object is identical, so a refresh that touched one task
+        // re-renders one card instead of every card on the board -- the
+        // difference between ~350ms and ~20ms of blocked main thread at 500
+        // tasks. Rows that are genuinely new get `_expanded` seeded; rows that
+        // survive keep theirs (a background poll no longer collapses an open
+        // description).
+        _mergeTasks(rows) {
+            const byId = new Map(this.tasks.map(t => [t.id, t]));
+            return rows.map(row => {
+                const cur = byId.get(row.id);
+                if (!cur) return { ...row, _expanded: false };
+                for (const [k, v] of Object.entries(row)) {
+                    if (!_sameValue(cur[k], v)) cur[k] = v;
+                }
+                return cur;
+            });
         },
 
         async loadCounts() {
@@ -1696,7 +1746,16 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             try {
                 const r = await fetch('/api/claude/sessions');
                 if (r.ok) {
-                    const d = await r.json();
+                    // The poll runs every 5s and the answer is almost always
+                    // identical. Reassigning the five arrays/objects below would
+                    // still invalidate every per-task binding that reads them
+                    // (taskRunPhase / taskProjectBusy sit on every row), so bail
+                    // out on an unchanged payload instead of re-rendering the
+                    // whole board for nothing.
+                    const raw = await r.text();
+                    if (raw === this._sessionsRaw) return;
+                    this._sessionsRaw = raw;
+                    const d = JSON.parse(raw);
                     this.claudeSessions = d.active || [];
                     this.claudeWaiting = d.waiting || [];
                     this.claudeSessionProjects = d.projects || {};

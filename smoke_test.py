@@ -413,6 +413,68 @@ def main() -> int:
     print(f"OK fractional sort_order insert -> {final}")
 
     # ------------------------------------------------------------------
+    # 24c-bis. Task dependencies. The feature has shipped since v2.3 with no
+    # smoke coverage at all -- notably none for the two error paths the
+    # validator exists for.
+    # ------------------------------------------------------------------
+    dep_a = client.post("/api/tasks", json={"title": "dep-a", "project": "dep-proj-a"}).json()
+    dep_b = client.post("/api/tasks", json={"title": "dep-b", "project": "dep-proj-b"}).json()
+
+    # A depends on B, across projects.
+    r = client.patch(f"/api/tasks/{dep_a['id']}", json={"depends": [dep_b["id"]]})
+    assert_ok(r)
+    dep = r.json()["depends"]
+    assert [d["id"] for d in dep] == [dep_b["id"]], f"dependency not stored: {dep}"
+    assert dep[0]["done"] is False
+    # The blocker's project travels with the dict, so the UI can name a blocker
+    # that sits outside the current filter.
+    assert dep[0]["project"] == "dep-proj-b", f"blocker project missing: {dep[0]}"
+    print("OK PATCH depends (cross-project, blocker project reported)")
+
+    # Same shape from the list endpoint (bulk loader) and the queue.
+    listed_a = next(t for t in client.get("/api/tasks?search=dep-a").json() if t["id"] == dep_a["id"])
+    assert listed_a["depends"][0]["project"] == "dep-proj-b", "bulk loader must report the project"
+    client.put("/api/queue", json={"ids": [dep_a["id"]]})
+    q_dep = client.get("/api/queue").json()["items"][0]["depends"][0]
+    assert q_dep["project"] == "dep-proj-b" and q_dep["done"] is False
+    print("OK GET /api/tasks + /api/queue carry the blocker's project")
+
+    # Closing the blocker flips ``done`` -- that is what unblocks the task.
+    assert_ok(client.patch(f"/api/tasks/{dep_b['id']}", json={"status": "done"}))
+    assert client.get(f"/api/tasks/{dep_a['id']}").json()["depends"][0]["done"] is True
+    assert_ok(client.patch(f"/api/tasks/{dep_b['id']}", json={"status": "open"}))
+    print("OK dependency done-flag follows the blocker's status")
+
+    # Self-reference and cycles are rejected with 400, not 500.
+    r = client.patch(f"/api/tasks/{dep_a['id']}", json={"depends": [dep_a["id"]]})
+    assert r.status_code == 400, f"self-dependency must be 400, got {r.status_code}"
+    r = client.patch(f"/api/tasks/{dep_b['id']}", json={"depends": [dep_a["id"]]})
+    assert r.status_code == 400, f"cycle must be 400, got {r.status_code}"
+    assert str(dep_a["id"]) in r.json()["detail"], "the error must name the offending task"
+    r = client.patch(f"/api/tasks/{dep_a['id']}", json={"depends": [99999]})
+    assert r.status_code == 400, f"missing dependency target must be 400, got {r.status_code}"
+    print("OK depends rejects self / cycle / missing target with 400")
+
+    # The worker will not start a task whose dependency is still open -- that
+    # guard is what makes a cross-project dependency actually hold.
+    from ntasker import taskqueue as _tq  # noqa: PLC0415
+    with db_module.get_conn() as dep_conn:
+        row_a = dep_conn.execute("SELECT * FROM tasks WHERE id = ?", (dep_a["id"],)).fetchone()
+        row_b = dep_conn.execute("SELECT * FROM tasks WHERE id = ?", (dep_b["id"],)).fetchone()
+        assert _tq._startable(row_a, dep_conn, {"claude"}, "claude") is False, (
+            "a task with an open dependency must not be startable"
+        )
+        assert _tq._startable(row_b, dep_conn, {"claude"}, "claude") is True, (
+            "the blocker itself has no dependency and must be startable"
+        )
+        # An agent that is not installed is the other skip reason.
+        assert _tq._startable(row_b, dep_conn, set(), "claude") is False
+    print("OK taskqueue._startable() blocks on an open dependency")
+
+    client.put("/api/queue", json={"ids": []})
+    assert_ok(client.patch(f"/api/tasks/{dep_a['id']}", json={"depends": []}))
+
+    # ------------------------------------------------------------------
     # 24d. Auto-run task queue (new in v2.22). The worker itself is not
     # exercised here -- it spawns real agent processes -- but the queue's
     # storage and its API contract are.

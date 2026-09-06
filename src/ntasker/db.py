@@ -253,9 +253,9 @@ def row_to_task(
 ) -> dict:
     """Convert a sqlite3.Row to a JSON-serialisable dict.
 
-    ``depends`` is a list of ``{id, title, done}`` dicts (the tasks this
-    one depends on), resolved by the caller. A task is "blocked" as long as
-    any of its dependencies is not ``done`` -- the frontend derives that
+    ``depends`` is a list of ``{id, title, done, project}`` dicts (the tasks
+    this one depends on), resolved by the caller. A task is "blocked" as long
+    as any of its dependencies is not ``done`` -- the frontend derives that
     from the ``done`` flags.
     """
     return {
@@ -524,11 +524,17 @@ def set_task_deps(conn: sqlite3.Connection, task_id: int, dep_ids: list[int]) ->
     )
 
 
+# A dependency is reported as ``{id, title, done, project}``. ``project`` is
+# what lets the UI name a blocker that lives in *another* project -- the queue
+# panel groups by project, and a blocker outside the current filter would
+# otherwise be an id with no context.
+
+
 def load_deps_for(conn: sqlite3.Connection, task_id: int) -> list[dict]:
-    """Return ``[{id, title, done}]`` for a single task, ordered by id."""
+    """Return ``[{id, title, done, project}]`` for a single task, ordered by id."""
     rows = conn.execute(
         """
-        SELECT t.id AS id, t.title AS title, t.status AS status
+        SELECT t.id AS id, t.title AS title, t.status AS status, t.project AS project
         FROM task_deps d
         JOIN tasks t ON t.id = d.depends_on_id
         WHERE d.task_id = ?
@@ -536,20 +542,27 @@ def load_deps_for(conn: sqlite3.Connection, task_id: int) -> list[dict]:
         """,
         (task_id,),
     ).fetchall()
-    return [
-        {"id": int(r["id"]), "title": r["title"], "done": r["status"] == "done"}
-        for r in rows
-    ]
+    return [_dep_dict(r) for r in rows]
+
+
+def _dep_dict(row: sqlite3.Row) -> dict:
+    return {
+        "id": int(row["id"]),
+        "title": row["title"],
+        "done": row["status"] == "done",
+        "project": row["project"],
+    }
 
 
 def load_deps_bulk(conn: sqlite3.Connection, task_ids: list[int]) -> dict[int, list[dict]]:
-    """Bulk lookup: task_id -> ``[{id, title, done}]``."""
+    """Bulk lookup: task_id -> ``[{id, title, done, project}]``."""
     if not task_ids:
         return {}
     placeholders = ", ".join("?" for _ in task_ids)
     rows = conn.execute(
         f"""
-        SELECT d.task_id AS task_id, t.id AS id, t.title AS title, t.status AS status
+        SELECT d.task_id AS task_id, t.id AS id, t.title AS title,
+               t.status AS status, t.project AS project
         FROM task_deps d
         JOIN tasks t ON t.id = d.depends_on_id
         WHERE d.task_id IN ({placeholders})
@@ -559,7 +572,5 @@ def load_deps_bulk(conn: sqlite3.Connection, task_ids: list[int]) -> dict[int, l
     ).fetchall()
     out: dict[int, list[dict]] = {tid: [] for tid in task_ids}
     for r in rows:
-        out[int(r["task_id"])].append(
-            {"id": int(r["id"]), "title": r["title"], "done": r["status"] == "done"}
-        )
+        out[int(r["task_id"])].append(_dep_dict(r))
     return out

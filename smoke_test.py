@@ -552,6 +552,34 @@ def main() -> int:
     print("OK ntasker queue add/clear (CLI and API share one queue)")
 
     # ------------------------------------------------------------------
+    # Translation completeness. Every UI string flows through
+    # build_js_strings(); a new msgid without a German translation ships
+    # English into a German UI, and `make i18n` is easy to forget.
+    # ------------------------------------------------------------------
+    import re as _re_po  # noqa: PLC0415 -- main() has a function-local `re`
+
+    from ntasker.app import build_js_strings  # noqa: PLC0415
+
+    po_path = Path(__file__).parent / "src/ntasker/locale/de/LC_MESSAGES/ntasker.po"
+    untranslated: set[str] = set()
+    for chunk in po_path.read_text(encoding="utf-8").split("\n\n"):
+        ids = _re_po.findall(r'^msgid ((?:"(?:[^"\\]|\\.)*"\n?)+)', chunk, _re_po.M)
+        strs = _re_po.findall(r'^msgstr ((?:"(?:[^"\\]|\\.)*"\n?)+)', chunk, _re_po.M)
+        if not ids or not strs:
+            continue
+        join = lambda raw: "".join(_re_po.findall(r'"((?:[^"\\]|\\.)*)"', raw))
+        msgid, msgstr = join(ids[0]), join(strs[0])
+        if msgid and not msgstr:
+            untranslated.add(msgid.replace('\\"', '"').replace("\\n", "\n"))
+
+    missing = sorted(set(build_js_strings().values()) & untranslated)
+    assert not missing, (
+        "these UI strings have no German translation -- run `make i18n` and "
+        f"fill in de.po: {missing}"
+    )
+    print(f"OK de.po covers every build_js_strings() msgid ({len(untranslated)} untranslated overall)")
+
+    # ------------------------------------------------------------------
     # Settings module (new in v1.0.0)
     # ------------------------------------------------------------------
 

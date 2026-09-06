@@ -7,6 +7,8 @@ Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 ## [Unreleased]
 Task queue: a queue button per task hands it to ntasker, which runs the queue unattended, one task per project.
 CLI: `ntasker queue list|add|rm|clear|start|pause` to drive the task queue from a terminal.
+Queue panel shows one column per project -- one lane per concurrent run, each with its own order.
+Set a dependency by dropping a task on the middle of another, on the board or across queue columns; undo via toast.
 Fixed `ntasker restart`: delegates to the installed service instead of squatting its port, and detaches otherwise.
 The settings restart button now waits for a genuinely new process (`/healthz` reports a `boot_id`) instead of any reply.
 Fixed `make smoke`: the test client used a host the origin guard rejects, and the sort_order checks queried the default sort.

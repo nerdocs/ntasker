@@ -48,10 +48,19 @@ to `open` and (if the column differs) updates phase.
   - Done column -> `PATCH /api/tasks/<id> {"status": "done"}`; phase
     stays so re-opening lands the card back in its previous column.
 - Drop **onto another card** triggers `onCardDrop` (which `.stop`s the
-  column handler): the card is inserted above or below the target,
-  depending on which half it was dropped over. When the target sits in a
-  different column this also applies the phase/status flip above, so a
-  cross-column drop moves *and* positions in one go.
+  column handler). Which of three horizontal bands the cursor was in
+  decides what happens (`_dropZone`):
+  - **Top / bottom edge** -- insert above / below the target. When the
+    target sits in a different column this also applies the phase/status
+    flip above, so a cross-column drop moves *and* positions in one go.
+  - **Middle** -- set a dependency instead: the dragged task comes to
+    depend on the target. No phase change, so the blocked-task guard on
+    Review/Done does not apply here. See
+    [docs/task-queue.md](task-queue.md) for the gesture in full.
+
+  The middle band is `clamp(height * 0.2, 10px, 28px)` -- deliberately
+  the small one, because reordering is the frequent gesture and linking
+  the rare, deliberate one.
 - Failure (HTTP non-2xx) shows a toast; the UI state is reloaded from
   the server, so a failed move never leaves the board out of sync.
 

@@ -6,8 +6,8 @@ ntasker hands each one to its agent, waits for it to finish, and moves on to the
 It sits in a panel above the board and is visible in both the list and the kanban view.
 
 Tasks get in through the **queue button** on each row / card -- the one next to the agent's run button. It toggles, so
-the same button takes a task back out. Dragging inside the panel reorders the queue; dragging a card *into* it is not a
-thing, precisely so the button is the one obvious way in.
+the same button takes a task back out. Dragging a card *into* the panel is not a thing, precisely so the button is the
+one obvious way in.
 
 ## Rules in one paragraph
 
@@ -18,16 +18,24 @@ the same, because the queue only ever reads the DB.
 
 ## The panel
 
+**One column per project.** The worker runs one task per project at a time, so a column is literally one execution lane:
+its own rail, its own `1..n` numbering, its own next-up. Cross-project tasks get the first column. Many projects scroll
+sideways rather than squeezing every lane flat.
+
 | Element | Meaning |
 |---|---|
-| The rail down the left of the list | Marches while the queue runs, frozen while it is paused. |
-| Position bead (`1`, `2`, `3`) | Run order. Indigo = running, orange = waiting for your input. |
-| Lock badge on an entry | The queue is passing this one over -- see [Skipped entries](#skipped-entries). |
+| The rail down the left of a column | Marches while the queue runs, frozen while it is paused. |
+| Position bead (`1`, `2`, `3`) | Run order **within that project**. Indigo = running, orange = waiting for input. |
+| Lock badge on an entry | The queue is passing this one over -- see [Skipped entries](#skipped-entries). The tooltip names the blockers, including the project of any blocker from another column. |
 | **Running** / **Waiting for your input** | Links into that session's terminal. |
 | `✕` | Removes the entry. So does the task's own queue button, which toggles. |
 
-Queued tasks also carry an indigo `⧉ n` badge on their board row / kanban card, so you can see a task's queue position
-without looking at the panel.
+Queued tasks also carry an indigo `⧉ n` badge on their board row / kanban card -- the same within-project position, so
+you can see when a task runs without looking at the panel.
+
+Dragging an entry **inside its column** reorders it. Across columns it is refused: that would have to silently reassign
+the task's project, which belongs in the edit dialog. The one gesture that legitimately crosses columns is setting a
+dependency -- see below.
 
 ## Start and pause
 
@@ -66,11 +74,44 @@ A session you start by hand also occupies its project: two agents in one working
 one-per-project rule exists to prevent. On a *running* queue, a hand-started session on a queued task is adopted -- it
 advances the queue like a queued run would. On a paused queue it is left alone.
 
+## Setting dependencies by drag
+
+A dependency is what makes one task wait for another, across projects included -- so it is the queue's real ordering
+tool, and it is a drag gesture on both the board and the panel.
+
+Every drop target splits into three horizontal bands:
+
+| Where you drop | What happens |
+|---|---|
+| Top / bottom edge | Insert before / after -- reordering, exactly as before. |
+| Middle | **A depends on B**: the dragged task waits for the one you dropped it on. |
+
+The middle band is the small one on purpose: reordering is the everyday gesture and has to stay easy to hit, while
+linking two tasks is rare and deserves a deliberate aim. It is `clamp(height * 0.2, 10px, 28px)` -- the floor keeps it
+reachable on a 2rem queue row, the ceiling keeps it from dominating a tall kanban card.
+
+While the drag is in flight the middle band shows an indigo ring around the whole target plus a label spelling out the
+direction ("#12 waits for #7"), and the cursor switches to the browser's link cursor. Nobody has to remember which way
+round it goes.
+
+Refused straight away (no ring, no-drop cursor): dropping a task on itself, and a dependency that already exists.
+**Cycles are not** pre-checked -- the board only holds the currently filtered tasks, so a check in the browser would
+miss edges. The server's `validate_deps` stays the single authority and a rejection comes back as a toast naming the
+offending task.
+
+A successful link toasts with an **Undo** button rather than asking first. In the queue panel the middle band works
+across columns; that is exactly how a cross-project dependency gets made.
+
 ## Storage
 
 A task is queued when its `queue_order` is not NULL; queued tasks run in `queue_order ASC` order. Unlike `sort_order`
 this is not fractional: every edit rewrites the column as a dense `1..n` sequence, which stays cheap because a queue is
 short by nature.
+
+That sequence stays **global** across all projects -- the columns are a view of it. The worker only ever needs the
+relative order inside a project bucket, which a global sequence already induces, so a per-project numbering would be a
+second encoding of the same information. Reordering one column substitutes its members back into the slots that column
+already held, leaving every other project untouched.
 
 ## CLI
 
@@ -109,8 +150,8 @@ there is no partial state to reconcile.
 | `src/ntasker/claude_runner.py` | `queue_seed_for_task` (the seed) and `start_detached_session` (spawn with no browser attached). |
 | `src/ntasker/app.py` | `/api/queue` routes plus the worker's startup / shutdown hooks. |
 | `src/ntasker/cli.py` | `cmd_queue_*` -- the `ntasker queue` subcommands. |
-| `src/ntasker/static/app.js` | Panel state, `toggleQueued` (the board button) and the reorder drag handlers. |
-| `src/ntasker/static/style.css` | `.task-queue*` -- including the rail. |
+| `src/ntasker/static/app.js` | Panel state, `queueGroups` (the columns), `toggleQueued`, `_dropZone` + `setDependency`. |
+| `src/ntasker/static/style.css` | `.task-queue*` (rail, columns) and `.drop-link` (the dependency drop). |
 
 A queued run lands in the same session registry as any other run, so it shows up in the busy indicators and the run-view
 tab strip. You can open its terminal at any point to watch it or take over.

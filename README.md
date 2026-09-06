@@ -41,7 +41,11 @@ pseudo-terminal, otherwise the button stays hidden. See [docs/claude-runs.md](do
 Press the queue button on a task and then **Start**: ntasker works through the queue unattended, one
 task per project at a time, and takes the next one as soon as the previous session ends. Queued runs are told to finish
 the task and close it themselves -- that close is what advances the queue. Off by default, so queueing tasks and
-sorting them never launches an agent by accident. See [docs/task-queue.md](docs/task-queue.md).
+sorting them never launches an agent by accident.
+
+The panel shows one column per project, because that is what runs in parallel. To make one task wait for another --
+across projects too -- drop it on the **middle** of the other; the edges keep reordering.
+See [docs/task-queue.md](docs/task-queue.md).
 
 ## Stack
 

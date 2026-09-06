@@ -515,16 +515,70 @@ def cmd_stop(args: argparse.Namespace) -> int:
 
 
 def cmd_restart(args: argparse.Namespace) -> int:
-    """Stop a running server (if any), then start a fresh one.
+    """Restart the server so freshly deployed code goes live.
 
-    Delegates to :func:`cmd_stop` and :func:`cmd_serve` unchanged, so both
-    halves keep their exit semantics. ``cmd_stop`` already waits for the
-    old server to disappear before returning, which keeps the new one from
-    racing it for the port; a failed stop aborts the restart.
+    A restart has to leave a *working* server behind, which rules out the naive
+    stop-then-``serve``:
+
+    * **Under a service manager**, stopping the daemon and starting our own
+      foreground server hands the port to a process systemd knows nothing
+      about. The unit then restarts into a port that is already taken, fails,
+      and (``Restart=on-failure``) crash-loops forever while the squatter keeps
+      serving the *old* code -- which looks exactly like "restart did nothing".
+      So when a unit is installed, hand the job to the supervisor.
+    * **Standalone**, a foreground server dies with the shell that started it.
+      Restart therefore detaches by default, unlike ``serve``.
+
+    ``--foreground`` opts out of both and does the literal stop-then-serve, for
+    when you want the server in your terminal (``--reload`` implies it).
+
+    An explicit ``--host`` / ``--port`` also skips the supervisor: it names one
+    specific server, and the installed unit may well serve a different address.
+    Restarting the unit would then leave the named address untouched while
+    bouncing an unrelated daemon.
     """
+    import time  # noqa: PLC0415
+
+    from ntasker import service  # noqa: PLC0415
+
+    # `restart` defaults host/port to None so "not given" stays distinguishable
+    # from "given the default value" -- see the docstring.
+    addressed = args.host is not None or args.port is not None
+    args.host = args.host if args.host is not None else "127.0.0.1"
+    args.port = args.port if args.port is not None else 8766
+
+    foreground = getattr(args, "foreground", False) or args.reload
+
+    if not foreground and not addressed and service.service_installed():
+        if not service.restart_service():
+            print(_("ntasker: could not restart the installed service."), file=sys.stderr)
+            return 1
+        # The supervisor restarts asynchronously; confirm it actually came back
+        # rather than reporting success into a crash loop.
+        deadline = time.monotonic() + 10.0
+        while time.monotonic() < deadline:
+            if _healthz_ok(args.host, args.port, timeout=0.3):
+                print(
+                    _("ntasker: service restarted on {host}:{port}").format(
+                        host=args.host, port=args.port
+                    )
+                )
+                return 0
+            time.sleep(0.2)
+        print(
+            _(
+                "ntasker: the service was restarted but nothing answers on "
+                "{host}:{port}. Check `ntasker service status`."
+            ).format(host=args.host, port=args.port),
+            file=sys.stderr,
+        )
+        return 1
+
     rc = cmd_stop(args)
     if rc != 0:
         return rc
+    # Detached unless explicitly asked for a foreground server -- see above.
+    args.detach = not foreground
     return cmd_serve(args)
 
 
@@ -1657,10 +1711,23 @@ def build_parser() -> argparse.ArgumentParser:
         "restart",
         help=_("Stop a running ntasker server, then start it again."),
     )
-    sp_restart.add_argument("--host", default="127.0.0.1")
-    sp_restart.add_argument("--port", type=int, default=8766)
+    # Defaults stay None on purpose: cmd_restart needs to tell "no address
+    # given" (restart whatever serves ntasker, service manager included) from
+    # "this exact address" (never touch the service). It fills them in itself.
+    sp_restart.add_argument("--host", default=None)
+    sp_restart.add_argument("--port", type=int, default=None)
     sp_restart.add_argument("--reload", action="store_true")
-    sp_restart.add_argument("--detach", action="store_true", help=detach_help)
+    sp_restart.add_argument(
+        "--foreground",
+        action="store_true",
+        help=_(
+            "Bypass the service manager and run the new server in this terminal "
+            "instead of detaching it. Implied by --reload."
+        ),
+    )
+    # Detaching is what restart does anyway now; kept accepted (and hidden) so
+    # scripts written against v2.21 do not start failing on an unknown flag.
+    sp_restart.add_argument("--detach", action="store_true", help=argparse.SUPPRESS)
     sp_restart.set_defaults(func=cmd_restart)
 
     # list ----------------------------------------------------------------

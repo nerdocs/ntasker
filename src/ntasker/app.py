@@ -15,6 +15,7 @@ import contextlib
 import functools
 import sqlite3
 import subprocess
+import uuid
 from datetime import datetime
 from importlib.resources import files
 from pathlib import Path
@@ -479,6 +480,10 @@ def build_js_strings() -> dict[str, str]:
         "restart_initiated": _("Restarting server..."),
         "restart_failed": _("Restart failed -- the server is not running as a service."),
         "restart_timeout": _("Server did not come back in time -- reload manually."),
+        "restart_unchanged": _(
+            "The server never restarted -- the same process is still answering. "
+            "Check `ntasker service status`: something else may be holding the port."
+        ),
         "restart_blocked_tasks": _(
             "Restart blocked -- {n} task session(s) still running. "
             "A restart would interrupt them; wait until they finish."
@@ -835,15 +840,24 @@ async def _stop_update_poll() -> None:
 # ---------------------------------------------------------------------------
 
 
+# Identity of *this* server process, regenerated on every import. Lets a client
+# tell "the server came back" from "the server never went away": the version
+# alone cannot, because a code change during development keeps the same version
+# string, and a restart that silently failed to replace the process would
+# otherwise look exactly like a successful one.
+BOOT_ID = uuid.uuid4().hex
+
+
 @app.get("/healthz")
 def healthz() -> dict:
     """Liveness probe for `ntasker serve --detach` and external supervisors.
 
     Intentionally DB-free so a half-broken install still reports `ok`
     quickly. Returns the package version so callers can detect a stale
-    background server after an upgrade.
+    background server after an upgrade, and :data:`BOOT_ID` so they can detect
+    a restart that did not actually happen.
     """
-    return {"ok": True, "version": VERSION}
+    return {"ok": True, "version": VERSION, "boot_id": BOOT_ID}
 
 
 def _self_terminate() -> None:

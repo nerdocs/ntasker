@@ -63,6 +63,24 @@ restarting, so a deploy hook never aborts a task mid-run. The restart button on 
 disables itself and shows an info banner while tasks run, and the `POST /api/service/restart` endpoint refuses with
 `409 tasks_running`.
 
+### Never start a second server next to the unit
+
+The top-level `ntasker restart` hands the job to the installed unit when there is one, precisely so this cannot happen:
+a plain stop-then-`serve` would put a process on port 8766 that systemd knows nothing about. The unit then restarts
+into an occupied port, fails, and -- with `Restart=on-failure` -- crash-loops forever while the squatter keeps serving
+the **old** code. Everything looks alive; every restart appears to do nothing.
+
+If you end up in that state, `systemctl --user status ntasker` shows the loop (`activating (auto-restart)`,
+`status=1/FAILURE`) while `curl 127.0.0.1:8766/healthz` answers fine. Kill the stray process (`pkill -f 'ntasker
+serve'`, or the `ntasker restart` process holding the port) and systemd binds on its next attempt.
+
+Passing an explicit `--host` / `--port` to `ntasker restart` always means "this exact server" and never touches the
+service manager. `--foreground` runs the new server in your terminal instead of detaching it.
+
+The settings page distinguishes the two cases: `/healthz` carries a `boot_id` that changes with every process, and the
+restart button waits for a *different* one before reloading. A restart that was accepted but never replaced the process
+reports that instead of reloading you into unchanged code.
+
 ## Auto-update
 
 ```bash

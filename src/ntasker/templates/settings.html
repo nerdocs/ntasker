@@ -446,6 +446,9 @@ function settingsPage() {
         // True while a restart is in flight -- disables the button and drives
         // the "Restarting..." label until the server answers /healthz again.
         restarting: false,
+        // boot_id of the server we asked to restart, captured before the POST.
+        // waitForServer reloads only once a *different* process answers.
+        _bootId: null,
         // Task ids with a live Claude session (running OR input-waiting). A
         // restart kills the whole cgroup, so while this is non-empty the button
         // is disabled and an info banner explains why. Polled by refreshSessions.
@@ -595,6 +598,11 @@ function settingsPage() {
         async restartServer() {
             if (this.restarting) return;
             this.restarting = true;
+            // Remember which process we are talking to. A restart that failed to
+            // replace it (e.g. the supervisor cannot bind because something else
+            // holds the port) would otherwise answer /healthz straight away and
+            // look like a success -- while still serving the old code.
+            this._bootId = await this.serverBootId();
             try {
                 const r = await fetch('/api/service/restart', {method: 'POST'});
                 if (!r.ok) {
@@ -616,21 +624,31 @@ function settingsPage() {
             this.waitForServer();
         },
 
-        // Poll /healthz after a restart; reload once the new process answers.
+        // The running server's process identity, or null when it is unreachable.
+        async serverBootId() {
+            try {
+                const r = await fetch('/healthz', {cache: 'no-store'});
+                if (!r.ok) return null;
+                return (await r.json()).boot_id || null;
+            } catch (e) {
+                return null;
+            }
+        },
+
+        // Poll /healthz after a restart; reload once a *different* process
+        // answers. Waiting for any answer is not enough -- see restartServer.
         waitForServer(tries = 0) {
             setTimeout(async () => {
-                try {
-                    const r = await fetch('/healthz', {cache: 'no-store'});
-                    if (r.ok) { location.reload(); return; }
-                } catch (e) {
-                    // still down -- keep polling
-                }
+                const id = await this.serverBootId();
+                if (id && id !== this._bootId) { location.reload(); return; }
                 if (tries < 40) {
                     this.waitForServer(tries + 1);
-                } else {
-                    this.restarting = false;
-                    this.toast(this.i18n('restart_timeout'));
+                    return;
                 }
+                this.restarting = false;
+                // Still the same process: the restart was accepted but never
+                // took effect. Say that instead of reloading into old code.
+                this.toast(this.i18n(id ? 'restart_unchanged' : 'restart_timeout'));
             }, tries === 0 ? 1000 : 500);
         },
 

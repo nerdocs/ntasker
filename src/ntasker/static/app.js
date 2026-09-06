@@ -145,7 +145,9 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // whether the drop would land above (true) or below (false) it. Drives
         // the insertion-line CSS (.drop-before / .drop-after).
         dragOverTaskId: null,
-        dragOverBefore: false,
+        // Which band of the hovered target the cursor sits in:
+        // 'before' / 'after' insert, 'link' sets a dependency. See _dropZone.
+        dragZone: 'before',
 
         // ---- Auto-run task queue ----
         // ``queue`` is the ordered worklist (full task objects, because a queued
@@ -158,7 +160,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         queue: [],
         queueEnabled: false,
         queueOverId: null,
-        queueOverBefore: false,
+        queueZone: 'before',
         // Raw body of the last /api/queue response; an unchanged payload skips
         // the state update (same trick as the session poll).
         _queueRaw: null,
@@ -692,6 +694,41 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             return (above + below) / 2;                       // between neighbours
         },
 
+        // Which band of a drop target the cursor is over. The outer bands keep
+        // the existing meaning (insert before / after); the middle one sets a
+        // dependency. The middle is deliberately the *small* band: reordering
+        // is the everyday gesture and must stay easy to hit, while linking two
+        // tasks is rare and deserves a deliberate aim. It still gets a 10px
+        // floor so it stays reachable on a 2rem queue row, and a 28px ceiling
+        // so it never dominates a tall kanban card.
+        _dropZone(event) {
+            const rect = event.currentTarget.getBoundingClientRect();
+            const middle = Math.min(28, Math.max(10, rect.height * 0.2));
+            const edge = (rect.height - middle) / 2;
+            const y = event.clientY - rect.top;
+            if (y < edge) return 'before';
+            if (y > rect.height - edge) return 'after';
+            return 'link';
+        },
+
+        // Whether "dragged depends on target" is a move we can offer. Self and
+        // an already-recorded dependency are answerable from local state; a
+        // cycle is not (the board holds only the filtered task set), so that
+        // one is left to the server -- see setDependency.
+        _canLink(draggedId, target) {
+            if (draggedId == null || draggedId === target.id) return false;
+            const dragged = this.tasks.find(t => t.id === draggedId)
+                         || this.queue.find(t => t.id === draggedId);
+            if (!dragged) return false;
+            return !(dragged.depends || []).some(d => d.id === target.id);
+        },
+
+        // Label shown on the target mid-drag, so the direction of the gesture
+        // never has to be remembered.
+        linkHint(target) {
+            return _i('dep_drop_hint', { a: this.draggedTaskId, b: target.id });
+        },
+
         onCardDragOver(event, task, colKey) {
             if (this.draggedTaskId == null) return;
             // Hovering the dragged card itself: no insertion line, but keep the
@@ -702,8 +739,18 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
                 return;
             }
-            // Kanban: a blocked task may not advance into Review/Done.
-            if (colKey != null) {
+            const zone = this._dropZone(event);
+            if (zone === 'link') {
+                // A link never changes phase, so the blocked-task guard below
+                // does not apply -- and the column highlight would be a lie.
+                if (!this._canLink(this.draggedTaskId, task)) {
+                    if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
+                    this.dragOverTaskId = null;
+                    return;
+                }
+                this.dragOverColumn = null;
+            } else if (colKey != null) {
+                // Kanban: a blocked task may not advance into Review/Done.
                 const dragged = this.tasks.find(t => t.id === this.draggedTaskId);
                 if (dragged && !this.canDropOn(dragged, colKey)) {
                     if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
@@ -713,24 +760,60 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 }
                 this.dragOverColumn = colKey;
             }
-            const rect = event.currentTarget.getBoundingClientRect();
-            this.dragOverBefore = (event.clientY - rect.top) < rect.height / 2;
+            this.dragZone = zone;
             this.dragOverTaskId = task.id;
-            if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+            // 'link' makes the browser swap in its own link cursor, which is
+            // half the reason the gesture reads as different at all.
+            if (event.dataTransfer) event.dataTransfer.dropEffect = zone === 'link' ? 'link' : 'move';
         },
 
         async onCardDrop(event, task, colKey) {
             const id = this.draggedTaskId;
-            const before = this.dragOverBefore;
+            const zone = this.dragZone;
             this.dragOverTaskId = null;
             this.dragOverColumn = null;
             this.draggedTaskId = null;
             if (id == null || id === task.id) return; // dropped on itself
+            if (zone === 'link') {
+                await this.setDependency(id, task);
+                return;
+            }
             const group = this._dropGroup(colKey, id);
             let idx = group.findIndex(t => t.id === task.id);
             if (idx < 0) idx = group.length;
-            else if (!before) idx += 1;
+            else if (zone === 'after') idx += 1;
             await this._applyDrop(id, colKey, group, idx);
+        },
+
+        // Record "task depends on target", the drop-on-the-middle gesture.
+        // ``PATCH /api/tasks/{id}`` replaces the whole dependency set and runs
+        // validate_deps, so it is both the write and the only cycle check that
+        // can see the full graph -- a 400 comes back as a toast naming the
+        // offending id. Success offers an Undo instead of asking first (a
+        // confirmation on a gesture this cheap would just train dismissal).
+        async setDependency(taskId, target) {
+            const task = this.tasks.find(t => t.id === taskId)
+                      || this.queue.find(t => t.id === taskId);
+            if (!task) return;
+            const prev = (task.depends || []).map(d => d.id);
+            if (prev.includes(target.id)) return;
+            const r = await this.patch(taskId, { depends: [...prev, target.id] }, true);
+            if (!r || !r.ok) {
+                // The server names the offending task ("...via task #2"), which
+                // is the only part of a rejected drop worth reading.
+                this.showToast(await this._errorDetail(r, 'update_failed'), 'danger');
+                return;
+            }
+            await this.refreshAll();
+            this.showToast(
+                _i('dep_added', { a: taskId, b: target.id }), 'success',
+                { label: _i('undo'), run: () => this._restoreDeps(taskId, prev) },
+            );
+        },
+
+        async _restoreDeps(taskId, depIds) {
+            const r = await this.patch(taskId, { depends: depIds });
+            if (r && r.ok) await this.refreshAll();
         },
 
         // Shared drop committer: builds the PATCH body (sort_order, plus the
@@ -1029,12 +1112,15 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // Reordering stays inside one column: dropping into a foreign column
         // would have to silently reassign the task's project, which belongs in
         // the edit dialog, not in a reorder gesture.
+        // The same three bands as on the board: edges reorder, middle links.
+        // Reordering stays inside one column -- dropping into a foreign column
+        // would have to silently reassign the task's project, which belongs in
+        // the edit dialog. Linking, by contrast, is *expected* to cross
+        // columns: that is exactly how a cross-project dependency is made.
         onQueueItemDragOver(event, item) {
             if (this.draggedTaskId == null) return;
             const dragged = this.queue.find(t => t.id === this.draggedTaskId);
-            const sameColumn = dragged &&
-                (dragged.project || PROJECT_NONE) === (item.project || PROJECT_NONE);
-            if (!sameColumn) {
+            if (!dragged) {   // dragged in from the board -- not our business
                 if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
                 this.queueOverId = null;
                 return;
@@ -1044,23 +1130,37 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
                 return;
             }
-            const rect = event.currentTarget.getBoundingClientRect();
-            this.queueOverBefore = (event.clientY - rect.top) < rect.height / 2;
+            const zone = this._dropZone(event);
+            const sameColumn =
+                (dragged.project || PROJECT_NONE) === (item.project || PROJECT_NONE);
+            const ok = zone === 'link'
+                ? this._canLink(this.draggedTaskId, item)
+                : sameColumn;
+            if (!ok) {
+                if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
+                this.queueOverId = null;
+                return;
+            }
+            this.queueZone = zone;
             this.queueOverId = item.id;
-            if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+            if (event.dataTransfer) event.dataTransfer.dropEffect = zone === 'link' ? 'link' : 'move';
         },
 
-        // Commit a reorder within one column: move the dragged entry to
-        // ``item``'s slot, then substitute the column back into the global
-        // queue so no other project shifts.
+        // Commit: a link, or a reorder within one column -- the latter
+        // substitutes the column back into the global queue so no other
+        // project shifts.
         async onQueueDrop(event, item) {
             const id = this.draggedTaskId;
-            const before = this.queueOverBefore;
+            const zone = this.queueZone;
             this.queueOverId = null;
             this.draggedTaskId = null;
             if (id == null || id === item.id) return;
             const task = this.queue.find(t => t.id === id);
-            if (!task) return;   // not a queue entry -- nothing to reorder
+            if (!task) return;   // not a queue entry
+            if (zone === 'link') {
+                await this.setDependency(id, item);
+                return;
+            }
             const key = task.project || PROJECT_NONE;
             if ((item.project || PROJECT_NONE) !== key) return;   // foreign column
             const column = this.queue.filter(
@@ -1068,7 +1168,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             );
             let idx = column.findIndex(t => t.id === item.id);
             if (idx < 0) idx = column.length;
-            else if (!before) idx += 1;
+            else if (zone === 'after') idx += 1;
             column.splice(idx, 0, task);
             await this._saveQueue(this._mergeGroupOrder(key, column));
         },
@@ -1372,13 +1472,16 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             return _i(fallbackKey);
         },
 
-        async patch(id, body) {
+        // ``quiet`` suppresses the generic failure toast for callers that report
+        // the server's own message instead -- two toasts for one failure, the
+        // first of them content-free, is worse than either alone.
+        async patch(id, body, quiet = false) {
             const r = await fetch(`/api/tasks/${id}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body),
             });
-            if (!r.ok) {
+            if (!r.ok && !quiet) {
                 this.showToast(_i('update_failed'), 'danger');
             }
             return r;
@@ -1848,7 +1951,11 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
 
         // Lightweight Tabler-style toast. Self-removes after 2.5s.
         // kind: 'success' | 'danger' | 'info'
-        showToast(message, kind = 'success') {
+        // ``action`` (optional) turns the toast into an undo affordance:
+        // ``{label, run}`` renders a button that calls ``run`` and dismisses.
+        // It also stretches the timeout -- 2.5s is enough to read a
+        // confirmation but not to decide whether to take an action back.
+        showToast(message, kind = 'success', action = null) {
             const container = document.getElementById('toast-container');
             if (!container) return;
             const div = document.createElement('div');
@@ -1863,8 +1970,19 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                     <button type="button" class="btn-close btn-close-white me-2 m-auto" aria-label="${_i('close')}"></button>
                 </div>`;
             div.querySelector('.btn-close').addEventListener('click', () => div.remove());
+            if (action) {
+                // Built via the DOM API, not innerHTML: the label is a
+                // translated string, and a toast must never be an injection
+                // point for one.
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'btn btn-sm btn-white me-2 my-auto flex-shrink-0';
+                btn.textContent = action.label;
+                btn.addEventListener('click', () => { div.remove(); action.run(); });
+                div.querySelector('.d-flex').insertBefore(btn, div.querySelector('.btn-close'));
+            }
             container.appendChild(div);
-            setTimeout(() => div.remove(), 2500);
+            setTimeout(() => div.remove(), action ? 8000 : 2500);
         },
 
         // ---- Datetime formatting ----

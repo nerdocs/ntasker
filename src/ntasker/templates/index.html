@@ -679,8 +679,10 @@
                                 :class="{'task-queue-item-running': taskRunPhase(item.id) === 'running',
                                          'task-queue-item-waiting': taskRunPhase(item.id) === 'waiting',
                                          'task-queue-item-dragging': draggedTaskId === item.id,
-                                         'drop-before': queueOverId === item.id && queueOverBefore,
-                                         'drop-after': queueOverId === item.id && !queueOverBefore}"
+                                         'drop-before': queueOverId === item.id && queueZone === 'before',
+                                         'drop-after': queueOverId === item.id && queueZone === 'after',
+                                         'drop-link': queueOverId === item.id && queueZone === 'link'}"
+                                :data-drop-link="queueOverId === item.id && queueZone === 'link' ? linkHint(item) : null"
                                 draggable="true"
                                 @dragstart="onCardDragStart($event, item)"
                                 @dragend="onCardDragEnd($event)"
@@ -776,8 +778,10 @@
                                  :class="{'task-session-running': taskRunPhase(task.id) === 'running',
                                           'task-session-waiting': taskRunPhase(task.id) === 'waiting',
                                           'task-project-busy': taskProjectBusy(task),
-                                          'drop-before': dragOverTaskId === task.id && dragOverBefore,
-                                          'drop-after': dragOverTaskId === task.id && !dragOverBefore}"
+                                          'drop-before': dragOverTaskId === task.id && dragZone === 'before',
+                                          'drop-after': dragOverTaskId === task.id && dragZone === 'after',
+                                          'drop-link': dragOverTaskId === task.id && dragZone === 'link'}"
+                                 :data-drop-link="dragOverTaskId === task.id && dragZone === 'link' ? linkHint(task) : null"
                                  :title="taskProjectBusy(task) ? $i18n('project_busy_hint') : ''"
                                  @dragover.prevent="onCardDragOver($event, task, null)"
                                  @drop.prevent="onCardDrop($event, task, null)">
@@ -1071,12 +1075,14 @@
                                     <template x-for="task in kanbanColumnTasks(col.key)" :key="task.id">
                                         <div class="kanban-card"
                                              :class="{'kanban-card-dragging': draggedTaskId === task.id,
-                                                      'drop-before': dragOverTaskId === task.id && dragOverBefore,
-                                                      'drop-after': dragOverTaskId === task.id && !dragOverBefore,
+                                                      'drop-before': dragOverTaskId === task.id && dragZone === 'before',
+                                                      'drop-after': dragOverTaskId === task.id && dragZone === 'after',
+                                                      'drop-link': dragOverTaskId === task.id && dragZone === 'link',
                                                       'task-session-running': taskRunPhase(task.id) === 'running',
                                                       'task-session-waiting': taskRunPhase(task.id) === 'waiting',
                                                       'task-project-busy': taskProjectBusy(task)}"
                                              :title="taskProjectBusy(task) ? $i18n('project_busy_hint') : ''"
+                                             :data-drop-link="dragOverTaskId === task.id && dragZone === 'link' ? linkHint(task) : null"
                                              draggable="true"
                                              @dragstart="onCardDragStart($event, task)"
                                              @dragend="onCardDragEnd($event)"

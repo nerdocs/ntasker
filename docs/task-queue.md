@@ -68,6 +68,24 @@ A task is queued when its `queue_order` is not NULL; queued tasks run in `queue_
 this is not fractional: every edit rewrites the column as a dense `1..n` sequence, which stays cheap because a queue is
 short by nature.
 
+## CLI
+
+```
+ntasker queue list [--json]        # the queue in run order, plus running/paused
+ntasker queue add <id...> [--top]  # append (or prepend); an already-queued id moves
+ntasker queue rm <id...>           # take entries out
+ntasker queue clear                # empty it
+ntasker queue start [--host --port]
+ntasker queue pause
+```
+
+The CLI only edits the queue and its switch; the running server's worker is what actually starts tasks. `queue start`
+therefore probes `/healthz` and points it out when nothing is listening -- otherwise the queue would sit there looking
+started while nothing happens. Pass `--host` / `--port` if you run on a non-default bind.
+
+Unlike the API, the CLI refuses a task that is closed, archived or missing instead of dropping it silently: a hand-typed
+id deserves to be told.
+
 ## API
 
 | Route | What it does |
@@ -86,6 +104,7 @@ there is no partial state to reconcile.
 | `src/ntasker/taskqueue.py` | The worker: retire what is finished, start what is next. Ticks every 2s. |
 | `src/ntasker/claude_runner.py` | `queue_seed_for_task` (the seed) and `start_detached_session` (spawn with no browser attached). |
 | `src/ntasker/app.py` | `/api/queue` routes plus the worker's startup / shutdown hooks. |
+| `src/ntasker/cli.py` | `cmd_queue_*` -- the `ntasker queue` subcommands. |
 | `src/ntasker/static/app.js` | Panel state and the drag handlers (`onQueueDrop` and friends). |
 | `src/ntasker/static/style.css` | `.task-queue*` -- including the rail. |
 

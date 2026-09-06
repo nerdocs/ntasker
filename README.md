@@ -274,6 +274,11 @@ DNS-rebinding write surface). Full reference: [docs/agents.md](docs/agents.md).
 | `ntasker tag-add <id> <t>`  | Append a tag                                                  |
 | `ntasker tag-rm  <id> <t>`  | Remove a tag                                                  |
 | `ntasker stats [filters]`   | Tab counts (open/done/archive) honoring filters               |
+| `ntasker queue list`        | Show the auto-run queue in run order, plus its on/off state   |
+| `ntasker queue add <id...>` | Queue tasks (`--top` inserts at the front); an already-queued id moves |
+| `ntasker queue rm <id...>`  | Take tasks out of the queue                                   |
+| `ntasker queue clear`       | Empty the queue                                               |
+| `ntasker queue start / pause` | Let the queue work through its tasks, or stop starting new ones |
 | `ntasker config list`       | Show all settings                                             |
 | `ntasker config get <k>`    | Read a setting                                                |
 | `ntasker config set <k> <v>`| Write a setting (validated)                                   |

@@ -60,6 +60,7 @@ from ntasker.db import (
 from ntasker.i18n import _, resolve_for_cli, set_active_language
 from ntasker.middleware import ALLOWED_HOSTS_ENV, LOOPBACK_HOSTS
 from ntasker.paths import resolve_db_path, warn_if_missing
+from ntasker import taskqueue
 from ntasker.settings import (
     delete_setting,
     get_setting_raw,
@@ -886,6 +887,133 @@ def cmd_config_unset(args: argparse.Namespace) -> int:
     return 0
 
 
+# Task queue -----------------------------------------------------------------
+# Thin wrappers around :mod:`ntasker.taskqueue` -- the same functions the web UI
+# drives through /api/queue, so both surfaces stay in step. The CLI only edits
+# the queue; the running server's worker is what actually starts the tasks.
+
+
+def _queue_tasks() -> list[dict]:
+    """The queue in run order, as full task dicts (tags + deps included)."""
+    rows = taskqueue.load_queue()
+    with get_conn() as conn:
+        return [
+            row_to_task(r, load_tags_for(conn, int(r["id"])), load_deps_for(conn, int(r["id"])))
+            for r in rows
+        ]
+
+
+def _reject_unqueueable(task_ids: list[int]) -> int | None:
+    """Print why an id cannot be queued and return an exit code, else ``None``.
+
+    The API drops ineligible ids silently -- fine when a stale browser list is
+    the source. A hand-typed id deserves to be told instead.
+    """
+    with get_conn() as conn:
+        for tid in task_ids:
+            row = conn.execute(
+                "SELECT status, archived FROM tasks WHERE id = ?", (tid,)
+            ).fetchone()
+            if row is None:
+                print(_("ntasker: task #{id} not found").format(id=tid), file=sys.stderr)
+                return 1
+            if row["archived"] or row["status"] != "open":
+                print(
+                    _("ntasker: #{id} is not open -- only open tasks can be queued").format(
+                        id=tid
+                    ),
+                    file=sys.stderr,
+                )
+                return 2
+    return None
+
+
+def cmd_queue_list(args: argparse.Namespace) -> int:
+    from ntasker.settings import get_queue_enabled  # noqa: PLC0415
+
+    tasks = _queue_tasks()
+    enabled = get_queue_enabled()
+    if args.json:
+        _print_json({"enabled": enabled, "items": tasks})
+        return 0
+    print(_("Queue: running") if enabled else _("Queue: paused"))
+    if not tasks:
+        print(_("(queue is empty)"))
+        return 0
+    for pos, t in enumerate(tasks, 1):
+        proj = t.get("project") or _("(cross)")
+        print(f"  {pos:>3}. #{t['id']:<5} {proj:<22} {_truncate(t['title'], 50)}")
+    return 0
+
+
+def cmd_queue_add(args: argparse.Namespace) -> int:
+    """Queue tasks. An already-queued id is moved, not duplicated."""
+    rc = _reject_unqueueable(args.task_id)
+    if rc is not None:
+        return rc
+    rest = [i for i in (int(r["id"]) for r in taskqueue.load_queue()) if i not in args.task_id]
+    ids = [*args.task_id, *rest] if args.top else [*rest, *args.task_id]
+    taskqueue.set_queue(ids)
+    print(_("queued: {ids}").format(ids=", ".join(f"#{i}" for i in args.task_id)))
+    return 0
+
+
+def cmd_queue_rm(args: argparse.Namespace) -> int:
+    queued = [int(r["id"]) for r in taskqueue.load_queue()]
+    missing = [i for i in args.task_id if i not in queued]
+    if missing:
+        print(
+            _("ntasker: not in the queue: {ids}").format(
+                ids=", ".join(f"#{i}" for i in missing)
+            ),
+            file=sys.stderr,
+        )
+        return 1
+    taskqueue.set_queue([i for i in queued if i not in args.task_id])
+    print(_("removed from the queue: {ids}").format(ids=", ".join(f"#{i}" for i in args.task_id)))
+    return 0
+
+
+def cmd_queue_clear(args: argparse.Namespace) -> int:
+    n = len(taskqueue.load_queue())
+    taskqueue.set_queue([])
+    print(_("queue cleared -- {n} task(s) removed").format(n=n))
+    return 0
+
+
+def _warn_if_no_server(host: str, port: int) -> None:
+    """Point out that a started queue needs a running server to do anything.
+
+    The switch lives in the DB, so ``queue start`` succeeds either way -- but
+    without a server there is no worker, and the queue would sit there looking
+    started while nothing happens.
+    """
+    if _healthz_ok(host, port):
+        return
+    print(
+        _(
+            "ntasker: note -- no server answering on {host}:{port}. The queue only "
+            "runs while `ntasker serve` is up."
+        ).format(host=host, port=port),
+        file=sys.stderr,
+    )
+
+
+def cmd_queue_start(args: argparse.Namespace) -> int:
+    set_setting("queue_enabled", "true")
+    n = len(taskqueue.load_queue())
+    print(_("queue started -- {n} task(s) queued").format(n=n))
+    _warn_if_no_server(args.host, args.port)
+    return 0
+
+
+def cmd_queue_pause(args: argparse.Namespace) -> int:
+    """Stop starting new tasks. A task already running keeps going."""
+    set_setting("queue_enabled", "false")
+    print(_("queue paused"))
+    return 0
+
+
 # Claude Code projects -------------------------------------------------------
 
 
@@ -1663,6 +1791,38 @@ def build_parser() -> argparse.ArgumentParser:
     cfg_unset = cfg_sub.add_parser("unset", help=_("Remove one key"))
     cfg_unset.add_argument("key")
     cfg_unset.set_defaults(func=cmd_config_unset)
+
+    # queue ---------------------------------------------------------------
+    sp_q = sub.add_parser("queue", help=_("Auto-run task queue"))
+    q_sub = sp_q.add_subparsers(dest="queue_cmd", required=True)
+
+    q_list = q_sub.add_parser("list", help=_("Show the queue in run order"))
+    q_list.add_argument("--json", action="store_true")
+    q_list.set_defaults(func=cmd_queue_list)
+
+    q_add = q_sub.add_parser("add", help=_("Put tasks in the queue"))
+    q_add.add_argument("task_id", type=_task_id, nargs="+")
+    q_add.add_argument(
+        "--top", action="store_true", help=_("Insert at the front instead of the end")
+    )
+    q_add.set_defaults(func=cmd_queue_add)
+
+    q_rm = q_sub.add_parser("rm", help=_("Take tasks out of the queue"))
+    q_rm.add_argument("task_id", type=_task_id, nargs="+")
+    q_rm.set_defaults(func=cmd_queue_rm)
+
+    q_clear = q_sub.add_parser("clear", help=_("Empty the queue"))
+    q_clear.set_defaults(func=cmd_queue_clear)
+
+    q_start = q_sub.add_parser("start", help=_("Let the queue work through its tasks"))
+    # Only used to warn when nothing is listening -- mirrors `serve`'s defaults
+    # so the hint stays accurate on a non-default bind.
+    q_start.add_argument("--host", default="127.0.0.1")
+    q_start.add_argument("--port", type=int, default=8766)
+    q_start.set_defaults(func=cmd_queue_start)
+
+    q_pause = q_sub.add_parser("pause", help=_("Stop starting new tasks"))
+    q_pause.set_defaults(func=cmd_queue_pause)
 
     # projects ------------------------------------------------------------
     sp_proj = sub.add_parser("projects", help=_("Claude Code projects"))

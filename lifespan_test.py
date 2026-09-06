@@ -83,7 +83,10 @@ def test_a_direct_import() -> None:
             # point of this test is that the app boots without a prior bind.
             from ntasker.app import app
 
-            with TestClient(app) as client:
+            # Loopback base_url: TestClient's default Host ("testserver") is
+            # refused by the origin guard, which would mask what this test is
+            # actually checking (the lifespan booting without a prior bind).
+            with TestClient(app, base_url="http://127.0.0.1:8766") as client:
                 r = client.get("/")
                 if r.status_code != 200:
                     print(f"FAIL status={r.status_code} body={r.text[:200]}")

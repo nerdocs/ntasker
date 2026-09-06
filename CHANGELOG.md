@@ -9,6 +9,7 @@ Task queue: drop tasks into the panel above the board and ntasker runs them unat
 CLI: `ntasker queue list|add|rm|clear|start|pause` to drive the task queue from a terminal.
 Fixed `ntasker restart`: delegates to the installed service instead of squatting its port, and detaches otherwise.
 The settings restart button now waits for a genuinely new process (`/healthz` reports a `boot_id`) instead of any reply.
+Fixed `make smoke`: the test client used a host the origin guard rejects, and the sort_order checks queried the default sort.
 
 ## [2.21.0] — 2026-09-03
 CLI: `ntasker start` as an alias for `serve`, plus a new `ntasker restart` (stop + start).

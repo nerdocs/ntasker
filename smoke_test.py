@@ -25,7 +25,12 @@ db_module.init_db()
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-client = TestClient(app)
+# Loopback base_url on purpose. TestClient defaults to ``http://testserver``,
+# which the origin guard rejects with 403 host_not_allowed -- correctly, since a
+# non-loopback Host is exactly the DNS-rebinding case it exists to block. Use
+# the address a real client uses, so the suite exercises the deployed path
+# instead of an artificial host the app would never accept.
+client = TestClient(app, base_url="http://127.0.0.1:8766")
 
 
 def assert_ok(resp, expected_status: int = 200) -> None:
@@ -370,30 +375,119 @@ def main() -> int:
         assert_ok(rr, 201)
         assert "sort_order" in rr.json(), "task payload must expose sort_order"
         so_ids.append(rr.json()["id"])
+
+    # ``sort_order`` only drives the order under ``sort=manual``; the default
+    # (``sort=priority``) ranks critical->low and ignores it on purpose. Every
+    # query in this block therefore asks for the manual order explicitly --
+    # without it the assertions would pass or fail for unrelated reasons.
+    manual = "/api/tasks?project=so-proj&status=open&archived=false&sort=manual"
+
     # Freshly created -> newest first (reverse insertion order).
-    listed = client.get("/api/tasks?project=so-proj&status=open&archived=false").json()
+    listed = client.get(manual).json()
     order = [t["id"] for t in listed]
     assert order == list(reversed(so_ids)), f"new tasks must sort newest-first, got {order}"
     print(f"OK POST /api/tasks seeds sort_order -> newest-first {order}")
+
+    # The default sort must NOT follow sort_order -- that separation is the
+    # whole point of the "sort by priority" reset in the UI.
+    prio = [t["id"] for t in
+            client.get("/api/tasks?project=so-proj&status=open&archived=false").json()]
+    assert prio == sorted(so_ids, reverse=True), f"priority sort must rank by id, got {prio}"
+    print(f"OK GET /api/tasks (default sort ignores sort_order) -> {prio}")
 
     # Move the oldest (currently last) above the current top via a larger
     # sort_order, and confirm it jumps to the front.
     top_so = listed[0]["sort_order"]
     r = client.patch(f"/api/tasks/{so_ids[0]}", json={"sort_order": top_so + 1})
     assert_ok(r)
-    moved = [t["id"] for t in
-             client.get("/api/tasks?project=so-proj&status=open&archived=false").json()]
+    moved = [t["id"] for t in client.get(manual).json()]
     assert moved[0] == so_ids[0], f"reordered task must be first, got {moved}"
     print(f"OK PATCH sort_order reorders the list -> {moved}")
 
     # Fractional insert: drop so_ids[1] between the top two; it must land 2nd.
-    rows = client.get("/api/tasks?project=so-proj&status=open&archived=false").json()
+    rows = client.get(manual).json()
     between = (rows[0]["sort_order"] + rows[1]["sort_order"]) / 2
     client.patch(f"/api/tasks/{so_ids[1]}", json={"sort_order": between})
-    final = [t["id"] for t in
-             client.get("/api/tasks?project=so-proj&status=open&archived=false").json()]
+    final = [t["id"] for t in client.get(manual).json()]
     assert final[1] == so_ids[1], f"fractional insert must land 2nd, got {final}"
     print(f"OK fractional sort_order insert -> {final}")
+
+    # ------------------------------------------------------------------
+    # 24d. Auto-run task queue (new in v2.22). The worker itself is not
+    # exercised here -- it spawns real agent processes -- but the queue's
+    # storage and its API contract are.
+    # ------------------------------------------------------------------
+    q_ids = []
+    for i in range(3):
+        rr = client.post("/api/tasks", json={"title": f"q-{i}", "project": "q-proj"})
+        assert_ok(rr, 201)
+        assert rr.json()["queue_order"] is None, "a new task must not be queued"
+        q_ids.append(rr.json()["id"])
+
+    r = client.get("/api/queue")
+    assert_ok(r)
+    assert r.json() == {"enabled": False, "items": []}, "queue starts empty and off"
+    print("OK GET /api/queue (empty, off)")
+
+    # PUT replaces the whole queue, head first, and renumbers 1..n.
+    r = client.put("/api/queue", json={"ids": [q_ids[2], q_ids[0], q_ids[1]]})
+    assert_ok(r)
+    items = r.json()["items"]
+    assert [t["id"] for t in items] == [q_ids[2], q_ids[0], q_ids[1]], f"order wrong: {items}"
+    assert [t["queue_order"] for t in items] == [1.0, 2.0, 3.0], "queue_order must be dense 1..n"
+    print("OK PUT /api/queue (order + dense renumber)")
+
+    # A closed task cannot sit in the queue: it is dropped, not stored.
+    assert_ok(client.patch(f"/api/tasks/{q_ids[0]}", json={"status": "done"}))
+    r = client.put("/api/queue", json={"ids": [q_ids[0], q_ids[1]]})
+    assert_ok(r)
+    assert [t["id"] for t in r.json()["items"]] == [q_ids[1]], "closed task must be dropped"
+    print("OK PUT /api/queue drops a closed task")
+
+    # The worker retires entries whose task is no longer open, whoever closed
+    # it -- the DB is the single source of truth.
+    client.put("/api/queue", json={"ids": [q_ids[1], q_ids[2]]})
+    assert_ok(client.patch(f"/api/tasks/{q_ids[1]}", json={"status": "done"}))
+    from ntasker import taskqueue  # noqa: PLC0415
+    taskqueue.tick()
+    assert [t["id"] for t in client.get("/api/queue").json()["items"]] == [q_ids[2]], (
+        "tick() must retire a task that was closed behind the queue's back"
+    )
+    print("OK taskqueue.tick() retires a closed task")
+
+    # The switch lives in the settings store, so CLI and UI share one state.
+    assert_ok(client.put("/api/settings/queue_enabled", json={"value": "true"}))
+    assert client.get("/api/queue").json()["enabled"] is True
+    assert client.put("/api/settings/queue_enabled", json={"value": "maybe"}).status_code == 400
+    # Drop the row again -- the settings section below starts from an empty store.
+    assert client.delete("/api/settings/queue_enabled").status_code == 204
+    print("OK queue_enabled switch (shared setting, validated)")
+
+    # An empty list is how the last entry is removed.
+    r = client.put("/api/queue", json={"ids": []})
+    assert_ok(r)
+    assert r.json()["items"] == []
+    print("OK PUT /api/queue [] clears it")
+
+    # CLI and API drive the same queue.
+    proc = subprocess.run(
+        ["ntasker", "queue", "add", str(q_ids[2])],
+        capture_output=True, text=True, env={**os.environ, "NTASKER_DB": str(tmp_db)},
+    )
+    assert proc.returncode == 0, f"ntasker queue add failed: {proc.stderr}"
+    assert [t["id"] for t in client.get("/api/queue").json()["items"]] == [q_ids[2]], (
+        "a CLI-queued task must show up over the API"
+    )
+    proc = subprocess.run(
+        ["ntasker", "queue", "add", str(q_ids[0])],
+        capture_output=True, text=True, env={**os.environ, "NTASKER_DB": str(tmp_db)},
+    )
+    assert proc.returncode == 2, "CLI must refuse to queue a closed task"
+    subprocess.run(
+        ["ntasker", "queue", "clear"],
+        capture_output=True, text=True, env={**os.environ, "NTASKER_DB": str(tmp_db)},
+    )
+    print("OK ntasker queue add/clear (CLI and API share one queue)")
 
     # ------------------------------------------------------------------
     # Settings module (new in v1.0.0)

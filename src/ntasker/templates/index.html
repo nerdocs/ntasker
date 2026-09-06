@@ -656,8 +656,25 @@
                     <div class="task-queue-empty" x-show="queue.length === 0"
                          x-text="$i18n('queue_empty')"></div>
 
-                    <ol class="task-queue-list" x-show="queue.length > 0" x-cloak>
-                        <template x-for="(item, idx) in queue" :key="item.id">
+                    {# One column per project -- the worker runs one task per #}
+                    {# project at a time, so a column is literally one execution #}
+                    {# lane. Cross-project first, then alphabetical. #}
+                    <div class="task-queue-board" x-show="queue.length > 0" x-cloak>
+                    <template x-for="group in queueGroups" :key="group.key">
+                    <div class="task-queue-col">
+                        <div class="task-queue-col-head d-flex align-items-center">
+                            <template x-if="group.key === '__none__'">
+                                <span class="text-truncate">
+                                    <i class="ti ti-asterisk me-1"></i><span x-text="$i18n('cross_project')"></span>
+                                </span>
+                            </template>
+                            <template x-if="group.key !== '__none__'">
+                                <span class="text-truncate" x-text="group.label" :title="group.label"></span>
+                            </template>
+                            <span class="badge bg-secondary-lt ms-auto" x-text="group.items.length"></span>
+                        </div>
+                    <ol class="task-queue-list">
+                        <template x-for="(item, idx) in group.items" :key="item.id">
                             <li class="task-queue-item"
                                 :class="{'task-queue-item-running': taskRunPhase(item.id) === 'running',
                                          'task-queue-item-waiting': taskRunPhase(item.id) === 'waiting',
@@ -684,20 +701,15 @@
                                 <span class="task-queue-title text-truncate" :title="item.title"
                                       x-text="item.title"></span>
 
-                                <template x-if="item.project">
-                                    <span class="badge bg-blue-lt flex-shrink-0" x-text="item.project"></span>
-                                </template>
-                                <template x-if="!item.project">
-                                    <span class="badge bg-secondary-lt flex-shrink-0"
-                                          :title="$i18n('cross_project')"><i class="ti ti-asterisk"></i></span>
-                                </template>
-
                                 {# Why an entry is being passed over, when it is. The #}
                                 {# queue keeps it and moves to the next task in that #}
                                 {# project, so silence here would just look broken. #}
+                                {# A blocker is named by id, and by project when it #}
+                                {# sits in another column. #}
                                 <template x-if="queueItemNote(item)">
-                                    <span class="badge bg-danger-lt flex-shrink-0" :title="queueItemNote(item)">
-                                        <i class="ti ti-lock"></i>
+                                    <span class="badge bg-danger-lt task-queue-blocker text-truncate"
+                                          :title="blockerDetail(item)">
+                                        <i class="ti ti-lock" :class="blockerLabel(item) && 'me-1'"></i><span x-text="blockerLabel(item)"></span>
                                     </span>
                                 </template>
 
@@ -726,6 +738,9 @@
                             </li>
                         </template>
                     </ol>
+                    </div>
+                    </template>
+                    </div>
                 </div>
 
                 {# Tabs -- list view only. Kanban renders its own column layout below. #}

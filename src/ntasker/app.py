@@ -438,6 +438,7 @@ def build_js_strings() -> dict[str, str]:
         "queue_badge": _("Queued at position {n}"),
         "queue_blocked": _("Skipped while a dependency is still open."),
         "queue_agent_missing": _("Skipped -- this task's agent is not installed."),
+        "dep_other_project": _("in {name}"),
         # Banners
         "configure_projects_dir": _(
             "Please configure the projects directory -- otherwise the project list stays empty."

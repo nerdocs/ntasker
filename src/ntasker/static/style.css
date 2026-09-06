@@ -280,6 +280,35 @@ body {
     text-align: center;
 }
 
+/* One column per project. The worker runs one task per project at a time, so
+ * a column is literally one execution lane -- which is why each gets its own
+ * rail and its own 1..n numbering. Scrolls sideways rather than squeezing the
+ * columns; a lane that is too narrow to read its titles helps nobody. */
+.task-queue-board {
+    display: flex;
+    gap: 0.75rem;
+    overflow-x: auto;
+    padding-bottom: 0.25rem;
+}
+/* Grow to share the width when there are few columns, never shrink below a
+ * readable lane -- so a handful of projects fill the panel, and many of them
+ * overflow into the horizontal scroll instead of squeezing each other flat. */
+.task-queue-col {
+    flex: 1 0 15rem;
+    max-width: 24rem;
+    min-width: 0;
+}
+.task-queue-col-head {
+    gap: 0.5rem;
+    padding: 0.375rem 0 0.125rem;
+    border-bottom: 1px solid var(--tblr-border-color);
+    color: var(--tblr-secondary);
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
 .task-queue-list {
     position: relative;
     list-style: none;
@@ -373,11 +402,15 @@ body {
     color: #fff;
 }
 
-/* The title takes whatever space the badges leave and truncates -- the queue
- * must stay one line per task however long the titles get. */
+/* One line per task, however long the titles get: the title is the elastic
+ * element, the blocker badge is not. The badge is a handful of characters and
+ * useless once truncated ("#1" -> "…"), while a clipped title still reads. */
 .task-queue-title {
     flex: 1 1 auto;
-    min-width: 4rem;
+    min-width: 3rem;
+}
+.task-queue-blocker {
+    flex: 0 0 auto;
 }
 .task-queue-item-running .task-queue-state .spinner-border {
     color: var(--tblr-indigo);

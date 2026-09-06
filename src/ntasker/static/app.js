@@ -924,11 +924,44 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             }
         },
 
-        // 1-based position of a task in the queue, or 0 when it is not queued
-        // (falsy, so the board badge can gate on it directly).
+        // The queue split into one column per project -- the worker runs one
+        // task per project at a time, so a project *is* the unit of execution
+        // and the panel says so. Cross-project first (as in the sidebar), then
+        // by name; inside a group the global queue order is preserved.
+        get queueGroups() {
+            const groups = new Map();
+            for (const item of this.queue) {
+                const key = item.project || PROJECT_NONE;
+                if (!groups.has(key)) groups.set(key, { key, label: item.project || '', items: [] });
+                groups.get(key).items.push(item);
+            }
+            return [...groups.values()].sort((a, b) => {
+                if (a.key === PROJECT_NONE) return -1;
+                if (b.key === PROJECT_NONE) return 1;
+                return a.key.localeCompare(b.key);
+            });
+        },
+
+        // Rewrite one column's order without disturbing any other project: the
+        // stored queue stays one global sequence, and this substitutes the new
+        // order into the slots that column already occupies.
+        _mergeGroupOrder(groupKey, orderedItems) {
+            const queue = [...orderedItems];
+            return this.queue.map(t =>
+                (t.project || PROJECT_NONE) === groupKey ? queue.shift() : t
+            );
+        },
+
+        // 1-based position of a task *within its project*, or 0 when it is not
+        // queued (falsy, so the board badge can gate on it directly). Within the
+        // project is the number that says when a task runs -- the global index
+        // would count tasks that run in parallel elsewhere.
         queuePosition(taskId) {
-            const i = this.queue.findIndex(t => t.id === taskId);
-            return i < 0 ? 0 : i + 1;
+            const task = this.queue.find(t => t.id === taskId);
+            if (!task) return 0;
+            const key = task.project || PROJECT_NONE;
+            return this.queue.filter(t => (t.project || PROJECT_NONE) === key)
+                             .findIndex(t => t.id === taskId) + 1;
         },
 
         queueHint() {
@@ -943,6 +976,31 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             if (this.isBlocked(item)) return _i('queue_blocked');
             if (!this.taskRunnable(item)) return _i('queue_agent_missing');
             return '';
+        },
+
+        // Lock badge, inline: just the blocking ids. A queue column is narrow --
+        // spelling out the blockers' projects here would eat the title, and the
+        // ids are what you act on.
+        blockerLabel(item) {
+            if (!this.isBlocked(item)) return '';
+            return this.blockingDeps(item).map(d => `#${d.id}`).join(', ');
+        },
+
+        // The same blockers spelled out for the tooltip, naming the project of
+        // any blocker that sits in another column -- a bare id would be
+        // unfindable there, and cross-project blockers are the whole reason
+        // dependencies matter to the queue.
+        blockerDetail(item) {
+            if (!this.isBlocked(item)) return _i('queue_agent_missing');
+            const own = item.project || PROJECT_NONE;
+            const parts = this.blockingDeps(item).map(d => {
+                const proj = d.project || PROJECT_NONE;
+                const where = proj === own
+                    ? ''
+                    : ' ' + _i('dep_other_project', {name: d.project || _i('cross_project')});
+                return `#${d.id} ${d.title}${where}`;
+            });
+            return _i('queue_blocked') + '\n' + parts.join('\n');
         },
 
         // Put a task in the queue, or take it back out. The per-task button on
@@ -967,10 +1025,18 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // queue is deliberately not a thing -- the board's queue button is the
         // way in, so a drop here only ever moves an entry that is already
         // queued, and a card dragged off the board is ignored.
+        //
+        // Reordering stays inside one column: dropping into a foreign column
+        // would have to silently reassign the task's project, which belongs in
+        // the edit dialog, not in a reorder gesture.
         onQueueItemDragOver(event, item) {
             if (this.draggedTaskId == null) return;
-            if (!this.queuePosition(this.draggedTaskId)) {
+            const dragged = this.queue.find(t => t.id === this.draggedTaskId);
+            const sameColumn = dragged &&
+                (dragged.project || PROJECT_NONE) === (item.project || PROJECT_NONE);
+            if (!sameColumn) {
                 if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
+                this.queueOverId = null;
                 return;
             }
             if (this.draggedTaskId === item.id) {   // itself: no insertion line
@@ -984,7 +1050,9 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
         },
 
-        // Commit a reorder: move the dragged entry to ``item``'s slot.
+        // Commit a reorder within one column: move the dragged entry to
+        // ``item``'s slot, then substitute the column back into the global
+        // queue so no other project shifts.
         async onQueueDrop(event, item) {
             const id = this.draggedTaskId;
             const before = this.queueOverBefore;
@@ -993,12 +1061,16 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             if (id == null || id === item.id) return;
             const task = this.queue.find(t => t.id === id);
             if (!task) return;   // not a queue entry -- nothing to reorder
-            const next = this.queue.filter(t => t.id !== id);
-            let idx = next.findIndex(t => t.id === item.id);
-            if (idx < 0) idx = next.length;
+            const key = task.project || PROJECT_NONE;
+            if ((item.project || PROJECT_NONE) !== key) return;   // foreign column
+            const column = this.queue.filter(
+                t => (t.project || PROJECT_NONE) === key && t.id !== id
+            );
+            let idx = column.findIndex(t => t.id === item.id);
+            if (idx < 0) idx = column.length;
             else if (!before) idx += 1;
-            next.splice(idx, 0, task);
-            await this._saveQueue(next);
+            column.splice(idx, 0, task);
+            await this._saveQueue(this._mergeGroupOrder(key, column));
         },
 
         async removeFromQueue(id) {

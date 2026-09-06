@@ -425,7 +425,10 @@ def build_js_strings() -> dict[str, str]:
         "queue_pause_title": _(
             "Stop starting new tasks. A task already running keeps going."
         ),
-        "queue_empty": _("Drop tasks here to have them worked through one after another."),
+        "queue_empty": _(
+            "Empty. Use the queue button on a task to have it worked through here."
+        ),
+        "queue_add": _("Add to the queue"),
         "queue_paused_hint": _("Paused -- press Start to work through these."),
         "queue_running_hint": _("Running one task per project, top down."),
         "queue_position": _("Position {n} in the queue"),
@@ -435,7 +438,6 @@ def build_js_strings() -> dict[str, str]:
         "queue_badge": _("Queued at position {n}"),
         "queue_blocked": _("Skipped while a dependency is still open."),
         "queue_agent_missing": _("Skipped -- this task's agent is not installed."),
-        "queue_add_failed": _("Only open tasks can be queued."),
         # Banners
         "configure_projects_dir": _(
             "Please configure the projects directory -- otherwise the project list stays empty."

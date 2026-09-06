@@ -620,17 +620,14 @@
                 </div>
 
                 {# ===== Task queue ===== #}
-                {# The auto-run worklist. Drop a task in from either view, press #}
-                {# Start, and ntasker works it through: one running task per #}
-                {# project, next one up as soon as the previous session ends. #}
+                {# The auto-run worklist. Tasks come in through the queue button #}
+                {# on each row / card; press Start and ntasker works them through: #}
+                {# one running task per project, next one up as soon as the #}
+                {# previous session ends. Dragging inside the panel reorders it. #}
                 {# The rail down the left side marches while the queue runs and #}
                 {# freezes when it is paused -- that is the state indicator. #}
                 <div class="task-queue mb-3"
-                     :class="{'task-queue-live': queueEnabled && queue.length,
-                              'task-queue-dropping': queueDragOver}"
-                     @dragover.prevent="onQueueDragOver($event)"
-                     @dragleave="onQueueDragLeave($event)"
-                     @drop.prevent="onQueueDrop($event, null)">
+                     :class="{'task-queue-live': queueEnabled && queue.length}">
 
                     <div class="d-flex align-items-center gap-2">
                         <span class="text-secondary text-uppercase small fw-bold d-flex align-items-center">
@@ -654,8 +651,8 @@
                         </button>
                     </div>
 
-                    {# Empty state doubles as the drop target -- it is the only #}
-                    {# place that says what the queue is for, so it stays visible. #}
+                    {# The empty state is the only place that says what the queue #}
+                    {# is for and how tasks get in, so it stays visible. #}
                     <div class="task-queue-empty" x-show="queue.length === 0"
                          x-text="$i18n('queue_empty')"></div>
 
@@ -954,6 +951,20 @@
                                                     <img :src="agentIconUrl(task)" class="claude-logo-icon agent-logo-disabled" alt="">
                                                 </span>
                                             </template>
+                                            {# Queue toggle -- hand the task to the auto-run queue, or take #}
+                                            {# it back out. Same gate as the run button next to it: no point #}
+                                            {# queueing work for an agent that cannot start. #}
+                                            <template x-if="canQueue(task)">
+                                                <button class="btn btn-sm btn-queue"
+                                                        :class="{'btn-queue-on': queuePosition(task.id)}"
+                                                        @click.stop="toggleQueued(task)"
+                                                        :aria-label="queuePosition(task.id) ? $i18n('queue_remove') : $i18n('queue_add')"
+                                                        :title="queuePosition(task.id)
+                                                            ? $i18n('queue_remove') + ' (' + $i18n('queue_position', {n: queuePosition(task.id)}) + ')'
+                                                            : $i18n('queue_add')">
+                                                    <i class="ti ti-stack-2 fs-3"></i>
+                                                </button>
+                                            </template>
                                             {# Resume: reopen a finished task's stored Claude session. #}
                                             <template x-if="canResume(task)">
                                                 <button class="btn btn-sm btn-claude" @click="openClaudeResume(task)"
@@ -1093,6 +1104,18 @@
                                                           :title="agentLabel(taskAgentKey(task)) + ' — ' + $i18n('agent_not_installed_hint')">
                                                         <img :src="agentIconUrl(task)" class="claude-logo-icon agent-logo-disabled" alt="">
                                                     </span>
+                                                </template>
+                                                {# Queue toggle -- see the list view for the rationale. #}
+                                                <template x-if="canQueue(task)">
+                                                    <button class="btn btn-sm btn-queue px-1 py-0"
+                                                            :class="{'btn-queue-on': queuePosition(task.id)}"
+                                                            @click.stop="toggleQueued(task)"
+                                                            :aria-label="queuePosition(task.id) ? $i18n('queue_remove') : $i18n('queue_add')"
+                                                            :title="queuePosition(task.id)
+                                                                ? $i18n('queue_remove') + ' (' + $i18n('queue_position', {n: queuePosition(task.id)}) + ')'
+                                                                : $i18n('queue_add')">
+                                                        <i class="ti ti-stack-2 fs-3"></i>
+                                                    </button>
                                                 </template>
                                                 {# Resume: reopen a finished task's stored Claude session. #}
                                                 <template x-if="canResume(task)">

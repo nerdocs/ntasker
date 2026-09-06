@@ -243,9 +243,29 @@ body {
 .task-queue.task-queue-live {
     border-left-color: var(--tblr-indigo);
 }
-.task-queue.task-queue-dropping {
-    border-color: var(--tblr-primary);
-    box-shadow: 0 0 0 3px rgba(var(--tblr-primary-rgb), 0.15);
+/* Per-task queue toggle on the board. Off it is a quiet ghost button like its
+ * neighbours; on it fills with the queue's indigo, so a queued task is
+ * recognisable from the button alone -- the same colour the panel and the
+ * position badge use. */
+.btn-queue,
+.btn-queue:focus {
+    background-color: transparent;
+    border-color: transparent;
+    color: var(--tblr-secondary);
+}
+.btn-queue:hover {
+    background-color: rgba(var(--tblr-indigo-rgb), 0.12);
+    border-color: transparent;
+    color: var(--tblr-indigo);
+}
+.btn-queue.btn-queue-on,
+.btn-queue.btn-queue-on:focus {
+    background-color: rgba(var(--tblr-indigo-rgb), 0.14);
+    border-color: transparent;
+    color: var(--tblr-indigo);
+}
+.btn-queue.btn-queue-on:hover {
+    background-color: rgba(var(--tblr-indigo-rgb), 0.22);
 }
 
 /* Empty state = the drop target. It is the only thing that explains what the

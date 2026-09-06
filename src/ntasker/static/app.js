@@ -152,11 +152,11 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // task may be filtered off the board and the panel still has to render
         // it). ``queueEnabled`` mirrors the server-side ``queue_enabled``
         // setting, so the play/pause state survives a reload and every open tab
-        // agrees on it. Its own drag state -- a queued task also sits on the
-        // board, so sharing dragOverTaskId would light up both at once.
+        // agrees on it. Reordering inside the panel has its own drag state -- a
+        // queued task also sits on the board, so sharing dragOverTaskId would
+        // light up both at once.
         queue: [],
         queueEnabled: false,
-        queueDragOver: false,
         queueOverId: null,
         queueOverBefore: false,
         // Raw body of the last /api/queue response; an unchanged payload skips
@@ -658,7 +658,6 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             this.draggedTaskId = null;
             this.dragOverColumn = null;
             this.dragOverTaskId = null;
-            this.queueDragOver = false;
             this.queueOverId = null;
             // A change detected mid-drag was deferred (re-rendering would abort
             // the drag); apply it now that the drag is over.
@@ -946,45 +945,34 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             return '';
         },
 
-        // Only open, unarchived tasks can be queued -- the server enforces the
-        // same rule; this just keeps the drop cursor honest.
-        _queueEligible(id) {
-            const t = this._taskById(id);
-            return !!t && t.status === 'open' && !t.archived;
-        },
-
-        // A dragged task can come from the board or from the queue itself.
-        _taskById(id) {
-            return this.tasks.find(t => t.id === id) || this.queue.find(t => t.id === id) || null;
-        },
-
-        onQueueDragOver(event) {
-            if (this.draggedTaskId == null) return;
-            if (!this._queueEligible(this.draggedTaskId)) {
-                if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
+        // Put a task in the queue, or take it back out. The per-task button on
+        // the board is the only way in; new entries land at the end, and the
+        // queue panel is where the order gets decided.
+        async toggleQueued(task) {
+            if (this.queuePosition(task.id)) {
+                await this.removeFromQueue(task.id);
                 return;
             }
-            if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
-            this.queueDragOver = true;
+            await this._saveQueue([...this.queue, task]);
         },
 
-        onQueueDragLeave(event) {
-            // dragleave also fires when crossing into a child -- only drop the
-            // highlight once the cursor has really left the panel.
-            const related = event.relatedTarget;
-            if (!related || !event.currentTarget.contains(related)) {
-                this.queueDragOver = false;
-                this.queueOverId = null;
-            }
+        // Whether the board should offer the queue button for this task: it has
+        // to be queueable (open, not archived) and have an agent that could
+        // actually run it -- same gate as the run button next to it.
+        canQueue(task) {
+            return !!task && task.status === 'open' && !task.archived && this.taskRunnable(task);
         },
 
+        // Drag inside the queue panel reorders it. Dragging a card *into* the
+        // queue is deliberately not a thing -- the board's queue button is the
+        // way in, so a drop here only ever moves an entry that is already
+        // queued, and a card dragged off the board is ignored.
         onQueueItemDragOver(event, item) {
             if (this.draggedTaskId == null) return;
-            if (!this._queueEligible(this.draggedTaskId)) {
+            if (!this.queuePosition(this.draggedTaskId)) {
                 if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
                 return;
             }
-            this.queueDragOver = true;
             if (this.draggedTaskId === item.id) {   // itself: no insertion line
                 this.queueOverId = null;
                 if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
@@ -996,25 +984,17 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
         },
 
-        // Drop into the queue. ``item`` is the entry the cursor was over, or
-        // null when the drop landed on the panel itself (append at the end).
-        // Same handler for a card coming off the board and for reordering an
-        // entry that is already queued -- both are "put this id at this slot".
+        // Commit a reorder: move the dragged entry to ``item``'s slot.
         async onQueueDrop(event, item) {
             const id = this.draggedTaskId;
             const before = this.queueOverBefore;
-            this.queueDragOver = false;
             this.queueOverId = null;
             this.draggedTaskId = null;
-            if (id == null) return;
-            const task = this._taskById(id);
-            if (!task) return;
-            if (task.status !== 'open' || task.archived) {
-                this.showToast(_i('queue_add_failed'), 'danger');
-                return;
-            }
+            if (id == null || id === item.id) return;
+            const task = this.queue.find(t => t.id === id);
+            if (!task) return;   // not a queue entry -- nothing to reorder
             const next = this.queue.filter(t => t.id !== id);
-            let idx = item ? next.findIndex(t => t.id === item.id) : next.length;
+            let idx = next.findIndex(t => t.id === item.id);
             if (idx < 0) idx = next.length;
             else if (!before) idx += 1;
             next.splice(idx, 0, task);

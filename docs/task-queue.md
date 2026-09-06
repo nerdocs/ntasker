@@ -1,9 +1,13 @@
 # Task Queue
 
-The task queue is a worklist ntasker works through on its own: drop tasks in, press **Start**, and ntasker hands
-each one to its agent, waits for it to finish, and moves on to the next.
+The task queue is a worklist ntasker works through on its own: press a task's queue button, press **Start**, and
+ntasker hands each one to its agent, waits for it to finish, and moves on to the next.
 
 It sits in a panel above the board and is visible in both the list and the kanban view.
+
+Tasks get in through the **queue button** on each row / card -- the one next to the agent's run button. It toggles, so
+the same button takes a task back out. Dragging inside the panel reorders the queue; dragging a card *into* it is not a
+thing, precisely so the button is the one obvious way in.
 
 ## Rules in one paragraph
 
@@ -20,14 +24,14 @@ the same, because the queue only ever reads the DB.
 | Position bead (`1`, `2`, `3`) | Run order. Indigo = running, orange = waiting for your input. |
 | Lock badge on an entry | The queue is passing this one over -- see [Skipped entries](#skipped-entries). |
 | **Running** / **Waiting for your input** | Links into that session's terminal. |
-| `✕` | Removes the entry. Dragging an entry back onto the board does *not* dequeue it. |
+| `✕` | Removes the entry. So does the task's own queue button, which toggles. |
 
 Queued tasks also carry an indigo `⧉ n` badge on their board row / kanban card, so you can see a task's queue position
 without looking at the panel.
 
 ## Start and pause
 
-The switch is **off by default**: dropping tasks in and sorting them never launches an agent by accident. It lives
+The switch is **off by default**: queueing tasks and sorting them never launches an agent by accident. It lives
 in the `queue_enabled` setting (not in `localStorage`), so the state survives a restart and every open browser tab
 agrees on it.
 
@@ -94,7 +98,7 @@ id deserves to be told.
 | `PUT /api/queue` | Body `{ids: [...]}` replaces the whole queue, head first. Ids that are closed, archived or gone are dropped. An empty list clears the queue. |
 | `PUT /api/settings/queue_enabled` | `{"value": "true" \| "false"}` -- the start/pause switch. |
 
-Add, reorder and remove are all the same `PUT`: the frontend owns the ordered list and sends it after every drop, so
+Add, reorder and remove are all the same `PUT`: the frontend owns the ordered list and sends it after every edit, so
 there is no partial state to reconcile.
 
 ## Where the code lives
@@ -105,7 +109,7 @@ there is no partial state to reconcile.
 | `src/ntasker/claude_runner.py` | `queue_seed_for_task` (the seed) and `start_detached_session` (spawn with no browser attached). |
 | `src/ntasker/app.py` | `/api/queue` routes plus the worker's startup / shutdown hooks. |
 | `src/ntasker/cli.py` | `cmd_queue_*` -- the `ntasker queue` subcommands. |
-| `src/ntasker/static/app.js` | Panel state and the drag handlers (`onQueueDrop` and friends). |
+| `src/ntasker/static/app.js` | Panel state, `toggleQueued` (the board button) and the reorder drag handlers. |
 | `src/ntasker/static/style.css` | `.task-queue*` -- including the rail. |
 
 A queued run lands in the same session registry as any other run, so it shows up in the busy indicators and the run-view

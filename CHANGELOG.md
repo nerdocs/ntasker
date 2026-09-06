@@ -5,7 +5,7 @@ All notable changes to ntasker.
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
 ## [Unreleased]
-Task queue: drop tasks into the panel above the board and ntasker runs them unattended, one per project at a time.
+Task queue: a queue button per task hands it to ntasker, which runs the queue unattended, one task per project.
 CLI: `ntasker queue list|add|rm|clear|start|pause` to drive the task queue from a terminal.
 Fixed `ntasker restart`: delegates to the installed service instead of squatting its port, and detaches otherwise.
 The settings restart button now waits for a genuinely new process (`/healthz` reports a `boot_id`) instead of any reply.

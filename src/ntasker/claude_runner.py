@@ -211,13 +211,29 @@ def seed_command_for_task(task: dict) -> str:
     return f"/task {task['id']}"
 
 
-def _compact_seed(task: dict) -> str:
+def queue_seed_for_task(task: dict) -> str:
+    """Initial input for a run started by the task queue.
+
+    A queued run is a different contract from every other run: the user put the
+    task in the queue precisely so it gets *finished and closed* without them,
+    so the seed carries an explicit grant to set ``status=done`` -- which the
+    normal tracker rules (and the ``/task`` command they come with) forbid.
+    That grant only works when it is right there in the prompt, so a queued run
+    never uses ``/task``; it always inlines the task like the compact seed does.
+    """
+    return _compact_seed(task, queued=True)
+
+
+def _compact_seed(task: dict, queued: bool = False) -> str:
     """Self-contained initial prompt: task data plus the tracker hand-off rules.
 
     Replaces what the ``/task`` command + loader would have injected. The task
     id is kept prominent -- the agent needs it for the review hand-off. The
     ``phase=wip`` move the loader normally performs happens server-side at
-    spawn instead (see :func:`_mark_wip`).
+    spawn instead (see :func:`mark_wip`).
+
+    ``queued`` swaps the hand-off rules for the queue's: finish the task and
+    close it yourself (see :func:`queue_seed_for_task`).
     """
     from ntasker.db import get_conn, load_tags_for  # noqa: PLC0415 -- lazy: avoid cycle
 
@@ -240,18 +256,37 @@ def _compact_seed(task: dict) -> str:
     description = (task.get("description") or "").strip()
     if description:
         lines += ["", "## Description", "", description]
-    lines += [
-        "",
-        "## Tracker rules",
-        "",
-        "- Work the task described above.",
-        "- When your work is done, hand it off to review (a handoff, not a close --",
-        f'  no user OK needed): ntasker patch "{task["id"]}" --phase review',
-        "- If you cannot finish (blocker, missing info), leave the phase as-is and",
-        "  report the blocker instead.",
-        "- Never set status=done or archive on your own; only the user closes tasks.",
-        "- No new tracker tasks, no deletes, no writes to other task IDs.",
-    ]
+    if queued:
+        lines += [
+            "",
+            "## Tracker rules (queued run)",
+            "",
+            "- The user put this task in nTasker's task queue to have it worked",
+            "  through unattended. Carry it to completion if at all possible.",
+            "- That queue placement IS the user's instruction to close the task, so",
+            "  when the work is done, close it yourself -- do not ask first:",
+            f'  ntasker done "{task["id"]}"',
+            "  This overrides the standing rule that only the user closes tasks; it",
+            "  applies to this task ID and this session only.",
+            "- The next queued task starts once this one is closed, so never close it",
+            "  on a guess. If you cannot finish (blocker, missing info, a decision",
+            "  only the user can make), leave the status open, hand it to review",
+            f'  (ntasker patch "{task["id"]}" --phase review) and report the blocker.',
+            "- No new tracker tasks, no deletes, no writes to other task IDs.",
+        ]
+    else:
+        lines += [
+            "",
+            "## Tracker rules",
+            "",
+            "- Work the task described above.",
+            "- When your work is done, hand it off to review (a handoff, not a close --",
+            f'  no user OK needed): ntasker patch "{task["id"]}" --phase review',
+            "- If you cannot finish (blocker, missing info), leave the phase as-is and",
+            "  report the blocker instead.",
+            "- Never set status=done or archive on your own; only the user closes tasks.",
+            "- No new tracker tasks, no deletes, no writes to other task IDs.",
+        ]
     return "\n".join(lines)
 
 
@@ -350,7 +385,7 @@ def _child_setup() -> None:
         fcntl.ioctl(0, termios.TIOCSCTTY, 0)
 
 
-def _mark_wip(task_id: int) -> None:
+def mark_wip(task_id: int) -> None:
     """Move a starting task to ``phase=wip`` -- the loader's job, done here.
 
     Compact-seed runs never execute the ``/task`` loader, so its "starting
@@ -372,7 +407,7 @@ def _mark_wip(task_id: int) -> None:
 def _store_session_id(task_id: int, session_id: str) -> None:
     """Persist a run's forced session id so the task can be resumed later.
 
-    Best-effort, mirroring :func:`_mark_wip`: a DB hiccup must never block the
+    Best-effort, mirroring :func:`mark_wip`: a DB hiccup must never block the
     spawn. Overwrites any previous id -- the column always points at the task's
     most recent web-terminal run.
     """
@@ -442,7 +477,7 @@ def _start_session(
     # normally performs happens here instead. A resume reopens finished work --
     # never resurrect its phase.
     if seed and not resume_id and get_compact_seed():
-        _mark_wip(task_id)
+        mark_wip(task_id)
     # The cwd is a best-effort guess from the task's project name (see
     # default_cwd_for_project). A new project's directory may not exist yet:
     # resolve_run_cwd creates it when it lives inside the configured
@@ -466,6 +501,26 @@ def _start_session(
     SESSIONS[task_id] = sess
     _attach_reader(sess)
     return sess
+
+
+def start_detached_session(task_id: int, cwd: str | None, seed: str | None) -> bool:
+    """Start a session with no browser attached. Used by the task queue.
+
+    Same spawn path as a run launched from the UI -- the session lands in the
+    same registry, so it shows up in the busy indicators and the run-view tab
+    strip, and the user can open its terminal at any point to watch or take
+    over. Returns ``False`` when the task already has a live session.
+
+    Must be called from the event loop: the PTY reader is registered on the
+    running loop (see :func:`_attach_reader`).
+    """
+    sess = SESSIONS.get(task_id)
+    if sess is not None and sess.alive:
+        return False
+    SESSIONS.pop(task_id, None)   # drop a stale dead session before replacing it
+    mark_wip(task_id)
+    _start_session(task_id, cwd, seed)
+    return True
 
 
 def _attach_reader(sess: TermSession) -> None:

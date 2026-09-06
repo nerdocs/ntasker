@@ -4,6 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [Unreleased]
+Task queue: drop tasks into the panel above the board and ntasker runs them unattended, one per project at a time.
+
 ## [2.21.0] — 2026-09-03
 CLI: `ntasker start` as an alias for `serve`, plus a new `ntasker restart` (stop + start).
 

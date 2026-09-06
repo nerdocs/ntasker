@@ -300,6 +300,26 @@ def validate_compact_seed(value: str) -> str:
     )
 
 
+def validate_queue_enabled(value: str) -> str:
+    """Validator for the ``queue_enabled`` boolean setting.
+
+    The task queue's play/pause switch. When truthy the queue worker starts the
+    next queued task as soon as its project is free; when falsy (the default)
+    queued tasks just sit there, so dropping tasks in and sorting them never
+    launches an agent by accident. Stored in the DB rather than the browser so
+    the state survives a restart and every open tab agrees on it. Normalizes
+    truthy/falsy spellings to ``"true"`` / ``"false"``; rejects anything else.
+    """
+    norm = (value or "").strip().lower()
+    if norm in _TRUE_STRINGS:
+        return "true"
+    if norm in _FALSE_STRINGS:
+        return "false"
+    raise ValueError(
+        _("queue_enabled must be a yes/no value (got {value!r}).").format(value=value)
+    )
+
+
 VALIDATORS: dict[str, Validator] = {
     "assets_mode": validate_assets_mode,
     "language": validate_language,
@@ -313,6 +333,7 @@ VALIDATORS: dict[str, Validator] = {
     "claude_open_terminal": validate_claude_open_terminal,
     "opencode_auto": validate_opencode_auto,
     "compact_seed": validate_compact_seed,
+    "queue_enabled": validate_queue_enabled,
     "update_command": validate_update_command,
 }
 """Registry of known settings keys with their validators.
@@ -387,6 +408,12 @@ HINTS: dict[str, object] = {
         "treats it as waiting for your input (the CLI sends no explicit "
         "'I have a question' signal). Lower = quicker 'waiting' badge but more "
         "false positives; higher = fewer false positives but slower. Default 8."
+    ),
+    "queue_enabled": _lazy(
+        "Whether the task queue works through its tasks on its own. Off by "
+        "default -- queued tasks wait until you press Start on the queue panel. "
+        "One task runs per project at a time; a task leaves the queue as soon "
+        "as its session ends. ENV: NTASKER_QUEUE_ENABLED."
     ),
     "update_command": _lazy(
         "Shell command run by 'self-update' to upgrade ntasker "
@@ -637,6 +664,18 @@ def get_compact_seed() -> bool:
     :func:`ntasker.claude_runner.seed_command_for_task`.
     """
     raw = get_setting("compact_seed", env_var="NTASKER_COMPACT_SEED")
+    if raw is None:
+        return False
+    return raw.strip().lower() in _TRUE_STRINGS
+
+
+def get_queue_enabled() -> bool:
+    """Whether the task queue starts queued tasks on its own. Defaults to False.
+
+    Honours the ``NTASKER_QUEUE_ENABLED`` ENV override. See
+    :func:`validate_queue_enabled` and :mod:`ntasker.taskqueue`.
+    """
+    raw = get_setting("queue_enabled", env_var="NTASKER_QUEUE_ENABLED")
     if raw is None:
         return False
     return raw.strip().lower() in _TRUE_STRINGS

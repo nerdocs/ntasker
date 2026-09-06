@@ -147,6 +147,22 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         dragOverTaskId: null,
         dragOverBefore: false,
 
+        // ---- Auto-run task queue ----
+        // ``queue`` is the ordered worklist (full task objects, because a queued
+        // task may be filtered off the board and the panel still has to render
+        // it). ``queueEnabled`` mirrors the server-side ``queue_enabled``
+        // setting, so the play/pause state survives a reload and every open tab
+        // agrees on it. Its own drag state -- a queued task also sits on the
+        // board, so sharing dragOverTaskId would light up both at once.
+        queue: [],
+        queueEnabled: false,
+        queueDragOver: false,
+        queueOverId: null,
+        queueOverBefore: false,
+        // Raw body of the last /api/queue response; an unchanged payload skips
+        // the state update (same trick as the session poll).
+        _queueRaw: null,
+
         // ---- Agent registry (Claude / OpenCode / Pi) ----
         // ntasker is agent-agnostic: each task carries an ``agent`` and the run
         // button shows that agent's icon. ``agents`` is the /api/agents feed --
@@ -254,6 +270,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 this.loadPriorities(),
                 this.loadClaudeStatus(),
                 this.loadClaudeSessions(),
+                this.loadQueue(),
             ]);
             // After loading projects/tags, drop stale entries silently.
             this.pruneStaleProjectFilter();
@@ -641,6 +658,8 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             this.draggedTaskId = null;
             this.dragOverColumn = null;
             this.dragOverTaskId = null;
+            this.queueDragOver = false;
+            this.queueOverId = null;
             // A change detected mid-drag was deferred (re-rendering would abort
             // the drag); apply it now that the drag is over.
             if (this._liveRefreshPending) {
@@ -843,6 +862,167 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             if (Object.keys(body).length === 0) return; // dropped on same column
             const r = await this.patch(id, body);
             if (r && r.ok) await this.refreshAll();
+        },
+
+        // ---- Auto-run task queue ----
+        // The server owns the queue (a ``queue_order`` per task) and works it
+        // through on its own; the browser only shows it and edits the order.
+        // Every edit -- add, reorder, remove -- is one PUT of the full ordered
+        // list, so there is no partial state to reconcile.
+
+        async loadQueue() {
+            try {
+                const r = await fetch('/api/queue');
+                if (!r.ok) return;
+                const raw = await r.text();
+                if (raw === this._queueRaw) return;   // nothing moved -- don't re-render
+                this._queueRaw = raw;
+                const d = JSON.parse(raw);
+                this.queue = d.items || [];
+                this.queueEnabled = !!d.enabled;
+            } catch (_e) { /* leave the last known queue */ }
+        },
+
+        // Persist the queue exactly as it is on screen. Applied optimistically
+        // so a drop lands without a round-trip, then reconciled with what the
+        // server actually kept (it drops closed / archived / missing tasks).
+        async _saveQueue(items) {
+            this.queue = items;
+            try {
+                const r = await fetch('/api/queue', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids: items.map(t => t.id) }),
+                });
+                if (!r.ok) throw new Error('save failed');
+                const d = await r.json();
+                this._queueRaw = null;   // force the next poll to re-read
+                this.queue = d.items || [];
+                this.queueEnabled = !!d.enabled;
+            } catch (_e) {
+                this.showToast(_i('update_failed'), 'danger');
+                this._queueRaw = null;
+                await this.loadQueue();
+            }
+        },
+
+        // Flip the queue's play/pause switch. Lives in the settings store, not
+        // localStorage, so the server-side worker reads the same value.
+        async toggleQueue() {
+            const next = !this.queueEnabled;
+            this.queueEnabled = next;
+            try {
+                const r = await fetch('/api/settings/queue_enabled', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ value: next ? 'true' : 'false' }),
+                });
+                if (!r.ok) throw new Error('save failed');
+                this._queueRaw = null;
+            } catch (_e) {
+                this.queueEnabled = !next;
+                this.showToast(_i('update_failed'), 'danger');
+            }
+        },
+
+        // 1-based position of a task in the queue, or 0 when it is not queued
+        // (falsy, so the board badge can gate on it directly).
+        queuePosition(taskId) {
+            const i = this.queue.findIndex(t => t.id === taskId);
+            return i < 0 ? 0 : i + 1;
+        },
+
+        queueHint() {
+            if (!this.queue.length) return '';
+            return this.queueEnabled ? _i('queue_running_hint') : _i('queue_paused_hint');
+        },
+
+        // Why the queue is passing over an entry, if it is. It stays queued and
+        // the queue moves to the next task in that project, so saying nothing
+        // would just look like the queue is stuck.
+        queueItemNote(item) {
+            if (this.isBlocked(item)) return _i('queue_blocked');
+            if (!this.taskRunnable(item)) return _i('queue_agent_missing');
+            return '';
+        },
+
+        // Only open, unarchived tasks can be queued -- the server enforces the
+        // same rule; this just keeps the drop cursor honest.
+        _queueEligible(id) {
+            const t = this._taskById(id);
+            return !!t && t.status === 'open' && !t.archived;
+        },
+
+        // A dragged task can come from the board or from the queue itself.
+        _taskById(id) {
+            return this.tasks.find(t => t.id === id) || this.queue.find(t => t.id === id) || null;
+        },
+
+        onQueueDragOver(event) {
+            if (this.draggedTaskId == null) return;
+            if (!this._queueEligible(this.draggedTaskId)) {
+                if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
+                return;
+            }
+            if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+            this.queueDragOver = true;
+        },
+
+        onQueueDragLeave(event) {
+            // dragleave also fires when crossing into a child -- only drop the
+            // highlight once the cursor has really left the panel.
+            const related = event.relatedTarget;
+            if (!related || !event.currentTarget.contains(related)) {
+                this.queueDragOver = false;
+                this.queueOverId = null;
+            }
+        },
+
+        onQueueItemDragOver(event, item) {
+            if (this.draggedTaskId == null) return;
+            if (!this._queueEligible(this.draggedTaskId)) {
+                if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
+                return;
+            }
+            this.queueDragOver = true;
+            if (this.draggedTaskId === item.id) {   // itself: no insertion line
+                this.queueOverId = null;
+                if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+                return;
+            }
+            const rect = event.currentTarget.getBoundingClientRect();
+            this.queueOverBefore = (event.clientY - rect.top) < rect.height / 2;
+            this.queueOverId = item.id;
+            if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+        },
+
+        // Drop into the queue. ``item`` is the entry the cursor was over, or
+        // null when the drop landed on the panel itself (append at the end).
+        // Same handler for a card coming off the board and for reordering an
+        // entry that is already queued -- both are "put this id at this slot".
+        async onQueueDrop(event, item) {
+            const id = this.draggedTaskId;
+            const before = this.queueOverBefore;
+            this.queueDragOver = false;
+            this.queueOverId = null;
+            this.draggedTaskId = null;
+            if (id == null) return;
+            const task = this._taskById(id);
+            if (!task) return;
+            if (task.status !== 'open' || task.archived) {
+                this.showToast(_i('queue_add_failed'), 'danger');
+                return;
+            }
+            const next = this.queue.filter(t => t.id !== id);
+            let idx = item ? next.findIndex(t => t.id === item.id) : next.length;
+            if (idx < 0) idx = next.length;
+            else if (!before) idx += 1;
+            next.splice(idx, 0, task);
+            await this._saveQueue(next);
+        },
+
+        async removeFromQueue(id) {
+            await this._saveQueue(this.queue.filter(t => t.id !== id));
         },
 
         // ---- Sidebar data ----
@@ -1159,6 +1339,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 this.loadTags(),
                 this.loadPhases(),
                 this.loadPriorities(),
+                this.loadQueue(),
             ]);
             this.pruneStaleProjectFilter();
             this.pruneStaleTagFilter();

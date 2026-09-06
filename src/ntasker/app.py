@@ -45,6 +45,7 @@ from ntasker.claude_runner import (
 )
 from ntasker.claude_runner import serve as claude_serve
 from ntasker.projects import discover_claude_projects
+from ntasker import taskqueue
 from ntasker import db as _db_module
 from ntasker.db import (
     DepError,
@@ -88,6 +89,7 @@ from ntasker.settings import (
     get_claude_open_terminal,
     get_default_agent,
     get_default_view,
+    get_queue_enabled,
     get_setting_raw,
     list_settings,
     set_setting,
@@ -239,6 +241,12 @@ class TagDelete(BaseModel):
 class ReorderIn(BaseModel):
     # Explicit manual order: ids[0] ends up topmost (largest sort_order).
     ids: list[int] = Field(..., min_length=1)
+
+
+class QueueIn(BaseModel):
+    # The whole task queue in execution order, ids[0] first. An empty list
+    # clears the queue -- that is how the last item is removed.
+    ids: list[int] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -406,6 +414,27 @@ def build_js_strings() -> dict[str, str]:
         "reorder_hint": _("Drag to reorder"),
         "expand_done": _("Expand done column"),
         "collapse_done": _("Collapse done column"),
+        # Task queue
+        "queue": _("Queue"),
+        "queue_start": _("Start queue"),
+        "queue_pause": _("Pause queue"),
+        "queue_start_title": _(
+            "Work through the queue: start the next task per project, close it, take the next."
+        ),
+        "queue_pause_title": _(
+            "Stop starting new tasks. A task already running keeps going."
+        ),
+        "queue_empty": _("Drop tasks here to have them worked through one after another."),
+        "queue_paused_hint": _("Paused -- press Start to work through these."),
+        "queue_running_hint": _("Running one task per project, top down."),
+        "queue_position": _("Position {n} in the queue"),
+        "queue_remove": _("Remove from queue"),
+        "queue_item_running": _("Running"),
+        "queue_item_waiting": _("Waiting for your input"),
+        "queue_badge": _("Queued at position {n}"),
+        "queue_blocked": _("Skipped while a dependency is still open."),
+        "queue_agent_missing": _("Skipped -- this task's agent is not installed."),
+        "queue_add_failed": _("Only open tasks can be queued."),
         # Banners
         "configure_projects_dir": _(
             "Please configure the projects directory -- otherwise the project list stays empty."
@@ -707,6 +736,7 @@ UPDATE_POLL_INTERVAL = 24 * 60 * 60  # once a day
 
 _reaper_task: asyncio.Task | None = None
 _update_poll_task: asyncio.Task | None = None
+_queue_task: asyncio.Task | None = None
 
 
 async def _reap_finished_claude_sessions() -> None:
@@ -745,6 +775,20 @@ async def _reap_finished_claude_sessions() -> None:
 async def _start_claude_reaper() -> None:
     global _reaper_task
     _reaper_task = asyncio.create_task(_reap_finished_claude_sessions())
+
+
+@app.on_event("startup")
+async def _start_queue_worker() -> None:
+    global _queue_task
+    _queue_task = asyncio.create_task(taskqueue.worker())
+
+
+@app.on_event("shutdown")
+async def _stop_queue_worker() -> None:
+    if _queue_task is not None:
+        _queue_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await _queue_task
 
 
 async def _poll_updates() -> None:
@@ -1147,6 +1191,48 @@ async def ws_claude_run(websocket: WebSocket, task_id: int) -> None:
     """
     await websocket.accept()
     await claude_serve(websocket, task_id)
+
+
+# ---------------------------------------------------------------------------
+# Routes -- API: the auto-run task queue
+# ---------------------------------------------------------------------------
+
+
+def _queue_payload(rows: list[sqlite3.Row]) -> dict:
+    """Serialize the queue: the switch state plus the tasks in run order."""
+    ids = [int(r["id"]) for r in rows]
+    with get_conn() as conn:
+        tags_by_id = load_tags_bulk(conn, ids)
+        deps_by_id = load_deps_bulk(conn, ids)
+    return {
+        "enabled": get_queue_enabled(),
+        "items": [
+            row_to_task(r, tags_by_id.get(int(r["id"]), []), deps_by_id.get(int(r["id"]), []))
+            for r in rows
+        ],
+    }
+
+
+@app.get("/api/queue")
+def api_get_queue() -> JSONResponse:
+    """The task queue in execution order, plus its on/off state.
+
+    Full task rows rather than ids: a queued task may well be filtered out of
+    the board the user is looking at, and the queue panel still has to render
+    its title, project and blocked state. See :mod:`ntasker.taskqueue`.
+    """
+    return JSONResponse(_queue_payload(taskqueue.load_queue()))
+
+
+@app.put("/api/queue")
+def api_set_queue(payload: QueueIn) -> JSONResponse:
+    """Replace the whole queue with ``ids`` (head first).
+
+    The frontend owns the ordered list and PUTs it after every drop, so adding,
+    reordering and removing are one operation. Ids that are closed, archived or
+    gone are dropped -- see :func:`ntasker.taskqueue.set_queue`.
+    """
+    return JSONResponse(_queue_payload(taskqueue.set_queue(payload.ids)))
 
 
 # ---------------------------------------------------------------------------

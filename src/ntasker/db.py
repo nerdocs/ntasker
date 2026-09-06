@@ -73,7 +73,12 @@ CREATE TABLE IF NOT EXISTS tasks (
     -- ``sort_order DESC``). New tasks get ``MAX(sort_order)+1`` so they land
     -- on top; a drop between two neighbours stores the average of their
     -- values (fractional indexing), so only the moved row is rewritten.
-    sort_order REAL NOT NULL DEFAULT 0
+    sort_order REAL NOT NULL DEFAULT 0,
+    -- Position in the auto-run task queue. NULL = not queued. Queued rows are
+    -- worked top-down (``queue_order ASC``). Unlike ``sort_order`` this is not
+    -- fractional: every reorder rewrites the whole queue as a dense 1..n
+    -- sequence, which stays cheap because a queue is short by nature.
+    queue_order REAL
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_archived ON tasks(archived);
 CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project);
@@ -159,6 +164,13 @@ def init_db(path: Path | None = None) -> None:
                 "ALTER TABLE tasks ADD COLUMN sort_order REAL NOT NULL DEFAULT 0"
             )
             conn.execute("UPDATE tasks SET sort_order = id")
+        except sqlite3.OperationalError:
+            pass
+        # v2.22 task-queue migration: add the ``queue_order`` column. Nullable,
+        # no default -- NULL means "not in the queue", which is the right state
+        # for every pre-existing task.
+        try:
+            conn.execute("ALTER TABLE tasks ADD COLUMN queue_order REAL")
         except sqlite3.OperationalError:
             pass
         # v2.0 phase migration: legacy values `later` and NULL collapse into
@@ -260,6 +272,7 @@ def row_to_task(
         "agent": row["agent"],
         "session_id": row["session_id"],
         "sort_order": row["sort_order"],
+        "queue_order": row["queue_order"],
         "tags": tags or [],
         "depends": depends or [],
     }

@@ -36,6 +36,13 @@ pseudo-terminal, otherwise the button stays hidden. See [docs/claude-runs.md](do
 
 ![Interactive Claude Code session embedded in the ntasker web UI](docs/screenshot-xterm.jpg)
 
+## Task queue
+
+Drag tasks into the queue panel above the board and press **Start**: ntasker then works through them unattended, one
+task per project at a time, and takes the next one as soon as the previous session ends. Queued runs are told to finish
+the task and close it themselves -- that close is what advances the queue. Off by default, so dropping tasks in and
+sorting them never launches an agent by accident. See [docs/task-queue.md](docs/task-queue.md).
+
 ## Stack
 
 - Backend: FastAPI + uvicorn, Python stdlib `sqlite3`
@@ -315,6 +322,8 @@ couple of CLI subcommands via subprocess.
 | GET | `/api/settings/{key}` | Single setting or 404 |
 | PUT | `/api/settings/{key}` | `{value: "..."}` -- 200 on accept, 400 if a registered validator rejects |
 | DELETE | `/api/settings/{key}` | 204 on success, 404 if not present |
+| GET | `/api/queue` | `{enabled, items[]}` -- the auto-run task queue in run order. See [docs/task-queue.md](docs/task-queue.md). |
+| PUT | `/api/queue` | `{ids: [...]}` replaces the whole queue, head first. Closed / archived / missing ids are dropped. |
 | GET | `/api/agents` | Read-only registry feed: per-agent availability + `/task` integration status, plus the default |
 | GET | `/api/claude-assets/status` | Read-only: `{installed, drift, package_version, claude_home, files[]}` |
 

@@ -12,9 +12,9 @@ one obvious way in.
 ## Rules in one paragraph
 
 One task runs **per project** at a time, so several projects progress in parallel while a single project stays strictly
-sequential. A task leaves the queue the moment its agent session ends -- whether the task was closed or not. Who closed
-it is irrelevant: the agent itself, you from the UI, `ntasker done` on the command line, or a direct DB write all count
-the same, because the queue only ever reads the DB.
+sequential. A task leaves the queue when its run hands it to `review`, or when its agent session ends -- whether the
+task got that far or not. Who moved it is irrelevant: the agent itself, you from the UI, `ntasker patch --phase review`
+on the command line, or a direct DB write all count the same, because the queue only ever reads the DB.
 
 ## The panel
 
@@ -49,16 +49,18 @@ queue when its session ends.
 ## What a queued run is told
 
 A queued run does **not** use the `/task <id>` slash command. It gets a self-contained seed
-(`claude_runner.queue_seed_for_task`) which inlines the task and, crucially, grants the one thing the normal tracker
-rules withhold: closing the task when the work is done.
+(`claude_runner.queue_seed_for_task`) which inlines the task and tells the agent to hand it off when the work is done.
 
-> That queue placement IS the user's instruction to close the task, so when the work is done, close it yourself --
-> do not ask first: `ntasker done "<id>"`
+> When the work is done, hand it off to review -- do not ask first, and do not close the task:
+> `ntasker patch "<id>" --phase review`
 
-That close is what advances the queue. The seed also tells the agent what to do when it *cannot* finish: leave the
-status open, hand the task to `review`, and report the blocker. The session ending is enough to advance the queue
-either way, so a task that cannot be finished never wedges the queue behind it -- it simply drops out and stays on the
-board with its phase intact.
+That hand-off is what advances the queue: the entry is retired and its session torn down (a live session would keep the
+project busy), so the next task of that project starts. **A queue run never closes a task** -- the results wait for you
+in the review column, exactly like a run you started by hand.
+
+The seed also tells the agent what to do when it *cannot* finish: leave the phase as-is and report the blocker. The
+session ending is enough to advance the queue either way, so a task that cannot be finished never wedges the queue
+behind it -- it simply drops out and stays on the board with its phase intact.
 
 ## Skipped entries
 

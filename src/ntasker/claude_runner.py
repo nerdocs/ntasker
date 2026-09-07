@@ -215,11 +215,11 @@ def queue_seed_for_task(task: dict) -> str:
     """Initial input for a run started by the task queue.
 
     A queued run is a different contract from every other run: the user put the
-    task in the queue precisely so it gets *finished and closed* without them,
-    so the seed carries an explicit grant to set ``status=done`` -- which the
-    normal tracker rules (and the ``/task`` command they come with) forbid.
-    That grant only works when it is right there in the prompt, so a queued run
-    never uses ``/task``; it always inlines the task like the compact seed does.
+    task in the queue to have it worked through unattended, so the seed grants
+    the review hand-off without asking and tells the agent that the hand-off is
+    what releases the next queued task. Closing stays the user's call, exactly
+    as everywhere else. A queued run never uses ``/task``; it always inlines the
+    task like the compact seed does.
     """
     return _compact_seed(task, queued=True)
 
@@ -232,8 +232,8 @@ def _compact_seed(task: dict, queued: bool = False) -> str:
     ``phase=wip`` move the loader normally performs happens server-side at
     spawn instead (see :func:`mark_wip`).
 
-    ``queued`` swaps the hand-off rules for the queue's: finish the task and
-    close it yourself (see :func:`queue_seed_for_task`).
+    ``queued`` swaps the hand-off rules for the queue's: carry the task to
+    completion and hand it to review (see :func:`queue_seed_for_task`).
     """
     from ntasker.db import get_conn, load_tags_for  # noqa: PLC0415 -- lazy: avoid cycle
 
@@ -263,15 +263,14 @@ def _compact_seed(task: dict, queued: bool = False) -> str:
             "",
             "- The user put this task in nTasker's task queue to have it worked",
             "  through unattended. Carry it to completion if at all possible.",
-            "- That queue placement IS the user's instruction to close the task, so",
-            "  when the work is done, close it yourself -- do not ask first:",
-            f'  ntasker done "{task["id"]}"',
-            "  This overrides the standing rule that only the user closes tasks; it",
-            "  applies to this task ID and this session only.",
-            "- The next queued task starts once this one is closed, so never close it",
-            "  on a guess. If you cannot finish (blocker, missing info, a decision",
-            "  only the user can make), leave the status open, hand it to review",
-            f'  (ntasker patch "{task["id"]}" --phase review) and report the blocker.',
+            "- When the work is done, hand it off to review -- do not ask first,",
+            "  and do not close the task:",
+            f'  ntasker patch "{task["id"]}" --phase review',
+            "- The next queued task starts on that hand-off, so never hand off on a",
+            "  guess. If you cannot finish (blocker, missing info, a decision only",
+            "  the user can make), leave the phase as-is and report the blocker.",
+            "- Never set status=done or archive on your own; only the user closes",
+            "  tasks, after checking your work in the review column.",
             "- No new tracker tasks, no deletes, no writes to other task IDs.",
         ]
     else:

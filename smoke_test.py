@@ -517,6 +517,16 @@ def main() -> int:
     )
     print("OK taskqueue.tick() retires a closed task")
 
+    # ``phase=review`` retires an entry only when the queue is running it -- a
+    # task queued while it already sits in review still has to get its run.
+    assert_ok(client.patch(f"/api/tasks/{q_ids[2]}", json={"phase": "review"}))
+    taskqueue.tick()
+    assert [t["id"] for t in client.get("/api/queue").json()["items"]] == [q_ids[2]], (
+        "tick() must keep a queued task that sits in review without a run"
+    )
+    assert_ok(client.patch(f"/api/tasks/{q_ids[2]}", json={"phase": "planned"}))
+    print("OK taskqueue.tick() keeps a queued review task that is not running")
+
     # The switch lives in the settings store, so CLI and UI share one state.
     assert_ok(client.put("/api/settings/queue_enabled", json={"value": "true"}))
     assert client.get("/api/queue").json()["enabled"] is True

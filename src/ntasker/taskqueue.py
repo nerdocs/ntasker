@@ -4,9 +4,10 @@ A task is *queued* when its ``queue_order`` is not NULL; queued tasks are worked
 top-down (``queue_order ASC``). :func:`worker` ticks a few times a second and
 does exactly two things:
 
-* **retire** entries that are finished -- ``status=done``, archived, deleted, or
-  whose agent session has ended (whoever closed the task, from the UI, the CLI
-  or the agent itself, is irrelevant: the DB is the single source of truth);
+* **retire** entries that are finished -- handed off to ``phase=review`` by
+  their own run, ``status=done``, archived, deleted, or whose agent session has
+  ended (whoever moved the task, from the UI, the CLI or the agent itself, is
+  irrelevant: the DB is the single source of truth);
 * **start** the head-most startable task of every project that has no live
   session yet -- one concurrent run per project, so several projects progress in
   parallel while a single project stays strictly sequential.
@@ -16,8 +17,9 @@ The entry is retired anyway and the queue moves on. A task that cannot finish
 must not wedge the queue behind it -- it keeps its phase and stays on the board.
 
 A queued run gets its own seed (:func:`~ntasker.claude_runner.queue_seed_for_task`)
-which grants the agent the one thing the normal rules withhold: closing the task
-when it is done. That close is what advances the queue.
+which tells the agent to hand the finished task to ``phase=review`` unprompted.
+That hand-off is what advances the queue -- closing stays the user's call, so a
+queue run leaves its results in the review column instead of closing them out.
 
 The whole thing is off until the user switches it on (``queue_enabled``), so
 dropping tasks in and sorting them never launches an agent by accident.
@@ -33,8 +35,10 @@ from ntasker.agents import AGENT_KEYS, get_spec, resolve_agent_key
 from ntasker.claude_runner import (
     active_session_ids,
     default_cwd_for_project,
+    mark_wip,
     queue_seed_for_task,
     start_detached_session,
+    stop_session,
     terminal_available,
 )
 from ntasker.db import get_conn
@@ -168,17 +172,30 @@ def tick() -> None:
         _running.update(queued_ids & live)
     _running.intersection_update(queued_ids)
 
-    # Retire: closed, archived, or the run is over -- finished or not.
+    # Handed off: the run we started moved its task to review -- that is a
+    # queued run's "finished" signal. Only for tasks we are running, so queueing
+    # a task that already sits in review still gets it worked on.
+    handed_off = {
+        int(r["id"]) for r in rows if int(r["id"]) in _running and r["phase"] == "review"
+    }
+
+    # Retire: handed off, closed, archived, or the run is over -- finished or not.
     retired = [
         int(r["id"])
         for r in rows
-        if r["status"] == "done"
+        if int(r["id"]) in handed_off
+        or r["status"] == "done"
         or r["archived"]
         or (int(r["id"]) in _running and int(r["id"]) not in live)
     ]
     if retired:
         with get_conn() as conn:
             _dequeue(conn, retired)
+        # A hand-off leaves the task open, so nothing else tears its session
+        # down -- and a live session keeps its project bucket busy. Stop it here
+        # or the next task of that project would never start.
+        for task_id in handed_off:
+            stop_session(task_id)
         _running.difference_update(retired)
         rows = [r for r in rows if int(r["id"]) not in retired]
 
@@ -210,6 +227,10 @@ def tick() -> None:
             queue_seed_for_task(task),
         )
         if started:
+            # Unconditionally, unlike the spawn path's own compact-seed-only
+            # call: retiring keys on ``phase=review``, so a task queued while it
+            # sits in review has to leave that phase the moment it starts.
+            mark_wip(task_id)
             _running.add(task_id)
 
 

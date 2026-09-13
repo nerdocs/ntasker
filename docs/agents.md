@@ -104,13 +104,15 @@ status.
 
 ### Configurable CLI path
 
-The ntasker server may run with a narrower `PATH` than your interactive shell -- e.g. as a `systemd --user` unit without
-`nvm` or `~/.opencode/bin` on the path. When an agent's CLI is not found, point ntasker at it with the per-agent
-`<key>_bin` setting (or its `NTASKER_<KEY>_BIN` env var):
+The ntasker server may run with a narrower `PATH` than your interactive shell -- e.g. as a `systemd --user` unit or
+launchd agent without `nvm` or `~/.opencode/bin` on the path. Auto-detection therefore falls back to the conventional
+install dirs after `PATH`: `~/.local/bin`, `~/.claude/local`, `~/.opencode/bin`, `/opt/homebrew/bin`, `/usr/local/bin`
+and every nvm-managed Node's `bin` (nvm `default` alias first, then newest first). When an agent's CLI lives elsewhere,
+point ntasker at it with the per-agent `<key>_bin` setting (or its `NTASKER_<KEY>_BIN` env var):
 
 ```bash
 ntasker config set opencode_bin ~/.opencode/bin/opencode
-ntasker config unset opencode_bin          # back to auto-detect on PATH
+ntasker config unset opencode_bin          # back to auto-detect
 ```
 
 A value containing a `/` is treated as a path (expanded; must be an executable file); a bare name is looked up on

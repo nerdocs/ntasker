@@ -268,10 +268,11 @@ def resolve_binary(spec: AgentSpec) -> str | None:
     """Resolve the agent's runnable binary, or ``None`` if not found.
 
     Precedence: the ``<key>_bin`` setting (ENV ``NTASKER_<KEY>_BIN`` first) ->
-    ``PATH`` lookup of the bare binary name. The override exists because the
-    ntasker server may run with a narrower ``PATH`` than the user's interactive
-    shell (e.g. a systemd unit without ``nvm`` / ``~/.opencode/bin``): point it
-    at the absolute path and runs work again.
+    ``PATH`` lookup of the bare binary name -> :func:`well_known_bin_dirs`.
+    The fallback exists because the ntasker server may run with a narrower
+    ``PATH`` than the user's interactive shell (e.g. a systemd unit or
+    launchd agent without ``nvm`` / ``~/.opencode/bin``); the override covers
+    installs outside those conventional places.
 
     An override containing a ``/`` is treated as a path (expanded, must be an
     executable file); a bare name is looked up on ``PATH``. A configured value
@@ -288,11 +289,70 @@ def resolve_binary(spec: AgentSpec) -> str | None:
         if "/" in cand:
             return cand if (os.path.isfile(cand) and os.access(cand, os.X_OK)) else None
         return shutil.which(cand)
-    return shutil.which(spec.binary)
+    found = shutil.which(spec.binary)
+    if found:
+        return found
+    for d in well_known_bin_dirs():
+        cand = os.path.join(d, spec.binary)
+        if os.path.isfile(cand) and os.access(cand, os.X_OK):
+            return cand
+    return None
+
+
+def well_known_bin_dirs(home: str | os.PathLike | None = None) -> list[str]:
+    """Directories where agent CLIs conventionally land, best first.
+
+    Covers the native installers (``~/.local/bin``, ``~/.claude/local``,
+    ``~/.opencode/bin``), Homebrew on macOS, ``/usr/local/bin``, and every
+    nvm-managed Node -- the nvm ``default`` alias first, then the remaining
+    versions newest first, so a freshly installed Node wins over a stale one.
+    """
+    home = Path(home or Path.home())
+    dirs = [
+        home / ".local" / "bin",
+        home / ".claude" / "local",
+        home / ".opencode" / "bin",
+        Path("/opt/homebrew/bin"),
+        Path("/usr/local/bin"),
+    ]
+    nvm = home / ".nvm"
+    versions = nvm / "versions" / "node"
+    if versions.is_dir():
+        default = _nvm_default_version(nvm)
+        node_dirs = sorted(
+            (d for d in versions.iterdir() if d.is_dir()),
+            key=lambda d: _version_key(d.name),
+            reverse=True,
+        )
+        if default:
+            node_dirs.sort(
+                key=lambda d: not (d.name == default or d.name.startswith(default + "."))
+            )
+        dirs.extend(d / "bin" for d in node_dirs)
+    return [str(d) for d in dirs]
+
+
+def _nvm_default_version(nvm: Path) -> str | None:
+    """The nvm ``default`` alias as a ``vN[.N.N]`` prefix, or ``None``.
+
+    The alias file holds e.g. ``24``, ``v24.14.1`` or ``lts/*``; only a
+    numeric form is usable as a prefix, anything else is ignored.
+    """
+    try:
+        raw = (nvm / "alias" / "default").read_text().strip()
+    except OSError:
+        return None
+    raw = raw.lstrip("v")
+    return f"v{raw}" if raw[:1].isdigit() else None
+
+
+def _version_key(name: str) -> tuple[int, ...]:
+    """Sort key for ``vMAJOR.MINOR.PATCH`` directory names."""
+    return tuple(int(p) for p in name.lstrip("v").split(".") if p.isdigit())
 
 
 def agent_available(spec: AgentSpec) -> bool:
-    """Whether the agent's CLI binary resolves (override or on ``PATH``)."""
+    """Whether the agent's CLI binary resolves (override, ``PATH`` or well-known dir)."""
     return resolve_binary(spec) is not None
 
 

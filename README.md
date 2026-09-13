@@ -253,9 +253,10 @@ ntasker agent install claude --home /tmp/test-home  # redirect to a non-default 
 `install-claude-assets` remains as a **deprecated alias** of `ntasker agent install claude`. The `--command-name` flag
 accepts only `[A-Za-z0-9_-]+` (no slashes, no dots) to prevent path traversal.
 
-**Configurable CLI path.** When the server runs with a narrower `PATH` than your shell (e.g. a `systemd --user` unit
-without `nvm`), point ntasker at an agent's CLI with the per-agent `claude_bin` / `opencode_bin` / `pi_bin` setting
-(ENV `NTASKER_CLAUDE_BIN` etc.). Empty auto-detects on `PATH`.
+**Configurable CLI path.** Auto-detection looks on `PATH`, then in the conventional install dirs (`~/.local/bin`,
+`~/.claude/local`, `~/.opencode/bin`, Homebrew, `/usr/local/bin`, nvm-managed Nodes), so a `systemd --user` unit or
+launchd agent with a narrow `PATH` still finds the CLI. For installs elsewhere, set the per-agent `claude_bin` /
+`opencode_bin` / `pi_bin` setting (ENV `NTASKER_CLAUDE_BIN` etc.). Empty auto-detects.
 
 `ntasker serve` prints a one-liner to stderr at boot if installed assets are out of date relative to the running
 version. The `/settings` UI shows the same status as read-only cards (one per agent under an **AI agent integration**

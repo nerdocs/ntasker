@@ -170,6 +170,13 @@ header shows the family's open-task total. Families start folded; a folded head
 shows how many projects hide inside and lights up when one of them is part of
 the active filter. Which families are open is remembered in the browser.
 
+The prefix rule can be overridden per project: the row menu's **Group...** opens
+an inline input (with the known family names as suggestions). Any name works --
+an existing project becomes the head, anything else a label-only header -- and
+an empty name takes the project out of every family. Overrides live in the
+`project_groups` setting (`{"gdaps": "conjunto", "django-oracle11": ""}`); a
+family with a manually placed member shows even with a single project.
+
 Every project row has a dots menu with **Hide**: the project leaves the sidebar
 (and the filter). Hidden names live in the `hidden_projects` setting, so all
 clients hide the same set; the **Hidden** switch above the list shows them dimmed

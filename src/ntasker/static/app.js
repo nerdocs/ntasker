@@ -98,6 +98,15 @@ function projectPrefix(name) {
     return name.split(PROJECT_GROUP_SEP, 1)[0];
 }
 
+// Sidebar label of a family child: the name minus "<family><sep>" when it
+// starts that way, else the full name (manually grouped projects).
+function childLabel(name, family) {
+    const rest = name.slice(family.length);
+    return name.startsWith(family) && PROJECT_GROUP_SEP.test(rest[0] || '')
+        ? rest.slice(1)
+        : name;
+}
+
 function loadExpandedProjectGroups() {
     try {
         const parsed = JSON.parse(localStorage.getItem(LS_KEY_EXPANDED_PROJECT_GROUPS) || '[]');
@@ -175,6 +184,9 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // Projects hidden via the row menu. Server-side setting (shared by
         // every client); the "Hidden" switch below reveals them, per browser.
         hiddenProjects: [],
+        // Manual family overrides {project: family} on top of the prefix
+        // rule; '' opts a project out. Server-side setting.
+        projectGroups: {},
         showHiddenProjects: localStorage.getItem(LS_KEY_SHOW_HIDDEN_PROJECTS) === '1',
         sidebarWidth: clampSidebarWidth(localStorage.getItem(LS_KEY_SIDEBAR_WIDTH)),
         // Drag&drop state. ``draggedTaskId`` is captured on dragstart so the
@@ -409,28 +421,31 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         get projectTree() {
             const families = new Map();
             for (const p of this.visibleProjects) {
-                const prefix = projectPrefix(p.name);
-                if (!families.has(prefix)) families.set(prefix, []);
-                families.get(prefix).push(p);
+                const family = this.projectFamily(p.name);
+                if (!families.has(family)) families.set(family, []);
+                families.get(family).push(p);
             }
             const rows = [];
             for (const p of this.visibleProjects) {
-                const prefix = projectPrefix(p.name);
-                const members = families.get(prefix);
-                if (!prefix || members.length < 2) {
+                const family = this.projectFamily(p.name);
+                const members = families.get(family);
+                // A family needs two members -- unless someone was put there
+                // by hand, then the intent is explicit and one is enough.
+                const manual = members.some(m => m.name in this.projectGroups);
+                if (!family || (members.length < 2 && !manual)) {
                     rows.push({ name: p.name, project: { ...p, label: p.name }, children: [] });
                     continue;
                 }
                 if (members[0] !== p) continue;  // emitted with its family
-                const root = members.find(m => m.name === prefix);
+                const root = members.find(m => m.name === family);
                 const children = members
                     .filter(m => m !== root)
-                    .map(m => ({ ...m, label: m.name.slice(prefix.length + 1) }));
+                    .map(m => ({ ...m, label: childLabel(m.name, family) }));
                 rows.push({
-                    name: prefix,
+                    name: family,
                     project: root ? { ...root, label: root.name } : null,
                     children,
-                    expanded: this.expandedProjectGroups.includes(prefix),
+                    expanded: this.expandedProjectGroups.includes(family),
                     // Open tasks across the whole family, shown while folded.
                     total: members.reduce((n, m) => n + m.open_count, 0),
                     // Any child in the filter -- surfaced on the folded header.
@@ -438,6 +453,49 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 });
             }
             return rows;
+        },
+
+        // Family a project belongs to: the manual override when set (may be
+        // '' = none), else the name prefix.
+        projectFamily(name) {
+            return name in this.projectGroups ? this.projectGroups[name] : projectPrefix(name);
+        },
+
+        // Value the "Group..." input opens with: the current family, or empty
+        // when the project only stands for itself.
+        groupPrefill(name) {
+            const family = this.projectFamily(name);
+            return family === name ? '' : family;
+        },
+
+        // Every family name in use -- feeds the datalist of the "Group..." input.
+        get familyNames() {
+            const names = new Set(this.projects.map(p => this.projectFamily(p.name)));
+            names.delete('');
+            return [...names].sort((a, b) => a.localeCompare(b));
+        },
+
+        // Put a project into a family by hand. Choosing what the prefix rule
+        // would pick anyway drops the override so the map stays minimal.
+        async setProjectGroup(name, family) {
+            const prev = this.projectGroups;
+            const next = { ...prev };
+            family = family.trim();
+            const auto = projectPrefix(name);
+            if (family === auto || (family === '' && auto === name)) delete next[name];
+            else next[name] = family;
+            this.projectGroups = next;
+            try {
+                const r = await fetch('/api/settings/project_groups', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ value: JSON.stringify(next) }),
+                });
+                if (!r.ok) throw new Error('save failed');
+            } catch (_e) {
+                this.projectGroups = prev;
+                this.showToast(_i('update_failed'), 'danger');
+            }
         },
 
         toggleProjectGroup(name) {
@@ -1324,13 +1382,15 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             // Projects are derived from tasks since v2.0: the response is a
             // plain list with __none__ first, then every name currently
             // referenced by at least one task.
-            const [r, h] = await Promise.all([
+            const [r, h, g] = await Promise.all([
                 fetch('/api/projects'),
                 fetch('/api/settings/hidden_projects'),
+                fetch('/api/settings/project_groups'),
             ]);
             this.projects = await r.json();
-            // 404 = never set -> nothing hidden.
+            // 404 = never set -> nothing hidden / no overrides.
             this.hiddenProjects = h.ok ? JSON.parse((await h.json()).value) : [];
+            this.projectGroups = g.ok ? JSON.parse((await g.json()).value) : {};
         },
 
         async loadTags() {

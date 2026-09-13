@@ -510,6 +510,8 @@ def build_js_strings() -> dict[str, str]:
         "project_menu": _("Project menu"),
         "hide_project": _("Hide"),
         "unhide_project": _("Unhide"),
+        "group_project": _("Group..."),
+        "group_project_placeholder": _("Group name -- empty = none"),
         "fold_project_family": _("Fold related projects"),
         "unfold_project_family": _("Show related projects"),
         "project_family_hint": _("{name} -- related projects, click to unfold"),

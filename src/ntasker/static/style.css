@@ -599,6 +599,9 @@ body {
     top: 100%;
     min-width: 0;
 }
+.project-group-input {
+    width: 11rem;
+}
 /* A hidden project shown via the "Hidden" switch: present but dimmed. */
 .project-hidden .form-check-label {
     opacity: 0.5;

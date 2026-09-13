@@ -126,6 +126,27 @@ def validate_hidden_projects(value: str) -> str:
     return json.dumps(names)
 
 
+def validate_project_groups(value: str) -> str:
+    """Validator for the ``project_groups`` setting.
+
+    JSON object ``{project: family}`` overriding the sidebar's automatic
+    name-prefix grouping (row menu -> "Group..."). An empty family string
+    opts the project out of any family. Keys are trimmed, empty keys dropped.
+    """
+    import json  # noqa: PLC0415
+
+    try:
+        parsed = json.loads(value or "{}")
+    except ValueError as exc:
+        raise ValueError(_("project_groups must be a JSON object of project -> group.")) from exc
+    if not isinstance(parsed, dict) or not all(
+        isinstance(k, str) and isinstance(v, str) for k, v in parsed.items()
+    ):
+        raise ValueError(_("project_groups must be a JSON object of project -> group."))
+    groups = {k.strip(): v.strip() for k, v in parsed.items() if k.strip()}
+    return json.dumps(groups)
+
+
 def validate_projects_base(value: str) -> str:
     """Validator for the ``projects_base`` setting.
 
@@ -347,6 +368,7 @@ VALIDATORS: dict[str, Validator] = {
     "default_agent": validate_default_agent,
     "projects_base": validate_projects_base,
     "hidden_projects": validate_hidden_projects,
+    "project_groups": validate_project_groups,
     "no_project_dir": validate_no_project_dir,
     "claude_idle_seconds": validate_claude_idle_seconds,
     "claude_auto_mode": validate_claude_auto_mode,

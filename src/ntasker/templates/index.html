@@ -75,7 +75,8 @@
                 {# row's right end while hovered/focused so they never eat name  #}
                 {# width. Skipped for the cross-project sentinel (nothing to seed). #}
                 <template x-if="{{ p }}.name !== '__none__'">
-                    <span class="project-actions" :class="{ 'is-open': menuOpen }" x-data="{ menuOpen: false }">
+                    <span class="project-actions" :class="{ 'is-open': menuOpen }"
+                          x-data="{ menuOpen: false, grouping: false, groupName: '' }">
                         {# Quick "+": open the new-task form pre-filled with this project. #}
                         <button type="button" class="btn btn-sm btn-ghost-secondary px-1 py-0"
                                 @click.stop.prevent="newTaskForProject({{ p }}.name)"
@@ -96,19 +97,40 @@
                         </template>
                         {# Dots menu: hide the project from the sidebar, or bring it #}
                         {# back when the "Hidden" switch shows it.                   #}
-                        <span class="dropdown project-menu" @click.outside="menuOpen = false">
+                        <span class="dropdown project-menu" @click.outside="menuOpen = false; grouping = false">
                             <button type="button" class="btn btn-sm btn-ghost-secondary px-1 py-0"
-                                    @click.stop.prevent="menuOpen = !menuOpen"
+                                    @click.stop.prevent="menuOpen = !menuOpen; grouping = false"
                                     :aria-expanded="menuOpen ? 'true' : 'false'"
                                     :aria-label="$i18n('project_menu')">
                                 <i class="ti ti-dots-vertical"></i>
                             </button>
                             <div class="dropdown-menu dropdown-menu-end" :class="{ show: menuOpen }" x-cloak>
-                                <button type="button" class="dropdown-item"
-                                        @click.stop.prevent="menuOpen = false; setProjectHidden({{ p }}.name, !isProjectHidden({{ p }}.name))">
-                                    <i class="ti me-2" :class="isProjectHidden({{ p }}.name) ? 'ti-eye' : 'ti-eye-off'"></i>
-                                    <span x-text="isProjectHidden({{ p }}.name) ? $i18n('unhide_project') : $i18n('hide_project')"></span>
-                                </button>
+                                <template x-if="!grouping">
+                                    <div>
+                                        {# "Group...": swaps the menu for an inline input, prefilled #}
+                                        {# with the current family (manual or automatic).          #}
+                                        <button type="button" class="dropdown-item"
+                                                @click.stop.prevent="grouping = true; groupName = groupPrefill({{ p }}.name)">
+                                            <i class="ti ti-folder-symlink me-2"></i>
+                                            <span x-text="$i18n('group_project')"></span>
+                                        </button>
+                                        <button type="button" class="dropdown-item"
+                                                @click.stop.prevent="menuOpen = false; setProjectHidden({{ p }}.name, !isProjectHidden({{ p }}.name))">
+                                            <i class="ti me-2" :class="isProjectHidden({{ p }}.name) ? 'ti-eye' : 'ti-eye-off'"></i>
+                                            <span x-text="isProjectHidden({{ p }}.name) ? $i18n('unhide_project') : $i18n('hide_project')"></span>
+                                        </button>
+                                    </div>
+                                </template>
+                                <template x-if="grouping">
+                                    <div class="px-2 py-1">
+                                        <input type="text" class="form-control form-control-sm project-group-input"
+                                               x-init="$el.focus()" x-model="groupName" list="project-families"
+                                               :placeholder="$i18n('group_project_placeholder')"
+                                               @click.stop
+                                               @keydown.enter.prevent="menuOpen = false; grouping = false; setProjectGroup({{ p }}.name, groupName)"
+                                               @keydown.escape.stop="menuOpen = false; grouping = false">
+                                    </div>
+                                </template>
                             </div>
                         </span>
                     </span>
@@ -213,6 +235,13 @@
                 </template>
             </div>
         </template>
+
+        {# Family names for the row menu's "Group..." input. #}
+        <datalist id="project-families">
+            <template x-for="name in familyNames" :key="name">
+                <option :value="name"></option>
+            </template>
+        </datalist>
 
         <div class="text-muted small mt-3" x-show="projects.length <= 1">
             {{ t('No project symlinks found.') }}

@@ -4,7 +4,8 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
-## [Unreleased]
+## [3.0.0] — 2026-09-13
+Plugin architecture with switchable agents and features; the drfoehn fork's workspace and task context merged.
 Task queue: a queue button per task hands it to ntasker, which runs the queue unattended, one task per project.
 CLI: `ntasker queue list|add|rm|clear|start|pause` to drive the task queue from a terminal.
 Queue panel shows one column per project -- one lane per concurrent run, each with its own order.
@@ -17,7 +18,6 @@ Task context plugin: attach files, notes, personas, skills and MCP servers to a 
 Plugin architecture: agents (claude/opencode/pi) are switchable plugins; `plugins_disabled` setting, `/api/plugins`.
 Sidebar row menu gains **Board**: kanban narrowed to that project with all phases.
 Hidden projects moved to a table: `GET /api/projects` reports `hidden`, `PUT /api/projects/hidden` toggles it.
-Hidden projects now live in a `hidden_projects` table; `GET /api/projects` reports `hidden`, `PUT /api/projects/hidden` toggles it.
 Fixed `ntasker stop` misreporting "no server running" on a port held by a foreign, non-accepting listener.
 
 ## [2.21.0] — 2026-09-03

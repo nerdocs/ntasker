@@ -11,6 +11,7 @@ Queue panel shows one column per project -- one lane per concurrent run, each wi
 Set a dependency by dropping a task on the middle of another, on the board or across queue columns; undo via toast.
 Fixed `ntasker restart`: delegates to the installed service instead of squatting its port, and detaches otherwise.
 The settings restart button now waits for a genuinely new process (`/healthz` reports a `boot_id`) instead of any reply.
+Fork migration: `project_categories` table folds into `project_groups` on boot; guide in docs/migrating-from-fork.md.
 Workspace plugin: team (Claude Code subagents), skills, knowledge base, documents -- page, sidebar, file viewer.
 Task context plugin: attach files, notes, personas, skills and MCP servers to a task; agent briefing carries them.
 Plugin architecture: agents (claude/opencode/pi) are switchable plugins; `plugins_disabled` setting, `/api/plugins`.

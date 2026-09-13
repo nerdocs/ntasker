@@ -278,6 +278,7 @@ its data stays intact. Contract and slots: [docs/plugins.md](docs/plugins.md). B
 `task_context` -- attach files, notes, personas, skills and MCP servers to a task, handed to the agent in its
 briefing ([docs/task-context.md](docs/task-context.md)); `workspace` -- team (Claude Code subagents), skills, knowledge
 base and documents on a `/workspace` page and in the sidebar, plus a viewer ([docs/workspace.md](docs/workspace.md)).
+Coming from the drfoehn fork? See [docs/migrating-from-fork.md](docs/migrating-from-fork.md).
 
 ## CLI
 

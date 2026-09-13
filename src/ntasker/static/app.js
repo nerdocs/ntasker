@@ -1374,6 +1374,24 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             });
         },
 
+        // Sidebar board button on a project row: show only this project's
+        // tasks as a kanban (planned / wip / review / done). Narrows the
+        // project filter to the one project, drops any phase filter so all
+        // four columns are populated, and leaves the run view if one is open.
+        showProjectBoard(name) {
+            this.projectFilter = [name];
+            this.phaseFilter = [];
+            this.persistProjectFilter();
+            this.persistPhaseFilter();
+            this.syncFormProjectFromFilter();
+            if (this.claudeView !== null) location.hash = '#/';
+            if (this.viewMode !== 'kanban') {
+                this.setViewMode('kanban');   // reloads tasks
+            } else {
+                this.loadTasks();
+            }
+        },
+
         // Sidebar agent logo on a project row: "I need an agent in this project
         // *now*". Creates a throwaway task (fixed title, straight to wip -- no
         // form, no typing) and drops the caret into a live session with a blank

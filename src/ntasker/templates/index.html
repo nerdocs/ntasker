@@ -205,6 +205,16 @@
                                 :aria-label="$i18n('hide_project')">
                             <i class="ti ti-eye-off"></i>
                         </button>
+                        {# Board: show only this project's tasks as a kanban -- #}
+                        {# planned / wip / review / done side by side. Uses      #}
+                        {# `ti-columns` (in the vendored icon subset, see below). #}
+                        <button type="button" class="btn btn-sm btn-ghost-secondary px-1 py-0 ms-1 project-add-btn"
+                                x-show="catEditing !== proj.name && !proj.hidden"
+                                @click.stop.prevent="showProjectBoard(proj.name)"
+                                :title="$i18n('project_board')"
+                                :aria-label="$i18n('project_board')">
+                            <i class="ti ti-columns"></i>
+                        </button>
                         {# Quick "+": open the new-task form pre-filled with this project. #}
                         <button type="button" class="btn btn-sm btn-ghost-secondary px-1 py-0 ms-1 project-add-btn"
                                 x-show="catEditing !== proj.name && !proj.hidden"

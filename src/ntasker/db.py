@@ -264,6 +264,12 @@ def init_db(path: Path | None = None) -> None:
                 conn.execute("DELETE FROM settings WHERE key = 'hidden_projects'")
         except sqlite3.OperationalError:
             pass
+        # Plugin tables + migrations -- additive, and run for disabled plugins
+        # too so a toggle never loses data. Lazy import: plugins pull in
+        # ``settings``, which imports this module.
+        from ntasker import plugins  # noqa: PLC0415
+
+        plugins.init_schema(conn)
         conn.commit()
 
 

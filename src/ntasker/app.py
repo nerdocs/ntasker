@@ -21,7 +21,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Literal, cast
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request, WebSocket
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, WebSocket
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -33,7 +33,7 @@ from ntasker.assets import (
     get_asset_url,
     get_sri,
 )
-from ntasker.agents import AGENTS, AGENT_KEYS, resolve_agent_key, resolve_home
+from ntasker.agents import agent_keys, enabled_agents, resolve_agent_key, resolve_home
 from ntasker.claude_assets import scan_status
 from ntasker.claude_runner import (
     active_session_ids,
@@ -46,7 +46,7 @@ from ntasker.claude_runner import (
 )
 from ntasker.claude_runner import serve as claude_serve
 from ntasker.projects import discover_claude_projects
-from ntasker import taskqueue
+from ntasker import plugins, taskqueue
 from ntasker import db as _db_module
 from ntasker.db import (
     DepError,
@@ -262,7 +262,13 @@ app = FastAPI(
     redoc_url=None,
 )
 
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+# Plugins register at import so their routes, settings and agents exist
+# before the first request; enablement is checked per call (see
+# :mod:`ntasker.plugins`). Their slot templates resolve relative to
+# ``plugins/`` ("workspace/templates/sidebar.html"), hence the second dir.
+plugins.load_all()
+
+templates = Jinja2Templates(directory=[str(TEMPLATES_DIR), str(plugins.PLUGINS_DIR)])
 
 # Wire the Jinja i18n extension. ``newstyle=True`` enables {trans foo=...}
 # placeholders. We deliberately bind callables (not pre-resolved strings)
@@ -369,8 +375,10 @@ def build_js_strings() -> dict[str, str]:
     * pybabel-extract sees a single Python source for all JS msgids;
     * the Jinja templates only need ``window.__i18n = {{ js_strings | tojson }}``;
     * adding a new key is one line in one place.
+
+    Enabled plugins append their own keys (``PluginContext.add_js_strings``).
     """
-    return {
+    strings = {
         # Sidebar -- projects
         "projects": _("Projects"),
         "select_all": _("Select all"),
@@ -693,7 +701,24 @@ def build_js_strings() -> dict[str, str]:
         "license_label": _("License"),
         "open_github": _("View on GitHub"),
         "report_issue": _("Report an issue"),
+        # Settings -- plugins card
+        "plugins": _("Plugins"),
+        "plugins_intro": _(
+            "Switch optional features and agent integrations on or off. Takes "
+            "effect immediately; at least one agent stays enabled."
+        ),
     }
+    strings.update(plugins.enabled_js_strings())
+    return strings
+
+
+def _page_plugins() -> dict:
+    """Template context shared by every page: enabled plugin names + slot templates."""
+    return {
+        "plugins_enabled": plugins.enabled_names(),
+        "plugin_slots": plugins.enabled_slots(),
+    }
+
 
 # Mount the user-data vendor cache at ``/static/vendor`` *before* the
 # broader ``/static`` mount. Starlette dispatches mounts in registration
@@ -708,7 +733,22 @@ if _vendor_cache.is_dir():
         name="static-vendor",
     )
 
+# Plugin static files (``/static/plugins/<name>/...``), also before ``/static``.
+for _ctx in plugins.REGISTRY.values():
+    _pdir = _ctx.static_dir()
+    if _pdir is not None:
+        app.mount(
+            f"/static/plugins/{_ctx.name}",
+            StaticFiles(directory=str(_pdir)),
+            name=f"static-plugin-{_ctx.name}",
+        )
+
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+# Plugin routers: every route 404s while its plugin is disabled.
+for _ctx in plugins.REGISTRY.values():
+    for _router in _ctx.routers:
+        app.include_router(_router, dependencies=[Depends(plugins.require_enabled(_ctx.name))])
 
 # Language middleware -- set the active i18n language for each request.
 # Must be added after the FastAPI() construction; runs *outermost* in the
@@ -986,6 +1026,7 @@ def index(request: Request) -> HTMLResponse:
             # input show where a new project's directory will be created.
             "projects_base": str(projects_base_dir() or ""),
             "links": LINKS,
+            **_page_plugins(),
         },
     )
     response.headers["Cache-Control"] = "no-store"
@@ -1021,6 +1062,7 @@ def settings_page(request: Request) -> HTMLResponse:
             "js_strings": build_js_strings(),
             "can_restart": service.service_installed(),
             "links": LINKS,
+            **_page_plugins(),
         },
     )
     response.headers["Cache-Control"] = "no-store"
@@ -1038,6 +1080,7 @@ def tags_page(request: Request) -> HTMLResponse:
             "language": get_active_language(),
             "js_strings": build_js_strings(),
             "links": LINKS,
+            **_page_plugins(),
         },
     )
     response.headers["Cache-Control"] = "no-store"
@@ -1056,6 +1099,7 @@ def info_page(request: Request) -> HTMLResponse:
             "language": get_active_language(),
             "js_strings": build_js_strings(),
             "links": LINKS,
+            **_page_plugins(),
         },
     )
     response.headers["Cache-Control"] = "no-store"
@@ -1123,11 +1167,12 @@ def api_agents() -> JSONResponse:
 
     Read-only -- installs go through the ``ntasker agent install`` CLI to avoid
     CSRF / DNS-rebind write surface. Reports ``default`` so the UI knows which
-    agent a task without an explicit ``agent`` will run on.
+    agent a task without an explicit ``agent`` will run on. Lists only agents
+    whose plugin is enabled; ``icon`` is a ready URL path.
     """
     default = get_default_agent()
     out: list[dict] = []
-    for spec in AGENTS.values():
+    for spec in enabled_agents():
         available, reason = terminal_available(spec)
         try:
             home = resolve_home(spec)
@@ -1151,6 +1196,16 @@ def api_agents() -> JSONResponse:
             }
         )
     return JSONResponse({"default": default, "package_version": VERSION, "agents": out})
+
+
+@app.get("/api/plugins")
+def api_plugins() -> JSONResponse:
+    """Every built-in plugin with its enabled flag (drives the /settings card).
+
+    Toggling goes through ``PUT /api/settings/plugins_disabled``; see
+    :mod:`ntasker.plugins` for the enablement rules.
+    """
+    return JSONResponse(plugins.describe())
 
 
 # ---------------------------------------------------------------------------
@@ -1814,7 +1869,7 @@ def _normalize_project(value: str | None) -> str | None:
 def api_create_task(payload: TaskCreate) -> JSONResponse:
     if payload.priority not in PRIORITY_VALID:
         raise HTTPException(status_code=400, detail=_("Invalid priority"))
-    if payload.agent is not None and payload.agent not in AGENT_KEYS:
+    if payload.agent is not None and payload.agent not in agent_keys():
         raise HTTPException(status_code=400, detail=_("Invalid agent"))
     norm_tags = normalize_tags(payload.tags)
     phase_value = payload.phase or PHASE_DEFAULT
@@ -1868,7 +1923,7 @@ def api_update_task(task_id: int, payload: TaskUpdate) -> JSONResponse:
     if "priority" in fields and fields["priority"] not in PRIORITY_VALID:
         raise HTTPException(status_code=400, detail=_("Invalid priority"))
 
-    if "agent" in fields and fields["agent"] is not None and fields["agent"] not in AGENT_KEYS:
+    if "agent" in fields and fields["agent"] is not None and fields["agent"] not in agent_keys():
         raise HTTPException(status_code=400, detail=_("Invalid agent"))
 
     # phase is NOT NULL since v2.0: a legacy client trying to set phase=null

@@ -37,7 +37,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Iterable
 
-from ntasker.agents import AGENTS, AgentSpec, resolve_home
+from ntasker.agents import AgentSpec, enabled_agents, resolve_home
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -424,7 +424,7 @@ def boot_drift_warning() -> str | None:
     caller (``ntasker.cli.cmd_serve``) prints the result to stderr.
     """
     stale: list[AgentSpec] = []
-    for spec in AGENTS.values():
+    for spec in enabled_agents():
         try:
             status = scan_status(spec, resolve_home(spec), command_name="task")
         except Exception:  # noqa: BLE001 -- one bad home must not hide the rest

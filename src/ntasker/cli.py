@@ -36,7 +36,8 @@ from ntasker.assets import (
     local_path_for,
     resolve_mode,
 )
-from ntasker.agents import AGENT_KEYS, AGENTS, agent_available, resolve_home
+from ntasker import plugins
+from ntasker.agents import AGENTS, agent_available, agent_keys, enabled_agents, resolve_home
 from ntasker.claude_assets import (
     install_assets,
     scan_status,
@@ -632,7 +633,7 @@ def cmd_add(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
-    if args.agent is not None and args.agent not in AGENT_KEYS:
+    if args.agent is not None and args.agent not in agent_keys():
         print(
             _("ntasker: invalid agent: {value!r}").format(value=args.agent),
             file=sys.stderr,
@@ -769,7 +770,7 @@ def cmd_patch(args: argparse.Namespace) -> int:
     if args.agent is not None:
         # Empty string clears the agent (-> default_agent at run time).
         candidate = args.agent.strip()
-        if candidate and candidate not in AGENT_KEYS:
+        if candidate and candidate not in agent_keys():
             print(
                 _("ntasker: invalid agent: {value!r}").format(value=args.agent),
                 file=sys.stderr,
@@ -1246,10 +1247,13 @@ def cmd_agent_install(args: argparse.Namespace) -> int:
     if key not in AGENTS:
         print(
             _("ntasker: unknown agent {key!r}. Known: {keys}").format(
-                key=key, keys=", ".join(AGENT_KEYS)
+                key=key, keys=", ".join(AGENTS)
             ),
             file=sys.stderr,
         )
+        return 2
+    if not plugins.is_enabled(key):
+        print(_("ntasker: plugin {name!r} is disabled.").format(name=key), file=sys.stderr)
         return 2
     return _do_agent_install(
         AGENTS[key],
@@ -1264,7 +1268,7 @@ def cmd_agent_install(args: argparse.Namespace) -> int:
 def cmd_agent_list(args: argparse.Namespace) -> int:
     """List the known agents with CLI availability + ``/task`` install status."""
     rows: list[dict] = []
-    for spec in AGENTS.values():
+    for spec in enabled_agents():
         try:
             home = resolve_home(spec)
             status = scan_status(spec, home)
@@ -1689,6 +1693,10 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("DB path (overrides NTASKER_DB and the default)."),
     )
 
+    # Plugins contribute agent choices and subcommands. The parser knows every
+    # built-in (the DB is not bound yet, so enablement cannot be read here);
+    # a disabled plugin's command refuses at run time instead.
+    plugins.load_all()
     sub = p.add_subparsers(dest="command", required=True)
 
     sub.add_parser("init", help=_("Create / migrate the schema")).set_defaults(func=cmd_init)
@@ -1771,7 +1779,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp_add.add_argument("--priority", default="normal")
     sp_add.add_argument(
         "--agent",
-        choices=list(AGENT_KEYS),
+        choices=list(AGENTS),
         help=_("AI coding agent for this task (default: the default_agent setting)."),
     )
     sp_add.add_argument("--tag", action="append", default=[])
@@ -1934,7 +1942,7 @@ def build_parser() -> argparse.ArgumentParser:
         "install",
         help=_("Install / check an agent's skill + /task slash command."),
     )
-    ag_install.add_argument("agent", choices=list(AGENT_KEYS))
+    ag_install.add_argument("agent", choices=list(AGENTS))
     ag_install.add_argument(
         "--command-name",
         default="task",
@@ -2075,6 +2083,10 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("Upgrade only; do not restart the running service."),
     )
     sp_su.set_defaults(func=cmd_self_update)
+
+    for _ctx in plugins.REGISTRY.values():
+        for _add in _ctx.cli:
+            _add(sub)
 
     return p
 

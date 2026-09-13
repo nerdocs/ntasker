@@ -155,7 +155,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
     // Resolve initial sort mode: localStorage > 'priority' (the default).
     let initialSort = localStorage.getItem(LS_KEY_SORT_MODE);
     if (initialSort !== 'priority' && initialSort !== 'manual') initialSort = 'priority';
-    return {
+    const base = {
         // Sidebar feeds.
         // projects/tags: [{name, open_count}]; phases/priorities: [{value, label, open_count}].
         projects: [],
@@ -340,6 +340,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             this.syncFormProjectFromFilter();
             // Phase / priority filters are validated against fixed value lists at restore time.
             await this.loadTasks();
+            if (typeof this.pluginInit === 'function') await this.pluginInit();
             // Start the live-update poll last, once the initial state is in
             // place -- it then refetches whenever a CLI/API change is detected.
             this.startChangePolling();
@@ -2375,7 +2376,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // Static URL of a task's agent icon (for the run button <img>).
         agentIconUrl(task) {
             const a = this.agentByKey(this.taskAgentKey(task));
-            return a && a.icon ? ('/static/' + a.icon) : '';
+            return a && a.icon ? a.icon : '';
         },
         // Human label for an agent key (for tooltips / the picker).
         agentLabel(key) {
@@ -2865,4 +2866,9 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             this.loadClaudeSessions();
         },
     };
+    // Plugin mixins: each enabled plugin's script pushed a factory onto
+    // window.ntaskerPlugins (see index.html); its state + methods merge into
+    // the component. A plugin may define pluginInit(), called from init().
+    for (const factory of (window.ntaskerPlugins || [])) Object.assign(base, factory());
+    return base;
 }

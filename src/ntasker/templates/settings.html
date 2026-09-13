@@ -162,6 +162,33 @@
                     </div>
                 </div>
 
+                {# Plugins: switch optional features and agent integrations. #}
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="ti ti-puzzle me-1"></i>
+                            <span x-text="$i18n('plugins')"></span>
+                        </h3>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small mb-3" x-text="$i18n('plugins_intro')"></p>
+                        <template x-for="p in plugins" :key="p.name">
+                            <label class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox"
+                                       :checked="p.enabled"
+                                       @change="setPluginEnabled(p.name, $event.target.checked)">
+                                <span class="form-check-label">
+                                    <strong x-text="p.label"></strong>
+                                    — <span x-text="p.description"></span>
+                                </span>
+                            </label>
+                        </template>
+                        <div class="invalid-feedback" :class="errors['plugins_disabled'] ? 'd-block' : ''"
+                             x-text="errors['plugins_disabled']"></div>
+                    </div>
+                </div>
+                {% for tpl in plugin_slots['settings'] %}{% include tpl %}{% endfor %}
+
                 {# AI agent integration: common settings shared by every agent. #}
                 <div class="card mb-3">
                     <div class="card-header">
@@ -204,7 +231,7 @@
                 <template x-for="a in agents" :key="a.key">
                     <div class="card mb-3">
                         <div class="card-header d-flex align-items-center">
-                            <img :src="'/static/' + a.icon" alt=""
+                            <img :src="a.icon" alt=""
                                  style="width: 1.4rem; height: 1.4rem; object-fit: contain;" class="me-2">
                             <h3 class="card-title mb-0" x-text="a.label"></h3>
                             <span class="badge ms-2"
@@ -459,9 +486,12 @@ function settingsPage() {
         // {key,label,icon,available,assets}. Drives the per-agent cards.
         agents: [],
         agentDefault: 'claude',
+        // Plugin list (GET /api/plugins): {name,label,description,kind,enabled}.
+        plugins: [],
 
         async init() {
             await this.refresh();
+            await this.refreshPlugins();
             await this.refreshAgents();
             await this.refreshSessions();
             // Keep the restart guard live -- a task may start or end while the
@@ -520,6 +550,27 @@ function settingsPage() {
             } catch (e) {
                 // Best-effort -- the cards stay empty.
             }
+        },
+
+        async refreshPlugins() {
+            try {
+                const r = await fetch('/api/plugins');
+                if (r.ok) this.plugins = await r.json();
+            } catch (e) {
+                // Best-effort -- the card stays empty.
+            }
+        },
+
+        // Flip one plugin switch: rewrite the plugins_disabled list and let
+        // the server validate it (unknown name, last agent). The agent cards
+        // follow, since /api/agents lists only enabled agents.
+        async setPluginEnabled(name, enabled) {
+            const disabled = this.plugins.filter(p => !p.enabled && p.name !== name).map(p => p.name);
+            if (!enabled) disabled.push(name);
+            this.known['plugins_disabled'] = JSON.stringify(disabled);
+            await this.saveKnown('plugins_disabled');
+            await this.refreshPlugins();
+            await this.refreshAgents();
         },
 
         async saveKnown(key) {

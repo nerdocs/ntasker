@@ -230,7 +230,8 @@ both modes (catches on-disk tampering for `local` too).
 ## AI agent integration
 
 ntasker is **agent-agnostic** -- it integrates with **Claude Code, OpenCode and Pi**, and adding another agent is one
-registry entry. The agent registry in `src/ntasker/agents.py` (one `AgentSpec` per agent) is the single source of
+plugin. The agent registry in `src/ntasker/agents.py` (one `AgentSpec` per agent, contributed by
+`src/ntasker/plugins/<key>/`) is the single source of
 truth for the binary, the spawn command, the config home, and the icon.
 
 Each task carries an `agent` (a nullable field). NULL falls back to the **`default_agent`** setting, then to `claude`.
@@ -268,6 +269,13 @@ launchd agent with a narrow `PATH` still finds the CLI. For installs elsewhere, 
 version. The `/settings` UI shows the same status as read-only cards (one per agent under an **AI agent integration**
 card); there is intentionally no HTTP write endpoint (installs are user-initiated via the CLI to avoid CSRF /
 DNS-rebinding write surface). Full reference: [docs/agents.md](docs/agents.md).
+
+## Plugins
+
+Agent integrations (and, in later releases, optional features like the workspace browser) are plugins that can be
+switched off individually: `/settings` -> *Plugins*, `ntasker config set plugins_disabled '["pi"]'`, or
+`NTASKER_PLUGINS_DISABLED=pi,opencode`. A disabled plugin's routes 404, its agent is neither listed nor resolvable, and
+its data stays intact. Contract and slots: [docs/plugins.md](docs/plugins.md).
 
 ## CLI
 
@@ -341,6 +349,7 @@ couple of CLI subcommands via subprocess.
 | GET | `/api/queue` | `{enabled, items[]}` -- the auto-run task queue in run order. See [docs/task-queue.md](docs/task-queue.md). |
 | PUT | `/api/queue` | `{ids: [...]}` replaces the whole queue, head first. Closed / archived / missing ids are dropped. |
 | GET | `/api/agents` | Read-only registry feed: per-agent availability + `/task` integration status, plus the default |
+| GET | `/api/plugins` | Built-in plugins + `enabled` flag; toggle via `PUT /api/settings/plugins_disabled` |
 | GET | `/api/claude-assets/status` | Read-only: `{installed, drift, package_version, claude_home, files[]}` |
 
 OpenAPI: <http://127.0.0.1:8766/api/docs>

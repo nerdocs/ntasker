@@ -22,7 +22,7 @@ import sqlite3
 from collections.abc import Callable
 from datetime import datetime
 
-from ntasker.agents import AGENT_KEYS, DEFAULT_AGENT
+from ntasker.agents import agent_keys, default_agent_key
 from ntasker.assets import ResolvedMode, validate_assets_mode
 from ntasker.db import get_conn
 from ntasker.i18n import AVAILABLE_LANGUAGES, _, _lazy
@@ -199,34 +199,6 @@ _TRUE_STRINGS = frozenset({"1", "true", "yes", "on"})
 _FALSE_STRINGS = frozenset({"0", "false", "no", "off", ""})
 
 
-def validate_claude_auto_mode(value: str) -> str:
-    """Validator for the legacy ``claude_auto_mode`` boolean setting.
-
-    Superseded by ``claude_permission_mode`` (the /settings selector). Retained
-    so a value stored by an older ntasker stays valid and readable: a legacy
-    truthy value still maps to ``bypassPermissions`` in
-    :func:`claude_permission_mode`. Normalizes truthy/falsy spellings to
-    ``"true"`` / ``"false"``; rejects anything else.
-    """
-    norm = (value or "").strip().lower()
-    if norm in _TRUE_STRINGS:
-        return "true"
-    if norm in _FALSE_STRINGS:
-        return "false"
-    raise ValueError(
-        _("claude_auto_mode must be a yes/no value (got {value!r}).").format(value=value)
-    )
-
-
-# Permission modes a spawned ``claude`` session can launch in. The values are
-# the literal ``--permission-mode`` choices the CLI accepts; ntasker exposes the
-# four the user picks between (see :func:`ntasker.settings.claude_permission_mode`
-# and the /settings selector). ``default`` is normal (Claude asks first);
-# ``bypassPermissions`` skips every prompt and is the only dangerous one.
-CLAUDE_PERMISSION_MODES = ("default", "auto", "plan", "bypassPermissions")
-CLAUDE_PERMISSION_MODE_DEFAULT = "default"
-
-
 def validate_claude_open_terminal(value: str) -> str:
     """Validator for the ``claude_open_terminal`` boolean setting.
 
@@ -245,58 +217,23 @@ def validate_claude_open_terminal(value: str) -> str:
     )
 
 
-def validate_claude_permission_mode(value: str) -> str:
-    """Validator for the ``claude_permission_mode`` setting.
-
-    Accepts one of :data:`CLAUDE_PERMISSION_MODES`. An empty value normalizes to
-    ``"default"`` (normal mode). Rejects anything else so a typo cannot silently
-    arm -- or fail to arm -- the dangerous ``bypassPermissions`` mode.
-    """
-    norm = (value or "").strip()
-    if not norm:
-        return CLAUDE_PERMISSION_MODE_DEFAULT
-    if norm in CLAUDE_PERMISSION_MODES:
-        return norm
-    raise ValueError(
-        _("claude_permission_mode must be one of {modes} (got {value!r}).").format(
-            modes=", ".join(CLAUDE_PERMISSION_MODES), value=value
-        )
-    )
-
-
 def validate_default_agent(value: str) -> str:
     """Validator for the ``default_agent`` setting.
 
     The AI coding agent new tasks default to (and the fallback for any task
-    without an explicit ``agent``). Whitelist against the registered agent
+    without an explicit ``agent``). Whitelist against the *enabled* agent
     keys; empty normalizes to the built-in default. See :mod:`ntasker.agents`.
     """
     norm = (value or "").strip().lower()
+    keys = agent_keys()
     if not norm:
-        return DEFAULT_AGENT
-    if norm in AGENT_KEYS:
+        return default_agent_key()
+    if norm in keys:
         return norm
     raise ValueError(
         _("default_agent must be one of {keys} (got {value!r}).").format(
-            keys=", ".join(AGENT_KEYS), value=value
+            keys=", ".join(keys), value=value
         )
-    )
-
-
-def validate_opencode_auto(value: str) -> str:
-    """Validator for the ``opencode_auto`` boolean setting.
-
-    When truthy, a spawned OpenCode session runs with ``--auto`` (it
-    auto-approves its own actions). Normalizes truthy/falsy spellings to
-    ``"true"`` / ``"false"``; rejects anything else.
-    """
-    norm = (value or "").strip().lower()
-    if norm in _TRUE_STRINGS:
-        return "true"
-    if norm in _FALSE_STRINGS:
-        return "false"
-    raise ValueError(
-        _("opencode_auto must be a yes/no value (got {value!r}).").format(value=value)
     )
 
 
@@ -319,6 +256,40 @@ def validate_compact_seed(value: str) -> str:
     raise ValueError(
         _("compact_seed must be a yes/no value (got {value!r}).").format(value=value)
     )
+
+
+def validate_plugins_disabled(value: str) -> str:
+    """Validator for the ``plugins_disabled`` setting.
+
+    JSON array of plugin names switched off (see :mod:`ntasker.plugins`).
+    Unknown names are rejected; so is a list that would leave no agent
+    plugin enabled, because every task needs an agent to resolve to. Names
+    are de-duplicated and kept in registry order. ENV
+    ``NTASKER_PLUGINS_DISABLED`` (comma list) overrides the stored value.
+    """
+    import json  # noqa: PLC0415
+
+    from ntasker import plugins  # noqa: PLC0415 -- lazy: plugins import settings
+
+    plugins.load_all()
+    try:
+        parsed = json.loads(value or "[]")
+    except ValueError as exc:
+        raise ValueError(_("plugins_disabled must be a JSON array of plugin names.")) from exc
+    if not isinstance(parsed, list) or not all(isinstance(v, str) for v in parsed):
+        raise ValueError(_("plugins_disabled must be a JSON array of plugin names."))
+    names = {v.strip() for v in parsed if v.strip()}
+    unknown = sorted(names - set(plugins.REGISTRY))
+    if unknown:
+        raise ValueError(
+            _("Unknown plugin(s): {names}. Known: {known}").format(
+                names=", ".join(unknown), known=", ".join(plugins.REGISTRY)
+            )
+        )
+    agents = {n for n, c in plugins.REGISTRY.items() if c.spec.kind == "agent"}
+    if agents and agents <= names:
+        raise ValueError(_("At least one agent plugin must stay enabled."))
+    return json.dumps([n for n in plugins.REGISTRY if n in names])
 
 
 def validate_queue_enabled(value: str) -> str:
@@ -350,12 +321,10 @@ VALIDATORS: dict[str, Validator] = {
     "project_groups": validate_project_groups,
     "no_project_dir": validate_no_project_dir,
     "claude_idle_seconds": validate_claude_idle_seconds,
-    "claude_auto_mode": validate_claude_auto_mode,
-    "claude_permission_mode": validate_claude_permission_mode,
     "claude_open_terminal": validate_claude_open_terminal,
-    "opencode_auto": validate_opencode_auto,
     "compact_seed": validate_compact_seed,
     "queue_enabled": validate_queue_enabled,
+    "plugins_disabled": validate_plugins_disabled,
     "update_command": validate_update_command,
 }
 """Registry of known settings keys with their validators.
@@ -403,21 +372,11 @@ HINTS: dict[str, object] = {
         "without an explicit agent): claude, opencode or pi. ENV: "
         "NTASKER_DEFAULT_AGENT."
     ),
-    "opencode_auto": _lazy(
-        "Run spawned OpenCode sessions with --auto (auto-approve actions). "
-        "Yes/no, default no."
-    ),
     "compact_seed": _lazy(
         "Seed spawned sessions with the task data inlined into the initial "
         "prompt instead of the /task command. Skips the loader roundtrip -- "
         "much faster time-to-first-response with slow local models (Ollama). "
         "Yes/no, default no. ENV: NTASKER_COMPACT_SEED."
-    ),
-    "claude_permission_mode": _lazy(
-        "Permission mode for interactive Claude sessions: 'default' (normal -- "
-        "Claude asks first), 'auto' (auto-accept actions), 'plan' (plan only, no "
-        "changes), or 'bypassPermissions' (skip every prompt -- dangerous). "
-        "Passed to the CLI as --permission-mode. Default: default."
     ),
     "claude_open_terminal": _lazy(
         "When starting a Claude session (Create + Run or the per-task run "
@@ -441,6 +400,11 @@ HINTS: dict[str, object] = {
         "Shell command run by 'self-update' to upgrade ntasker "
         "(e.g. `uv tool upgrade ntasker`). Unset to auto-detect how ntasker "
         "was installed."
+    ),
+    "plugins_disabled": _lazy(
+        "JSON array of plugins switched off, e.g. [\"pi\", \"workspace\"]. "
+        "Toggle them on the Plugins card above; at least one agent plugin "
+        "stays enabled. ENV: NTASKER_PLUGINS_DISABLED (comma-separated)."
     ),
 }
 
@@ -472,7 +436,7 @@ FIELD_DEFAULTS: dict[str, str] = {
 }
 
 
-def _make_bin_validator(agent_key: str) -> Validator:
+def make_bin_validator(agent_key: str) -> Validator:
     """Build a validator for an agent's ``<key>_bin`` binary-path override.
 
     Accepts a path (contains ``/`` -> expanded, must be an executable file) or
@@ -505,16 +469,14 @@ def _make_bin_validator(agent_key: str) -> Validator:
     return _validate
 
 
-# Register a per-agent binary-path override (``claude_bin`` / ``opencode_bin``
-# / ``pi_bin``). Lets the user point ntasker at a CLI that is not on the
-# server's PATH -- e.g. when run as a systemd unit without ``nvm`` /
-# ``~/.opencode/bin``. See :func:`ntasker.agents.resolve_binary`.
-for _agent_key in AGENT_KEYS:
-    VALIDATORS[f"{_agent_key}_bin"] = _make_bin_validator(_agent_key)
-    HINTS[f"{_agent_key}_bin"] = _lazy(
-        "Full path to the agent's CLI when it is not on the server's PATH "
-        "(e.g. an absolute path under your home). Unset to auto-detect."
-    )
+#: Hint shared by every agent plugin's ``<key>_bin`` binary-path override.
+#: The override lets the user point ntasker at a CLI that is not on the
+#: server's PATH -- e.g. when run as a systemd unit without ``nvm`` /
+#: ``~/.opencode/bin``. See :func:`ntasker.agents.resolve_binary`.
+BIN_OVERRIDE_HINT = _lazy(
+    "Full path to the agent's CLI when it is not on the server's PATH "
+    "(e.g. an absolute path under your home). Unset to auto-detect."
+)
 
 
 # ---------------------------------------------------------------------------
@@ -553,25 +515,6 @@ def get_setting(key: str, env_var: str | None = None) -> str | None:
             return env_val
     row = get_setting_raw(key)
     return row["value"] if row else None
-
-
-def claude_permission_mode() -> str:
-    """Resolved permission mode for interactive Claude sessions.
-
-    Backs the /settings mode selector; read at session spawn in
-    :func:`ntasker.claude_runner._start_session`. Returns one of
-    :data:`CLAUDE_PERMISSION_MODES`, defaulting to ``"default"`` (safe, normal).
-
-    Backward compatibility: the pre-selector ``claude_auto_mode`` boolean meant
-    "skip every prompt", so a legacy truthy value maps to ``bypassPermissions``
-    when no explicit ``claude_permission_mode`` is set.
-    """
-    raw = (get_setting("claude_permission_mode") or "").strip()
-    if raw in CLAUDE_PERMISSION_MODES:
-        return raw
-    if (get_setting("claude_auto_mode") or "").strip().lower() in _TRUE_STRINGS:
-        return "bypassPermissions"
-    return CLAUDE_PERMISSION_MODE_DEFAULT
 
 
 def set_setting(key: str, value: str) -> dict:
@@ -659,23 +602,16 @@ def get_claude_open_terminal() -> bool:
 def get_default_agent() -> str:
     """Return the configured default agent key (``claude`` / ``opencode`` / ``pi``).
 
-    Honours the ``NTASKER_DEFAULT_AGENT`` ENV override. Falls back to the
-    built-in :data:`ntasker.agents.DEFAULT_AGENT` when unset or invalid, so a
-    stale value never pushes a task onto an unknown agent.
+    Honours the ``NTASKER_DEFAULT_AGENT`` ENV override. Falls back to
+    :func:`ntasker.agents.default_agent_key` when unset, invalid or pointing
+    at a disabled agent, so a stale value never pushes a task onto an
+    unknown agent.
     """
     raw = get_setting("default_agent", env_var="NTASKER_DEFAULT_AGENT")
     if not raw:
-        return DEFAULT_AGENT
+        return default_agent_key()
     norm = raw.strip().lower()
-    return norm if norm in AGENT_KEYS else DEFAULT_AGENT
-
-
-def get_opencode_auto() -> bool:
-    """Whether spawned OpenCode sessions run with ``--auto``. Defaults to False."""
-    raw = get_setting("opencode_auto", env_var="NTASKER_OPENCODE_AUTO")
-    if raw is None:
-        return False
-    return raw.strip().lower() in _TRUE_STRINGS
+    return norm if norm in agent_keys() else default_agent_key()
 
 
 def get_compact_seed() -> bool:

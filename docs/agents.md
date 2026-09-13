@@ -1,7 +1,7 @@
 # Multi-agent framework
 
-ntasker is **agent-agnostic**: every task can run on one of several AI coding agents, and the framework is built so that
-adding another is a single registry entry. Today it ships three -- **Claude Code**, **OpenCode** and **Pi**.
+ntasker is **agent-agnostic**: every task can run on one of several AI coding agents, and each agent is a
+[plugin](plugins.md) that can be switched off. Today it ships three -- **Claude Code**, **OpenCode** and **Pi**.
 
 This page covers the architecture, the per-agent config homes and command formats, the CLI, and the settings. For the
 interactive run view itself (the embedded TUI, background sessions, busy/waiting indicators), see
@@ -9,13 +9,15 @@ interactive run view itself (the embedded TUI, background sessions, busy/waiting
 
 ## The registry is the single source of truth
 
-Everything agent-specific lives in `src/ntasker/agents.py`, as one `AgentSpec` per agent in the `AGENTS` dict (keys
-`claude`, `opencode`, `pi`). No other module hard-codes an agent name -- the runner, the app, the CLI and the settings
-all read the registry. An `AgentSpec` captures:
+Everything agent-specific lives in one `AgentSpec` per agent, contributed by its plugin
+(`src/ntasker/plugins/<key>/__init__.py`) into the `AGENTS` dict of `src/ntasker/agents.py` (keys `claude`,
+`opencode`, `pi`). No other module hard-codes an agent name -- the runner, the app, the CLI and the settings all read
+the registry through `agent_keys()` / `enabled_agents()` / `get_spec()`, which only return agents whose plugin is
+enabled. An `AgentSpec` captures:
 
 - `key` / `label` -- stable id persisted in `tasks.agent`, and the human-facing name.
 - `binary` -- the CLI executable looked up on `PATH` for availability and spawning.
-- `icon` -- the static asset shown on the run button (`claude.webp`, `opencode.svg`, `pi.svg`).
+- `icon` -- URL of the run-button icon, served from the plugin's `static/` (`/static/plugins/claude/claude.webp`).
 - `home_env` / `default_home` / `commands_subdir` / `skills_subdir` -- where the `/task` slash command and `SKILL.md`
   install (see the table below).
 - `command_template` -- the packaged template under `claude_assets/command/` rendered into the command file.
@@ -26,17 +28,21 @@ all read the registry. An `AgentSpec` captures:
 - `extra_strip_env` -- agent-specific nesting markers stripped before spawn, on top of the shared `CLAUDE_CODE_*` /
   `AI_AGENT` base set, so a session always starts as a fresh top-level run.
 
-Permission/auto-approve flags are produced by `AgentSpec.permission_args()`, which reads the agent-specific settings
-lazily (Claude's permission mode, OpenCode's `--auto`).
+Permission/auto-approve flags are produced by `AgentSpec.permission_args()`, which calls the plugin-supplied
+`permission_args_fn` (Claude's permission mode, OpenCode's `--auto`); an agent without such flags leaves it `None`.
 
 ### Adding a fourth agent
 
-1. Add one `AgentSpec` entry to `AGENTS` in `src/ntasker/agents.py`.
-2. Reuse `task.generic.md.template` (or add a new template under `src/ntasker/claude_assets/command/`) for its `/task`
+1. Create `src/ntasker/plugins/<key>/__init__.py` with a `SPEC = PluginSpec(..., kind="agent")` and a `register(ctx)`
+   that calls `ctx.add_agent(AgentSpec(...))` plus `ctx.add_setting("<key>_bin", make_bin_validator("<key>"),
+   BIN_OVERRIDE_HINT)` and any agent-specific settings; put the icon under `plugins/<key>/static/`.
+2. Add `<key>` to `BUILTIN` in `src/ntasker/plugins/__init__.py`.
+3. Reuse `task.generic.md.template` (or add a new template under `src/ntasker/claude_assets/command/`) for its `/task`
    slash command.
 
-That is the whole surface. The per-agent `<key>_bin` setting, the validation whitelists, the run button, the new-task
-picker and the `/settings` card are all derived from the registry, so they pick the new agent up automatically.
+That is the whole surface. The validation whitelists, the run button, the new-task picker and the `/settings` cards
+are all derived from the registry, so they pick the new agent up automatically -- and its switch appears on the
+Plugins card.
 
 ## Per-task agent
 
@@ -44,10 +50,10 @@ Each task has a nullable `agent` field (a DB column). Resolution at run time is,
 
 1. the task's own `agent`,
 2. the `default_agent` setting,
-3. the built-in default `claude`.
+3. the built-in default: `claude` while its plugin is enabled, else the first enabled agent.
 
-Unknown values are dropped at each step (`resolve_agent_key` in `agents.py`), so a stale `tasks.agent` value can never
-break a run. Set the agent in the new-task form, the edit dialog, or via the CLI:
+Unknown or disabled values are dropped at each step (`resolve_agent_key` in `agents.py`), so a stale `tasks.agent`
+value can never break a run. Set the agent in the new-task form, the edit dialog, or via the CLI:
 
 ```bash
 ntasker add --title "..." --agent opencode    # create a task pinned to OpenCode

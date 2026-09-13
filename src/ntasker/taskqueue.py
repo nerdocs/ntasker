@@ -31,7 +31,7 @@ import asyncio
 import contextlib
 import sqlite3
 
-from ntasker.agents import AGENT_KEYS, get_spec, resolve_agent_key
+from ntasker.agents import agent_keys, get_spec, resolve_agent_key
 from ntasker.claude_runner import (
     active_session_ids,
     default_cwd_for_project,
@@ -124,7 +124,7 @@ def _runnable_agents() -> set[str]:
     override from the settings store, so asking it per queued task would mean a
     fresh DB connection per row, every two seconds, forever.
     """
-    return {key for key in AGENT_KEYS if terminal_available(get_spec(key))[0]}
+    return {key for key in agent_keys() if terminal_available(get_spec(key))[0]}
 
 
 def _startable(
@@ -141,7 +141,7 @@ def _startable(
     both would otherwise cost a settings lookup (i.e. a DB connection) per row.
     Same precedence as :func:`~ntasker.agents.resolve_agent_key`.
     """
-    key = row["agent"] if row["agent"] in AGENT_KEYS else default_agent
+    key = row["agent"] if row["agent"] in agent_keys() else default_agent
     if key not in runnable:
         return False
     blocked = conn.execute(

@@ -15,6 +15,7 @@
     <link rel="stylesheet" href="{{ asset('xterm-css') }}"
           integrity="{{ asset_sri('xterm-css') }}" crossorigin="anonymous">
     <link rel="stylesheet" href="/static/style.css?v={{ static_bust('style.css') }}">
+    {% for tpl in plugin_slots['head'] %}{% include tpl %}{% endfor %}
 
     {# Frontend i18n bridge: js_strings is built server-side per request. #}
     {# Alpine magic property `$i18n('key')` is registered just below. #}
@@ -34,6 +35,10 @@
         // Configured projects base dir (expanded) or "". Lets the project input
         // tell the user where a brand-new project's directory will be created.
         window.__projectsBase = {{ projects_base | default('') | tojson }};
+        // Names of the enabled plugins; plugin scripts register mixins on
+        // window.ntaskerPlugins (merged into tracker() in app.js).
+        window.__plugins = {{ plugins_enabled | tojson }};
+        window.ntaskerPlugins = [];
         document.addEventListener('alpine:init', () => {
             Alpine.magic('i18n', () => (key, params) => {
                 let s = (window.__i18n && window.__i18n[key]) || key;
@@ -381,6 +386,9 @@
                 </template>
             </div>
         </template>
+
+        {# Plugin sidebar sections (enabled plugins only; see ntasker/plugins). #}
+        {% for tpl in plugin_slots['sidebar'] %}{% include tpl %}{% endfor %}
     </aside>
 
     {# Drag handle on the sidebar's edge: resizes the sidebar, width persists in localStorage. #}
@@ -579,6 +587,7 @@
                                               @keydown.enter.meta.prevent="createTask()"
                                               :placeholder="$i18n('description_placeholder')"></textarea>
                                 </div>
+                                {% for tpl in plugin_slots['task_form'] %}{% include tpl %}{% endfor %}
                                 <div class="col-md-6">
                                     <label class="form-label">{{ t('Tags') }}</label>
                                     {# Tag-Input: AlpineJS-driven combobox. Tags as badges, free-text input, autocomplete dropdown. #}
@@ -1521,6 +1530,7 @@
                         <label class="form-label">{{ t('Description') }}</label>
                         <textarea class="form-control edit-description" rows="16" x-model="editing.description"></textarea>
                     </div>
+                    {% for tpl in plugin_slots['task_edit'] %}{% include tpl %}{% endfor %}
                     <div class="mb-2">
                         <label class="form-label">{{ t('Tags') }}</label>
                         {# Edit-modal tag input: same pattern as new-task form, bound to editing.tags. #}
@@ -1643,6 +1653,8 @@
 </div>
 
 
+{% for tpl in plugin_slots['modals'] %}{% include tpl %}{% endfor %}
+
 {# Toast container (Tabler/Bootstrap-compatible). Toasts injected by app.js. #}
 <div id="toast-container"
      class="toast-container position-fixed bottom-0 end-0 p-3"
@@ -1658,6 +1670,8 @@
 <script src="{{ asset('alpine-js') }}"
         integrity="{{ asset_sri('alpine-js') }}" crossorigin="anonymous" defer></script>
 <script src="/static/topnav.js?v={{ static_bust('topnav.js') }}"></script>
+{# Plugin scripts push their mixins before app.js builds the component. #}
+{% for tpl in plugin_slots['scripts'] %}{% include tpl %}{% endfor %}
 <script src="/static/app.js?v={{ static_bust('app.js') }}"></script>
 </body>
 </html>

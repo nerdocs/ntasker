@@ -9,9 +9,12 @@ where its config home lives, which icon the button shows, how the
 ``/task`` integration is installed -- is captured here as one
 :class:`AgentSpec` per agent.
 
-Adding a fourth agent is a single :data:`AGENTS` entry plus (for the
-``/task`` integration) a command template under ``claude_assets/command/``.
-No other module hard-codes an agent name.
+Agents are contributed by plugins (``ntasker/plugins/<key>/``): each
+plugin's ``register()`` adds one :class:`AgentSpec` to :data:`AGENTS`, plus
+its own settings keys. Adding a fourth agent is a new plugin package plus
+(for the ``/task`` integration) a command template under
+``claude_assets/command/``. No other module hard-codes an agent name, and
+a disabled plugin's agent is neither listed nor resolvable.
 
 Design notes:
 
@@ -19,15 +22,15 @@ Design notes:
   so this module stays import-cheap and free of cycles -- ``settings``
   imports ``db``/``assets``; ``agents`` is imported by the runner and the
   app, which must not pull settings at module load.
-* The Claude spec is deliberately byte-compatible with the pre-multi-agent
-  installer: same home, same subdirs, same rendered command -- so an
-  existing ``~/.claude`` install never shows spurious drift.
+* The registry fills itself on first use: every accessor calls
+  :func:`_ensure_loaded`, which runs :func:`ntasker.plugins.load_all`.
 """
 
 from __future__ import annotations
 
 import os
 import shutil
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -109,6 +112,10 @@ class AgentSpec:
     extra_strip_env: tuple[str, ...] = field(default_factory=tuple)
     """Agent-specific nesting markers, merged with :data:`_BASE_STRIP_ENV`."""
 
+    permission_args_fn: Callable[[], list[str]] | None = None
+    """Settings-driven permission / auto-approve flags, supplied by the agent's
+    plugin (``None`` = the agent has no such flags)."""
+
     @property
     def strip_env(self) -> tuple[str, ...]:
         """Full set of env vars to strip before spawning this agent."""
@@ -116,19 +123,7 @@ class AgentSpec:
 
     def permission_args(self) -> list[str]:
         """Agent-specific permission/auto-approve CLI flags (settings-driven)."""
-        from ntasker import settings  # noqa: PLC0415 -- lazy: avoid import cycle
-
-        if self.key == "claude":
-            mode = settings.claude_permission_mode()
-            if mode == "bypassPermissions":
-                return ["--dangerously-skip-permissions"]
-            if mode in ("auto", "plan"):
-                return ["--permission-mode", mode]
-            return []
-        if self.key == "opencode":
-            return ["--auto"] if settings.get_opencode_auto() else []
-        # pi: no documented permission flag yet.
-        return []
+        return self.permission_args_fn() if self.permission_args_fn else []
 
     @property
     def bin_setting_key(self) -> str:
@@ -183,81 +178,60 @@ class AgentSpec:
 # Registry
 # ---------------------------------------------------------------------------
 
-_HOME = Path.home()
+#: key -> spec, in plugin load order. Filled by :func:`ntasker.plugins.load_all`
+#: (every registered agent, enabled or not); read through the accessors below.
+AGENTS: dict[str, AgentSpec] = {}
 
-AGENTS: dict[str, AgentSpec] = {
-    "claude": AgentSpec(
-        key="claude",
-        label="Claude Code",
-        binary="claude",
-        icon="claude.webp",
-        home_env="NTASKER_CLAUDE_HOME",
-        default_home=_HOME / ".claude",
-        commands_subdir="commands",
-        skills_subdir="skills/ntasker",
-        command_template="task.md.template",
-        helper_ref_dir="~/.claude/commands",
-        seed_mode="positional",
-        session_flag="--session-id",
-        resume_flag="--resume",
-        system_prompt_flag="--append-system-prompt",
-    ),
-    "opencode": AgentSpec(
-        key="opencode",
-        label="OpenCode",
-        binary="opencode",
-        icon="opencode.svg",
-        home_env="OPENCODE_CONFIG_DIR",
-        default_home=_HOME / ".config" / "opencode",
-        commands_subdir="command",
-        skills_subdir="skills/ntasker",
-        command_template="task.generic.md.template",
-        helper_ref_dir="~/.config/opencode/command",
-        seed_mode="prompt-flag",
-        extra_strip_env=("OPENCODE", "OPENCODE_BIN_PATH"),
-    ),
-    "pi": AgentSpec(
-        key="pi",
-        label="Pi",
-        binary="pi",
-        icon="pi.svg",
-        home_env="PI_CODING_AGENT_DIR",
-        default_home=_HOME / ".pi" / "agent",
-        commands_subdir="prompts",
-        skills_subdir="skills/ntasker",
-        command_template="task.generic.md.template",
-        helper_ref_dir="~/.pi/agent/prompts",
-        seed_mode="positional",
-        system_prompt_flag="--append-system-prompt",
-        extra_strip_env=("PI_CODING_AGENT", "PI_SESSION_ID"),
-    ),
-}
 
-#: Ordered list of agent keys -- drives validation whitelists + UI order.
-AGENT_KEYS: tuple[str, ...] = tuple(AGENTS.keys())
+def _ensure_loaded() -> None:
+    """Register the agent plugins on first use (idempotent, lazy import)."""
+    from ntasker import plugins  # noqa: PLC0415 -- lazy: plugins import settings
 
-#: Fallback agent when a task has none and no ``default_agent`` is set.
-DEFAULT_AGENT = "claude"
+    plugins.load_all()
+
+
+def agent_keys() -> tuple[str, ...]:
+    """Keys of the *enabled* agents, in load order -- validation whitelist + UI order."""
+    _ensure_loaded()
+    from ntasker import plugins  # noqa: PLC0415
+
+    off = plugins.disabled_plugins()
+    return tuple(key for key in AGENTS if key not in off)
+
+
+def enabled_agents() -> list[AgentSpec]:
+    """Specs of the enabled agents, in load order."""
+    return [AGENTS[key] for key in agent_keys()]
+
+
+def default_agent_key() -> str:
+    """Fallback agent when a task has none and no ``default_agent`` is set.
+
+    ``claude`` while its plugin is enabled, else the first enabled agent.
+    """
+    keys = agent_keys()
+    return "claude" if "claude" in keys else keys[0]
 
 
 def get_spec(key: str | None) -> AgentSpec:
     """Return the :class:`AgentSpec` for ``key``, falling back to the default.
 
-    An unknown / ``None`` key degrades to :data:`DEFAULT_AGENT` rather than
-    raising, so a stale ``tasks.agent`` value can never break a run.
+    An unknown / ``None`` / disabled key degrades to :func:`default_agent_key`
+    rather than raising, so a stale ``tasks.agent`` value can never break a run.
     """
-    if key and key in AGENTS:
+    if key and key in agent_keys():
         return AGENTS[key]
-    return AGENTS[DEFAULT_AGENT]
+    return AGENTS[default_agent_key()]
 
 
 def resolve_agent_key(task_agent: str | None) -> str:
     """Resolve the effective agent key for a task.
 
     Precedence: the task's own ``agent`` -> the ``default_agent`` setting ->
-    :data:`DEFAULT_AGENT`. Unknown values are dropped at each step.
+    :func:`default_agent_key`. Unknown or disabled values are dropped at each
+    step.
     """
-    if task_agent and task_agent in AGENTS:
+    if task_agent and task_agent in agent_keys():
         return task_agent
     from ntasker.settings import get_default_agent  # noqa: PLC0415
 

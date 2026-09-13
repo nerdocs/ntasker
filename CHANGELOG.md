@@ -11,6 +11,7 @@ Queue panel shows one column per project -- one lane per concurrent run, each wi
 Set a dependency by dropping a task on the middle of another, on the board or across queue columns; undo via toast.
 Fixed `ntasker restart`: delegates to the installed service instead of squatting its port, and detaches otherwise.
 The settings restart button now waits for a genuinely new process (`/healthz` reports a `boot_id`) instead of any reply.
+Plugin architecture: agents (claude/opencode/pi) are switchable plugins; `plugins_disabled` setting, `/api/plugins`.
 Sidebar row menu gains **Board**: kanban narrowed to that project with all phases.
 Hidden projects moved to a table: `GET /api/projects` reports `hidden`, `PUT /api/projects/hidden` toggles it.
 Hidden projects now live in a `hidden_projects` table; `GET /api/projects` reports `hidden`, `PUT /api/projects/hidden` toggles it.

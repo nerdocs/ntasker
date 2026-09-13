@@ -170,6 +170,12 @@ header shows the family's open-task total. Families start folded; a folded head
 shows how many projects hide inside and lights up when one of them is part of
 the active filter. Which families are open is remembered in the browser.
 
+Every project row has a dots menu with **Hide**: the project leaves the sidebar
+(and the filter). Hidden names live in the `hidden_projects` setting, so all
+clients hide the same set; the **Hidden** switch above the list shows them dimmed
+again, with **Unhide** in the menu. The **Empty** switch reveals projects without
+open tasks the same way.
+
 ## Localization
 
 ntasker ships with English (default) and German UI strings. Translation

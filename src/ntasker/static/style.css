@@ -563,16 +563,45 @@ body {
     opacity: 0.85;
 }
 
-/* Sidebar "+" quick-add button on a project row: stays out of the way until
- * the row is hovered/focused, then offers a one-click new task for the project. */
-.project-add-btn {
-    line-height: 1;
+/* Sidebar project row actions ("+", quick run, dots menu). Overlaid on the
+ * row's right end, invisible until the row is hovered or focused, so the
+ * name keeps its full width. Stays up while the row menu is open. */
+.project-row {
+    position: relative;
+}
+.project-actions {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    padding-left: 0.5rem;
+    background-color: var(--tblr-bg-surface-secondary, var(--tblr-bg-surface));
     opacity: 0;
     transition: opacity 0.1s ease-in-out;
 }
-.form-check:hover .project-add-btn,
-.project-add-btn:focus-visible {
+.project-actions .btn {
+    line-height: 1;
+}
+.form-check:hover .project-actions,
+.form-check:focus-within .project-actions,
+.project-actions.is-open {
     opacity: 1;
+}
+/* Row menu: the dropdown hangs off the dots button, not the row. */
+.project-menu {
+    position: relative;
+}
+.project-menu .dropdown-menu {
+    right: 0;
+    left: auto;
+    top: 100%;
+    min-width: 0;
+}
+/* A hidden project shown via the "Hidden" switch: present but dimmed. */
+.project-hidden .form-check-label {
+    opacity: 0.5;
 }
 
 /* Active-projects chips: a flat badge per project with a live agent session.

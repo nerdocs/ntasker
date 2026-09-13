@@ -52,7 +52,8 @@
 {# family heads and indented children. `after_badge` is extra markup that #}
 {# follows the open-count badge (the folded-family pill on head rows).    #}
 {% macro project_row(p, after_badge='') %}
-            <label class="form-check d-flex align-items-center w-100 mb-1 flex-fill min-w-0"
+            <label class="form-check project-row d-flex align-items-center w-100 mb-1 flex-fill min-w-0"
+                   :class="{ 'project-hidden': isProjectHidden({{ p }}.name) }"
                    :title="{{ p }}.name === '__none__' ? $i18n('tasks_without_project') : {{ p }}.name">
                 <input type="checkbox" class="form-check-input"
                        :checked="projectFilter.includes({{ p }}.name)"
@@ -70,26 +71,47 @@
                 </span>
                 <span class="badge bg-secondary-lt ms-2" x-text="{{ p }}.open_count"></span>
                 {{ after_badge }}
-                {# Quick "+": open the new-task form pre-filled with this project. #}
-                {# Skipped for the cross-project sentinel (no project to seed). #}
+                {# Row actions -- quick "+", quick run, dots menu. Overlaid on the #}
+                {# row's right end while hovered/focused so they never eat name  #}
+                {# width. Skipped for the cross-project sentinel (nothing to seed). #}
                 <template x-if="{{ p }}.name !== '__none__'">
-                    <button type="button" class="btn btn-sm btn-ghost-secondary px-1 py-0 ms-1 project-add-btn"
-                            @click.stop.prevent="newTaskForProject({{ p }}.name)"
-                            :title="$i18n('new_task_for_project')"
-                            :aria-label="$i18n('new_task_for_project')">
-                        <i class="ti ti-plus"></i>
-                    </button>
-                </template>
-                {# Quick run: skip the form entirely -- create a throwaway task #}
-                {# in this project and open a live agent session with a blank    #}
-                {# prompt. Hidden when the default agent's CLI isn't launchable. #}
-                <template x-if="{{ p }}.name !== '__none__' && agentAvailable(defaultAgent)">
-                    <button type="button" class="btn btn-sm btn-ghost-secondary px-1 py-0 ms-1 project-add-btn"
-                            @click.stop.prevent="quickRunForProject({{ p }}.name)"
-                            :title="$i18n('quick_run_for_project') + ' (' + agentLabel(defaultAgent) + ')'"
-                            :aria-label="$i18n('quick_run_for_project')">
-                        <img :src="agentIconUrl({})" class="claude-logo-icon" alt="">
-                    </button>
+                    <span class="project-actions" :class="{ 'is-open': menuOpen }" x-data="{ menuOpen: false }">
+                        {# Quick "+": open the new-task form pre-filled with this project. #}
+                        <button type="button" class="btn btn-sm btn-ghost-secondary px-1 py-0"
+                                @click.stop.prevent="newTaskForProject({{ p }}.name)"
+                                :title="$i18n('new_task_for_project')"
+                                :aria-label="$i18n('new_task_for_project')">
+                            <i class="ti ti-plus"></i>
+                        </button>
+                        {# Quick run: skip the form entirely -- create a throwaway task #}
+                        {# in this project and open a live agent session with a blank    #}
+                        {# prompt. Hidden when the default agent's CLI isn't launchable. #}
+                        <template x-if="agentAvailable(defaultAgent)">
+                            <button type="button" class="btn btn-sm btn-ghost-secondary px-1 py-0"
+                                    @click.stop.prevent="quickRunForProject({{ p }}.name)"
+                                    :title="$i18n('quick_run_for_project') + ' (' + agentLabel(defaultAgent) + ')'"
+                                    :aria-label="$i18n('quick_run_for_project')">
+                                <img :src="agentIconUrl({})" class="claude-logo-icon" alt="">
+                            </button>
+                        </template>
+                        {# Dots menu: hide the project from the sidebar, or bring it #}
+                        {# back when the "Hidden" switch shows it.                   #}
+                        <span class="dropdown project-menu" @click.outside="menuOpen = false">
+                            <button type="button" class="btn btn-sm btn-ghost-secondary px-1 py-0"
+                                    @click.stop.prevent="menuOpen = !menuOpen"
+                                    :aria-expanded="menuOpen ? 'true' : 'false'"
+                                    :aria-label="$i18n('project_menu')">
+                                <i class="ti ti-dots-vertical"></i>
+                            </button>
+                            <div class="dropdown-menu dropdown-menu-end" :class="{ show: menuOpen }" x-cloak>
+                                <button type="button" class="dropdown-item"
+                                        @click.stop.prevent="menuOpen = false; setProjectHidden({{ p }}.name, !isProjectHidden({{ p }}.name))">
+                                    <i class="ti me-2" :class="isProjectHidden({{ p }}.name) ? 'ti-eye' : 'ti-eye-off'"></i>
+                                    <span x-text="isProjectHidden({{ p }}.name) ? $i18n('unhide_project') : $i18n('hide_project')"></span>
+                                </button>
+                            </div>
+                        </span>
+                    </span>
                 </template>
             </label>
 {% endmacro %}
@@ -129,15 +151,25 @@
             </button>
         </div>
 
-        {# Projects with no open tasks are hidden by default to cut clutter; #}
-        {# this switch (persisted) reveals them. Only shown when there is at #}
-        {# least one empty project, so it never appears as a dead control. #}
-        <label class="form-check form-switch mb-2" x-show="hasEmptyProjects" x-cloak>
-            <input class="form-check-input" type="checkbox"
-                   x-model="showEmptyProjects"
-                   @change="persistShowEmptyProjects()">
-            <span class="form-check-label small text-secondary">{{ t('Show empty projects') }}</span>
-        </label>
+        {# Two reveal switches: projects with no open tasks, and projects the #}
+        {# user hid via the row menu. Each only appears when it has something #}
+        {# to reveal, so neither ever shows up as a dead control.             #}
+        <div class="d-flex flex-wrap gap-3 mb-2" x-show="hasEmptyProjects || hiddenProjects.length" x-cloak>
+            <label class="form-check form-switch mb-0" x-show="hasEmptyProjects"
+                   title="{{ t('Show projects without open tasks') }}">
+                <input class="form-check-input" type="checkbox"
+                       x-model="showEmptyProjects"
+                       @change="persistShowEmptyProjects()">
+                <span class="form-check-label small text-secondary">{{ t('Empty') }}</span>
+            </label>
+            <label class="form-check form-switch mb-0" x-show="hiddenProjects.length"
+                   title="{{ t('Show hidden projects') }}">
+                <input class="form-check-input" type="checkbox"
+                       x-model="showHiddenProjects"
+                       @change="persistShowHiddenProjects()">
+                <span class="form-check-label small text-secondary">{{ t('Hidden') }}</span>
+            </label>
+        </div>
 
         <div class="text-muted small mb-2" x-show="projectFilter.length === 0 && tagFilter.length === 0">
             {{ t('No filter active -- all tasks visible.') }}
@@ -186,39 +218,6 @@
             {{ t('No project symlinks found.') }}
         </div>
 
-        {# Phases section -- always visible, fixed order (workflow) #}
-        <hr class="my-3">
-        <div class="d-flex align-items-center justify-content-between mb-2">
-            <span class="text-secondary text-uppercase small fw-bold">
-                <i class="ti ti-flag me-1"></i>
-                {{ t('Phases') }}
-            </span>
-            <button type="button" class="btn btn-sm btn-ghost-secondary px-2 py-0"
-                    x-show="phaseFilter.length > 0"
-                    @click="clearPhaseFilter()"
-                    :title="$i18n('clear_phase_filter')">
-                <i class="ti ti-x fs-3"></i>
-            </button>
-        </div>
-
-        <template x-for="ph in phases" :key="ph.value">
-            <label class="form-check d-flex align-items-center w-100 mb-1" :title="ph.label">
-                <input type="checkbox" class="form-check-input"
-                       :checked="phaseFilter.includes(ph.value)"
-                       @change="togglePhase(ph.value)">
-                <span class="form-check-label ms-2 d-flex align-items-center flex-fill">
-                    <i class="ti me-1"
-                       :class="{
-                           'ti-clock': ph.value === 'planned',
-                           'ti-progress': ph.value === 'wip',
-                           'ti-eye': ph.value === 'review',
-                       }"></i>
-                    <span x-text="ph.label"></span>
-                </span>
-                <span class="badge bg-secondary-lt ms-2" x-text="ph.open_count"></span>
-            </label>
-        </template>
-
         {# Priorities section -- always visible, fixed order (highest first) #}
         <hr class="my-3">
         <div class="d-flex align-items-center justify-content-between mb-2">
@@ -250,6 +249,39 @@
                     <span x-text="pr.label"></span>
                 </span>
                 <span class="badge bg-secondary-lt ms-2" x-text="pr.open_count"></span>
+            </label>
+        </template>
+
+        {# Phases section -- always visible, fixed order (workflow) #}
+        <hr class="my-3">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+            <span class="text-secondary text-uppercase small fw-bold">
+                <i class="ti ti-flag me-1"></i>
+                {{ t('Phases') }}
+            </span>
+            <button type="button" class="btn btn-sm btn-ghost-secondary px-2 py-0"
+                    x-show="phaseFilter.length > 0"
+                    @click="clearPhaseFilter()"
+                    :title="$i18n('clear_phase_filter')">
+                <i class="ti ti-x fs-3"></i>
+            </button>
+        </div>
+
+        <template x-for="ph in phases" :key="ph.value">
+            <label class="form-check d-flex align-items-center w-100 mb-1" :title="ph.label">
+                <input type="checkbox" class="form-check-input"
+                       :checked="phaseFilter.includes(ph.value)"
+                       @change="togglePhase(ph.value)">
+                <span class="form-check-label ms-2 d-flex align-items-center flex-fill">
+                    <i class="ti me-1"
+                       :class="{
+                           'ti-clock': ph.value === 'planned',
+                           'ti-progress': ph.value === 'wip',
+                           'ti-eye': ph.value === 'review',
+                       }"></i>
+                    <span x-text="ph.label"></span>
+                </span>
+                <span class="badge bg-secondary-lt ms-2" x-text="ph.open_count"></span>
             </label>
         </template>
 

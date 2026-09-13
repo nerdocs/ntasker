@@ -507,6 +507,9 @@ def build_js_strings() -> dict[str, str]:
         # Task row
         "click_to_copy_id": _("Click to copy: #{id}"),
         "filter_project": _("Filter: project {name}"),
+        "project_menu": _("Project menu"),
+        "hide_project": _("Hide"),
+        "unhide_project": _("Unhide"),
         "fold_project_family": _("Fold related projects"),
         "unfold_project_family": _("Show related projects"),
         "project_family_hint": _("{name} -- related projects, click to unfold"),

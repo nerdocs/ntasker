@@ -21,6 +21,7 @@ const LS_KEY_SORT_MODE = 'ntasker.sortMode';
 const LS_KEY_KANBAN_DONE_COLLAPSED = 'ntasker.kanbanDoneCollapsed';
 const LS_KEY_SHOW_EMPTY_PROJECTS = 'ntasker.showEmptyProjects';
 const LS_KEY_EXPANDED_PROJECT_GROUPS = 'ntasker.expandedProjectGroups';
+const LS_KEY_SHOW_HIDDEN_PROJECTS = 'ntasker.showHiddenProjects';
 // Sidebar tree: a project name is split at the first of these to find the
 // family it belongs to ("thrito-meta" -> "thrito").
 const PROJECT_GROUP_SEP = /[-_/]/;
@@ -171,6 +172,10 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // Sidebar: project families are folded by default; the ones the user
         // opened stay open across reloads.
         expandedProjectGroups: loadExpandedProjectGroups(),
+        // Projects hidden via the row menu. Server-side setting (shared by
+        // every client); the "Hidden" switch below reveals them, per browser.
+        hiddenProjects: [],
+        showHiddenProjects: localStorage.getItem(LS_KEY_SHOW_HIDDEN_PROJECTS) === '1',
         sidebarWidth: clampSidebarWidth(localStorage.getItem(LS_KEY_SIDEBAR_WIDTH)),
         // Drag&drop state. ``draggedTaskId`` is captured on dragstart so the
         // drop handler can identify the moving task without parsing dataTransfer
@@ -360,10 +365,39 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // A project currently in the filter stays visible even when empty, so
         // the user can always un-check it.
         get visibleProjects() {
-            if (this.showEmptyProjects) return this.projects;
             return this.projects.filter(p =>
-                p.open_count > 0 || this.projectFilter.includes(p.name)
+                (this.showHiddenProjects || !this.isProjectHidden(p.name)) &&
+                (this.showEmptyProjects || p.open_count > 0 || this.projectFilter.includes(p.name))
             );
+        },
+
+        isProjectHidden(name) {
+            return this.hiddenProjects.includes(name);
+        },
+
+        persistShowHiddenProjects() {
+            localStorage.setItem(LS_KEY_SHOW_HIDDEN_PROJECTS, this.showHiddenProjects ? '1' : '0');
+        },
+
+        // Hide / unhide a project from the sidebar. A hidden project also
+        // leaves the filter, so no invisible row keeps narrowing the list.
+        async setProjectHidden(name, hidden) {
+            const prev = this.hiddenProjects;
+            this.hiddenProjects = hidden
+                ? [...prev.filter(n => n !== name), name]
+                : prev.filter(n => n !== name);
+            if (hidden && this.projectFilter.includes(name)) this.toggleProject(name);
+            try {
+                const r = await fetch('/api/settings/hidden_projects', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ value: JSON.stringify(this.hiddenProjects) }),
+                });
+                if (!r.ok) throw new Error('save failed');
+            } catch (_e) {
+                this.hiddenProjects = prev;
+                this.showToast(_i('update_failed'), 'danger');
+            }
         },
 
         // Sidebar rows as a one-level tree. Projects sharing a name prefix
@@ -1290,8 +1324,13 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             // Projects are derived from tasks since v2.0: the response is a
             // plain list with __none__ first, then every name currently
             // referenced by at least one task.
-            const r = await fetch('/api/projects');
+            const [r, h] = await Promise.all([
+                fetch('/api/projects'),
+                fetch('/api/settings/hidden_projects'),
+            ]);
             this.projects = await r.json();
+            // 404 = never set -> nothing hidden.
+            this.hiddenProjects = h.ok ? JSON.parse((await h.json()).value) : [];
         },
 
         async loadTags() {

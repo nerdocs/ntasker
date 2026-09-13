@@ -106,6 +106,26 @@ def validate_update_command(value: str) -> str:
     return norm
 
 
+def validate_hidden_projects(value: str) -> str:
+    """Validator for the ``hidden_projects`` setting.
+
+    JSON array of project names the sidebar keeps out of sight (the row's
+    dots menu -> "Hide"; the "Hidden" switch brings them back). Kept in the
+    DB rather than the browser so every client hides the same set. Names
+    are trimmed and de-duplicated; empty strings are dropped.
+    """
+    import json  # noqa: PLC0415
+
+    try:
+        parsed = json.loads(value or "[]")
+    except ValueError as exc:
+        raise ValueError(_("hidden_projects must be a JSON array of project names.")) from exc
+    if not isinstance(parsed, list) or not all(isinstance(v, str) for v in parsed):
+        raise ValueError(_("hidden_projects must be a JSON array of project names."))
+    names = list(dict.fromkeys(v.strip() for v in parsed if v.strip()))
+    return json.dumps(names)
+
+
 def validate_projects_base(value: str) -> str:
     """Validator for the ``projects_base`` setting.
 
@@ -326,6 +346,7 @@ VALIDATORS: dict[str, Validator] = {
     "default_view": validate_default_view,
     "default_agent": validate_default_agent,
     "projects_base": validate_projects_base,
+    "hidden_projects": validate_hidden_projects,
     "no_project_dir": validate_no_project_dir,
     "claude_idle_seconds": validate_claude_idle_seconds,
     "claude_auto_mode": validate_claude_auto_mode,

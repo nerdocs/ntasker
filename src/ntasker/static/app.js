@@ -20,6 +20,10 @@ const LS_KEY_VIEW_MODE = 'ntasker.viewMode';
 const LS_KEY_SORT_MODE = 'ntasker.sortMode';
 const LS_KEY_KANBAN_DONE_COLLAPSED = 'ntasker.kanbanDoneCollapsed';
 const LS_KEY_SHOW_EMPTY_PROJECTS = 'ntasker.showEmptyProjects';
+const LS_KEY_EXPANDED_PROJECT_GROUPS = 'ntasker.expandedProjectGroups';
+// Sidebar tree: a project name is split at the first of these to find the
+// family it belongs to ("thrito-meta" -> "thrito").
+const PROJECT_GROUP_SEP = /[-_/]/;
 // Sidebar width in px, set by dragging the splitter next to the sidebar.
 const LS_KEY_SIDEBAR_WIDTH = 'ntasker.sidebarWidth';
 const SIDEBAR_WIDTH_DEFAULT = 280;
@@ -86,6 +90,22 @@ function _sameValue(a, b) {
 // Sentinel for cross-project tasks (matches PROJECT_NONE_SENTINEL in app.py).
 const PROJECT_NONE = '__none__';
 
+// Family prefix of a project name for the sidebar tree; '' when the name
+// has no usable prefix (sentinel, leading separator).
+function projectPrefix(name) {
+    if (name === PROJECT_NONE) return '';
+    return name.split(PROJECT_GROUP_SEP, 1)[0];
+}
+
+function loadExpandedProjectGroups() {
+    try {
+        const parsed = JSON.parse(localStorage.getItem(LS_KEY_EXPANDED_PROJECT_GROUPS) || '[]');
+        return Array.isArray(parsed) ? parsed.filter(v => typeof v === 'string') : [];
+    } catch {
+        return [];
+    }
+}
+
 // Valid phase values (matches PHASE_ORDER / PHASE_VALID in app.py).
 // Used to silently drop stale entries from localStorage.
 const PHASE_VALUES = ['planned', 'wip', 'review'];
@@ -148,6 +168,9 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // Sidebar: hide projects with 0 open tasks by default; this switch
         // (persisted) flips them back into view.
         showEmptyProjects: localStorage.getItem(LS_KEY_SHOW_EMPTY_PROJECTS) === '1',
+        // Sidebar: project families are folded by default; the ones the user
+        // opened stay open across reloads.
+        expandedProjectGroups: loadExpandedProjectGroups(),
         sidebarWidth: clampSidebarWidth(localStorage.getItem(LS_KEY_SIDEBAR_WIDTH)),
         // Drag&drop state. ``draggedTaskId`` is captured on dragstart so the
         // drop handler can identify the moving task without parsing dataTransfer
@@ -341,6 +364,54 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             return this.projects.filter(p =>
                 p.open_count > 0 || this.projectFilter.includes(p.name)
             );
+        },
+
+        // Sidebar rows as a one-level tree. Projects sharing a name prefix
+        // (up to the first "-", "_" or "/") fold under one family once at
+        // least two of them are visible; a lone "foo-bar" stays a flat row.
+        // If the prefix itself is a project ("thrito") that row heads the
+        // family, otherwise the family gets a label-only header. Children
+        // carry their name minus the prefix as `label`.
+        get projectTree() {
+            const families = new Map();
+            for (const p of this.visibleProjects) {
+                const prefix = projectPrefix(p.name);
+                if (!families.has(prefix)) families.set(prefix, []);
+                families.get(prefix).push(p);
+            }
+            const rows = [];
+            for (const p of this.visibleProjects) {
+                const prefix = projectPrefix(p.name);
+                const members = families.get(prefix);
+                if (!prefix || members.length < 2) {
+                    rows.push({ name: p.name, project: { ...p, label: p.name }, children: [] });
+                    continue;
+                }
+                if (members[0] !== p) continue;  // emitted with its family
+                const root = members.find(m => m.name === prefix);
+                const children = members
+                    .filter(m => m !== root)
+                    .map(m => ({ ...m, label: m.name.slice(prefix.length + 1) }));
+                rows.push({
+                    name: prefix,
+                    project: root ? { ...root, label: root.name } : null,
+                    children,
+                    expanded: this.expandedProjectGroups.includes(prefix),
+                    // Open tasks across the whole family, shown while folded.
+                    total: members.reduce((n, m) => n + m.open_count, 0),
+                    // Any child in the filter -- surfaced on the folded header.
+                    filtered: children.some(c => this.projectFilter.includes(c.name)),
+                });
+            }
+            return rows;
+        },
+
+        toggleProjectGroup(name) {
+            const idx = this.expandedProjectGroups.indexOf(name);
+            if (idx >= 0) this.expandedProjectGroups.splice(idx, 1);
+            else this.expandedProjectGroups.push(name);
+            localStorage.setItem(LS_KEY_EXPANDED_PROJECT_GROUPS,
+                JSON.stringify(this.expandedProjectGroups));
         },
 
         // True when at least one project has no open tasks -- gates the switch

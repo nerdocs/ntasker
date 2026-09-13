@@ -787,3 +787,77 @@ a.running-chip-link:hover {
 [data-bs-theme="dark"] .brand-lockup-dark {
     display: block;
 }
+
+/* Sidebar project tree. A family ("thrito", "thrito-meta", ...) folds behind
+ * a chevron; children hang off a thin rail so the eye reads the indent as
+ * "belongs to", not as a random offset. The chevron rotates on unfold. */
+.project-node {
+    /* Rows without a chevron line up with those that have one. */
+    padding-left: 1.25rem;
+    position: relative;
+}
+.project-fold {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1.25rem;
+    height: 1.5rem;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--tblr-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+.project-fold .ti {
+    transition: transform 0.15s ease-out;
+}
+.project-node.is-open > div > .project-fold .ti {
+    transform: rotate(90deg);
+}
+.project-fold:hover,
+.project-fold:focus-visible {
+    color: var(--tblr-body-color);
+}
+.project-family-head {
+    border: 0;
+    background: none;
+    padding: 0;
+    color: var(--tblr-secondary);
+    font-weight: var(--tblr-font-weight-medium);
+    line-height: 1.5;
+    cursor: pointer;
+}
+.project-family-head:hover,
+.project-family-head:focus-visible {
+    color: var(--tblr-body-color);
+}
+/* Folded head: count of hidden children. Turns primary when one of them
+ * sits in the active filter, so a filter never hides behind a closed fold. */
+.project-fold-summary {
+    font-size: 0.75rem;
+    line-height: 1;
+    padding: 0.15rem 0.4rem;
+    border-radius: 999px;
+    border: 1px dashed var(--tblr-border-color);
+    color: var(--tblr-secondary);
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+}
+.project-fold-summary.is-filtered {
+    border-style: solid;
+    border-color: var(--tblr-primary);
+    color: var(--tblr-primary);
+}
+.project-children {
+    margin-left: 0.55rem;
+    padding-left: 0.6rem;
+    border-left: 1px solid var(--tblr-border-color);
+}
+@media (prefers-reduced-motion: reduce) {
+    .project-fold .ti { transition: none; }
+}

@@ -160,6 +160,16 @@ there is no scan job and no DB-cached project list. Add or remove a
 folder/symlink in `projects_dir` and it shows up (or disappears) on the
 next reload.
 
+### Sidebar project tree
+
+Projects sharing a name prefix -- everything before the first `-`, `_` or
+`/` -- fold into one family in the sidebar (`thrito`, `thrito-meta`,
+`thrito-medication` -> `thrito`), as soon as two of them are visible. If the
+prefix is itself a project, that row heads the family; otherwise a label-only
+header shows the family's open-task total. Families start folded; a folded head
+shows how many projects hide inside and lights up when one of them is part of
+the active filter. Which families are open is remembered in the browser.
+
 ## Localization
 
 ntasker ships with English (default) and German UI strings. Translation

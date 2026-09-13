@@ -47,6 +47,62 @@
         });
     </script>
 </head>
+{# One sidebar project row. `p` is the Alpine expression yielding the #}
+{# project ({name, label, open_count}); the same markup serves flat rows, #}
+{# family heads and indented children. `after_badge` is extra markup that #}
+{# follows the open-count badge (the folded-family pill on head rows).    #}
+{% macro project_row(p, after_badge='') %}
+            <label class="form-check d-flex align-items-center w-100 mb-1 flex-fill min-w-0"
+                   :title="{{ p }}.name === '__none__' ? $i18n('tasks_without_project') : {{ p }}.name">
+                <input type="checkbox" class="form-check-input"
+                       :checked="projectFilter.includes({{ p }}.name)"
+                       @change="toggleProject({{ p }}.name)">
+                <span class="form-check-label ms-2 text-truncate flex-fill d-flex align-items-center">
+                    <template x-if="{{ p }}.name === '__none__'">
+                        <span>
+                            <i class="ti ti-asterisk me-1 text-secondary"></i>
+                            <span x-text="$i18n('cross_project')"></span>
+                        </span>
+                    </template>
+                    <template x-if="{{ p }}.name !== '__none__'">
+                        <span x-text="{{ p }}.label"></span>
+                    </template>
+                </span>
+                <span class="badge bg-secondary-lt ms-2" x-text="{{ p }}.open_count"></span>
+                {{ after_badge }}
+                {# Quick "+": open the new-task form pre-filled with this project. #}
+                {# Skipped for the cross-project sentinel (no project to seed). #}
+                <template x-if="{{ p }}.name !== '__none__'">
+                    <button type="button" class="btn btn-sm btn-ghost-secondary px-1 py-0 ms-1 project-add-btn"
+                            @click.stop.prevent="newTaskForProject({{ p }}.name)"
+                            :title="$i18n('new_task_for_project')"
+                            :aria-label="$i18n('new_task_for_project')">
+                        <i class="ti ti-plus"></i>
+                    </button>
+                </template>
+                {# Quick run: skip the form entirely -- create a throwaway task #}
+                {# in this project and open a live agent session with a blank    #}
+                {# prompt. Hidden when the default agent's CLI isn't launchable. #}
+                <template x-if="{{ p }}.name !== '__none__' && agentAvailable(defaultAgent)">
+                    <button type="button" class="btn btn-sm btn-ghost-secondary px-1 py-0 ms-1 project-add-btn"
+                            @click.stop.prevent="quickRunForProject({{ p }}.name)"
+                            :title="$i18n('quick_run_for_project') + ' (' + agentLabel(defaultAgent) + ')'"
+                            :aria-label="$i18n('quick_run_for_project')">
+                        <img :src="agentIconUrl({})" class="claude-logo-icon" alt="">
+                    </button>
+                </template>
+            </label>
+{% endmacro %}
+{# Folded-family pill on a head row: how many children hide behind the #}
+{# chevron; lit up when one of them is part of the active filter.       #}
+{% macro fold_pill() %}
+                <template x-if="row.children.length && !row.expanded">
+                    <span class="project-fold-summary ms-1" :class="{ 'is-filtered': row.filtered }"
+                          :title="$i18n('project_family_folded', {n: row.children.length, open: row.total})">
+                        <i class="ti ti-folder"></i><span x-text="row.children.length"></span>
+                    </span>
+                </template>
+{% endmacro %}
 <body>
 <div class="d-flex" style="min-height: 100vh;"
      x-data="tracker(window.__defaultView, window.__claudeOpenTerminal, window.__defaultAgent)"
@@ -87,47 +143,43 @@
             {{ t('No filter active -- all tasks visible.') }}
         </div>
 
-        {# Cross-project sentinel #}
-        <template x-for="proj in visibleProjects" :key="proj.name">
-            <label class="form-check d-flex align-items-center w-100 mb-1"
-                   :title="proj.name === '__none__' ? $i18n('tasks_without_project') : proj.name">
-                <input type="checkbox" class="form-check-input"
-                       :checked="projectFilter.includes(proj.name)"
-                       @change="toggleProject(proj.name)">
-                <span class="form-check-label ms-2 text-truncate flex-fill d-flex align-items-center">
-                    <template x-if="proj.name === '__none__'">
-                        <span>
-                            <i class="ti ti-asterisk me-1 text-secondary"></i>
-                            <span x-text="$i18n('cross_project')"></span>
-                        </span>
+        {# Project tree: flat rows, plus one family per shared name prefix #}
+        {# ("thrito", "thrito-meta", ...). A family folds behind a chevron; #}
+        {# its head is the prefix project itself when one exists, else a   #}
+        {# label-only header carrying the family's open-task total.        #}
+        <template x-for="row in projectTree" :key="row.name">
+            <div class="project-node" :class="{ 'is-open': row.expanded }">
+                <div class="d-flex align-items-center">
+                    <template x-if="row.children.length">
+                        <button type="button" class="project-fold"
+                                @click.stop.prevent="toggleProjectGroup(row.name)"
+                                :aria-expanded="row.expanded ? 'true' : 'false'"
+                                :title="row.expanded ? $i18n('fold_project_family') : $i18n('unfold_project_family')">
+                            <i class="ti ti-chevron-right"></i>
+                        </button>
                     </template>
-                    <template x-if="proj.name !== '__none__'">
-                        <span x-text="proj.name"></span>
+                    <template x-if="row.project">
+                        {{ project_row('row.project', fold_pill()) }}
                     </template>
-                </span>
-                <span class="badge bg-secondary-lt ms-2" x-text="proj.open_count"></span>
-                {# Quick "+": open the new-task form pre-filled with this project. #}
-                {# Skipped for the cross-project sentinel (no project to seed). #}
-                <template x-if="proj.name !== '__none__'">
-                    <button type="button" class="btn btn-sm btn-ghost-secondary px-1 py-0 ms-1 project-add-btn"
-                            @click.stop.prevent="newTaskForProject(proj.name)"
-                            :title="$i18n('new_task_for_project')"
-                            :aria-label="$i18n('new_task_for_project')">
-                        <i class="ti ti-plus"></i>
-                    </button>
+                    <template x-if="!row.project">
+                        <button type="button" class="project-family-head d-flex align-items-center w-100 mb-1 min-w-0"
+                                @click="toggleProjectGroup(row.name)"
+                                :title="$i18n('project_family_hint', {name: row.name})">
+                            <i class="ti ti-folder me-2 text-secondary"></i>
+                            <span class="text-truncate flex-fill text-start" x-text="row.name"></span>
+                            <span class="badge bg-secondary-lt ms-2" x-text="row.total"></span>
+                            {{ fold_pill() }}
+                        </button>
+                    </template>
+                </div>
+                <template x-if="row.children.length && row.expanded">
+                    <div class="project-children">
+                        <template x-for="child in row.children" :key="child.name">
+                            {{ project_row('child') }}
+                        </template>
+                    </div>
                 </template>
-                {# Quick run: skip the form entirely -- create a throwaway task #}
-                {# in this project and open a live agent session with a blank    #}
-                {# prompt. Hidden when the default agent's CLI isn't launchable. #}
-                <template x-if="proj.name !== '__none__' && agentAvailable(defaultAgent)">
-                    <button type="button" class="btn btn-sm btn-ghost-secondary px-1 py-0 ms-1 project-add-btn"
-                            @click.stop.prevent="quickRunForProject(proj.name)"
-                            :title="$i18n('quick_run_for_project') + ' (' + agentLabel(defaultAgent) + ')'"
-                            :aria-label="$i18n('quick_run_for_project')">
-                        <img :src="agentIconUrl({})" class="claude-logo-icon" alt="">
-                    </button>
-                </template>
-            </label>
+            </div>
         </template>
 
         <div class="text-muted small mt-3" x-show="projects.length <= 1">

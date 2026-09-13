@@ -345,31 +345,6 @@ body {
 .task-queue.task-queue-live {
     border-left-color: var(--tblr-indigo);
 }
-/* Per-task queue toggle on the board. Off it is a quiet ghost button like its
- * neighbours; on it fills with the queue's indigo, so a queued task is
- * recognisable from the button alone -- the same colour the panel and the
- * position badge use. */
-.btn-queue,
-.btn-queue:focus {
-    background-color: transparent;
-    border-color: transparent;
-    color: var(--tblr-secondary);
-}
-.btn-queue:hover {
-    background-color: rgba(var(--tblr-indigo-rgb), 0.12);
-    border-color: transparent;
-    color: var(--tblr-indigo);
-}
-.btn-queue.btn-queue-on,
-.btn-queue.btn-queue-on:focus {
-    background-color: rgba(var(--tblr-indigo-rgb), 0.14);
-    border-color: transparent;
-    color: var(--tblr-indigo);
-}
-.btn-queue.btn-queue-on:hover {
-    background-color: rgba(var(--tblr-indigo-rgb), 0.22);
-}
-
 /* Empty state = the drop target. It is the only thing that explains what the
  * queue does, so it stays put instead of appearing only mid-drag. */
 .task-queue-empty {
@@ -643,37 +618,6 @@ body {
 /* A hidden project shown via the "Hidden" switch: present but dimmed. */
 .project-hidden .form-check-label {
     opacity: 0.5;
-}
-
-/* Active-projects chips: a flat badge per project with a live agent session.
- * One session -> the whole chip is a link (.running-chip-link) into that
- * #/run/<id> session, the agent logo trailing the name. Several sessions ->
- * the name stays a label and each session's logo (.running-session-link) is
- * its own link. */
-.running-project-chip {
-    border: 0;
-    line-height: 1.2;
-}
-a.running-chip-link {
-    cursor: pointer;
-    color: inherit;
-    text-decoration: none;
-    transition: filter 0.1s ease;
-}
-a.running-chip-link:hover {
-    filter: brightness(0.95);
-}
-.running-session-link {
-    cursor: pointer;
-    opacity: 0.85;
-    transition: opacity 0.1s ease, filter 0.1s ease;
-}
-.running-session-link:hover {
-    opacity: 1;
-    filter: brightness(1.05);
-}
-.running-session-link-waiting {
-    opacity: 1;
 }
 
 /* "Run with Claude" button -- ghost (bare): the Claude logo tile it carries is

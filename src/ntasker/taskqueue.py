@@ -10,7 +10,9 @@ does exactly two things:
   irrelevant: the DB is the single source of truth);
 * **start** the head-most startable task of every project that has no live
   session yet -- one concurrent run per project, so several projects progress in
-  parallel while a single project stays strictly sequential.
+  parallel while a single project stays strictly sequential. With ``dir_locks``
+  on, a task also waits while another live session holds one of its directories
+  (see :mod:`ntasker.locks`), and with ``require_clean`` while one is git-dirty.
 
 Session ended but the task is still open (agent stopped, crashed, hit a blocker)?
 The entry is retired anyway and the queue moves on. A task that cannot finish
@@ -21,8 +23,9 @@ which tells the agent to hand the finished task to ``phase=review`` unprompted.
 That hand-off is what advances the queue -- closing stays the user's call, so a
 queue run leaves its results in the review column instead of closing them out.
 
-The whole thing is off until the user switches it on (``queue_enabled``), so
-dropping tasks in and sorting them never launches an agent by accident.
+The queue is the **only** way a session starts: every run button enqueues at
+the front of the task's project lane (:func:`enqueue_front`), and the worker
+picks it up on its next tick. ``queue_enabled`` (default on) is a pause switch.
 """
 
 from __future__ import annotations
@@ -31,10 +34,10 @@ import asyncio
 import contextlib
 import sqlite3
 
+from ntasker import locks
 from ntasker.agents import agent_keys, get_spec, resolve_agent_key
 from ntasker.claude_runner import (
     active_session_ids,
-    default_cwd_for_project,
     mark_wip,
     queue_seed_for_task,
     start_detached_session,
@@ -53,6 +56,13 @@ QUEUE_TICK = 2.0
 # queued task counts too. An id in here that no longer has a session means the
 # run is over -- that is what triggers the retire step.
 _running: set[int] = set()
+
+# Task ids to start as a *quick run* -- blank prompt plus the "name this task"
+# briefing (see :func:`~ntasker.claude_runner.quick_run_system_prompt`). Filled
+# by the sidebar quick run, consumed by :func:`tick` on start. In memory only:
+# API and worker share the process, and a quick task that has not started
+# before a restart simply runs as a normal queued run.
+QUICK: set[int] = set()
 
 
 def _bucket(project: str | None) -> str:
@@ -92,6 +102,16 @@ def set_queue(ids: list[int]) -> list[sqlite3.Row]:
         return conn.execute(
             "SELECT * FROM tasks WHERE queue_order IS NOT NULL ORDER BY queue_order ASC"
         ).fetchall()
+
+
+def enqueue_front(task_id: int) -> list[sqlite3.Row]:
+    """Put ``task_id`` at the head of the queue -- "run this next".
+
+    What every run button does: an already-queued id moves to the front, a new
+    one is inserted there. Same filtering as :func:`set_queue`.
+    """
+    rest = [int(r["id"]) for r in load_queue() if int(r["id"]) != task_id]
+    return set_queue([task_id, *rest])
 
 
 def _dequeue(conn: sqlite3.Connection, ids: list[int]) -> None:
@@ -154,9 +174,60 @@ def _startable(
     return blocked is None
 
 
+def _lock_reason(
+    row: sqlite3.Row, held: dict[str, int], require_clean: bool
+) -> dict | None:
+    """Why directory locks keep this task from starting, or ``None``.
+
+    ``{"reason": "lock", "project", "holder"}`` when another live task holds
+    one of its directories; ``{"reason": "dirty", "project", "holder": None}``
+    when ``require_clean`` is on and one of them has uncommitted changes. The
+    git check only runs for a task that passed every cheaper gate, so an idle
+    queue costs nothing. Shared by the start decision and :func:`skipped`.
+    """
+    own = row["project"]
+    names = [*([own] if own else []), *locks.parse(row["locks"])]
+    by_dir = {locks.resolve_dir(n): n for n in names}
+    hit = locks.conflict(set(by_dir), held, exclude=int(row["id"]))
+    if hit is not None:
+        return {"reason": "lock", "project": by_dir[hit[0]], "holder": hit[1]}
+    if require_clean:
+        dirty = locks.dirty_dir(set(by_dir))
+        if dirty is not None:
+            return {"reason": "dirty", "project": by_dir[dirty], "holder": None}
+    return None
+
+
+def skipped(rows: list[sqlite3.Row], live: set[int]) -> dict[int, dict]:
+    """Lock / dirty reasons per queued task id, for the queue panel.
+
+    Same rules as the start step: only while ``dir_locks`` is on, only for
+    tasks without a live session, and a lock conflict wins over the git check.
+    """
+    from ntasker.settings import get_dir_locks, get_require_clean  # noqa: PLC0415
+
+    if not rows or not get_dir_locks():
+        return {}
+    require_clean = get_require_clean()
+    with get_conn() as conn:
+        held = locks.held_dirs(conn, live)
+    out: dict[int, dict] = {}
+    for row in rows:
+        if int(row["id"]) in live:
+            continue
+        reason = _lock_reason(row, held, require_clean)
+        if reason is not None:
+            out[int(row["id"])] = reason
+    return out
+
+
 def tick() -> None:
     """One pass: retire what is finished, start what is next. Never raises."""
-    from ntasker.settings import get_queue_enabled  # noqa: PLC0415 -- lazy: avoid cycle
+    from ntasker.settings import (  # noqa: PLC0415 -- lazy: avoid cycle
+        get_dir_locks,
+        get_queue_enabled,
+        get_require_clean,
+    )
 
     enabled = get_queue_enabled()
     live = set(active_session_ids())
@@ -202,34 +273,43 @@ def tick() -> None:
     if not rows or not enabled:
         return
 
-    # Start: one task per free bucket, head-most first.
+    # Start: one task per free bucket, head-most first. With directory locks
+    # on, a task whose directories a live session holds (or, with
+    # ``require_clean``, whose directories are git-dirty) waits as well.
     runnable = _runnable_agents()
     default_agent = resolve_agent_key(None)
-    starts: list[tuple[int, str | None]] = []
+    dir_locks = get_dir_locks()
+    require_clean = dir_locks and get_require_clean()
+    starts: list[int] = []
     with get_conn() as conn:
         busy = _busy_buckets(live, conn)
+        held = locks.held_dirs(conn, live) if dir_locks else {}
         for row in rows:
             bucket = _bucket(row["project"])
             if bucket in busy or not _startable(row, conn, runnable, default_agent):
                 continue
-            starts.append((int(row["id"]), row["project"]))
+            if dir_locks:
+                if _lock_reason(row, held, require_clean) is not None:
+                    continue
+                for d in locks.task_dirs(row["project"], locks.parse(row["locks"])):
+                    held.setdefault(d, int(row["id"]))
+            starts.append(int(row["id"]))
             busy.add(bucket)
 
     # Spawning happens after the DB context is closed: it forks a process and
     # registers a PTY reader, neither of which should hold a connection open.
-    for task_id, project in starts:
+    for task_id in starts:
         task = _task_dict(task_id)
         if task is None:
             continue
+        quick = task_id in QUICK
         started = start_detached_session(
-            task_id,
-            default_cwd_for_project(project),
-            queue_seed_for_task(task),
+            task_id, None if quick else queue_seed_for_task(task), quick=quick
         )
         if started:
-            # Unconditionally, unlike the spawn path's own compact-seed-only
-            # call: retiring keys on ``phase=review``, so a task queued while it
-            # sits in review has to leave that phase the moment it starts.
+            QUICK.discard(task_id)
+            # Retiring keys on ``phase=review``, so a task queued while it sits
+            # in review has to leave that phase the moment it starts.
             mark_wip(task_id)
             _running.add(task_id)
 

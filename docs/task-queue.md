@@ -1,13 +1,15 @@
 # Task Queue
 
-The task queue is a worklist ntasker works through on its own: press a task's queue button, press **Start**, and
-ntasker hands each one to its agent, waits for it to finish, and moves on to the next.
+The task queue is a worklist ntasker works through on its own -- and **the only way an agent session starts**. Every
+run button (board row, kanban card, "Create + Run", the sidebar quick run) puts its task at the head of its project's
+lane; the queue worker hands it to its agent as soon as that lane is free, waits for it to finish, and moves on to the
+next.
 
 It sits in a panel above the board and is visible in both the list and the kanban view.
 
-Tasks get in through the **queue button** on each row / card -- the one next to the agent's run button. It toggles, so
-the same button takes a task back out. Dragging a card *into* the panel is not a thing, precisely so the button is the
-one obvious way in.
+Tasks get in through the **run button** on each row / card. Pressing it on an already-queued task moves it to the front
+of its lane; pressing it on a task with a live session just opens that session. The panel's `✕` takes an entry out.
+Dragging a card *into* the panel is not a thing, precisely so the run button is the one obvious way in.
 
 ## Rules in one paragraph
 
@@ -28,7 +30,7 @@ sideways rather than squeezing every lane flat.
 | Position bead (`1`, `2`, `3`) | Run order **within that project**. Indigo = running, orange = waiting for input. |
 | Lock badge on an entry | The queue is passing this one over -- see [Skipped entries](#skipped-entries). The tooltip names the blockers, including the project of any blocker from another column. |
 | **Running** / **Waiting for your input** | Links into that session's terminal. |
-| `✕` | Removes the entry. So does the task's own queue button, which toggles. |
+| `✕` | Removes the entry. |
 
 Queued tasks also carry an indigo `⧉ n` badge on their board row / kanban card -- the same within-project position, so
 you can see when a task runs without looking at the panel.
@@ -37,18 +39,22 @@ Dragging an entry **inside its column** reorders it. Across columns it is refuse
 the task's project, which belongs in the edit dialog. The one gesture that legitimately crosses columns is setting a
 dependency -- see below.
 
-## Start and pause
+## Pause and resume
 
-The switch is **off by default**: queueing tasks and sorting them never launches an agent by accident. It lives
-in the `queue_enabled` setting (not in `localStorage`), so the state survives a restart and every open browser tab
-agrees on it.
+The queue is **on by default** -- it is the only start path, so an off switch would mean no run ever starts. The header
+button pauses it (**Pause queue**) and resumes it (**Resume queue**); the state lives in the `queue_enabled` setting
+(not in `localStorage`), so it survives a restart and every open browser tab agrees on it.
 
-Pausing stops the queue from starting anything new. A task that is already running keeps going, and still leaves the
-queue when its session ends.
+Pausing stops the queue from starting anything new. Run buttons still queue tasks while paused; a task that is already
+running keeps going, and still leaves the queue when its session ends.
+
+With `claude_open_terminal` on (the default), a run button also opens the task's terminal as soon as the worker has
+started the session (the browser polls for up to 15 s). Off, it only toasts and the board stays on screen; the queue
+panel's **Running** link opens the terminal later.
 
 ## What a queued run is told
 
-A queued run does **not** use the `/task <id>` slash command. It gets a self-contained seed
+A run does **not** use the `/task <id>` slash command. It gets a self-contained seed
 (`claude_runner.queue_seed_for_task`) which inlines the task and tells the agent to hand it off when the work is done.
 
 > When the work is done, hand it off to review -- do not ask first, and do not close the task:
@@ -67,10 +73,12 @@ behind it -- it simply drops out and stays on the board with its phase intact.
 An entry stays queued but is passed over when
 
 * one of its dependencies is still open (the same guard the kanban drag applies), or
-* its agent's CLI is not installed.
+* its agent's CLI is not installed, or
+* another task's live session holds one of its directories (badge `#<holder>`), or
+* with `require_clean` on, one of its directories has uncommitted changes (badge `dirty: <project>`).
 
-The queue then looks at the next entry **in the same project** instead of stalling behind it. Both cases are labelled on
-the entry, so a queue that looks idle always says why.
+The last two are [directory locks](directory-locks.md). The queue then looks at the next entry **in the same project**
+instead of stalling behind it. Every case is labelled on the entry, so a queue that looks idle always says why.
 
 A session you start by hand also occupies its project: two agents in one working directory is exactly what the
 one-per-project rule exists to prevent. On a *running* queue, a hand-started session on a queued task is adopted -- it
@@ -122,9 +130,12 @@ ntasker queue list [--json]        # the queue in run order, plus running/paused
 ntasker queue add <id...> [--top]  # append (or prepend); an already-queued id moves
 ntasker queue rm <id...>           # take entries out
 ntasker queue clear                # empty it
-ntasker queue start [--host --port]
+ntasker queue start [--host --port]  # resume
 ntasker queue pause
 ```
+
+`ntasker queue add <id> --top` is the CLI's run button: it puts the task at the head of the queue, exactly like the
+button on the board. There is no separate `ntasker run`.
 
 The CLI only edits the queue and its switch; the running server's worker is what actually starts tasks. `queue start`
 therefore probes `/healthz` and points it out when nothing is listening -- otherwise the queue would sit there looking
@@ -137,9 +148,10 @@ id deserves to be told.
 
 | Route | What it does |
 |---|---|
-| `GET /api/queue` | `{enabled, items: [task, ...]}` -- full task rows in run order (a queued task may be filtered off the board and the panel still has to render it). |
+| `GET /api/queue` | `{enabled, items: [task, ...], skipped: {id: {reason, project, holder}}}` -- full task rows in run order (a queued task may be filtered off the board and the panel still has to render it); `skipped` holds the lock / dirty reasons. |
 | `PUT /api/queue` | Body `{ids: [...]}` replaces the whole queue, head first. Ids that are closed, archived or gone are dropped. An empty list clears the queue. |
-| `PUT /api/settings/queue_enabled` | `{"value": "true" \| "false"}` -- the start/pause switch. |
+| `POST /api/projects/quick-run` | Body `{project}` -- the sidebar quick run: creates a placeholder `wip` task, queues it at the head, marks it as a blank-prompt run. Returns the task. |
+| `PUT /api/settings/queue_enabled` | `{"value": "true" \| "false"}` -- the pause switch (default `true`). |
 
 Add, reorder and remove are all the same `PUT`: the frontend owns the ordered list and sends it after every edit, so
 there is no partial state to reconcile.
@@ -152,7 +164,7 @@ there is no partial state to reconcile.
 | `src/ntasker/claude_runner.py` | `queue_seed_for_task` (the seed) and `start_detached_session` (spawn with no browser attached). |
 | `src/ntasker/app.py` | `/api/queue` routes plus the worker's startup / shutdown hooks. |
 | `src/ntasker/cli.py` | `cmd_queue_*` -- the `ntasker queue` subcommands. |
-| `src/ntasker/static/app.js` | Panel state, `queueGroups` (the columns), `toggleQueued`, `_dropZone` + `setDependency`. |
+| `src/ntasker/static/app.js` | Panel state, `queueGroups` (the columns), `runNext` + `_openWhenLive`, `_dropZone` + `setDependency`. |
 | `src/ntasker/static/style.css` | `.task-queue*` (rail, columns) and `.drop-link` (the dependency drop). |
 
 A queued run lands in the same session registry as any other run, so it shows up in the busy indicators and the run-view

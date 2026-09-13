@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {"hooks": [{"type": "command", "command": "ntasker hook waiting"}]}
+    ],
+    "Notification": [
+      {"matcher": "permission_prompt", "hooks": [{"type": "command", "command": "ntasker hook waiting"}]}
+    ],
+    "UserPromptSubmit": [
+      {"hooks": [{"type": "command", "command": "ntasker hook running"}]}
+    ],
+    "PostToolUse": [
+      {"hooks": [{"type": "command", "command": "ntasker hook running"}]}
+    ]
+  }
+}

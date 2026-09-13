@@ -1,9 +1,10 @@
 # Run with an agent
 
-Every task row carries a run button showing **its agent's logo**. It opens a full-page view that embeds the **real
-interactive agent CLI** -- the genuine TUI, rendered in the browser by xterm.js. Not a headless wrapper: it is the
-same binary you run from a shell, so you get its full interactivity (it asks, you answer; you can steer it, interrupt
-it with `Ctrl-C`, type anything) and the *identical* context.
+Every task row carries a run button showing **its agent's logo**. It puts the task at the head of the
+[task queue](task-queue.md) -- the only path that starts a session -- and, once the queue worker has spawned it, opens
+a full-page view that embeds the **real interactive agent CLI** -- the genuine TUI, rendered in the browser by
+xterm.js. Not a headless wrapper: it is the same binary you run from a shell, so you get its full interactivity (it
+asks, you answer; you can steer it, interrupt it with `Ctrl-C`, type anything) and the *identical* context.
 
 ## Multiple agents (Claude · OpenCode · Pi)
 
@@ -29,25 +30,28 @@ card per agent (availability, run options, install status). `install-claude-asse
 `agent install claude`.
 
 The rest of this page describes the Claude session in detail; OpenCode and Pi work the same way (their CLI is spawned
-in the task's project directory, seeded with `/task <id>`), differing only in the per-agent options above.
+in the task's project directory with the same seed), differing only in the per-agent options above.
 
-**Compact seed (`compact_seed` setting, default off).** The default `/task <id>` seed makes the agent run the loader
-script first -- a full extra inference pass (generate the tool call, execute it, re-read its output) plus a couple
-thousand prompt tokens. Cheap on hosted models, painful on slow local ones (Ollama). With `compact_seed = true`
-(ENV `NTASKER_COMPACT_SEED`), ntasker instead inlines the task data -- id, title, description, project, tags, and the
-tracker hand-off rules -- directly into the initial prompt, and performs the loader's `phase=wip` move itself at
-spawn (same guards: archived / `status=done` tasks are never resurrected). The `/task` command stays installed and
-keeps working in manual terminal sessions; only ntasker-spawned runs bypass it. Trade-off: the compact seed skips the
-loader's project-mismatch warning and does not pull in ntasker's `SKILL.md` knowledge.
+**The seed.** A spawned run does not use the `/task <id>` slash command -- that would make the agent run the loader
+script first, a full extra inference pass plus a couple thousand prompt tokens. ntasker instead inlines the task data
+-- id, title, description, project, tags, plugin briefings, and the queue's hand-off rules -- directly into the
+initial prompt (`claude_runner.queue_seed_for_task`), and performs the loader's `phase=wip` move itself at spawn (same
+guards: archived / `status=done` tasks are never resurrected). The `/task` command stays installed and keeps working
+in manual terminal sessions.
 
 ## The flow
 
-1. Click the robot on a task (list or kanban view). A full-page terminal opens (with a **Back** button), and a
-   `claude` session starts in the task's project directory, seeded with the **`/task <id>`** slash command so the
-   task is loaded into the session straight away via ntasker's existing Claude Code integration.
+1. Click the agent logo on a task (list or kanban view). The task moves to the head of its project's queue lane; the
+   worker starts a `claude` session in the task's project directory as soon as the lane is free (within ~2 s when it
+   is), seeded with the task. With `claude_open_terminal` on, the full-page terminal (with a **Back** button) opens as
+   soon as the session is live; off, you get a toast and the board stays.
 2. Work interactively, exactly as in a terminal: read Claude's output, answer its questions, approve or deny its
    permission prompts, type follow-ups, `Ctrl-C` to interrupt.
 3. **Stop** terminates the session (kills the process group). **Back** returns to the list/kanban.
+
+Another agent already live in the same project? The run simply waits in the queue behind it -- the worker runs one
+session per project. The board damps such tasks and their tooltip says so. Work spanning several repos takes
+[directory locks](directory-locks.md) on the other projects, and waits for those directories too.
 
 ### Working directory
 
@@ -62,15 +66,16 @@ parks the session on its trust prompt, which looks like a run that never starts.
 Sometimes there is no task yet, just the urge to work in a project. Every project row in the sidebar carries the
 **default agent's logo** next to its `+`. One click:
 
-1. creates a task in that project (placeholder title, straight to `phase=wip`) so the session has something to hang on,
-2. opens the terminal and starts the agent in the project directory **with a completely empty prompt** -- no
-   `/task <id>` seed, nothing typed, caret in the terminal,
+1. creates a task in that project (placeholder title, straight to `phase=wip`) so the session has something to hang on
+   (`POST /api/projects/quick-run`), and puts it at the head of the queue,
+2. the worker starts the agent in the project directory **with a completely empty prompt** -- no seed, nothing typed --
+   and the terminal opens with the caret in it,
 3. briefs the agent -- via the *system* prompt, so the input line stays empty -- to give that placeholder task a real
    title itself as soon as your request is clear (`ntasker patch <id> --title "..."`).
 
-The button only shows when the default agent's CLI is launchable, and the "another agent is already live in this
-project" warning applies as for any run. Agents without a system-prompt flag (`AgentSpec.system_prompt_flag`, today
-Claude's `--append-system-prompt`) start the same way, they just never get the naming hint -- the task then keeps its
+The button only shows when the default agent's CLI is launchable; a project with a live session makes the quick run
+wait like any other run. Agents without a system-prompt flag (`AgentSpec.system_prompt_flag`, today Claude's
+`--append-system-prompt`) start the same way, they just never get the naming hint -- the task then keeps its
 placeholder title until you rename it.
 
 The setting **open terminal on run** does not apply here: a quick run always reveals and focuses the terminal, because
@@ -92,7 +97,7 @@ the recent output buffer to reconstruct the screen, then streams live again. Sev
 its own indicator.
 
 A page reload drops the *client* terminal but not the *server* session -- reopening reattaches. Stopping the session,
-or the `claude` process exiting on its own, ends it; the next robot click then starts a fresh one.
+or the `claude` process exiting on its own, ends it; the next run click queues a fresh one.
 
 **Marking the task done ends its session.** When a task's status flips to `done` (via the API -- which is also how
 the ntasker skill closes a task), ntasker terminates that task's session completely: the work is finished, so the
@@ -119,10 +124,15 @@ A task with a live session is highlighted in both the list and kanban so it stan
 * **Waiting for input** -- Claude is parked at a prompt and wants you (a question, a permission dialog). The card turns
   **amber** and the button becomes a pulsing **question mark**.
 
-The CLI emits no explicit "I have a question" signal, so ntasker infers *waiting* from **output silence**: while Claude
-works its TUI keeps repainting, so a terminal that has produced nothing for a while is blocked on input. The silence
-window is the **`claude_idle_seconds`** setting (default `8`, in seconds). There is no UI for it -- set it via CLI or
-the settings API:
+For Claude Code the signal is **explicit**: every spawned session carries ntasker's hooks (via `--settings`, see
+[directory-locks.md](directory-locks.md#hooks-claude-code)) -- `Stop` and a permission prompt report *waiting*, a
+submitted prompt or a finished tool call reports *running* -- so the badge flips the moment Claude stops or asks,
+not after a timeout.
+
+OpenCode, Pi, and a Claude session before its first hook has fired fall back to the **output-silence** heuristic:
+while an agent works its TUI keeps repainting, so a terminal that has produced nothing for a while is blocked on
+input. The silence window is the **`claude_idle_seconds`** setting (default `8`, in seconds). There is no UI for it --
+set it via CLI or the settings API:
 
 ```
 ntasker config set claude_idle_seconds 12          # CLI
@@ -141,13 +151,13 @@ included** -- gated solely by that loopback bind. Keep the bind local (never `0.
 
 * Backend (`src/ntasker/claude_runner.py`): spawns `claude` in a POSIX pseudo-terminal and bridges the PTY to a
   WebSocket (`/ws/claude/<task_id>`) -- output down (base64), keystrokes / resize / stop up. Sessions and a bounded
-  replay buffer live in a module-level registry. The `attach` message carries `cwd` / `seed` / `resume` / `quick`; only
-  the client that *starts* a session supplies them (they are ignored on reattach).
+  replay buffer live in a module-level registry. The `attach` message only **reattaches** a live session; without one
+  it answers `{"type":"error"}` -- fresh sessions are spawned by the queue worker (`start_detached_session`). The one
+  exception is `attach {resume: true}`, which reopens a finished task's stored session.
 * Frontend: xterm.js + the fit addon, vendored through the CDN/SRI asset manifest in `src/ntasker/assets.py` (no
-  build step), driving the terminal in `static/app.js`.
-* Endpoints: `GET /api/claude/status` (CLI + PTY available?), `GET /api/claude/sessions` (`{active, waiting}` task-id
-  lists, for the busy / waiting indicators), `GET /api/tasks/<id>/claude-run/defaults` (guessed cwd + `/task <id>`
-  seed).
+  build step), driving the terminal in `static/app.js` (`runNext` queues, `_openWhenLive` waits for the session).
+* Endpoints: `GET /api/claude/status` (CLI + PTY available?), `GET /api/claude/sessions` (`{active, waiting, projects,
+  titles}`, for the busy / waiting indicators and the run tabs), `POST /api/projects/quick-run`.
 
 ## Requirements
 

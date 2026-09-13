@@ -281,6 +281,12 @@
                 <option :value="name"></option>
             </template>
         </datalist>
+        {# Project names for the directory-lock chip inputs. #}
+        <datalist id="project-names">
+            <template x-for="name in projectNames" :key="name">
+                <option :value="name"></option>
+            </template>
+        </datalist>
 
         <div class="text-muted small mt-3" x-show="projects.length <= 1">
             {{ t('No project symlinks found.') }}
@@ -694,6 +700,31 @@
                                         </div>
                                     </div>
                                 </div>
+
+                                <div class="col-md-6">
+                                    <label class="form-label">{{ t('Also locks') }}</label>
+                                    {# Directory-lock chips: extra projects whose directories this run holds. #}
+                                    <div class="form-control d-flex flex-wrap align-items-center gap-1"
+                                         style="cursor: text; min-height: calc(1.5em + 0.75rem + 2px);"
+                                         @click="$refs.formLockInput.focus()">
+                                        <template x-for="(lk, idx) in form.locks" :key="lk">
+                                            <span class="badge bg-yellow-lt d-inline-flex align-items-center">
+                                                <i class="ti ti-lock me-1"></i><span x-text="lk"></span>
+                                                <button type="button" class="btn-close btn-close-sm ms-1"
+                                                        style="font-size: 0.6rem;"
+                                                        :aria-label="$i18n('remove_lock')"
+                                                        @click.stop="removeLockFrom('form', idx)"></button>
+                                            </span>
+                                        </template>
+                                        <input type="text" class="border-0 flex-fill p-0" list="project-names"
+                                               style="outline: none; background: transparent; min-width: 8rem;"
+                                               x-model="form.lockInput"
+                                               x-ref="formLockInput"
+                                               @keydown="onLockKeydown($event, 'form')"
+                                               @blur="commitLockInput('form')"
+                                               :placeholder="$i18n('locks_placeholder')">
+                                    </div>
+                                </div>
                                 <div class="col-12 text-end">
                                     <button type="submit" class="btn btn-sm btn-primary" :disabled="!form.title.trim()">
                                         <i class="ti ti-plus me-1 fs-3"></i>
@@ -714,73 +745,12 @@
                     </div>
                 </div>
 
-                {# Running-projects chips: one per project with a live agent #}
-                {# session, so you see at a glance what is running in parallel #}
-                {# right now. The common case (one session) makes the whole chip #}
-                {# a link straight into that #/run/<id> session, with the agent #}
-                {# logo after the name. The rare multi-session case keeps the name #}
-                {# as a label and turns each session's logo into its own link. #}
-                {# Auto-updates from the session poll; hidden when nothing runs. #}
-                {# x-show sits on a plain wrapper (no Bootstrap display utility) so #}
-                {# `.d-flex !important` cannot override Alpine's display:none. #}
-                <div x-show="runningProjectGroups.length > 0" x-cloak>
-                <div class="running-projects mb-3 d-flex flex-wrap align-items-center gap-2">
-                    <span class="text-secondary small text-uppercase fw-bold me-1">
-                        <i class="ti ti-player-play me-1"></i><span x-text="$i18n('running_now')"></span>
-                    </span>
-                    <template x-for="group in runningProjectGroups" :key="group.name">
-                        <span class="d-inline-flex">
-                            {# One session: the entire chip links into it; logo trails the name. #}
-                            <template x-if="group.sessions.length === 1">
-                                <a :href="'#/run/' + group.sessions[0].id"
-                                   class="badge running-project-chip running-chip-link d-inline-flex align-items-center"
-                                   :class="group.waiting ? 'bg-orange-lt' : 'bg-azure-lt'"
-                                   :title="agentLabel(group.sessions[0].agent) + ' #' + group.sessions[0].id + ' — ' + $i18n('claude_switch_session')">
-                                    <span class="status-dot status-dot-animated me-2"
-                                          :class="group.waiting ? 'bg-orange' : 'bg-azure'"></span>
-                                    <template x-if="group.name === '__none__'">
-                                        <span><i class="ti ti-asterisk me-1"></i><span x-text="$i18n('cross_project')"></span></span>
-                                    </template>
-                                    <template x-if="group.name !== '__none__'">
-                                        <span x-text="group.name"></span>
-                                    </template>
-                                    <img :src="agentIconUrl({agent: group.sessions[0].agent})" class="claude-logo-icon ms-2" alt="">
-                                </a>
-                            </template>
-                            {# Several sessions (should not happen -- warned): group them, #}
-                            {# name as a label, one logo-link per session after the name. #}
-                            <template x-if="group.sessions.length > 1">
-                                <span class="badge running-project-chip d-inline-flex align-items-center"
-                                      :class="group.waiting ? 'bg-orange-lt' : 'bg-azure-lt'"
-                                      :title="group.name === '__none__' ? $i18n('cross_project') : group.name">
-                                    <span class="status-dot status-dot-animated me-2"
-                                          :class="group.waiting ? 'bg-orange' : 'bg-azure'"></span>
-                                    <template x-if="group.name === '__none__'">
-                                        <span><i class="ti ti-asterisk me-1"></i><span x-text="$i18n('cross_project')"></span></span>
-                                    </template>
-                                    <template x-if="group.name !== '__none__'">
-                                        <span x-text="group.name"></span>
-                                    </template>
-                                    <template x-for="s in group.sessions" :key="s.id">
-                                        <a :href="'#/run/' + s.id"
-                                           class="running-session-link d-inline-flex align-items-center ms-2"
-                                           :class="{'running-session-link-waiting': s.waiting}"
-                                           :title="agentLabel(s.agent) + ' #' + s.id + ' — ' + $i18n('claude_switch_session')">
-                                            <img :src="agentIconUrl({agent: s.agent})" class="claude-logo-icon" alt="">
-                                        </a>
-                                    </template>
-                                </span>
-                            </template>
-                        </span>
-                    </template>
-                </div>
-                </div>
-
                 {# ===== Task queue ===== #}
-                {# The auto-run worklist. Tasks come in through the queue button #}
-                {# on each row / card; press Start and ntasker works them through: #}
-                {# one running task per project, next one up as soon as the #}
-                {# previous session ends. Dragging inside the panel reorders it. #}
+                {# The auto-run worklist -- and the only way a session starts. #}
+                {# Every run button puts its task at the head of this queue; #}
+                {# ntasker works it through: one running task per project, next #}
+                {# one up as soon as the previous session ends. Dragging inside #}
+                {# the panel reorders it; the header button pauses / resumes. #}
                 {# The rail down the left side marches while the queue runs and #}
                 {# freezes when it is paused -- that is the state indicator. #}
                 <div class="task-queue mb-3"
@@ -794,9 +764,8 @@
                               x-text="queue.length"></span>
                         <span class="text-muted small text-truncate flex-fill"
                               x-show="queue.length" x-cloak x-text="queueHint()"></span>
-                        {# Solid only when pressing it would actually do something: #}
-                        {# with an empty queue there is nothing to start, so the #}
-                        {# control stays quiet instead of shouting a dead CTA. #}
+                        {# Solid only when paused with work waiting -- that is the #}
+                        {# one state where pressing it changes something visible. #}
                         <button type="button" class="btn btn-sm ms-auto"
                                 :class="(!queueEnabled && queue.length) ? 'btn-primary' : 'btn-ghost-secondary'"
                                 :disabled="!queue.length && !queueEnabled"
@@ -808,8 +777,7 @@
                         </button>
                     </div>
 
-                    {# The empty state is the only place that says what the queue #}
-                    {# is for and how tasks get in, so it stays visible. #}
+                    {# The empty state says how tasks get in, so it stays visible. #}
                     <div class="task-queue-empty" x-show="queue.length === 0"
                          x-text="$i18n('queue_empty')"></div>
 
@@ -1083,6 +1051,12 @@
                                                     <i class="ti ti-stack-2 me-1"></i><span x-text="queuePosition(task.id)"></span>
                                                 </span>
                                             </template>
+                                            {# Lock badge -- extra project directories this run holds. #}
+                                            <template x-if="task.locks && task.locks.length">
+                                                <span class="badge bg-yellow-lt" :title="lockBadgeTitle(task)">
+                                                    <i class="ti ti-lock me-1"></i><span x-text="task.locks.length"></span>
+                                                </span>
+                                            </template>
                                         </div>
 
                                         <div x-show="task._expanded && task.description"
@@ -1112,7 +1086,7 @@
                                                 <span class="d-inline-flex align-items-center">
                                                     <template x-if="taskRunPhase(task.id) === 'running'"><span class="spinner-border spinner-border-sm text-secondary me-1"></span></template>
                                                     <template x-if="taskRunPhase(task.id) === 'waiting'"><i class="ti ti-help fs-3 text-orange me-1"></i></template>
-                                                    <button class="btn btn-sm btn-claude" @click="openClaudeRun(task)"
+                                                    <button class="btn btn-sm btn-claude" @click="runNext(task)"
                                                             :class="{'btn-claude-waiting': taskRunPhase(task.id) === 'waiting'}"
                                                             :aria-label="runButtonTitle(task)"
                                                             :title="runButtonTitle(task)">
@@ -1127,20 +1101,6 @@
                                                       :title="agentLabel(taskAgentKey(task)) + ' — ' + $i18n('agent_not_installed_hint')">
                                                     <img :src="agentIconUrl(task)" class="claude-logo-icon agent-logo-disabled" alt="">
                                                 </span>
-                                            </template>
-                                            {# Queue toggle -- hand the task to the auto-run queue, or take #}
-                                            {# it back out. Same gate as the run button next to it: no point #}
-                                            {# queueing work for an agent that cannot start. #}
-                                            <template x-if="canQueue(task)">
-                                                <button class="btn btn-sm btn-queue"
-                                                        :class="{'btn-queue-on': queuePosition(task.id)}"
-                                                        @click.stop="toggleQueued(task)"
-                                                        :aria-label="queuePosition(task.id) ? $i18n('queue_remove') : $i18n('queue_add')"
-                                                        :title="queuePosition(task.id)
-                                                            ? $i18n('queue_remove') + ' (' + $i18n('queue_position', {n: queuePosition(task.id)}) + ')'
-                                                            : $i18n('queue_add')">
-                                                    <i class="ti ti-stack-2 fs-3"></i>
-                                                </button>
                                             </template>
                                             {# Resume: reopen a finished task's stored Claude session. #}
                                             <template x-if="canResume(task)">
@@ -1268,7 +1228,7 @@
                                                         <template x-if="taskRunPhase(task.id) === 'running'"><span class="spinner-border spinner-border-sm text-secondary me-1"></span></template>
                                                         <template x-if="taskRunPhase(task.id) === 'waiting'"><i class="ti ti-help fs-3 text-orange me-1"></i></template>
                                                         <button class="btn btn-sm btn-claude px-1 py-0"
-                                                                @click.stop="openClaudeRun(task)"
+                                                                @click.stop="runNext(task)"
                                                                 :class="{'btn-claude-waiting': taskRunPhase(task.id) === 'waiting'}"
                                                                 :aria-label="runButtonTitle(task)"
                                                                 :title="runButtonTitle(task)">
@@ -1283,18 +1243,6 @@
                                                           :title="agentLabel(taskAgentKey(task)) + ' — ' + $i18n('agent_not_installed_hint')">
                                                         <img :src="agentIconUrl(task)" class="claude-logo-icon agent-logo-disabled" alt="">
                                                     </span>
-                                                </template>
-                                                {# Queue toggle -- see the list view for the rationale. #}
-                                                <template x-if="canQueue(task)">
-                                                    <button class="btn btn-sm btn-queue px-1 py-0"
-                                                            :class="{'btn-queue-on': queuePosition(task.id)}"
-                                                            @click.stop="toggleQueued(task)"
-                                                            :aria-label="queuePosition(task.id) ? $i18n('queue_remove') : $i18n('queue_add')"
-                                                            :title="queuePosition(task.id)
-                                                                ? $i18n('queue_remove') + ' (' + $i18n('queue_position', {n: queuePosition(task.id)}) + ')'
-                                                                : $i18n('queue_add')">
-                                                        <i class="ti ti-stack-2 fs-3"></i>
-                                                    </button>
                                                 </template>
                                                 {# Resume: reopen a finished task's stored Claude session. #}
                                                 <template x-if="canResume(task)">
@@ -1361,6 +1309,11 @@
                                                     <span class="badge bg-indigo-lt"
                                                           :title="$i18n('queue_badge', {n: queuePosition(task.id)})">
                                                         <i class="ti ti-stack-2 me-1"></i><span x-text="queuePosition(task.id)"></span>
+                                                    </span>
+                                                </template>
+                                                <template x-if="task.locks && task.locks.length">
+                                                    <span class="badge bg-yellow-lt" :title="lockBadgeTitle(task)">
+                                                        <i class="ti ti-lock me-1"></i><span x-text="task.locks.length"></span>
                                                     </span>
                                                 </template>
 
@@ -1639,6 +1592,30 @@
                                     </button>
                                 </template>
                             </div>
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">{{ t('Also locks') }}</label>
+                        {# Directory-lock chips: extra projects whose directories this run holds. #}
+                        <div class="form-control d-flex flex-wrap align-items-center gap-1"
+                             style="cursor: text; min-height: calc(1.5em + 0.75rem + 2px);"
+                             @click="$refs.editLockInput.focus()">
+                            <template x-for="(lk, idx) in editing.locks" :key="lk">
+                                <span class="badge bg-yellow-lt d-inline-flex align-items-center">
+                                    <i class="ti ti-lock me-1"></i><span x-text="lk"></span>
+                                    <button type="button" class="btn-close btn-close-sm ms-1"
+                                            style="font-size: 0.6rem;"
+                                            :aria-label="$i18n('remove_lock')"
+                                            @click.stop="removeLockFrom('edit', idx)"></button>
+                                </span>
+                            </template>
+                            <input type="text" class="border-0 flex-fill p-0" list="project-names"
+                                   style="outline: none; background: transparent; min-width: 8rem;"
+                                   x-model="editing._lockInput"
+                                   x-ref="editLockInput"
+                                   @keydown="onLockKeydown($event, 'edit')"
+                                   @blur="commitLockInput('edit')"
+                                   :placeholder="$i18n('locks_placeholder')">
                         </div>
                     </div>
                 </div>

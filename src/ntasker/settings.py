@@ -258,25 +258,18 @@ def validate_default_agent(value: str) -> str:
     )
 
 
-def validate_compact_seed(value: str) -> str:
-    """Validator for the ``compact_seed`` boolean setting.
+def validate_on_off(value: str) -> str:
+    """Validator for the ``on``/``off`` switches (``dir_locks``, ``require_clean``).
 
-    When truthy, a spawned session is seeded with the task data inlined into
-    the initial prompt instead of the ``/task <id>`` slash command. That skips
-    the loader tool roundtrip (one full extra inference pass) and shrinks the
-    prompt -- a large win for slow local models (Ollama etc.). ntasker then
-    moves the task to ``phase=wip`` itself at spawn, since the loader that
-    normally does it never runs. Normalizes truthy/falsy spellings to
-    ``"true"`` / ``"false"``; rejects anything else.
+    Normalizes every truthy/falsy spelling to ``"on"`` / ``"off"`` -- the
+    spelling the /settings radios use -- and rejects anything else.
     """
     norm = (value or "").strip().lower()
     if norm in _TRUE_STRINGS:
-        return "true"
+        return "on"
     if norm in _FALSE_STRINGS:
-        return "false"
-    raise ValueError(
-        _("compact_seed must be a yes/no value (got {value!r}).").format(value=value)
-    )
+        return "off"
+    raise ValueError(_("Expected on or off (got {value!r}).").format(value=value))
 
 
 def validate_plugins_disabled(value: str) -> str:
@@ -316,12 +309,12 @@ def validate_plugins_disabled(value: str) -> str:
 def validate_queue_enabled(value: str) -> str:
     """Validator for the ``queue_enabled`` boolean setting.
 
-    The task queue's play/pause switch. When truthy the queue worker starts the
-    next queued task as soon as its project is free; when falsy (the default)
-    queued tasks just sit there, so dropping tasks in and sorting them never
-    launches an agent by accident. Stored in the DB rather than the browser so
-    the state survives a restart and every open tab agrees on it. Normalizes
-    truthy/falsy spellings to ``"true"`` / ``"false"``; rejects anything else.
+    The task queue's pause switch. When truthy (the default) the queue worker
+    starts the next queued task as soon as its project is free; when falsy
+    queued tasks just sit there -- nothing new starts until the queue is
+    resumed. Stored in the DB rather than the browser so the state survives a
+    restart and every open tab agrees on it. Normalizes truthy/falsy spellings
+    to ``"true"`` / ``"false"``; rejects anything else.
     """
     norm = (value or "").strip().lower()
     if norm in _TRUE_STRINGS:
@@ -344,8 +337,9 @@ VALIDATORS: dict[str, Validator] = {
     "no_project_dir": validate_no_project_dir,
     "claude_idle_seconds": validate_claude_idle_seconds,
     "claude_open_terminal": validate_claude_open_terminal,
-    "compact_seed": validate_compact_seed,
     "queue_enabled": validate_queue_enabled,
+    "dir_locks": validate_on_off,
+    "require_clean": validate_on_off,
     "plugins_disabled": validate_plugins_disabled,
     "update_command": validate_update_command,
 }
@@ -394,12 +388,6 @@ HINTS: dict[str, object] = {
         "without an explicit agent): claude, opencode or pi. ENV: "
         "NTASKER_DEFAULT_AGENT."
     ),
-    "compact_seed": _lazy(
-        "Seed spawned sessions with the task data inlined into the initial "
-        "prompt instead of the /task command. Skips the loader roundtrip -- "
-        "much faster time-to-first-response with slow local models (Ollama). "
-        "Yes/no, default no. ENV: NTASKER_COMPACT_SEED."
-    ),
     "claude_open_terminal": _lazy(
         "When starting a Claude session (Create + Run or the per-task run "
         "button), open the terminal immediately (true, default) or start it in "
@@ -413,10 +401,20 @@ HINTS: dict[str, object] = {
         "false positives; higher = fewer false positives but slower. Default 8."
     ),
     "queue_enabled": _lazy(
-        "Whether the task queue works through its tasks on its own. Off by "
-        "default -- queued tasks wait until you press Start on the queue panel. "
-        "One task runs per project at a time; a task leaves the queue as soon "
-        "as its session ends. ENV: NTASKER_QUEUE_ENABLED."
+        "Pause switch for the task queue -- the only way a session starts. On "
+        "by default; off pauses it: run buttons still queue tasks, but nothing "
+        "new starts until you press Resume on the queue panel. One task runs "
+        "per project at a time. ENV: NTASKER_QUEUE_ENABLED."
+    ),
+    "dir_locks": _lazy(
+        "Directory locks: a queued task waits while another live session holds "
+        "one of its directories (its own project's or a locked project's), and "
+        "Claude Code sessions refuse edits inside other projects' directories "
+        "they do not hold. Off: one task per project lane only."
+    ),
+    "require_clean": _lazy(
+        "Only start a queued task when every directory it holds is git-clean "
+        "(no uncommitted changes). Needs directory locks on."
     ),
     "sidebar_sections": _lazy(
         "Which sidebar sections are folded -- written by the fold buttons in the "
@@ -454,11 +452,21 @@ FIELD_CHOICES: dict[str, list[tuple[str, object, object]]] = {
         ("list", _lazy("List"), _lazy("Classic task list.")),
         ("kanban", _lazy("Kanban board"), _lazy("Four-column board.")),
     ],
+    "dir_locks": [
+        ("on", _lazy("On"), None),
+        ("off", _lazy("Off"), None),
+    ],
+    "require_clean": [
+        ("on", _lazy("On"), None),
+        ("off", _lazy("Off"), None),
+    ],
 }
 
 FIELD_DEFAULTS: dict[str, str] = {
     "assets_mode": "auto",
     "default_view": DEFAULT_VIEW_FALLBACK,
+    "dir_locks": "on",
+    "require_clean": "off",
 }
 
 
@@ -640,29 +648,36 @@ def get_default_agent() -> str:
     return norm if norm in agent_keys() else default_agent_key()
 
 
-def get_compact_seed() -> bool:
-    """Whether spawned sessions get the compact inline seed. Defaults to False.
-
-    Honours the ``NTASKER_COMPACT_SEED`` ENV override. See
-    :func:`validate_compact_seed` and
-    :func:`ntasker.claude_runner.seed_command_for_task`.
-    """
-    raw = get_setting("compact_seed", env_var="NTASKER_COMPACT_SEED")
-    if raw is None:
-        return False
-    return raw.strip().lower() in _TRUE_STRINGS
-
-
 def get_queue_enabled() -> bool:
-    """Whether the task queue starts queued tasks on its own. Defaults to False.
+    """Whether the task queue starts queued tasks on its own. Defaults to True.
 
     Honours the ``NTASKER_QUEUE_ENABLED`` ENV override. See
     :func:`validate_queue_enabled` and :mod:`ntasker.taskqueue`.
     """
     raw = get_setting("queue_enabled", env_var="NTASKER_QUEUE_ENABLED")
     if raw is None:
-        return False
+        return True
     return raw.strip().lower() in _TRUE_STRINGS
+
+
+def _get_on_off(key: str, default: bool) -> bool:
+    raw = get_setting(key, env_var=f"NTASKER_{key.upper()}")
+    if raw is None:
+        return default
+    return raw.strip().lower() in _TRUE_STRINGS
+
+
+def get_dir_locks() -> bool:
+    """Whether the queue honours directory locks (default on). ENV ``NTASKER_DIR_LOCKS``."""
+    return _get_on_off("dir_locks", True)
+
+
+def get_require_clean() -> bool:
+    """Whether a queued task needs git-clean directories to start (default off).
+
+    ENV ``NTASKER_REQUIRE_CLEAN``. Only consulted while :func:`get_dir_locks`.
+    """
+    return _get_on_off("require_clean", False)
 
 
 def get_sidebar_sections() -> dict[str, bool]:

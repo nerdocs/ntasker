@@ -109,6 +109,11 @@ class AgentSpec:
     Used to brief a session without putting anything in the *user* prompt --
     see the quick run in :mod:`ntasker.claude_runner`."""
 
+    settings_flag: str | None = None
+    """CLI flag that loads an extra settings file for the session
+    (``--settings``), or ``None``. ntasker passes its hooks file through it --
+    see :func:`ntasker.claude_assets.hooks_settings_path`."""
+
     extra_strip_env: tuple[str, ...] = field(default_factory=tuple)
     """Agent-specific nesting markers, merged with :data:`_BASE_STRIP_ENV`."""
 
@@ -142,6 +147,7 @@ class AgentSpec:
         session_id: str | None = None,
         resume_id: str | None = None,
         system_prompt: str | None = None,
+        settings_path: str | None = None,
     ) -> list[str]:
         """Full argv for an interactive session, incl. permission flags + seed.
 
@@ -155,10 +161,13 @@ class AgentSpec:
         ``session_id`` forces a fresh session's id (:attr:`session_flag`) so
         ntasker can persist it and resume the run later. ``system_prompt`` is
         appended to the agent's system prompt (:attr:`system_prompt_flag`) --
-        a briefing that leaves the user prompt untouched. All three are no-ops
-        on an agent that lacks the corresponding flag.
+        a briefing that leaves the user prompt untouched. ``settings_path`` is
+        an extra settings file (:attr:`settings_flag`) -- ntasker's hooks. All
+        four are no-ops on an agent that lacks the corresponding flag.
         """
         args = [resolve_binary(self) or self.binary, *self.permission_args()]
+        if settings_path and self.settings_flag:
+            args.extend([self.settings_flag, settings_path])
         if resume_id and self.resume_flag:
             args.extend([self.resume_flag, resume_id])
             return args  # resuming replays the conversation -- no seed

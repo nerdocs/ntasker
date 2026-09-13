@@ -4,6 +4,12 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [Unreleased]
+Run buttons and the sidebar quick run now enqueue at the front; the queue is the only way to start a session.
+Directory locks: `tasks.locks`, cross-repo start condition, `ntasker lock add|rm|list`, `dir_locks`/`require_clean`.
+Claude Code hooks via `--settings`: explicit waiting/running state and a PreToolUse guard for unlocked dirs.
+Removed: per-task queue button, "Active projects" bar, `compact_seed` setting, `claude-run/defaults` endpoint.
+
 ## [3.0.0] — 2026-09-13
 Plugin architecture with switchable agents and features; the drfoehn fork's workspace and task context merged.
 Task queue: a queue button per task hands it to ntasker, which runs the queue unattended, one task per project.

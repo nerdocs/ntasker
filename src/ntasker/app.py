@@ -33,20 +33,19 @@ from ntasker.assets import (
     get_asset_url,
     get_sri,
 )
-from ntasker.agents import agent_keys, enabled_agents, resolve_agent_key, resolve_home
+from ntasker.agents import agent_keys, enabled_agents, resolve_home
 from ntasker.claude_assets import scan_status
 from ntasker.claude_runner import (
     active_session_ids,
-    default_cwd_for_project,
     projects_base_dir,
-    seed_command_for_task,
     session_states,
+    set_hook_state,
     stop_session,
     terminal_available,
 )
 from ntasker.claude_runner import serve as claude_serve
 from ntasker.projects import discover_claude_projects
-from ntasker import plugins, taskqueue
+from ntasker import locks, plugins, taskqueue
 from ntasker import db as _db_module
 from ntasker.db import (
     DepError,
@@ -90,6 +89,7 @@ from ntasker.settings import (
     get_claude_open_terminal,
     get_default_agent,
     get_default_view,
+    get_dir_locks,
     get_queue_enabled,
     get_sidebar_sections,
     get_setting_raw,
@@ -207,6 +207,9 @@ class TaskCreate(BaseModel):
     # dicts here; the owning plugin validates them in its create hook
     # *before* the insert, so a bad entry never leaves a half-created task.
     context: list[dict] = Field(default_factory=list)
+    # Extra project names whose directories this task's run holds besides its
+    # own project's (see ntasker.locks). The own project is dropped on insert.
+    locks: list[str] = Field(default_factory=list)
 
 
 class TaskUpdate(BaseModel):
@@ -227,6 +230,7 @@ class TaskUpdate(BaseModel):
     # Manual drag&drop position (fractional). None = unchanged. Written as a
     # plain column by the generic UPDATE path -- no extra validation needed.
     sort_order: float | None = None
+    locks: list[str] | None = None  # None = unchanged; [] = clear all
 
 
 class SettingUpdate(BaseModel):
@@ -430,19 +434,18 @@ def build_js_strings() -> dict[str, str]:
         "collapse_done": _("Collapse done column"),
         # Task queue
         "queue": _("Queue"),
-        "queue_start": _("Start queue"),
+        "queue_start": _("Resume queue"),
         "queue_pause": _("Pause queue"),
         "queue_start_title": _(
-            "Work through the queue: start the next task per project, close it, take the next."
+            "Resume: start the next task per project as soon as its lane is free."
         ),
         "queue_pause_title": _(
             "Stop starting new tasks. A task already running keeps going."
         ),
-        "queue_empty": _(
-            "Empty. Use the queue button on a task to have it worked through here."
-        ),
-        "queue_add": _("Add to the queue"),
-        "queue_paused_hint": _("Paused -- press Start to work through these."),
+        "queue_empty": _("Empty. Press a task's run button to queue it here."),
+        "queue_run_next": _("Run next"),
+        "queued_front": _("Task #{id} queued -- it starts as soon as its project is free."),
+        "queue_paused_hint": _("Paused -- press Resume to work through these."),
         "queue_running_hint": _("Running one task per project, top down."),
         "queue_position": _("Position {n} in the queue"),
         "queue_remove": _("Remove from queue"),
@@ -451,6 +454,13 @@ def build_js_strings() -> dict[str, str]:
         "queue_badge": _("Queued at position {n}"),
         "queue_blocked": _("Skipped while a dependency is still open."),
         "queue_agent_missing": _("Skipped -- this task's agent is not installed."),
+        "queue_locked": _("Waiting -- another task's session holds one of its directories."),
+        "queue_dirty": _("Waiting -- a directory it holds has uncommitted changes."),
+        # Directory locks (form + edit chips, board badge)
+        "locks_label": _("Also locks"),
+        "locks_placeholder": _("project name, Enter"),
+        "remove_lock": _("Remove lock"),
+        "task_locks_badge": _("Also locks the directories of:"),
         "dep_other_project": _("in {name}"),
         "dep_drop_hint": _("#{a} waits for #{b}"),
         "dep_added": _("#{a} now depends on #{b}."),
@@ -631,22 +641,14 @@ def build_js_strings() -> dict[str, str]:
         "claude_back": _("Back"),
         "claude_stop": _("Stop"),
         "claude_mark_done": _("Mark done"),
-        "claude_started_background": _("Task #{id} started in the background."),
         "claude_connect_failed": _("Could not connect to the agent session."),
         "claude_disconnected": _("Connection to the session lost."),
         "claude_term_init_failed": _(
             "The terminal component failed to load -- reload the page (Ctrl+Shift+R)."
         ),
         "claude_file_too_large": _("File is too large to drop into the terminal (max 25 MB)."),
-        "running_now": _("Active projects"),
-        "confirm_parallel_run": _(
-            'Project "{project}" already has a running agent session. '
-            "Two agents in one project can conflict and cause inconsistencies. "
-            "Start another anyway?"
-        ),
         "project_busy_hint": _(
-            "An agent is already running in this project -- a second one can get "
-            "in its way. You can still start this task if you want to."
+            "Another agent is live in this project -- a run waits for it."
         ),
         "new_task_for_project": _("New task in this project -- opens the form to fill in"),
         "project_board": _("Only this project"),
@@ -657,8 +659,6 @@ def build_js_strings() -> dict[str, str]:
             "Start an agent in this project right away -- creates a task "
             "and opens a session with an empty prompt"
         ),
-        # Placeholder title for the task the quick run creates on the fly.
-        "quick_task_title": _("New task"),
         # New-task / edit -- agent picker
         "agent_label": _("Agent"),
         "agent_not_installed_hint": _("not installed"),
@@ -1229,53 +1229,52 @@ def api_claude_sessions() -> JSONResponse:
     ``active``: every task id with a live session. ``waiting``: the subset that
     has gone silent long enough to look blocked on a prompt (see
     :func:`ntasker.claude_runner.session_states`). ``projects``: the project of
-    each active task (id -> name|null) -- feeds the running-projects chips and
-    the same-project parallel-run warning on the frontend. ``agents``: the
-    resolved agent key of each active task (id -> key) -- feeds the agent logo
-    on each running-session link. ``titles``: the current title of each active
-    task (id -> title) -- lets the run-view tab strip follow a title that
-    changes mid-session (e.g. a placeholder task getting its real name).
+    each active task (id -> name|null) -- feeds the run-view tabs and the
+    same-project busy damping on the frontend. ``titles``: the current title of
+    each active task (id -> title) -- lets the run-view tab strip follow a
+    title that changes mid-session (e.g. a placeholder task getting its real
+    name).
     """
     states = session_states()
     active = list(states.keys())
     projects: dict[int, str | None] = {}
-    agents: dict[int, str] = {}
     titles: dict[int, str] = {}
     if active:
         placeholders = ",".join("?" * len(active))
         with get_conn() as conn:
             rows = conn.execute(
-                f"SELECT id, title, project, agent FROM tasks WHERE id IN ({placeholders})",
+                f"SELECT id, title, project FROM tasks WHERE id IN ({placeholders})",
                 active,
             ).fetchall()
         projects = {row["id"]: row["project"] for row in rows}
-        agents = {row["id"]: resolve_agent_key(row["agent"]) for row in rows}
         titles = {row["id"]: row["title"] for row in rows}
     return JSONResponse(
         {
             "active": active,
             "waiting": [tid for tid, st in states.items() if st == "waiting"],
-            "agents": agents,
             "projects": projects,
             "titles": titles,
         }
     )
 
 
-@app.get("/api/tasks/{task_id}/claude-run/defaults")
-def api_claude_run_defaults(task_id: int) -> JSONResponse:
-    """Pre-fill the run launch: a guessed cwd + the ``/task <id>`` seed input."""
-    with get_conn() as conn:
-        row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
-    if row is None:
-        raise HTTPException(status_code=404, detail=_("Task not found"))
-    task = dict(row)
-    return JSONResponse(
-        {
-            "seed": seed_command_for_task(task),
-            "cwd": default_cwd_for_project(task["project"]) or "",
-        }
-    )
+class SessionStateIn(BaseModel):
+    waiting: bool
+
+
+@app.post("/api/claude/sessions/{task_id}/state")
+def api_claude_session_state(task_id: int, payload: SessionStateIn) -> JSONResponse:
+    """Explicit waiting/running state, reported by the session's own hooks.
+
+    Called by ``ntasker hook waiting|running`` from inside a Claude Code
+    session (``Stop`` / permission ``Notification`` -> waiting,
+    ``UserPromptSubmit`` / ``PostToolUse`` -> running). Overrides the silence
+    heuristic for that session -- see :func:`ntasker.claude_runner.session_states`.
+    404 when the task has no live session.
+    """
+    if not set_hook_state(task_id, payload.waiting):
+        raise HTTPException(status_code=404, detail=_("No live session for this task"))
+    return JSONResponse({"ok": True})
 
 
 @app.websocket("/ws/claude/{task_id}")
@@ -1307,6 +1306,7 @@ def _queue_payload(rows: list[sqlite3.Row]) -> dict:
             row_to_task(r, tags_by_id.get(int(r["id"]), []), deps_by_id.get(int(r["id"]), []))
             for r in rows
         ],
+        "skipped": taskqueue.skipped(rows, set(active_session_ids())),
     }
 
 
@@ -1330,6 +1330,133 @@ def api_set_queue(payload: QueueIn) -> JSONResponse:
     gone are dropped -- see :func:`ntasker.taskqueue.set_queue`.
     """
     return JSONResponse(_queue_payload(taskqueue.set_queue(payload.ids)))
+
+
+class QuickRunIn(BaseModel):
+    project: str
+
+
+@app.post("/api/projects/quick-run", status_code=201)
+def api_quick_run(payload: QuickRunIn) -> JSONResponse:
+    """Sidebar quick run: "I need an agent in this project *now*".
+
+    Creates a placeholder task (localised title, straight to ``wip``), puts it
+    at the head of the queue and marks it as a quick run, so the worker starts
+    it with a blank prompt plus the "name this task" briefing (see
+    :func:`ntasker.claude_runner.quick_run_system_prompt`). Returns the task.
+    """
+    project = _normalize_project(payload.project)
+    if project is None:
+        raise HTTPException(status_code=400, detail=_("Invalid project"))
+    with get_conn() as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO tasks (project, title, phase, priority, sort_order)
+            VALUES (?, ?, 'wip', 'normal', (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM tasks))
+            """,
+            (project, _("New task")),
+        )
+        new_id = cast(int, cur.lastrowid)
+    taskqueue.QUICK.add(new_id)
+    taskqueue.enqueue_front(new_id)
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM tasks WHERE id = ?", (new_id,)).fetchone()
+        task = row_to_task(row, [], [])
+        plugins.apply_task_hooks(conn, [task])
+    return JSONResponse(task, status_code=201)
+
+
+# ---------------------------------------------------------------------------
+# Routes -- API: directory locks (see ntasker.locks)
+# ---------------------------------------------------------------------------
+
+
+class LocksIn(BaseModel):
+    projects: list[str] = Field(..., min_length=1)
+
+
+def _refuse_held(
+    conn: sqlite3.Connection, task_id: int, own: str | None, wanted: list[str]
+) -> None:
+    """409 when a task with a live session asks for a directory another live
+    task holds. A task without a session is not checked -- the worker decides
+    at start time."""
+    if task_id not in active_session_ids():
+        return
+    held = locks.held_dirs(conn, set(active_session_ids()))
+    by_dir = {locks.resolve_dir(n): n for n in wanted}
+    hit = locks.conflict(set(by_dir), held, exclude=task_id)
+    if hit is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=_("{project} is held by task #{holder}").format(
+                project=by_dir[hit[0]], holder=hit[1]
+            ),
+        )
+
+
+def _task_locks_response(conn: sqlite3.Connection, task_id: int) -> JSONResponse:
+    row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+    task = row_to_task(row, load_tags_for(conn, task_id), load_deps_for(conn, task_id))
+    plugins.apply_task_hooks(conn, [task])
+    return JSONResponse(task)
+
+
+@app.post("/api/tasks/{task_id}/locks")
+def api_add_locks(task_id: int, payload: LocksIn) -> JSONResponse:
+    """Grant extra directory locks to a task -- all or nothing.
+
+    409 (naming the holder) when the task has a live session and another live
+    task holds one of the requested directories. Returns the updated task.
+    """
+    with get_conn() as conn:
+        row = conn.execute("SELECT project, locks FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail=_("Task not found"))
+        wanted = locks.normalize([*locks.parse(row["locks"]), *payload.projects], row["project"])
+        _refuse_held(conn, task_id, row["project"], wanted)
+        conn.execute("UPDATE tasks SET locks = ? WHERE id = ?", (locks.dump(wanted), task_id))
+        return _task_locks_response(conn, task_id)
+
+
+@app.delete("/api/tasks/{task_id}/locks/{project:path}")
+def api_remove_lock(task_id: int, project: str) -> JSONResponse:
+    """Release one directory lock. Unknown project -> no-op. Returns the task."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT locks FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail=_("Task not found"))
+        kept = [p for p in locks.parse(row["locks"]) if p != project]
+        conn.execute("UPDATE tasks SET locks = ? WHERE id = ?", (locks.dump(kept), task_id))
+        return _task_locks_response(conn, task_id)
+
+
+@app.get("/api/locks/check")
+def api_locks_check(task: int, path: str) -> JSONResponse:
+    """May task ``task`` write to ``path``? Asked by the PreToolUse hook.
+
+    Refused only when ``path`` lies inside another *known* project's directory
+    (``locks.project_for_path``) that the task does not hold -- paths that
+    belong to no project (temp dirs, plan files, dotfiles) always pass. With
+    ``dir_locks`` off everything passes. ``holder`` is the live task holding
+    that directory right now, if any.
+    """
+    with get_conn() as conn:
+        row = conn.execute("SELECT project, locks FROM tasks WHERE id = ?", (task,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail=_("Task not found"))
+        if not get_dir_locks():
+            return JSONResponse({"allowed": True, "project": None, "holder": None})
+        project = locks.project_for_path(conn, path)
+        if project is None:
+            return JSONResponse({"allowed": True, "project": None, "holder": None})
+        target = locks.resolve_dir(project)
+        allowed = target in locks.task_dirs(row["project"], locks.parse(row["locks"]))
+        held = locks.held_dirs(conn, set(active_session_ids()))
+    holder = held.get(target)
+    return JSONResponse(
+        {"allowed": allowed, "project": project, "holder": holder if holder != task else None}
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1894,8 +2021,8 @@ def api_create_task(payload: TaskCreate) -> JSONResponse:
         cur = conn.execute(
             """
             INSERT INTO tasks (project, title, description, phase, priority, agent,
-                               sort_order)
-            VALUES (?, ?, ?, ?, ?, ?,
+                               locks, sort_order)
+            VALUES (?, ?, ?, ?, ?, ?, ?,
                     (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM tasks))
             """,
             (
@@ -1905,6 +2032,7 @@ def api_create_task(payload: TaskCreate) -> JSONResponse:
                 phase_value,
                 payload.priority,
                 payload.agent,
+                locks.dump(locks.normalize(payload.locks, project_value)),
             ),
         )
         # sqlite3 types lastrowid as ``int | None``; after a successful INSERT
@@ -1969,6 +2097,19 @@ def api_update_task(task_id: int, payload: TaskUpdate) -> JSONResponse:
         fields["archived"] = 1 if fields["archived"] else 0
 
     with get_conn() as conn:
+        if "locks" in fields:
+            # Normalise against the project the task will have after this
+            # update; a lock a live session could not take is refused (409).
+            if "project" in fields:
+                own = fields["project"]
+            else:
+                cur = conn.execute("SELECT project FROM tasks WHERE id = ?", (task_id,))
+                stored = cur.fetchone()
+                own = stored["project"] if stored else None
+            wanted = locks.normalize(fields["locks"], own)
+            _refuse_held(conn, task_id, own, wanted)
+            fields["locks"] = locks.dump(wanted)
+
         # Title is optional: an emptied title falls back to the start of the
         # description -- the just-submitted one if present, else the stored
         # one. Mirrors the create endpoint.

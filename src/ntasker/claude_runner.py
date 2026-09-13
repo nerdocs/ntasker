@@ -25,6 +25,7 @@ import contextlib
 import os
 import shlex
 import signal
+import sys
 import tempfile
 import threading
 import time
@@ -88,17 +89,22 @@ def terminal_available(spec: AgentSpec) -> tuple[bool, str | None]:
     return True, None
 
 
-def _spec_for_task(task_id: int) -> AgentSpec:
-    """Resolve the :class:`AgentSpec` for a task from its persisted ``agent``."""
+def _task_row(task_id: int):
+    """The task's ``agent`` + ``project`` columns, or ``None`` (missing / DB hiccup)."""
     from ntasker.db import get_conn  # noqa: PLC0415
 
     try:
         with get_conn() as conn:
-            row = conn.execute(
-                "SELECT agent FROM tasks WHERE id = ?", (task_id,)
+            return conn.execute(
+                "SELECT agent, project FROM tasks WHERE id = ?", (task_id,)
             ).fetchone()
     except Exception:  # noqa: BLE001 -- a DB hiccup must not crash the spawn path
-        row = None
+        return None
+
+
+def _spec_for_task(task_id: int) -> AgentSpec:
+    """Resolve the :class:`AgentSpec` for a task from its persisted ``agent``."""
+    row = _task_row(task_id)
     task_agent = row["agent"] if row else None
     return get_spec(resolve_agent_key(task_agent))
 
@@ -189,51 +195,19 @@ def resolve_run_cwd(cwd: str | None) -> str:
     return no_project_dir()
 
 
-def seed_command_for_task(task: dict) -> str:
-    """Initial input for the session, in one of two styles.
-
-    Default: the ntasker ``/task <id>`` slash command. ntasker ships that
-    command for every agent; firing it as the first message loads the task
-    (title, description, phase) into the session via the existing integration
-    -- no guessing, no clash with the built-in ``Task`` tools.
-
-    With the ``compact_seed`` setting on: the task data inlined directly into
-    the prompt (see :func:`_compact_seed`). This skips the loader tool
-    roundtrip -- one full extra inference pass -- and several thousand prompt
-    tokens, which matters a lot on slow local models (Ollama). The ``/task``
-    command stays installed for manual terminal sessions; only ntasker-spawned
-    runs bypass it.
-    """
-    from ntasker.settings import get_compact_seed  # noqa: PLC0415 -- lazy: avoid cycle
-
-    if get_compact_seed():
-        return _compact_seed(task)
-    return f"/task {task['id']}"
-
-
 def queue_seed_for_task(task: dict) -> str:
-    """Initial input for a run started by the task queue.
+    """Initial input for a run started by the task queue -- i.e. for every run.
 
-    A queued run is a different contract from every other run: the user put the
+    The queue is the only path that starts a session, so every run gets this
+    seed: the task data inlined into the prompt (no ``/task`` loader roundtrip
+    -- one full inference pass and several thousand tokens saved, which matters
+    on slow local models) plus the queue's hand-off rules. The user put the
     task in the queue to have it worked through unattended, so the seed grants
     the review hand-off without asking and tells the agent that the hand-off is
-    what releases the next queued task. Closing stays the user's call, exactly
-    as everywhere else. A queued run never uses ``/task``; it always inlines the
-    task like the compact seed does.
-    """
-    return _compact_seed(task, queued=True)
-
-
-def _compact_seed(task: dict, queued: bool = False) -> str:
-    """Self-contained initial prompt: task data plus the tracker hand-off rules.
-
-    Replaces what the ``/task`` command + loader would have injected. The task
-    id is kept prominent -- the agent needs it for the review hand-off. The
+    what releases the next queued task. Closing stays the user's call. The
     ``phase=wip`` move the loader normally performs happens server-side at
-    spawn instead (see :func:`mark_wip`).
-
-    ``queued`` swaps the hand-off rules for the queue's: carry the task to
-    completion and hand it to review (see :func:`queue_seed_for_task`).
+    spawn instead (see :func:`mark_wip`). The ``/task`` command stays installed
+    for manual terminal sessions.
     """
     from ntasker.db import get_conn, load_tags_for  # noqa: PLC0415 -- lazy: avoid cycle
 
@@ -259,36 +233,22 @@ def _compact_seed(task: dict, queued: bool = False) -> str:
     from ntasker import plugins  # noqa: PLC0415 -- lazy: avoid cycle
 
     lines += plugins.run_briefings(int(task["id"]))
-    if queued:
-        lines += [
-            "",
-            "## Tracker rules (queued run)",
-            "",
-            "- The user put this task in nTasker's task queue to have it worked",
-            "  through unattended. Carry it to completion if at all possible.",
-            "- When the work is done, hand it off to review -- do not ask first,",
-            "  and do not close the task:",
-            f'  ntasker patch "{task["id"]}" --phase review',
-            "- The next queued task starts on that hand-off, so never hand off on a",
-            "  guess. If you cannot finish (blocker, missing info, a decision only",
-            "  the user can make), leave the phase as-is and report the blocker.",
-            "- Never set status=done or archive on your own; only the user closes",
-            "  tasks, after checking your work in the review column.",
-            "- No new tracker tasks, no deletes, no writes to other task IDs.",
-        ]
-    else:
-        lines += [
-            "",
-            "## Tracker rules",
-            "",
-            "- Work the task described above.",
-            "- When your work is done, hand it off to review (a handoff, not a close --",
-            f'  no user OK needed): ntasker patch "{task["id"]}" --phase review',
-            "- If you cannot finish (blocker, missing info), leave the phase as-is and",
-            "  report the blocker instead.",
-            "- Never set status=done or archive on your own; only the user closes tasks.",
-            "- No new tracker tasks, no deletes, no writes to other task IDs.",
-        ]
+    lines += [
+        "",
+        "## Tracker rules (queued run)",
+        "",
+        "- The user put this task in nTasker's task queue to have it worked",
+        "  through unattended. Carry it to completion if at all possible.",
+        "- When the work is done, hand it off to review -- do not ask first,",
+        "  and do not close the task:",
+        f'  ntasker patch "{task["id"]}" --phase review',
+        "- The next queued task starts on that hand-off, so never hand off on a",
+        "  guess. If you cannot finish (blocker, missing info, a decision only",
+        "  the user can make), leave the phase as-is and report the blocker.",
+        "- Never set status=done or archive on your own; only the user closes",
+        "  tasks, after checking your work in the review column.",
+        "- No new tracker tasks, no deletes, no writes to other task IDs.",
+    ]
     return "\n".join(lines)
 
 
@@ -337,6 +297,10 @@ class TermSession:
     # Monotonic deadline until which PTY output is treated as a resize redraw
     # and does NOT bump ``last_output`` (see RESIZE_REDRAW_GRACE). 0 = inactive.
     resize_grace_until: float = 0.0
+    # Explicit waiting/running state reported by the agent's own hooks
+    # (``ntasker hook waiting|running``, see :func:`set_hook_state`). ``None``
+    # until the first hook fires -- then the silence heuristic decides.
+    hook_waiting: bool | None = None
 
 
 SESSIONS: dict[int, TermSession] = {}
@@ -347,15 +311,26 @@ def active_session_ids() -> list[int]:
     return [tid for tid, s in SESSIONS.items() if s.alive]
 
 
+def set_hook_state(task_id: int, waiting: bool) -> bool:
+    """Record the explicit state a session's hook reported. ``False`` = no live session."""
+    sess = SESSIONS.get(task_id)
+    if sess is None or not sess.alive:
+        return False
+    sess.hook_waiting = waiting
+    return True
+
+
 def session_states() -> dict[int, str]:
     """Map each live session's task id to ``"waiting"`` or ``"running"``.
 
-    ``"waiting"``: the PTY produced no output for at least the configured idle
-    window, which we read as "Claude is parked at a prompt and wants the user".
-    The CLI emits no explicit "I have a question" event, so output-silence is
-    the stand-in -- while Claude works its TUI keeps repainting (the spinner),
-    so a quiet terminal means it is blocked on input. Everything else is
-    ``"running"``. The window comes from the ``claude_idle_seconds`` setting.
+    A session whose hooks have reported (:func:`set_hook_state`) is taken at
+    its word: ``hook_waiting`` True -> ``"waiting"``, False -> ``"running"``.
+    Claude Code sessions get those hooks via ``--settings``; OpenCode / Pi
+    (and a Claude session before its first hook fires) fall back to the
+    silence heuristic: no PTY output for at least the configured idle window
+    reads as "parked at a prompt and wants the user" -- while an agent works
+    its TUI keeps repainting, so a quiet terminal means it is blocked on
+    input. The window comes from the ``claude_idle_seconds`` setting.
     """
     from ntasker.settings import CLAUDE_IDLE_SECONDS_DEFAULT, get_setting  # noqa: PLC0415
 
@@ -367,16 +342,33 @@ def session_states() -> dict[int, str]:
     except Exception:  # noqa: BLE001 -- bad value or DB hiccup both fall back
         idle = CLAUDE_IDLE_SECONDS_DEFAULT
     now = time.monotonic()
-    return {
-        tid: ("waiting" if now - s.last_output >= idle else "running")
-        for tid, s in SESSIONS.items()
-        if s.alive
-    }
+
+    def state(s: TermSession) -> str:
+        if s.hook_waiting is not None:
+            return "waiting" if s.hook_waiting else "running"
+        return "waiting" if now - s.last_output >= idle else "running"
+
+    return {tid: state(s) for tid, s in SESSIONS.items() if s.alive}
 
 
-def _clean_env(spec: AgentSpec) -> dict:
+def _clean_env(spec: AgentSpec, task_id: int) -> dict:
+    """Child environment: nesting markers stripped, ntasker's own markers added.
+
+    ``NTASKER_TASK_ID`` / ``NTASKER_URL`` let ``ntasker hook ...`` (and
+    ``ntasker lock ...``) inside the session find their task and server;
+    ``ntasker serve`` sets ``NTASKER_URL`` for its own process, the default
+    covers a server started another way. The server's own ``bin`` dir goes
+    first on ``PATH`` so the bare ``ntasker`` the hooks and seeds call is the
+    same version as the server -- a stale install elsewhere on PATH would make
+    every hook fail (and a failing ``Stop`` hook blocks the session's stop).
+    """
     env = {k: v for k, v in os.environ.items() if k not in spec.strip_env}
     env["TERM"] = "xterm-256color"
+    env["NTASKER_TASK_ID"] = str(task_id)
+    env.setdefault("NTASKER_URL", "http://127.0.0.1:8766")
+    own_bin = os.path.dirname(sys.executable)
+    if os.path.isfile(os.path.join(own_bin, "ntasker")):
+        env["PATH"] = own_bin + os.pathsep + env.get("PATH", "")
     return env
 
 
@@ -390,9 +382,9 @@ def _child_setup() -> None:
 def mark_wip(task_id: int) -> None:
     """Move a starting task to ``phase=wip`` -- the loader's job, done here.
 
-    Compact-seed runs never execute the ``/task`` loader, so its "starting
-    work marks the task in progress" step moves here. Same guards as the
-    loader: never resurrect an archived/closed task, no-op when already wip.
+    Queued runs never execute the ``/task`` loader, so its "starting work
+    marks the task in progress" step moves here. Same guards as the loader:
+    never resurrect an archived/closed task, no-op when already wip.
     Best-effort -- a DB hiccup must not block the spawn.
     """
     from ntasker.db import get_conn  # noqa: PLC0415 -- lazy: avoid cycle
@@ -439,8 +431,8 @@ def _stored_session_id(task_id: int) -> str | None:
 
 def _start_session(
     task_id: int,
-    cwd: str | None,
-    seed: str | None,
+    *,
+    seed: str | None = None,
     resume: bool = False,
     quick: bool = False,
 ) -> TermSession:
@@ -448,17 +440,25 @@ def _start_session(
 
     The agent (Claude / OpenCode / Pi) is resolved from the task's ``agent``
     field; its :class:`~ntasker.agents.AgentSpec` builds the full argv --
-    including permission/auto flags and how the ``/task`` seed is attached
-    (positional vs ``--prompt``) -- and which env markers get stripped. The cwd
-    is always set on the subprocess (uniform across agents).
+    including permission/auto flags and how the seed is attached (positional
+    vs ``--prompt``) -- and which env markers get stripped. The cwd is derived
+    from the task's project (see :func:`default_cwd_for_project`) and always
+    set on the subprocess (uniform across agents).
 
     ``quick`` marks a session started from the sidebar quick run: it has no seed
     at all, and gets the "name this task once you know what it is" briefing via
     the system prompt (see :func:`quick_run_system_prompt`).
     """
-    from ntasker.settings import get_compact_seed  # noqa: PLC0415 -- lazy: avoid cycle
+    from ntasker.claude_assets import hooks_settings_path  # noqa: PLC0415 -- lazy: avoid cycle
+    from ntasker.settings import get_dir_locks  # noqa: PLC0415 -- lazy: avoid cycle
 
-    spec = _spec_for_task(task_id)
+    row = _task_row(task_id)
+    spec = get_spec(resolve_agent_key(row["agent"] if row else None))
+    cwd = default_cwd_for_project(row["project"] if row else None)
+    # ntasker's Claude Code hooks (explicit waiting/running state, and the
+    # directory-lock guard when dir_locks is on). Only agents with a settings
+    # flag get the file; build_spawn ignores it otherwise.
+    settings_path = hooks_settings_path(get_dir_locks()) if spec.settings_flag else None
     master, slave = os.openpty()
     # Resume: reopen the stored session (conversation replays, no seed). Only
     # when the agent supports it and an id was captured on a previous run --
@@ -466,20 +466,17 @@ def _start_session(
     resume_id = _stored_session_id(task_id) if (resume and spec.resume_flag) else None
     sys_prompt = quick_run_system_prompt(task_id) if quick else None
     if resume_id:
-        args = spec.build_spawn(None, resume_id=resume_id)
+        args = spec.build_spawn(None, resume_id=resume_id, settings_path=settings_path)
     elif spec.session_flag:
         # Fresh run: force a known session id so it can be resumed later, and
         # persist it. uuid4 is what --session-id expects (a canonical UUID).
         forced_id = str(uuid.uuid4())
-        args = spec.build_spawn(seed, session_id=forced_id, system_prompt=sys_prompt)
+        args = spec.build_spawn(
+            seed, session_id=forced_id, system_prompt=sys_prompt, settings_path=settings_path
+        )
         _store_session_id(task_id, forced_id)
     else:
-        args = spec.build_spawn(seed, system_prompt=sys_prompt)
-    # Compact-seed sessions bypass the /task loader, so the phase=wip move it
-    # normally performs happens here instead. A resume reopens finished work --
-    # never resurrect its phase.
-    if seed and not resume_id and get_compact_seed():
-        mark_wip(task_id)
+        args = spec.build_spawn(seed, system_prompt=sys_prompt, settings_path=settings_path)
     # The cwd is a best-effort guess from the task's project name (see
     # default_cwd_for_project). A new project's directory may not exist yet:
     # resolve_run_cwd creates it when it lives inside the configured
@@ -493,7 +490,7 @@ def _start_session(
         stdout=slave,
         stderr=slave,
         cwd=run_cwd,
-        env=_clean_env(spec),
+        env=_clean_env(spec, task_id),
         preexec_fn=_child_setup,
         close_fds=True,
     )
@@ -505,13 +502,15 @@ def _start_session(
     return sess
 
 
-def start_detached_session(task_id: int, cwd: str | None, seed: str | None) -> bool:
-    """Start a session with no browser attached. Used by the task queue.
+def start_detached_session(task_id: int, seed: str | None, quick: bool = False) -> bool:
+    """Start a session with no browser attached. The task queue's spawn path.
 
-    Same spawn path as a run launched from the UI -- the session lands in the
-    same registry, so it shows up in the busy indicators and the run-view tab
-    strip, and the user can open its terminal at any point to watch or take
-    over. Returns ``False`` when the task already has a live session.
+    The queue is the only way a fresh session starts, so this is *the* spawn:
+    the session lands in the registry, shows up in the busy indicators and the
+    run-view tab strip, and the user can open its terminal at any point to
+    watch or take over. ``quick`` = a sidebar quick run (blank prompt, see
+    :func:`quick_run_system_prompt`). Returns ``False`` when the task already
+    has a live session.
 
     Must be called from the event loop: the PTY reader is registered on the
     running loop (see :func:`_attach_reader`).
@@ -521,7 +520,7 @@ def start_detached_session(task_id: int, cwd: str | None, seed: str | None) -> b
         return False
     SESSIONS.pop(task_id, None)   # drop a stale dead session before replacing it
     mark_wip(task_id)
-    _start_session(task_id, cwd, seed)
+    _start_session(task_id, seed=seed, quick=quick)
     return True
 
 
@@ -680,11 +679,10 @@ async def serve(websocket: WebSocket, task_id: int) -> None:
 
     Protocol (JSON):
 
-    * client -> ``{"type":"attach", "cwd", "seed", "resume", "quick"}``
-      (cwd/seed/resume/quick only used when a session has to be started; ignored
-      on reattach. ``resume`` truthy reopens the task's stored session id instead
-      of seeding a fresh one; ``quick`` marks a sidebar quick run -- blank prompt
-      plus the "name this task" briefing, see :func:`quick_run_system_prompt`)
+    * client -> ``{"type":"attach", "resume"}`` -- reattaches the task's live
+      session. Attaching never starts a fresh run (the task queue does that);
+      the one exception is ``resume`` truthy, which reopens a finished task's
+      stored session id. No live session and no ``resume`` -> ``error``.
     * client -> ``{"type":"input", "data"}`` (keystrokes, written to the PTY)
     * client -> ``{"type":"file", "name", "data"}`` (base64 file bytes; saved to
       a temp file whose path is typed into the PTY -- like a terminal drag-drop)
@@ -707,13 +705,14 @@ async def serve(websocket: WebSocket, task_id: int) -> None:
 
     sess = SESSIONS.get(task_id)
     if sess is None or not sess.alive:
+        if not first.get("resume"):
+            await websocket.send_json(
+                {"type": "error", "error": "no live session for this task -- queue it to start one"}
+            )
+            return
         if sess is not None:  # stale dead session -> replace
             SESSIONS.pop(task_id, None)
-        cwd = (first.get("cwd") or "").strip() or None
-        seed = (first.get("seed") or "").strip() or None
-        resume = bool(first.get("resume"))
-        quick = bool(first.get("quick"))
-        sess = _start_session(task_id, cwd, seed, resume=resume, quick=quick)
+        sess = _start_session(task_id, resume=True)
 
     queue: asyncio.Queue = asyncio.Queue(maxsize=2000)
     sess.subscribers.add(queue)

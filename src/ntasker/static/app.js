@@ -220,7 +220,10 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // queued task also sits on the board, so sharing dragOverTaskId would
         // light up both at once.
         queue: [],
-        queueEnabled: false,
+        queueEnabled: true,
+        // Lock / dirty reasons per queued task id, from /api/queue ``skipped``
+        // ({id: {reason, project, holder}}). Drives the panel's lock badge.
+        queueSkipped: {},
         queueOverId: null,
         queueZone: 'before',
         // Raw body of the last /api/queue response; an unchanged payload skips
@@ -251,10 +254,10 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         claudeReason: null,
         claudeView: null,
         claudeTabs: [],
-        // When false (the `claude_open_terminal` setting), starting a session
-        // (Create + Run or the per-task run button) attaches it in the
-        // background and keeps the board on screen instead of opening the run
-        // view. Clicking an already-running task still surfaces its terminal.
+        // When false (the `claude_open_terminal` setting), a run button only
+        // queues the task and toasts; when true the terminal opens as soon as
+        // the queue worker has started the session (see _openWhenLive).
+        // Clicking an already-running task still surfaces its terminal.
         claudeOpenTerminal: claudeOpenTerminal !== false,
         claudeSessions: [],
         // Raw body of the last /api/claude/sessions response -- the poll
@@ -264,12 +267,9 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // blocked on a prompt -- drives the "waiting for input" highlight.
         claudeWaiting: [],
         // Project of each active session, keyed by task id (string keys, as
-        // they arrive from JSON). Feeds the running-projects chips and the
-        // same-project parallel-run warning.
+        // they arrive from JSON). Feeds the run-view tabs and the same-project
+        // busy damping.
         claudeSessionProjects: {},
-        // Resolved agent key of each active session, keyed by task id (string
-        // keys). Feeds the agent logo on each running-session link.
-        claudeSessionAgents: {},
         // Current title of each active session, keyed by task id (string keys).
         // Keeps the run-view tabs in sync when a task is renamed mid-session.
         claudeSessionTitles: {},
@@ -307,6 +307,8 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             tagInput: '',      // current text in the tag-input
             depends: [],       // committed dependencies: [{id, title, done}]
             depInput: '',      // current text in the dependency-input
+            locks: [],         // extra projects whose dirs the run holds
+            lockInput: '',     // current text in the lock-input
         },
         // Dependency autocomplete suggestions for the currently focused
         // input (form or edit -- only one is open at a time).
@@ -882,20 +884,16 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         },
 
         // Sidebar agent logo on a project row: "I need an agent in this project
-        // *now*". Creates a throwaway task (fixed title, straight to wip -- no
-        // form, no typing) and drops the caret into a live session with a blank
-        // prompt: no `/task <id>` seed, so the agent waits for what you type.
-        // The placeholder title is localised -- it is what the user reads on the
-        // card until they rename it.
+        // *now*". The server creates a placeholder task (straight to wip) and
+        // puts it at the head of the queue as a quick run -- the worker starts
+        // it with a blank prompt. The terminal always opens: the whole point is
+        // to type into it right away, so the background-start setting does not
+        // apply here.
         async quickRunForProject(name) {
-            const r = await fetch('/api/tasks', {
+            const r = await fetch('/api/projects/quick-run', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    project: name,
-                    title: _i('quick_task_title'),
-                    phase: 'wip',
-                }),
+                body: JSON.stringify({ project: name }),
             });
             if (!r.ok) {
                 this.showToast(await this._errorDetail(r, 'create_failed'), 'danger');
@@ -903,7 +901,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             }
             const created = await r.json();
             await this.refreshAll();
-            this.openClaudeRun(created, true);
+            this._openWhenLive(created.id);
         },
 
         // Static column definitions for the kanban board. ``key`` is either
@@ -1267,6 +1265,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 const d = JSON.parse(raw);
                 this.queue = d.items || [];
                 this.queueEnabled = !!d.enabled;
+                this.queueSkipped = d.skipped || {};
             } catch (_e) { /* leave the last known queue */ }
         },
 
@@ -1286,6 +1285,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 this._queueRaw = null;   // force the next poll to re-read
                 this.queue = d.items || [];
                 this.queueEnabled = !!d.enabled;
+                this.queueSkipped = d.skipped || {};
             } catch (_e) {
                 this.showToast(_i('update_failed'), 'danger');
                 this._queueRaw = null;
@@ -1363,15 +1363,21 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         queueItemNote(item) {
             if (this.isBlocked(item)) return _i('queue_blocked');
             if (!this.taskRunnable(item)) return _i('queue_agent_missing');
+            const skip = this.queueSkipped[item.id];
+            if (skip) return skip.reason === 'dirty' ? _i('queue_dirty') : _i('queue_locked');
             return '';
         },
 
-        // Lock badge, inline: just the blocking ids. A queue column is narrow --
+        // Lock badge, inline: just the blocking ids -- or, for a directory
+        // lock, the holder's id / the dirty project. A queue column is narrow --
         // spelling out the blockers' projects here would eat the title, and the
         // ids are what you act on.
         blockerLabel(item) {
-            if (!this.isBlocked(item)) return '';
-            return this.blockingDeps(item).map(d => `#${d.id}`).join(', ');
+            if (this.isBlocked(item)) return this.blockingDeps(item).map(d => `#${d.id}`).join(', ');
+            if (!this.taskRunnable(item)) return '';
+            const skip = this.queueSkipped[item.id];
+            if (!skip) return '';
+            return skip.reason === 'dirty' ? `dirty: ${skip.project}` : `#${skip.holder}`;
         },
 
         // The same blockers spelled out for the tooltip, naming the project of
@@ -1379,7 +1385,13 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // unfindable there, and cross-project blockers are the whole reason
         // dependencies matter to the queue.
         blockerDetail(item) {
-            if (!this.isBlocked(item)) return _i('queue_agent_missing');
+            if (!this.isBlocked(item)) {
+                if (!this.taskRunnable(item)) return _i('queue_agent_missing');
+                const skip = this.queueSkipped[item.id] || {};
+                return skip.reason === 'dirty'
+                    ? _i('queue_dirty') + '\n' + skip.project
+                    : _i('queue_locked') + '\n' + skip.project + ' -- #' + skip.holder;
+            }
             const own = item.project || PROJECT_NONE;
             const parts = this.blockingDeps(item).map(d => {
                 const proj = d.project || PROJECT_NONE;
@@ -1391,26 +1403,8 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             return _i('queue_blocked') + '\n' + parts.join('\n');
         },
 
-        // Put a task in the queue, or take it back out. The per-task button on
-        // the board is the only way in; new entries land at the end, and the
-        // queue panel is where the order gets decided.
-        async toggleQueued(task) {
-            if (this.queuePosition(task.id)) {
-                await this.removeFromQueue(task.id);
-                return;
-            }
-            await this._saveQueue([...this.queue, task]);
-        },
-
-        // Whether the board should offer the queue button for this task: it has
-        // to be queueable (open, not archived) and have an agent that could
-        // actually run it -- same gate as the run button next to it.
-        canQueue(task) {
-            return !!task && task.status === 'open' && !task.archived && this.taskRunnable(task);
-        },
-
         // Drag inside the queue panel reorders it. Dragging a card *into* the
-        // queue is deliberately not a thing -- the board's queue button is the
+        // queue is deliberately not a thing -- the board's run button is the
         // way in, so a drop here only ever moves an entry that is already
         // queued, and a card dragged off the board is ignored.
         //
@@ -1610,8 +1604,9 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
 
         // ---- Task CRUD ----
         async createTask(run = false) {
-            // Commit any pending tag input before submit.
+            // Commit any pending tag / lock input before submit.
             this.commitTagInput('form');
+            this.commitLockInput('form');
             // Title is optional -- the server falls back to the start of the
             // description. Require at least one of the two so we don't create
             // an empty task. Project is optional (empty = cross-project).
@@ -1625,6 +1620,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 agent: this.form.agent || null,
                 tags: this.form.tags,
                 depends: this.form.depends.map(d => d.id),
+                locks: this.form.locks,
             };
             if (typeof this.pluginCreatePayload === 'function') this.pluginCreatePayload(payload);
             const r = await fetch('/api/tasks', {
@@ -1646,13 +1642,15 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             this.form.tagInput = '';
             this.form.depends = [];
             this.form.depInput = '';
+            this.form.locks = [];
+            this.form.lockInput = '';
             if (typeof this.pluginResetForm === 'function') this.pluginResetForm();
             // Keep project selection for rapid same-project entry.
             await this.refreshAll();
-            // Create + Run: hand the fresh task straight to its agent. The run
-            // view replaces the page, so skip the create toast below.
+            // Create + Run: queue the fresh task at the front of its lane. Its
+            // own toast replaces the create toast below.
             if (run && this.taskRunnable(created)) {
-                this.openClaudeRun(created);
+                this.runNext(created);
                 return;
             }
             // The task is saved, but an active filter (project/phase/tag/
@@ -1727,6 +1725,8 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 _tagInput: '',
                 depends: (task.depends || []).map(d => ({ ...d })),
                 _depInput: '',
+                locks: [...(task.locks || [])],
+                _lockInput: '',
             };
             if (typeof this.pluginStartEdit === 'function') this.pluginStartEdit(this.editing, task);
             this.depSuggest = [];
@@ -1742,8 +1742,9 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         },
 
         async saveEdit() {
-            // Commit any pending tag input before save.
+            // Commit any pending tag / lock input before save.
             this.commitTagInput('edit');
+            this.commitLockInput('edit');
             const t = this.editing;
             // Title is optional -- the server falls back to the start of the
             // description. Require at least one of the two.
@@ -1757,6 +1758,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 agent: t.agent || null,
                 tags: t.tags,
                 depends: (t.depends || []).map(d => d.id),
+                locks: t.locks || [],
             };
             const r = await fetch(`/api/tasks/${t.id}`, {
                 method: 'PATCH',
@@ -1992,6 +1994,49 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         removeTagFromEditing(idx) {
             if (this.editing) this.editing.tags.splice(idx, 1);
             this.tagCaret.edit = -1;
+        },
+
+        // ---- Directory-lock chips (form + edit) ----
+        // Extra projects whose directories the run holds (see docs/
+        // directory-locks.md). Same chip pattern as tags, minus the caret
+        // dance: enter / comma commit, backspace on an empty input pops. The
+        // own project is dropped here too, so the chips mirror what the
+        // server will store. Suggestions come from the project datalist.
+        _lockBucket(which) {
+            return which === 'edit' ? this.editing : this.form;
+        },
+        _lockInputProp(which) {
+            return which === 'edit' ? '_lockInput' : 'lockInput';
+        },
+        commitLockInput(which) {
+            const bucket = this._lockBucket(which);
+            if (!bucket) return;
+            const key = this._lockInputProp(which);
+            const own = bucket.project || '';
+            for (const c of (bucket[key] || '').split(',').map(s => s.trim()).filter(Boolean)) {
+                if (c !== own && !bucket.locks.includes(c)) bucket.locks.push(c);
+            }
+            bucket[key] = '';
+        },
+        onLockKeydown(event, which) {
+            const bucket = this._lockBucket(which);
+            if (!bucket) return;
+            const key = this._lockInputProp(which);
+            if (event.key === 'Enter' || event.key === ',') {
+                if (!(bucket[key] || '').trim()) return;   // plain Enter submits the form
+                event.preventDefault();
+                this.commitLockInput(which);
+            } else if (event.key === 'Backspace' && !bucket[key] && bucket.locks.length) {
+                bucket.locks.pop();
+            }
+        },
+        removeLockFrom(which, idx) {
+            const bucket = this._lockBucket(which);
+            if (bucket) bucket.locks.splice(idx, 1);
+        },
+        // Tooltip for the lock badge on a row / card: one project per line.
+        lockBadgeTitle(task) {
+            return _i('task_locks_badge') + '\n' + (task.locks || []).join('\n');
         },
 
         tagSuggestions(which) {
@@ -2433,7 +2478,6 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                     this.claudeSessions = d.active || [];
                     this.claudeWaiting = d.waiting || [];
                     this.claudeSessionProjects = d.projects || {};
-                    this.claudeSessionAgents = d.agents || {};
                     this.claudeSessionTitles = d.titles || {};
                     this._syncTabsFromSessions();
                 }
@@ -2492,31 +2536,6 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             return _i('claude_run') + agent;
         },
 
-        // One group per project that currently has at least one live session --
-        // "what's running in parallel right now". Cross-project sessions (no
-        // project) are grouped under the PROJECT_NONE sentinel. Each group lists
-        // its sessions ({id, agent, waiting}) so the chip can render one agent
-        // logo per session, each a deep link into that #/run/<id> session.
-        // ``waiting`` on the group = any of its sessions is blocked on a prompt.
-        // Sorted by name (sessions by id) so the order is stable across polls.
-        get runningProjectGroups() {
-            const waiting = new Set(this.claudeWaiting);
-            const byProject = new Map();
-            for (const id of this.claudeSessions) {
-                const proj = this.claudeSessionProjects[String(id)] || PROJECT_NONE;
-                const group = byProject.get(proj) || { name: proj, waiting: false, sessions: [] };
-                group.sessions.push({
-                    id,
-                    agent: this.claudeSessionAgents[String(id)] || this.defaultAgent,
-                    waiting: waiting.has(id),
-                });
-                if (waiting.has(id)) group.waiting = true;
-                byProject.set(proj, group);
-            }
-            for (const g of byProject.values()) g.sessions.sort((a, b) => a.id - b.id);
-            return [...byProject.values()].sort((a, b) => a.name.localeCompare(b.name));
-        },
-
         // True when ``project`` already has a live session for a DIFFERENT task
         // -- two agents in one project can collide. Cross-project (null) tasks
         // never count: they share no working dir to clobber.
@@ -2529,11 +2548,11 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         },
 
         // True when this task should be visually damped: its project already has
-        // a live session on a *different* task, so starting this one would put a
-        // second agent into the same working dir. Purely advisory -- the task
-        // stays fully interactive (see `.task-project-busy` in style.css); the
-        // hard stop is the confirm() in openClaudeRun. Never damps the running
-        // task itself, a done task, or a cross-project (null) task.
+        // a live session on a *different* task, so a run queued now waits for
+        // that lane to free up. Purely advisory -- the task stays fully
+        // interactive (see `.task-project-busy` in style.css); the queue worker
+        // serialises the lane. Never damps the running task itself, a done
+        // task, or a cross-project (null) task.
         taskProjectBusy(task) {
             if (!task || task.status === 'done') return false;
             if (this.taskRunPhase(task.id)) return false;
@@ -2577,95 +2596,76 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         },
 
         // Attach a terminal to a tab that has none yet -- reattaches the live
-        // server-side PTY (no seed; seed is ignored on reattach anyway).
+        // server-side PTY.
         _ensureTabConnected(id) {
-            if (!_claudeTerms.has(id)) this._claudeConnect(id, '', '');
+            if (!_claudeTerms.has(id)) this._claudeConnect(id);
         },
 
-        // Launch (or re-focus) a run tab for a task. Fetches the guessed cwd +
-        // `/task <id>` seed for a fresh session, then drives the #/run/<id> hash
-        // which shows the tab and attaches the socket -- starting the server-side
-        // session if one isn't already running.
-        //
-        // ``quick`` (sidebar quick run, see quickRunForProject): start with a
-        // blank prompt instead of the `/task <id>` seed, and always reveal the
-        // terminal -- the whole point is to type into it right away, so the
-        // background-start setting does not apply.
-        async openClaudeRun(task, quick = false) {
+        // The run button: "run this next". The queue is the only way a session
+        // starts, so this puts the task at the head of the queue (moving it
+        // there if it was queued further down) and lets the worker start it
+        // -- one lane per project, so a busy project makes it wait. A task
+        // with a live session just gets its tab. With `claude_open_terminal`
+        // on, the terminal opens as soon as the session is live.
+        async runNext(task) {
             const id = task.id;
-            if (this.claudeTabs.some(t => t.taskId === id)) {
-                this.activateTab(id);   // already open -> just switch to its tab
+            if (this.taskRunPhase(id)) {
+                this.activateTab(id);
                 return;
             }
-            // Same-project collision warning: another agent is already live in
-            // this project. Warn, but don't prevent -- the user may proceed.
-            if (this._projectHasOtherSession(task.project, id) &&
-                !confirm(_i('confirm_parallel_run', { project: task.project }))) {
-                return;
+            await this._saveQueue([task, ...this.queue.filter(t => t.id !== id)]);
+            this.showToast(_i('queued_front', { id }), 'success');
+            if (this.claudeOpenTerminal) this._openWhenLive(id);
+        },
+
+        // Poll the session list until ``id`` has a live session, then open its
+        // tab. Gives up after ``timeout`` ms and stays on the board -- the
+        // queue panel then shows why the task has not started (lane busy,
+        // paused, blocked).
+        async _openWhenLive(id, timeout = 15000) {
+            const deadline = Date.now() + timeout;
+            while (Date.now() < deadline) {
+                await this.loadClaudeSessions();
+                if (this.claudeSessions.includes(id)) {
+                    this._openRunById(id);
+                    return;
+                }
+                await new Promise(res => setTimeout(res, 1000));
             }
-            let cwd = '', seed = '';
-            try {
-                const r = await fetch(`/api/tasks/${id}/claude-run/defaults`);
-                if (r.ok) { const d = await r.json(); cwd = d.cwd || ''; if (!quick) seed = d.seed || ''; }
-            } catch (_e) { /* defaults are best-effort */ }
-            this._addTab(id, task.title || '', task.project || '');
-            // Background start: attach the session but stay on the board. The
-            // tab's xterm host still renders (hidden) via the claudeTabs x-for,
-            // so the socket attaches and the server-side PTY starts; opening the
-            // tab later (clicking the running task) reattaches and fits it.
-            if (!this.claudeOpenTerminal && !quick) {
-                this.$nextTick(() => this._claudeConnect(id, cwd, seed));
-                this.showToast(_i('claude_started_background', { id }), 'success');
-                return;
-            }
-            this.claudeView = id;
-            location.hash = '#/run/' + id;   // record in history (idempotent _applyRoute)
-            this.$nextTick(() => this._claudeConnect(id, cwd, seed, false, quick));
         },
 
         // Reopen a finished task's Claude session in the web terminal
-        // (`claude --resume <stored id>`). Same tab machinery as openClaudeRun,
-        // but no seed -- the conversation replays -- and the attach carries
-        // ``resume`` so the server reopens the stored id instead of seeding a
-        // fresh session. The cwd still matters (resume history is per-project),
-        // so we fetch the guessed one.
-        async openClaudeResume(task) {
+        // (`claude --resume <stored id>`). The one attach that may start a
+        // process: the attach carries ``resume`` so the server reopens the
+        // stored id. Not a queue run -- done tasks cannot be queued.
+        openClaudeResume(task) {
             const id = task.id;
             if (this.claudeTabs.some(t => t.taskId === id)) {
                 this.activateTab(id);
                 return;
             }
-            let cwd = '';
-            try {
-                const r = await fetch(`/api/tasks/${id}/claude-run/defaults`);
-                if (r.ok) { const d = await r.json(); cwd = d.cwd || ''; }
-            } catch (_e) { /* defaults are best-effort */ }
             this._addTab(id, task.title || '', task.project || '');
-            if (!this.claudeOpenTerminal) {
-                this.$nextTick(() => this._claudeConnect(id, cwd, '', true));
-                this.showToast(_i('claude_started_background', { id }), 'success');
-                return;
-            }
             this.claudeView = id;
             location.hash = '#/run/' + id;
-            this.$nextTick(() => this._claudeConnect(id, cwd, '', true));
+            this.$nextTick(() => this._claudeConnect(id, true));
         },
 
-        // Open a tab from just an id (deep link / browser-forward / reload).
-        // Looks up the title + run defaults, then connects like openClaudeRun.
+        // Open a tab from just an id (deep link / browser-forward / reload / a
+        // queued run going live). Looks up the title, then reattaches.
         async _openRunById(id) {
-            let title = '', project = '', cwd = '', seed = '';
+            if (this.claudeTabs.some(t => t.taskId === id)) {
+                this.activateTab(id);
+                return;
+            }
+            let title = '', project = '';
             try {
                 const r = await fetch(`/api/tasks/${id}`);
                 if (r.ok) { const t = await r.json(); title = t.title || ''; project = t.project || ''; }
             } catch (_e) { /* best-effort */ }
-            try {
-                const r = await fetch(`/api/tasks/${id}/claude-run/defaults`);
-                if (r.ok) { const d = await r.json(); cwd = d.cwd || ''; seed = d.seed || ''; }
-            } catch (_e) { /* best-effort */ }
             this._addTab(id, title, project);
             this.claudeView = id;
-            this.$nextTick(() => this._claudeConnect(id, cwd, seed));
+            location.hash = '#/run/' + id;   // record in history (idempotent _applyRoute)
+            this.$nextTick(() => this._claudeConnect(id));
         },
 
         // Switch to an already-open tab. Goes through the hash so the switch
@@ -2698,11 +2698,10 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
 
         // Create the xterm terminal + WebSocket bridge for a task's tab. Attaches
         // to the per-tab host node (#claude-term-<id>) and stores the live handles
-        // in the module-level _claudeTerms map.
-        // ``quick`` is forwarded to the server's attach: it starts the session
-        // with a blank prompt and briefs the agent to name the placeholder task
-        // itself (see quick_run_system_prompt in claude_runner.py).
-        _claudeConnect(taskId, cwd, seed, resume = false, quick = false) {
+        // in the module-level _claudeTerms map. The attach only reattaches the
+        // live server-side session; ``resume`` is the one exception (reopen a
+        // finished task's stored session, see openClaudeResume).
+        _claudeConnect(taskId, resume = false) {
             if (_claudeTerms.has(taskId)) return;   // don't double-connect a tab
             const el = document.getElementById('claude-term-' + taskId);
             if (!el || typeof Terminal === 'undefined') {
@@ -2734,7 +2733,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             let opened = false, ended = false;
             ws.onopen = () => {
                 opened = true;
-                ws.send(JSON.stringify({ type: 'attach', cwd, seed, resume, quick }));
+                ws.send(JSON.stringify({ type: 'attach', resume }));
                 this._fitAndSync(taskId);
                 this._setTabStatus(taskId, 'running');
                 this.loadClaudeSessions();

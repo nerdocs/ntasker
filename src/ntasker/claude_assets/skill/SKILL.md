@@ -247,6 +247,24 @@ user's behalf.
 missing info, failed verification), leave the phase as-is and report the
 blocker. Review is a *handoff*, not a *give-up* signal.
 
+### 6.1 Directory locks (since v3.1)
+
+A run holds its own project's directory. Work that must touch **another
+project's repo** needs a lock on it first -- the queue then keeps other
+sessions out of that directory, and the Claude Code `PreToolUse` hook refuses
+edits in a directory the task does not hold (with `dir_locks` on):
+
+```bash
+ntasker lock list <id>                 # own project + extra locks
+ntasker lock add <id> <project> [...]  # all-or-nothing; exit 1 + holder if a dir is taken
+ntasker lock rm <id> <project> [...]
+```
+
+Locks live in the task's `locks` field (`--locks a,b` on `add` / `patch`).
+Lock only what the task genuinely needs, and only if the directory is free --
+if it is held, leave that work to a task in that project. Never lock as a
+workaround for a blocked edit outside any project (those always pass).
+
 ## 7. Creating Tasks (only on the user's explicit instruction)
 
 ```bash
@@ -303,6 +321,7 @@ either `""` or `null` for "no project" both work.
 | `archived` | INT | 0/1 -- task remains searchable |
 | tags | n:m | via `tags` + `task_tags` tables |
 | depends | n:m | via `task_deps(task_id, depends_on_id)`, FK CASCADE; kept acyclic |
+| `locks` | TEXT JSON | extra project names whose directories the run holds (own project implicit) |
 | settings | KV | `key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT` |
 
 Workflow phases read left-to-right in the kanban view:

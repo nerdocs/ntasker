@@ -23,6 +23,7 @@ Global flags: ``--db <path>`` (highest precedence) and ``--version``.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import sys
 from datetime import datetime
@@ -61,7 +62,7 @@ from ntasker.db import (
 from ntasker.i18n import _, resolve_for_cli, set_active_language
 from ntasker.middleware import ALLOWED_HOSTS_ENV, LOOPBACK_HOSTS
 from ntasker.paths import resolve_db_path, warn_if_missing
-from ntasker import taskqueue
+from ntasker import locks, taskqueue
 from ntasker.settings import (
     delete_setting,
     get_setting_raw,
@@ -392,6 +393,10 @@ def cmd_serve(args: argparse.Namespace) -> int:
     if args.host not in LOOPBACK_HOSTS:
         os.environ[ALLOWED_HOSTS_ENV] = args.host
 
+    # Spawned agent sessions inherit this so `ntasker hook ...` (Claude Code
+    # hooks) can reach the server that started them, whatever it binds to.
+    os.environ["NTASKER_URL"] = f"http://{args.host}:{args.port}"
+
     if getattr(args, "detach", False):
         if args.reload:
             print(
@@ -631,6 +636,11 @@ def cmd_show(args: argparse.Namespace) -> int:
     return 0
 
 
+def _parse_locks(raw: str | None) -> list[str]:
+    """Split a comma-separated ``--locks`` value; ``None``/'' -> ``[]``."""
+    return [p.strip() for p in (raw or "").split(",") if p.strip()]
+
+
 def cmd_add(args: argparse.Namespace) -> int:
     if args.priority not in {"critical", "high", "normal", "low"}:
         print(
@@ -679,9 +689,17 @@ def cmd_add(args: argparse.Namespace) -> int:
                 )
                 return 2
         cur = conn.execute(
-            "INSERT INTO tasks (project, title, description, phase, priority, agent) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (args.project, title_value, args.description, phase_value, args.priority, args.agent),
+            "INSERT INTO tasks (project, title, description, phase, priority, agent, locks) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                args.project,
+                title_value,
+                args.description,
+                phase_value,
+                args.priority,
+                args.agent,
+                locks.dump(locks.normalize(_parse_locks(args.locks), args.project)),
+            ),
         )
         # sqlite3 types lastrowid as ``int | None``; after a successful INSERT
         # on a rowid table it is always set, so narrow instead of coercing.
@@ -790,6 +808,8 @@ def cmd_patch(args: argparse.Namespace) -> int:
         fields["agent"] = candidate or None
     if args.archived is not None:
         fields["archived"] = 1 if args.archived else 0
+    if args.locks is not None:
+        fields["locks"] = _parse_locks(args.locks)   # normalised below, once the project is known
     if args.status is not None:
         if args.status not in {"open", "done"}:
             print(
@@ -817,11 +837,14 @@ def cmd_patch(args: argparse.Namespace) -> int:
 
     with get_conn() as conn:
         exists = conn.execute(
-            "SELECT 1 FROM tasks WHERE id = ?", (args.task_id,)
+            "SELECT project FROM tasks WHERE id = ?", (args.task_id,)
         ).fetchone()
         if exists is None:
             print(_("ntasker: task #{id} not found").format(id=args.task_id), file=sys.stderr)
             return 1
+        if "locks" in fields:
+            own = fields["project"] if "project" in fields else exists["project"]
+            fields["locks"] = locks.dump(locks.normalize(fields["locks"], own))
 
         if dep_ids is not None:
             dep_ids = normalize_dep_ids(dep_ids)
@@ -1088,6 +1111,201 @@ def cmd_queue_pause(args: argparse.Namespace) -> int:
     set_setting("queue_enabled", "false")
     print(_("queue paused"))
     return 0
+
+
+# Directory locks --------------------------------------------------------------
+# These go through the running server's API rather than the DB: a lock grant
+# has to be checked against the *live* sessions, which only the server knows.
+
+
+def _server_base(args: argparse.Namespace) -> str:
+    """Base URL of the server: explicit ``--host/--port`` > ``NTASKER_URL`` > default.
+
+    ``NTASKER_URL`` is what ``ntasker serve`` puts into the environment of every
+    session it spawns, so an agent inside such a session reaches the right
+    server without flags.
+    """
+    import os  # noqa: PLC0415
+
+    host, port = getattr(args, "host", None), getattr(args, "port", None)
+    if host is None and port is None and os.environ.get("NTASKER_URL"):
+        return os.environ["NTASKER_URL"].rstrip("/")
+    return f"http://{host or '127.0.0.1'}:{port or 8766}"
+
+
+def _api_call(
+    base: str, method: str, path: str, body: dict | None = None, timeout: float = 5.0
+) -> tuple[int, dict]:
+    """One JSON request against the server; ``(status, parsed body)``.
+
+    Raises ``OSError`` (incl. ``URLError``) when the server is unreachable; a
+    non-2xx answer is returned, not raised, so callers can print its detail.
+    """
+    import urllib.error  # noqa: PLC0415
+    import urllib.request  # noqa: PLC0415
+
+    data = json.dumps(body).encode("utf-8") if body is not None else None
+    req = urllib.request.Request(
+        base + path, data=data, method=method, headers={"Content-Type": "application/json"}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
+            raw = resp.read().decode("utf-8")
+            return resp.status, (json.loads(raw) if raw else {})
+    except urllib.error.HTTPError as exc:
+        raw = exc.read().decode("utf-8", "replace")
+        try:
+            return exc.code, json.loads(raw)
+        except ValueError:
+            return exc.code, {"detail": raw}
+
+
+def _print_locks(task: dict) -> None:
+    own = task.get("project") or _("(cross)")
+    extra = task.get("locks") or []
+    print(_("#{id} holds: {own}{extra}").format(
+        id=task["id"], own=own, extra=("".join(f", {p}" for p in extra))
+    ))
+
+
+def _lock_request(args: argparse.Namespace, method: str, path: str, body: dict | None) -> int:
+    try:
+        status, data = _api_call(_server_base(args), method, path, body)
+    except OSError as exc:
+        print(_("ntasker: server not reachable ({err})").format(err=exc), file=sys.stderr)
+        return 1
+    if status >= 400:
+        print(_("ntasker: {detail}").format(detail=data.get("detail", status)), file=sys.stderr)
+        return 1
+    _print_locks(data)
+    return 0
+
+
+def cmd_lock_add(args: argparse.Namespace) -> int:
+    """Grant extra directory locks -- all or nothing, 1 when a dir is held."""
+    return _lock_request(
+        args, "POST", f"/api/tasks/{args.task_id}/locks", {"projects": args.project}
+    )
+
+
+def cmd_lock_rm(args: argparse.Namespace) -> int:
+    rc = 0
+    for project in args.project:
+        rc = _lock_request(args, "DELETE", f"/api/tasks/{args.task_id}/locks/{project}", None) or rc
+    return rc
+
+
+def cmd_lock_list(args: argparse.Namespace) -> int:
+    return _lock_request(args, "GET", f"/api/tasks/{args.task_id}", None)
+
+
+# Claude Code hooks -------------------------------------------------------------
+# Run *inside* an ntasker-spawned Claude Code session (wired via the
+# ``--settings`` file, see claude_assets/hooks/*.json). They read the hook's
+# JSON from stdin and find their task + server in ``NTASKER_TASK_ID`` /
+# ``NTASKER_URL`` -- both set by the runner. A hook must never break the
+# session: missing env, an unreachable server or a bad payload all exit 0
+# silently. Only ``pretooluse`` ever blocks (exit 2 + a reason on stderr).
+
+
+def _hook_context() -> tuple[int, str, dict] | None:
+    """``(task_id, base_url, stdin payload)`` or ``None`` outside a spawned session."""
+    import os  # noqa: PLC0415
+
+    raw_id, base = os.environ.get("NTASKER_TASK_ID"), os.environ.get("NTASKER_URL")
+    if not raw_id or not base:
+        return None
+    try:
+        task_id = int(raw_id)
+    except ValueError:
+        return None
+    try:
+        payload = json.loads(sys.stdin.read() or "{}")
+    except ValueError:
+        payload = {}
+    return task_id, base.rstrip("/"), payload if isinstance(payload, dict) else {}
+
+
+def _hook_state(waiting: bool) -> int:
+    ctx = _hook_context()
+    if ctx is None:
+        return 0
+    task_id, base, _payload = ctx
+    with contextlib.suppress(Exception):
+        _api_call(base, "POST", f"/api/claude/sessions/{task_id}/state", {"waiting": waiting}, 2.0)
+    return 0
+
+
+def cmd_hook_waiting(args: argparse.Namespace) -> int:
+    return _hook_state(True)
+
+
+def cmd_hook_running(args: argparse.Namespace) -> int:
+    return _hook_state(False)
+
+
+def _pretooluse_target(payload: dict) -> str | None:
+    """The path a tool call is about to write to, or ``None`` when it has none.
+
+    Edit / Write / MultiEdit / NotebookEdit carry ``file_path`` /
+    ``notebook_path``. For Bash only a ``cd <dir>`` is inspected (the shell
+    then works in that directory); the dir is resolved against the hook's
+    ``cwd``. A bare ``cd`` or ``cd -`` has no static target.
+    """
+    import os  # noqa: PLC0415
+    import shlex  # noqa: PLC0415
+
+    tool_input = payload.get("tool_input") or {}
+    path = tool_input.get("file_path") or tool_input.get("notebook_path")
+    if path:
+        return str(path)
+    if payload.get("tool_name") != "Bash":
+        return None
+    command = (tool_input.get("command") or "").strip()
+    if not command.startswith("cd "):
+        return None
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return None
+    if len(tokens) < 2 or tokens[1] in {"-", "~"} or tokens[1].startswith("-"):
+        return None
+    target = os.path.expanduser(tokens[1])
+    return os.path.join(payload.get("cwd") or os.getcwd(), target)
+
+
+def cmd_hook_pretooluse(args: argparse.Namespace) -> int:
+    """Refuse a write inside another project's directory the task does not hold.
+
+    Asks ``GET /api/locks/check``; the server owns the resolution rules (see
+    docs/directory-locks.md). Exit 2 blocks the tool call and Claude Code
+    shows stderr to the agent; anything else -- no target, server down,
+    allowed -- is exit 0.
+    """
+    from urllib.parse import urlencode  # noqa: PLC0415
+
+    ctx = _hook_context()
+    if ctx is None:
+        return 0
+    task_id, base, payload = ctx
+    target = _pretooluse_target(payload)
+    if not target:
+        return 0
+    try:
+        status, data = _api_call(
+            base, "GET", "/api/locks/check?" + urlencode({"task": task_id, "path": target}), None, 3.0
+        )
+    except Exception:  # noqa: BLE001 -- the server being down must not block the agent
+        return 0
+    if status != 200 or data.get("allowed", True):
+        return 0
+    project = data.get("project") or target
+    print(
+        f"{target} is not locked by task #{task_id} -- run `ntasker lock add {task_id} {project}` "
+        f"if it is free, or leave it to a task in that project",
+        file=sys.stderr,
+    )
+    return 2
 
 
 # Claude Code projects -------------------------------------------------------
@@ -1798,6 +2016,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--depends",
         help=_("Comma-separated task ids this task depends on, e.g. 12,15."),
     )
+    sp_add.add_argument(
+        "--locks",
+        help=_("Comma-separated extra projects whose directories the run holds."),
+    )
     sp_add.set_defaults(func=cmd_add)
 
     # done ----------------------------------------------------------------
@@ -1842,6 +2064,10 @@ def build_parser() -> argparse.ArgumentParser:
     sp_patch.add_argument(
         "--depends",
         help=_("Comma-separated task ids to depend on (replaces the set; '' clears)."),
+    )
+    sp_patch.add_argument(
+        "--locks",
+        help=_("Comma-separated extra projects to lock (replaces the set; '' clears)."),
     )
     sp_patch.set_defaults(func=cmd_patch)
 
@@ -1919,6 +2145,34 @@ def build_parser() -> argparse.ArgumentParser:
 
     q_pause = q_sub.add_parser("pause", help=_("Stop starting new tasks"))
     q_pause.set_defaults(func=cmd_queue_pause)
+
+    # hook ----------------------------------------------------------------
+    # Claude Code hook entry points; not meant to be typed by hand.
+    sp_hook = sub.add_parser("hook", help=_("Claude Code hook handlers (used by spawned sessions)"))
+    hook_sub = sp_hook.add_subparsers(dest="hook_cmd", required=True)
+    for name, func in (
+        ("waiting", cmd_hook_waiting),
+        ("running", cmd_hook_running),
+        ("pretooluse", cmd_hook_pretooluse),
+    ):
+        hook_sub.add_parser(name).set_defaults(func=func)
+
+    # lock ----------------------------------------------------------------
+    sp_lock = sub.add_parser("lock", help=_("Directory locks a task's run holds"))
+    lock_sub = sp_lock.add_subparsers(dest="lock_cmd", required=True)
+    for name, func, with_projects, help_text in (
+        ("add", cmd_lock_add, True, _("Lock more projects' directories for a task")),
+        ("rm", cmd_lock_rm, True, _("Release directory locks")),
+        ("list", cmd_lock_list, False, _("Show the directories a task holds")),
+    ):
+        lp = lock_sub.add_parser(name, help=help_text)
+        lp.add_argument("task_id", type=_task_id)
+        if with_projects:
+            lp.add_argument("project", nargs="+")
+        # Server to talk to; default NTASKER_URL (set inside spawned sessions).
+        lp.add_argument("--host", default=None)
+        lp.add_argument("--port", type=int, default=None)
+        lp.set_defaults(func=func)
 
     # projects ------------------------------------------------------------
     sp_proj = sub.add_parser("projects", help=_("Claude Code projects"))
@@ -2133,9 +2387,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "assets" and getattr(args, "assets_cmd", None) in {"fetch", "remove"}:
         set_active_language(resolve_for_cli())
         return args.func(args)
-    # `stop` is a pure HTTP request to a running server -- never create
-    # a DB just to send a shutdown.
-    if args.command == "stop":
+    # `stop`, `lock` and `hook` are pure HTTP requests to a running server --
+    # never create a DB for them (hooks fire inside every spawned session).
+    if args.command in {"stop", "lock", "hook"}:
         set_active_language(resolve_for_cli())
         return args.func(args)
     # `service` (install/uninstall/status) and `self-update` manage OS units

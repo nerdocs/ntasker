@@ -488,8 +488,8 @@ def main() -> int:
 
     r = client.get("/api/queue")
     assert_ok(r)
-    assert r.json() == {"enabled": False, "items": []}, "queue starts empty and off"
-    print("OK GET /api/queue (empty, off)")
+    assert r.json() == {"enabled": True, "items": [], "skipped": {}}, "queue starts empty and on"
+    print("OK GET /api/queue (empty, on)")
 
     # PUT replaces the whole queue, head first, and renumbers 1..n.
     r = client.put("/api/queue", json={"ids": [q_ids[2], q_ids[0], q_ids[1]]})
@@ -508,6 +508,9 @@ def main() -> int:
 
     # The worker retires entries whose task is no longer open, whoever closed
     # it -- the DB is the single source of truth.
+    # Pause first: the queue is on by default and tick() would otherwise
+    # spawn a real agent process for the remaining entry.
+    assert_ok(client.put("/api/settings/queue_enabled", json={"value": "false"}))
     client.put("/api/queue", json={"ids": [q_ids[1], q_ids[2]]})
     assert_ok(client.patch(f"/api/tasks/{q_ids[1]}", json={"status": "done"}))
     from ntasker import taskqueue  # noqa: PLC0415
@@ -528,11 +531,11 @@ def main() -> int:
     print("OK taskqueue.tick() keeps a queued review task that is not running")
 
     # The switch lives in the settings store, so CLI and UI share one state.
-    assert_ok(client.put("/api/settings/queue_enabled", json={"value": "true"}))
-    assert client.get("/api/queue").json()["enabled"] is True
+    assert client.get("/api/queue").json()["enabled"] is False
     assert client.put("/api/settings/queue_enabled", json={"value": "maybe"}).status_code == 400
     # Drop the row again -- the settings section below starts from an empty store.
     assert client.delete("/api/settings/queue_enabled").status_code == 204
+    assert client.get("/api/queue").json()["enabled"] is True
     print("OK queue_enabled switch (shared setting, validated)")
 
     # An empty list is how the last entry is removed.

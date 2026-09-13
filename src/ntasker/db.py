@@ -20,6 +20,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import cast
 
+from ntasker import locks
+
 # Module-level "current DB" — set once at startup by paths.resolve_db_path()
 # via :func:`set_db_path`. The smoke test rebinds it to a tempfile.
 DB_PATH: Path | None = None
@@ -79,7 +81,12 @@ CREATE TABLE IF NOT EXISTS tasks (
     -- worked top-down (``queue_order ASC``). Unlike ``sort_order`` this is not
     -- fractional: every reorder rewrites the whole queue as a dense 1..n
     -- sequence, which stays cheap because a queue is short by nature.
-    queue_order REAL
+    queue_order REAL,
+    -- Directory locks: JSON list of *additional* project names whose
+    -- directories this task's run holds besides its own project's. The queue
+    -- worker refuses to start a task while another live session holds one of
+    -- its directories. See ntasker.locks.
+    locks TEXT NOT NULL DEFAULT '[]'
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_archived ON tasks(archived);
 CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project);
@@ -180,6 +187,13 @@ def init_db(path: Path | None = None) -> None:
         # for every pre-existing task.
         try:
             conn.execute("ALTER TABLE tasks ADD COLUMN queue_order REAL")
+        except sqlite3.OperationalError:
+            pass
+        # v3.1 directory-locks migration: JSON list of extra project names a
+        # run holds; '[]' = own project only, the right state for every
+        # pre-existing task.
+        try:
+            conn.execute("ALTER TABLE tasks ADD COLUMN locks TEXT NOT NULL DEFAULT '[]'")
         except sqlite3.OperationalError:
             pass
         # v2.0 phase migration: legacy values `later` and NULL collapse into
@@ -345,6 +359,7 @@ def row_to_task(
         "session_id": row["session_id"],
         "sort_order": row["sort_order"],
         "queue_order": row["queue_order"],
+        "locks": locks.parse(row["locks"]),
         "tags": tags or [],
         "depends": depends or [],
     }

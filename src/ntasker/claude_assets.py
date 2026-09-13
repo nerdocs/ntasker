@@ -88,6 +88,18 @@ def _asset_root():
     return files("ntasker") / "claude_assets"
 
 
+def hooks_settings_path(with_locks: bool) -> str:
+    """Path of the Claude Code settings file ntasker passes via ``--settings``.
+
+    ``base.json`` carries the state hooks (waiting / running); ``locks.json``
+    adds the ``PreToolUse`` directory-lock guard. Picked at spawn from the
+    ``dir_locks`` setting. Package data, so a regular install yields a real
+    file path (``--settings`` needs one).
+    """
+    name = "locks.json" if with_locks else "base.json"
+    return str(_asset_root() / "hooks" / name)
+
+
 def read_skill_md() -> str:
     """Return the packaged ``SKILL.md`` content (verbatim, UTF-8)."""
     return (_asset_root() / "skill" / "SKILL.md").read_text(encoding="utf-8")

@@ -24,9 +24,10 @@ read and drive your tracker, no copy-paste:
 ## Run with an agent (web UI)
 
 The flip side of the integration above: every task row has a **run** button -- showing that task's agent logo -- that
-opens a real interactive session -- the genuine TUI, embedded in the page via xterm.js -- running in the task's project
-directory and seeded with `/task <id>`. You answer the agent's questions, approve its tool prompts and interrupt it
-exactly as in a terminal; it is the same CLI with the same `CLAUDE.md`, skills, MCP and permissions.
+queues the task to run next and opens a real interactive session -- the genuine TUI, embedded in the page via xterm.js
+-- running in the task's project directory and seeded with the task. You answer the agent's questions, approve its tool
+prompts and interrupt it exactly as in a terminal; it is the same CLI with the same `CLAUDE.md`, skills, MCP and
+permissions.
 
 Each task picks its agent (or inherits the `default_agent` setting); the run button only appears when that agent's CLI
 resolves. Sessions run in the background (the button shows a spinner, and re-opening reattaches to the live session);
@@ -38,10 +39,10 @@ pseudo-terminal, otherwise the button stays hidden. See [docs/claude-runs.md](do
 
 ## Task queue
 
-Press the queue button on a task and then **Start**: ntasker works through the queue unattended, one
-task per project at a time, and takes the next one as soon as the previous session ends. Queued runs are told to finish
-the task and close it themselves -- that close is what advances the queue. Off by default, so queueing tasks and
-sorting them never launches an agent by accident.
+The queue is the only way a session starts: every run button puts its task at the head of its project's lane, and
+ntasker works through the queue unattended, one task per project at a time, taking the next one as soon as the previous
+session ends. Runs are told to finish the task and hand it to review themselves -- that hand-off is what advances the
+queue. **Pause** stops new starts; running tasks keep going.
 
 The panel shows one column per project, because that is what runs in parallel. To make one task wait for another --
 across projects too -- drop it on the **middle** of the other; the edges keep reordering.

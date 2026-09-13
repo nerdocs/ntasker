@@ -190,6 +190,9 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         projectGroups: {},
         showHiddenProjects: localStorage.getItem(LS_KEY_SHOW_HIDDEN_PROJECTS) === '1',
         sidebarWidth: clampSidebarWidth(localStorage.getItem(LS_KEY_SIDEBAR_WIDTH)),
+        // Open/folded state per sidebar section (the `sidebar_sections`
+        // setting, rendered into the page so nothing flashes on load).
+        sectionOpen: window.__sidebarSections || {},
         // Drag&drop state. ``draggedTaskId`` is captured on dragstart so the
         // drop handler can identify the moving task without parsing dataTransfer
         // (Firefox is picky about reading text/plain mid-drag). ``dragOverColumn``
@@ -395,6 +398,19 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
 
         persistShowHiddenProjects() {
             localStorage.setItem(LS_KEY_SHOW_HIDDEN_PROJECTS, this.showHiddenProjects ? '1' : '0');
+        },
+
+        // Fold / unfold a sidebar section. Stored server-side so every
+        // browser agrees; a failed write only costs the memory, not the fold.
+        async toggleSection(key) {
+            this.sectionOpen[key] = !this.sectionOpen[key];
+            try {
+                await fetch('/api/settings/sidebar_sections', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ value: JSON.stringify(this.sectionOpen) }),
+                });
+            } catch (_e) { /* offline -- the fold still applies for this page */ }
         },
 
         // Hide / unhide a project from the sidebar. A hidden project also

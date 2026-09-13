@@ -123,32 +123,8 @@
     min-width: 0;
 }
 
-/* A section header is a <button> so it is keyboard-reachable and announces
-   its expanded state, but it must read as a heading, not as a control --
-   hence no button chrome at all. */
-.sidebar-section-toggle {
-    background: transparent;
-    box-shadow: none;
-    /* Tabler's .btn is a centering flex container -- without this the
-       section labels drift to the middle and the carets stop lining up
-       into a column. `text-start` alone cannot fix that: it sets
-       text-align, which a flex container ignores for its items. */
-    display: flex;
-    justify-content: flex-start;
-    align-items: center;
-}
-.sidebar-section-toggle:hover .text-secondary,
-.sidebar-section-toggle:focus-visible .text-secondary {
-    color: var(--tblr-body-color) !important;
-}
-
-/* The caret sits tight against the section icon; Tabler's fs-3 would
-   otherwise push the label out of line with the checkbox rows below. */
-.sidebar-caret {
-    width: 1rem;
-    margin-left: -0.25rem;
-    vertical-align: -0.1em;
-}
+/* .sidebar-section-toggle / .sidebar-caret live in the core style.css: the
+   core sidebar sections fold the same way. */
 
 /* Workspace entries are dense rows, not buttons: the sidebar shows up to
    twelve per section and Tabler's default button padding would double the

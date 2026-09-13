@@ -113,6 +113,44 @@ body {
     user-select: none;
 }
 
+/* ---------------- Sidebar sections ----------------
+ * Every section heading folds its body; the state is the
+ * `sidebar_sections` setting. */
+/* A section header is a <button> so it is keyboard-reachable and announces
+   its expanded state, but it must read as a heading, not as a control --
+   hence no button chrome at all. */
+.sidebar-section-toggle {
+    background: transparent;
+    box-shadow: none;
+    /* Tabler's .btn is a centering flex container -- without this the
+       section labels drift to the middle and the carets stop lining up
+       into a column. `text-start` alone cannot fix that: it sets
+       text-align, which a flex container ignores for its items. */
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+}
+/* Tabler paints a ghost button's hover/focus/active state as a filled
+   bar -- on a heading that reads as a selection, so the label darkens instead. */
+.btn.sidebar-section-toggle:hover,
+.btn.sidebar-section-toggle:focus,
+.btn.sidebar-section-toggle:active {
+    background: transparent;
+    box-shadow: none;
+}
+.sidebar-section-toggle:hover .text-secondary,
+.sidebar-section-toggle:focus-visible .text-secondary {
+    color: var(--tblr-body-color) !important;
+}
+
+/* The caret sits tight against the section icon; Tabler's fs-3 would
+   otherwise push the label out of line with the checkbox rows below. */
+.sidebar-caret {
+    width: 1rem;
+    margin-left: -0.25rem;
+    vertical-align: -0.1em;
+}
+
 /* ---------------- Tag chips (keyboard caret nav) ----------------
  * Chips in the tag inputs are focusable. When a chip holds focus the caret
  * conceptually sits to its LEFT -- shown as a vertical bar via a left border --

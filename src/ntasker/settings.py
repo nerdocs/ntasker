@@ -127,6 +127,27 @@ def validate_project_groups(value: str) -> str:
     return json.dumps(groups)
 
 
+SIDEBAR_SECTIONS = ("projects", "priority", "phases", "tags", "workspace")
+
+
+def validate_sidebar_sections(value: str) -> str:
+    """Validator for the ``sidebar_sections`` setting.
+
+    JSON object ``{section: open}`` remembering which sidebar sections are
+    folded. Unknown sections are dropped; a missing section counts as open
+    (see :func:`get_sidebar_sections`).
+    """
+    import json  # noqa: PLC0415
+
+    try:
+        parsed = json.loads(value or "{}")
+    except ValueError as exc:
+        raise ValueError(_("sidebar_sections must be a JSON object of section -> true/false.")) from exc
+    if not isinstance(parsed, dict) or not all(isinstance(v, bool) for v in parsed.values()):
+        raise ValueError(_("sidebar_sections must be a JSON object of section -> true/false."))
+    return json.dumps({k: v for k, v in parsed.items() if k in SIDEBAR_SECTIONS})
+
+
 def validate_projects_base(value: str) -> str:
     """Validator for the ``projects_base`` setting.
 
@@ -319,6 +340,7 @@ VALIDATORS: dict[str, Validator] = {
     "default_agent": validate_default_agent,
     "projects_base": validate_projects_base,
     "project_groups": validate_project_groups,
+    "sidebar_sections": validate_sidebar_sections,
     "no_project_dir": validate_no_project_dir,
     "claude_idle_seconds": validate_claude_idle_seconds,
     "claude_open_terminal": validate_claude_open_terminal,
@@ -395,6 +417,10 @@ HINTS: dict[str, object] = {
         "default -- queued tasks wait until you press Start on the queue panel. "
         "One task runs per project at a time; a task leaves the queue as soon "
         "as its session ends. ENV: NTASKER_QUEUE_ENABLED."
+    ),
+    "sidebar_sections": _lazy(
+        "Which sidebar sections are folded -- written by the fold buttons in the "
+        "sidebar. JSON object {section: true|false}; a missing section is open."
     ),
     "update_command": _lazy(
         "Shell command run by 'self-update' to upgrade ntasker "
@@ -637,6 +663,15 @@ def get_queue_enabled() -> bool:
     if raw is None:
         return False
     return raw.strip().lower() in _TRUE_STRINGS
+
+
+def get_sidebar_sections() -> dict[str, bool]:
+    """Open/folded state per sidebar section; every section defaults to open."""
+    import json  # noqa: PLC0415
+
+    raw = get_setting("sidebar_sections")
+    saved = json.loads(raw) if raw else {}
+    return {name: saved.get(name, True) for name in SIDEBAR_SECTIONS}
 
 
 def get_language_setting() -> str:

@@ -91,6 +91,7 @@ from ntasker.settings import (
     get_default_agent,
     get_default_view,
     get_queue_enabled,
+    get_sidebar_sections,
     get_setting_raw,
     list_settings,
     set_setting,
@@ -1032,6 +1033,7 @@ def index(request: Request) -> HTMLResponse:
             # Configured projects base (expanded) or "" -- lets the project
             # input show where a new project's directory will be created.
             "projects_base": str(projects_base_dir() or ""),
+            "sidebar_sections": get_sidebar_sections(),
             "links": LINKS,
             **_page_plugins(),
         },

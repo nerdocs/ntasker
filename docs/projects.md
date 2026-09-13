@@ -112,9 +112,16 @@ trimmed, empty keys dropped.
 
 ## Board shortcut
 
-**Row menu -> Board** narrows the project filter to that one project, clears the
-phase filter so all four columns are populated, leaves an open run view and
-switches to the kanban view.
+**Row menu -> Only this project** narrows the project filter to that one project,
+clears the phase filter so all four columns are populated, leaves an open run
+view and switches to the kanban view.
+
+## Folding sections
+
+Every sidebar heading (Projects, Priority, Phases, Tags, Workspace) is a button
+that folds its section. The state is the `sidebar_sections` setting -- a JSON
+object `{section: true|false}` -- so it is shared by every browser and survives
+a restart; a section missing from the object is open.
 
 ## Hiding projects
 

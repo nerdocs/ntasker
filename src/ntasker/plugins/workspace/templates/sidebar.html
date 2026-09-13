@@ -5,14 +5,20 @@
     <div>
         <hr class="my-3">
         <div class="d-flex align-items-center mb-2">
-            <span class="text-secondary text-uppercase small fw-bold flex-fill">
-                <i class="ti ti-layout-grid me-1"></i>
-                <span x-text="$i18n('workspace')"></span>
-            </span>
+            {# Folds the whole block; the per-directory carets below stay. #}
+            <button type="button" class="btn btn-ghost-secondary px-0 py-0 border-0 flex-fill text-start sidebar-section-toggle"
+                    @click="toggleSection('workspace')" :aria-expanded="sectionOpen.workspace">
+                <span class="text-secondary text-uppercase small fw-bold">
+                    <i class="ti fs-3 sidebar-caret" :class="sectionOpen.workspace ? 'ti-chevron-down' : 'ti-chevron-right'"></i>
+                    <i class="ti ti-layout-grid me-1"></i>
+                    <span x-text="$i18n('workspace')"></span>
+                </span>
+            </button>
             <a href="/workspace" class="btn btn-sm btn-ghost-secondary px-2 py-0" :title="$i18n('ws_open_page')">
                 <i class="ti ti-arrow-up-right fs-3"></i>
             </a>
         </div>
+        <div x-show="sectionOpen.workspace" x-cloak>
 
         {# --- Team: Claude Code subagents --- #}
         <template x-if="ws.team.exists">
@@ -146,5 +152,6 @@
                 </div>
             </div>
         </template>
+        </div>
     </div>
 </template>

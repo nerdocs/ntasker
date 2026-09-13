@@ -35,6 +35,9 @@
         // Configured projects base dir (expanded) or "". Lets the project input
         // tell the user where a brand-new project's directory will be created.
         window.__projectsBase = {{ projects_base | default('') | tojson }};
+        // Folded/open state of the sidebar sections (the `sidebar_sections`
+        // setting) -- rendered server-side so nothing flashes on load.
+        window.__sidebarSections = {{ sidebar_sections | tojson }};
         // Names of the enabled plugins; plugin scripts register mixins on
         // window.ntaskerPlugins (merged into tracker() in app.js).
         window.__plugins = {{ plugins_enabled | tojson }};
@@ -52,6 +55,20 @@
         });
     </script>
 </head>
+{# Sidebar section heading: a button that folds the section's body.    #}
+{# `key` is a name in settings.SIDEBAR_SECTIONS; the open state lives in #}
+{# `sectionOpen` and is persisted to the `sidebar_sections` setting.     #}
+{% macro section_toggle(key, icon, label) %}
+            <button type="button" class="btn btn-ghost-secondary px-0 py-0 border-0 flex-fill text-start sidebar-section-toggle"
+                    @click="toggleSection('{{ key }}')" :aria-expanded="sectionOpen.{{ key }}">
+                <span class="text-secondary text-uppercase small fw-bold">
+                    <i class="ti fs-3 sidebar-caret" :class="sectionOpen.{{ key }} ? 'ti-chevron-down' : 'ti-chevron-right'"></i>
+                    <i class="ti {{ icon }} me-1"></i>
+                    {{ label }}
+                </span>
+            </button>
+{% endmacro %}
+
 {# One sidebar project row. `p` is the Alpine expression yielding the #}
 {# project ({name, label, open_count}); the same markup serves flat rows, #}
 {# family heads and indented children. `after_badge` is extra markup that #}
@@ -178,17 +195,15 @@
            style="flex-shrink: 0; position: sticky; top: 0; align-self: flex-start; max-height: 100vh; overflow-y: auto; background-color: var(--tblr-bg-surface-secondary, var(--tblr-bg-surface));">
 
         {# Projects section #}
-        <div class="d-flex align-items-center justify-content-between mb-2">
-            <span class="text-secondary text-uppercase small fw-bold">
-                <i class="ti ti-folders me-1"></i>
-                {{ t('Projects') }}
-            </span>
+        <div class="d-flex align-items-center mb-2">
+            {{ section_toggle('projects', 'ti-folders', t('Projects')) }}
             <button type="button" class="btn btn-sm btn-ghost-secondary px-2 py-0"
                     @click="toggleAllProjects()"
                     :title="allProjectsActive ? $i18n('deselect_all') : $i18n('select_all')">
                 <i class="ti fs-3" :class="allProjectsActive ? 'ti-square-off' : 'ti-square-check'"></i>
             </button>
         </div>
+        <div x-show="sectionOpen.projects" x-cloak>
 
         {# Two reveal switches: projects with no open tasks, and projects the #}
         {# user hid via the row menu. Each only appears when it has something #}
@@ -270,14 +285,12 @@
         <div class="text-muted small mt-3" x-show="projects.length <= 1">
             {{ t('No project symlinks found.') }}
         </div>
+        </div>
 
         {# Priorities section -- always visible, fixed order (highest first) #}
         <hr class="my-3">
-        <div class="d-flex align-items-center justify-content-between mb-2">
-            <span class="text-secondary text-uppercase small fw-bold">
-                <i class="ti ti-flame me-1"></i>
-                {{ t('Priority') }}
-            </span>
+        <div class="d-flex align-items-center mb-2">
+            {{ section_toggle('priority', 'ti-flame', t('Priority')) }}
             <button type="button" class="btn btn-sm btn-ghost-secondary px-2 py-0"
                     x-show="priorityFilter.length > 0"
                     @click="clearPriorityFilter()"
@@ -286,6 +299,7 @@
             </button>
         </div>
 
+        <div x-show="sectionOpen.priority" x-cloak>
         <template x-for="pr in priorities" :key="pr.value">
             <label class="form-check d-flex align-items-center w-100 mb-1" :title="pr.label">
                 <input type="checkbox" class="form-check-input"
@@ -304,14 +318,12 @@
                 <span class="badge bg-secondary-lt ms-2" x-text="pr.open_count"></span>
             </label>
         </template>
+        </div>
 
         {# Phases section -- always visible, fixed order (workflow) #}
         <hr class="my-3">
-        <div class="d-flex align-items-center justify-content-between mb-2">
-            <span class="text-secondary text-uppercase small fw-bold">
-                <i class="ti ti-flag me-1"></i>
-                {{ t('Phases') }}
-            </span>
+        <div class="d-flex align-items-center mb-2">
+            {{ section_toggle('phases', 'ti-flag', t('Phases')) }}
             <button type="button" class="btn btn-sm btn-ghost-secondary px-2 py-0"
                     x-show="phaseFilter.length > 0"
                     @click="clearPhaseFilter()"
@@ -320,6 +332,7 @@
             </button>
         </div>
 
+        <div x-show="sectionOpen.phases" x-cloak>
         <template x-for="ph in phases" :key="ph.value">
             <label class="form-check d-flex align-items-center w-100 mb-1" :title="ph.label">
                 <input type="checkbox" class="form-check-input"
@@ -337,23 +350,19 @@
                 <span class="badge bg-secondary-lt ms-2" x-text="ph.open_count"></span>
             </label>
         </template>
+        </div>
 
         {# Tags section -- only visible if any tag exists #}
         <template x-if="tags.length > 0">
             <div>
                 <hr class="my-3">
-                <div class="d-flex align-items-center justify-content-between mb-2">
-                    <span class="d-flex align-items-center">
-                        <span class="text-secondary text-uppercase small fw-bold">
-                            <i class="ti ti-tags me-1"></i>
-                            {{ t('Tags') }}
-                        </span>
-                        {# Cog -> dedicated tag-management page (rename/merge/delete/cleanup). #}
-                        <a href="/tags" class="btn btn-sm btn-ghost-secondary px-2 py-0"
-                           :title="$i18n('manage_tags')">
-                            <i class="ti ti-settings fs-3"></i>
-                        </a>
-                    </span>
+                <div class="d-flex align-items-center mb-2">
+                    {{ section_toggle('tags', 'ti-tags', t('Tags')) }}
+                    {# Cog -> dedicated tag-management page (rename/merge/delete/cleanup). #}
+                    <a href="/tags" class="btn btn-sm btn-ghost-secondary px-2 py-0"
+                       :title="$i18n('manage_tags')">
+                        <i class="ti ti-settings fs-3"></i>
+                    </a>
                     <button type="button" class="btn btn-sm btn-ghost-secondary px-2 py-0"
                             x-show="tagFilter.length > 0"
                             @click="clearTagFilter()"
@@ -362,6 +371,7 @@
                     </button>
                 </div>
 
+                <div x-show="sectionOpen.tags" x-cloak>
                 {# Type-ahead filter over the tag list (display-only; does not filter tasks). #}
                 <div class="input-icon search-box mb-2" x-show="tags.length > 0" x-cloak>
                     <span class="input-icon-addon"><i class="ti ti-search"></i></span>
@@ -385,6 +395,7 @@
                         <span class="badge bg-secondary-lt ms-2" x-text="t.open_count"></span>
                     </label>
                 </template>
+                </div>
             </div>
         </template>
 

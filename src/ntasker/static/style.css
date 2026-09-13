@@ -88,6 +88,31 @@ body {
     filter: brightness(1.2);
 }
 
+/* ---------------- Sidebar splitter ----------------
+ * Thin drag handle sitting on the sidebar's right border. Stretches the full
+ * flex-row height; pulled 3px left so it straddles the border line. While a
+ * drag is in flight the body suppresses text selection and keeps the
+ * col-resize cursor everywhere, so the drag never stutters over content. */
+.tracker-splitter {
+    width: 6px;
+    margin-left: -3px;
+    flex-shrink: 0;
+    cursor: col-resize;
+    z-index: 2;
+    touch-action: none;
+}
+
+.tracker-splitter:hover,
+.tracker-resizing .tracker-splitter {
+    background-color: var(--tblr-primary);
+    opacity: 0.4;
+}
+
+.tracker-resizing {
+    cursor: col-resize;
+    user-select: none;
+}
+
 /* ---------------- Tag chips (keyboard caret nav) ----------------
  * Chips in the tag inputs are focusable. When a chip holds focus the caret
  * conceptually sits to its LEFT -- shown as a vertical bar via a left border --

@@ -20,6 +20,19 @@ const LS_KEY_VIEW_MODE = 'ntasker.viewMode';
 const LS_KEY_SORT_MODE = 'ntasker.sortMode';
 const LS_KEY_KANBAN_DONE_COLLAPSED = 'ntasker.kanbanDoneCollapsed';
 const LS_KEY_SHOW_EMPTY_PROJECTS = 'ntasker.showEmptyProjects';
+// Sidebar width in px, set by dragging the splitter next to the sidebar.
+const LS_KEY_SIDEBAR_WIDTH = 'ntasker.sidebarWidth';
+const SIDEBAR_WIDTH_DEFAULT = 280;
+const SIDEBAR_WIDTH_MIN = 180;
+const SIDEBAR_WIDTH_MAX = 600;
+
+// Sidebar width from storage/drag, clamped to the sane range; anything
+// unparsable falls back to the default.
+function clampSidebarWidth(raw) {
+    const n = Number.parseInt(raw, 10);
+    if (Number.isNaN(n)) return SIDEBAR_WIDTH_DEFAULT;
+    return Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, n));
+}
 
 // Legacy keys used pre-1.0. Migrated to the ntasker.* namespace once.
 const LEGACY_KEYS = {
@@ -135,6 +148,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // Sidebar: hide projects with 0 open tasks by default; this switch
         // (persisted) flips them back into view.
         showEmptyProjects: localStorage.getItem(LS_KEY_SHOW_EMPTY_PROJECTS) === '1',
+        sidebarWidth: clampSidebarWidth(localStorage.getItem(LS_KEY_SIDEBAR_WIDTH)),
         // Drag&drop state. ``draggedTaskId`` is captured on dragstart so the
         // drop handler can identify the moving task without parsing dataTransfer
         // (Firefox is picky about reading text/plain mid-drag). ``dragOverColumn``
@@ -363,6 +377,29 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
 
         persistShowEmptyProjects() {
             localStorage.setItem(LS_KEY_SHOW_EMPTY_PROJECTS, this.showEmptyProjects ? '1' : '0');
+        },
+
+        // Splitter drag: pointer capture keeps the move/up events on the
+        // handle even when the cursor leaves it; the width is committed to
+        // localStorage on release.
+        startSidebarResize(ev) {
+            const handle = ev.currentTarget;
+            const startX = ev.clientX;
+            const startWidth = this.sidebarWidth;
+            const onMove = (e) => {
+                this.sidebarWidth = clampSidebarWidth(startWidth + e.clientX - startX);
+            };
+            const onUp = () => {
+                handle.removeEventListener('pointermove', onMove);
+                handle.removeEventListener('pointerup', onUp);
+                document.body.classList.remove('tracker-resizing');
+                localStorage.setItem(LS_KEY_SIDEBAR_WIDTH, String(this.sidebarWidth));
+            };
+            handle.setPointerCapture(ev.pointerId);
+            handle.addEventListener('pointermove', onMove);
+            handle.addEventListener('pointerup', onUp);
+            document.body.classList.add('tracker-resizing');
+            ev.preventDefault();
         },
 
         pruneStaleProjectFilter() {

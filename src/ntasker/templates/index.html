@@ -57,7 +57,8 @@
     {# drive the bg so dark-mode behaves. Sidebar has its own scroll context; the main #}
     {# page-wrapper scrolls independently. #}
     <aside class="tracker-sidebar d-none d-md-flex flex-column border-end p-3"
-           style="width: 280px; flex-shrink: 0; position: sticky; top: 0; align-self: flex-start; max-height: 100vh; overflow-y: auto; background-color: var(--tblr-bg-surface-secondary, var(--tblr-bg-surface));">
+           :style="{ width: sidebarWidth + 'px' }"
+           style="flex-shrink: 0; position: sticky; top: 0; align-self: flex-start; max-height: 100vh; overflow-y: auto; background-color: var(--tblr-bg-surface-secondary, var(--tblr-bg-surface));">
 
         {# Projects section #}
         <div class="d-flex align-items-center justify-content-between mb-2">
@@ -250,6 +251,10 @@
             </div>
         </template>
     </aside>
+
+    {# Drag handle on the sidebar's edge: resizes the sidebar, width persists in localStorage. #}
+    <div class="tracker-splitter d-none d-md-block"
+         @pointerdown="startSidebarResize($event)"></div>
 
     {# Main content (full-width inside its column) #}
     <div class="page flex-fill" style="min-width: 0;"

@@ -11,7 +11,10 @@ Queue panel shows one column per project -- one lane per concurrent run, each wi
 Set a dependency by dropping a task on the middle of another, on the board or across queue columns; undo via toast.
 Fixed `ntasker restart`: delegates to the installed service instead of squatting its port, and detaches otherwise.
 The settings restart button now waits for a genuinely new process (`/healthz` reports a `boot_id`) instead of any reply.
-Fixed `make smoke`: the test client used a host the origin guard rejects, and the sort_order checks queried the default sort.
+Sidebar row menu gains **Board**: kanban narrowed to that project with all phases.
+Hidden projects moved to a table: `GET /api/projects` reports `hidden`, `PUT /api/projects/hidden` toggles it.
+Hidden projects now live in a `hidden_projects` table; `GET /api/projects` reports `hidden`, `PUT /api/projects/hidden` toggles it.
+Fixed `ntasker stop` misreporting "no server running" on a port held by a foreign, non-accepting listener.
 
 ## [2.21.0] — 2026-09-03
 CLI: `ntasker start` as an alias for `serve`, plus a new `ntasker restart` (stop + start).

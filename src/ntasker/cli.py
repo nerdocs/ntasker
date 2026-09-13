@@ -454,13 +454,23 @@ def cmd_stop(args: argparse.Namespace) -> int:
 
     base = f"http://{args.host}:{args.port}"
 
+    # Probe the raw port BEFORE /healthz, not after. Both probes open a
+    # TCP connection, and a foreign listener that never accept()s -- the
+    # exact case this diagnosis exists for -- holds each one in its
+    # backlog. With a backlog of 1 (a plain `listen(1)`), the /healthz
+    # attempt fills the queue and the follow-up probe then cannot connect,
+    # so ntasker reported "no server running" about a port that was
+    # visibly occupied. Asking the cheap question first keeps the answer
+    # independent of how deep the other process's backlog happens to be.
+    listening = _port_in_use(args.host, args.port)
+
     if not _healthz_ok(args.host, args.port):
         # /healthz silent: either the port is truly empty (nothing to
         # stop, exit 0) -- or something *is* there but does not speak
         # our protocol (pre-v1.4.0 ntasker, or a foreign process). In
         # the latter case we cannot POST /shutdown, so we tell the user
         # exactly that instead of a misleading "no server running".
-        if _port_in_use(args.host, args.port):
+        if listening:
             print(
                 _(
                     "ntasker: something is listening on {host}:{port} but does not "

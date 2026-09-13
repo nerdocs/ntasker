@@ -13,6 +13,7 @@ threads through every request without function-arg plumbing.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -102,6 +103,14 @@ CREATE TABLE IF NOT EXISTS task_deps (
     PRIMARY KEY (task_id, depends_on_id)
 );
 CREATE INDEX IF NOT EXISTS idx_task_deps_dep ON task_deps(depends_on_id);
+
+-- Projects the user has hidden from the sidebar entirely -- discovered
+-- entries reappear on every scan, so "remove" has to be a persisted veto
+-- rather than a delete. Hiding never touches tasks; it only takes the name
+-- out of the project list until the user restores it.
+CREATE TABLE IF NOT EXISTS hidden_projects (
+    project TEXT PRIMARY KEY
+);
 
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
@@ -196,6 +205,63 @@ def init_db(path: Path | None = None) -> None:
         # "nothing selected = automatic" state instead of a stale value.
         try:
             conn.execute("DELETE FROM settings WHERE key = 'language' AND value = 'auto'")
+        except sqlite3.OperationalError:
+            pass
+        # v2.22 fork migration: some forks stored per-project sidebar
+        # categories in a `project_categories(project, category)` table.
+        # Upstream keeps that same info as the `project_groups` JSON setting
+        # instead, so fold any such table into that setting and drop it.
+        # Existing upstream entries win on conflict.
+        try:
+            table = conn.execute(
+                "SELECT name FROM sqlite_master "
+                "WHERE type='table' AND name='project_categories'"
+            ).fetchone()
+            if table is not None:
+                row = conn.execute(
+                    "SELECT value FROM settings WHERE key = 'project_groups'"
+                ).fetchone()
+                try:
+                    groups = json.loads(row[0]) if row else {}
+                except (json.JSONDecodeError, TypeError):
+                    groups = {}
+                if not isinstance(groups, dict):
+                    groups = {}
+                for project, category in conn.execute(
+                    "SELECT project, category FROM project_categories"
+                ).fetchall():
+                    project = (project or "").strip()
+                    category = (category or "").strip()
+                    if not project or not category:
+                        continue
+                    groups.setdefault(project, category)
+                conn.execute(
+                    "INSERT INTO settings (key, value) VALUES ('project_groups', ?) "
+                    "ON CONFLICT(key) DO UPDATE SET "
+                    "value = excluded.value, updated_at = datetime('now')",
+                    (json.dumps(groups),),
+                )
+                conn.execute("DROP TABLE project_categories")
+        except sqlite3.OperationalError:
+            pass
+        # v2.22: the hidden_projects setting (unreleased) became a table.
+        try:
+            row = conn.execute(
+                "SELECT value FROM settings WHERE key = 'hidden_projects'"
+            ).fetchone()
+            if row is not None:
+                try:
+                    names = json.loads(row[0])
+                except (json.JSONDecodeError, TypeError):
+                    names = []
+                if isinstance(names, list):
+                    for name in names:
+                        if isinstance(name, str) and name.strip():
+                            conn.execute(
+                                "INSERT OR IGNORE INTO hidden_projects (project) VALUES (?)",
+                                (name.strip(),),
+                            )
+                conn.execute("DELETE FROM settings WHERE key = 'hidden_projects'")
         except sqlite3.OperationalError:
             pass
         conn.commit()

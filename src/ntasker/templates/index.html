@@ -110,6 +110,13 @@
                             <div class="dropdown-menu dropdown-menu-end" :class="{ show: menuOpen }" x-cloak>
                                 <template x-if="!grouping">
                                     <div>
+                                        {# "Board": kanban narrowed to this project, all phases. #}
+                                        <button type="button" class="dropdown-item"
+                                                :title="$i18n('project_board_hint')"
+                                                @click.stop.prevent="menuOpen = false; showProjectBoard({{ p }}.name)">
+                                            <i class="ti ti-columns me-2"></i>
+                                            <span x-text="$i18n('project_board')"></span>
+                                        </button>
                                         {# "Group...": swaps the menu for an inline input, prefilled #}
                                         {# with the current family (manual or automatic).          #}
                                         <button type="button" class="dropdown-item"
@@ -180,7 +187,9 @@
         {# Two reveal switches: projects with no open tasks, and projects the #}
         {# user hid via the row menu. Each only appears when it has something #}
         {# to reveal, so neither ever shows up as a dead control.             #}
-        <div class="d-flex flex-wrap gap-3 mb-2" x-show="hasEmptyProjects || hiddenProjects.length" x-cloak>
+        {# Plain wrapper carries x-show: a Bootstrap display utility would override it. #}
+        <div x-show="hasEmptyProjects || hiddenProjects.length" x-cloak>
+        <div class="d-flex flex-wrap gap-3 mb-2">
             <label class="form-check form-switch mb-0" x-show="hasEmptyProjects"
                    title="{{ t('Show projects without open tasks') }}">
                 <input class="form-check-input" type="checkbox"
@@ -195,6 +204,7 @@
                        @change="persistShowHiddenProjects()">
                 <span class="form-check-label small text-secondary">{{ t('Hidden') }}</span>
             </label>
+        </div>
         </div>
 
         <div class="text-muted small mb-2" x-show="projectFilter.length === 0 && tagFilter.length === 0">

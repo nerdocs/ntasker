@@ -633,6 +633,10 @@ def build_js_strings() -> dict[str, str]:
             "in its way. You can still start this task if you want to."
         ),
         "new_task_for_project": _("New task in this project -- opens the form to fill in"),
+        "project_board": _("Board"),
+        "project_board_hint": _(
+            "Show this project's tasks as a board -- planned, in progress, review, done"
+        ),
         "quick_run_for_project": _(
             "Start an agent in this project right away -- creates a task "
             "and opens a session with an empty prompt"
@@ -1283,6 +1287,9 @@ def api_projects() -> JSONResponse:
     * Any non-NULL ``tasks.project`` value -- so free-form names that do not
       correspond to a Claude project (and never vanish a project that still
       carries tasks) keep showing up.
+
+    Each entry also carries ``hidden`` -- whether the project is on the
+    ``hidden_projects`` veto list (see :func:`api_set_project_hidden`).
     """
     with get_conn() as conn:
         # All distinct project names currently referenced by any task
@@ -1302,7 +1309,9 @@ def api_projects() -> JSONResponse:
             GROUP BY project
             """
         ).fetchall()
+        hidden_rows = conn.execute("SELECT project FROM hidden_projects").fetchall()
     counts: dict[str | None, int] = {row["project"]: int(row["c"]) for row in count_rows}
+    hidden: set[str] = {row["project"] for row in hidden_rows}
 
     # Union of Claude-discovered projects and names already on a task.
     # Defensively drop the reserved sentinels so a task that accidentally
@@ -1313,12 +1322,44 @@ def api_projects() -> JSONResponse:
     }
 
     out: list[dict] = [
-        {"name": PROJECT_NONE_SENTINEL, "open_count": counts.get(None, 0)},
+        {"name": PROJECT_NONE_SENTINEL, "open_count": counts.get(None, 0), "hidden": False},
     ]
     for name in sorted(names, key=str.casefold):
-        out.append({"name": name, "open_count": counts.get(name, 0)})
+        out.append(
+            {"name": name, "open_count": counts.get(name, 0), "hidden": name in hidden}
+        )
 
     return JSONResponse(out)
+
+
+class ProjectHiddenSet(BaseModel):
+    """Hide a project from the sidebar entirely, or restore it."""
+
+    project: str
+    hidden: bool
+
+
+@app.put("/api/projects/hidden")
+def api_set_project_hidden(payload: ProjectHiddenSet) -> JSONResponse:
+    """Hide or restore one project in the sidebar feed.
+
+    Hiding is a persisted veto, not a delete: tasks keep their ``project``
+    value untouched and discovered directories stay on disk -- the name is
+    only excluded from the sidebar until restored. Body-based because
+    project names may contain slashes.
+    """
+    project = payload.project.strip()
+    if not project or project == PROJECT_NONE_SENTINEL:
+        raise HTTPException(status_code=400, detail=_("Invalid project name"))
+    with get_conn() as conn:
+        if payload.hidden:
+            conn.execute(
+                "INSERT OR IGNORE INTO hidden_projects (project) VALUES (?)",
+                (project,),
+            )
+        else:
+            conn.execute("DELETE FROM hidden_projects WHERE project = ?", (project,))
+    return JSONResponse({"project": project, "hidden": payload.hidden})
 
 
 @app.get("/api/tags")

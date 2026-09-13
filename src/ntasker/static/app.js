@@ -181,8 +181,9 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // Sidebar: project families are folded by default; the ones the user
         // opened stay open across reloads.
         expandedProjectGroups: loadExpandedProjectGroups(),
-        // Projects hidden via the row menu. Server-side setting (shared by
-        // every client); the "Hidden" switch below reveals them, per browser.
+        // Projects hidden via the row menu. Server-side table, delivered as
+        // `hidden` on each /api/projects row and mirrored here; the "Hidden"
+        // switch below reveals them, per browser.
         hiddenProjects: [],
         // Manual family overrides {project: family} on top of the prefix
         // rule; '' opts a project out. Server-side setting.
@@ -404,12 +405,13 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 : prev.filter(n => n !== name);
             if (hidden && this.projectFilter.includes(name)) this.toggleProject(name);
             try {
-                const r = await fetch('/api/settings/hidden_projects', {
+                const r = await fetch('/api/projects/hidden', {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ value: JSON.stringify(this.hiddenProjects) }),
+                    body: JSON.stringify({ project: name, hidden }),
                 });
                 if (!r.ok) throw new Error('save failed');
+                await this.loadProjects();
             } catch (_e) {
                 this.hiddenProjects = prev;
                 this.showToast(_i('update_failed'), 'danger');
@@ -842,6 +844,24 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 el.focus();
                 el.scrollIntoView({ block: 'nearest' });
             });
+        },
+
+        // Row menu -> "Board": show only this project's tasks as a kanban
+        // (planned / wip / review / done). Narrows the project filter to the
+        // one project, drops any phase filter so all four columns are
+        // populated, and leaves the run view if one is open.
+        showProjectBoard(name) {
+            this.projectFilter = [name];
+            this.phaseFilter = [];
+            this.persistProjectFilter();
+            this.persistPhaseFilter();
+            this.syncFormProjectFromFilter();
+            if (this.claudeView !== null) location.hash = '#/';
+            if (this.viewMode !== 'kanban') {
+                this.setViewMode('kanban');   // reloads tasks
+            } else {
+                this.loadTasks();
+            }
         },
 
         // Sidebar agent logo on a project row: "I need an agent in this project
@@ -1450,14 +1470,13 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             // Projects are derived from tasks since v2.0: the response is a
             // plain list with __none__ first, then every name currently
             // referenced by at least one task.
-            const [r, h, g] = await Promise.all([
+            const [r, g] = await Promise.all([
                 fetch('/api/projects'),
-                fetch('/api/settings/hidden_projects'),
                 fetch('/api/settings/project_groups'),
             ]);
             this.projects = await r.json();
-            // 404 = never set -> nothing hidden / no overrides.
-            this.hiddenProjects = h.ok ? JSON.parse((await h.json()).value) : [];
+            this.hiddenProjects = this.projects.filter(p => p.hidden).map(p => p.name);
+            // 404 = never set -> no overrides.
             this.projectGroups = g.ok ? JSON.parse((await g.json()).value) : {};
         },
 

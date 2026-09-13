@@ -110,11 +110,18 @@ The setting is server-side (`GET/PUT /api/settings/project_groups`,
 tree. It is validated: must be a JSON object of string -> string; keys are
 trimmed, empty keys dropped.
 
+## Board shortcut
+
+**Row menu -> Board** narrows the project filter to that one project, clears the
+phase filter so all four columns are populated, leaves an open run view and
+switches to the kanban view.
+
 ## Hiding projects
 
 Independent of families, a project can be hidden from the sidebar via the row
-menu (**Hide**). Hidden names live in the `hidden_projects` setting (JSON array,
-server-side). A hidden project also leaves the active filter, so no invisible
+menu (**Hide**). Hidden names live in the `hidden_projects` table (server-side);
+`GET /api/projects` reports `hidden` per row and `PUT /api/projects/hidden`
+(`{project, hidden}`) toggles it. A hidden project also leaves the active filter, so no invisible
 row keeps narrowing the task list. The **Hidden** switch above the list shows
 them again, dimmed, with **Unhide** in the menu; the **Empty** switch does the
 same for projects without open tasks. Both switches only appear when they have

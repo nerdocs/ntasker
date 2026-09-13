@@ -842,14 +842,14 @@
 
                                 <span class="task-queue-state text-muted small d-flex align-items-center flex-shrink-0">
                                     <template x-if="taskRunPhase(item.id) === 'running'">
-                                        <a :href="'#/run/' + item.id" class="d-flex align-items-center text-reset text-decoration-none"
+                                        <a :href="'#/run/' + item.id" class="btn btn-sm btn-ghost-secondary task-queue-state-btn d-flex align-items-center"
                                            :title="$i18n('claude_switch_session')">
                                             <span class="spinner-border spinner-border-sm me-1"></span>
                                             <span x-text="$i18n('queue_item_running')"></span>
                                         </a>
                                     </template>
                                     <template x-if="taskRunPhase(item.id) === 'waiting'">
-                                        <a :href="'#/run/' + item.id" class="d-flex align-items-center text-orange text-decoration-none"
+                                        <a :href="'#/run/' + item.id" class="btn btn-sm btn-ghost-orange task-queue-state-btn d-flex align-items-center"
                                            :title="$i18n('claude_waiting')">
                                             <i class="ti ti-help fs-3 me-1"></i>
                                             <span x-text="$i18n('queue_item_waiting')"></span>

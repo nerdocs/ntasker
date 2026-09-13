@@ -1,0 +1,150 @@
+{# ---- Workspace sections: team, skills, knowledge base, documents. ---- #}
+{# Only rendered once at least one directory exists -- on an install with #}
+{# none, the sidebar looks exactly as it always did.                       #}
+<template x-if="wsConfigured">
+    <div>
+        <hr class="my-3">
+        <div class="d-flex align-items-center mb-2">
+            <span class="text-secondary text-uppercase small fw-bold flex-fill">
+                <i class="ti ti-layout-grid me-1"></i>
+                <span x-text="$i18n('workspace')"></span>
+            </span>
+            <a href="/workspace" class="btn btn-sm btn-ghost-secondary px-2 py-0" :title="$i18n('ws_open_page')">
+                <i class="ti ti-arrow-up-right fs-3"></i>
+            </a>
+        </div>
+
+        {# --- Team: Claude Code subagents --- #}
+        <template x-if="ws.team.exists">
+            <div class="mb-1">
+                <div class="d-flex align-items-center">
+                    <button type="button" class="btn btn-ghost-secondary px-0 py-0 border-0 flex-fill text-start sidebar-section-toggle"
+                            @click="toggleWsSection('team')" :aria-expanded="wsOpen.team">
+                        <span class="text-secondary small fw-bold">
+                            <i class="ti fs-3 sidebar-caret" :class="wsOpen.team ? 'ti-chevron-down' : 'ti-chevron-right'"></i>
+                            <i class="ti ti-users me-1"></i>
+                            <span x-text="$i18n('ws_team')"></span>
+                        </span>
+                    </button>
+                    <span class="badge bg-secondary-lt ms-1" x-text="ws.team.total"></span>
+                </div>
+                <div x-show="wsOpen.team" x-cloak class="ps-2 pt-1">
+                    <input type="search" class="form-control form-control-sm mb-1" x-show="ws.team.total > 8"
+                           x-model="wsQuery.team" :placeholder="$i18n('ws_search')">
+                    <template x-for="m in wsSlice(ws.team.members, wsQuery.team, ['name','role','title'])" :key="m.path">
+                        <button type="button" class="btn btn-ghost-secondary btn-sm w-100 text-start px-2 py-1 sidebar-ws-item"
+                                @click="wsPreview(m.path)" :title="m.role || m.name">
+                            <i class="ti ti-user me-1 text-secondary"></i>
+                            <span class="text-truncate flex-fill" x-text="m.name"></span>
+                            <span class="badge bg-secondary-lt ms-1" x-show="m.model" x-text="m.model"></span>
+                        </button>
+                    </template>
+                    <div x-show="wsMore(ws.team.members, wsQuery.team, ['name','role','title'])" x-cloak>
+                        <a href="/workspace#team" class="d-block small text-secondary px-2 pt-1"
+                           x-text="$i18n('ws_and_more', { n: wsMore(ws.team.members, wsQuery.team, ['name','role','title']) })"></a>
+                    </div>
+                </div>
+            </div>
+        </template>
+
+        {# --- Skills. The badge is loading/total: a skill that silently --- #}
+        {# fails to load is the whole reason this section shows a count.  --- #}
+        <template x-if="ws.skills.exists">
+            <div class="mb-1">
+                <div class="d-flex align-items-center">
+                    <button type="button" class="btn btn-ghost-secondary px-0 py-0 border-0 flex-fill text-start sidebar-section-toggle"
+                            @click="toggleWsSection('skills')" :aria-expanded="wsOpen.skills">
+                        <span class="text-secondary small fw-bold">
+                            <i class="ti fs-3 sidebar-caret" :class="wsOpen.skills ? 'ti-chevron-down' : 'ti-chevron-right'"></i>
+                            <i class="ti ti-puzzle me-1"></i>
+                            <span x-text="$i18n('ws_skills')"></span>
+                        </span>
+                    </button>
+                    <span class="badge ms-1" :class="ws.skills.broken ? 'bg-orange-lt' : 'bg-secondary-lt'"
+                          x-text="ws.skills.broken ? `${ws.skills.loading}/${ws.skills.total}` : ws.skills.total"></span>
+                </div>
+                <div x-show="wsOpen.skills" x-cloak class="ps-2 pt-1">
+                    <template x-for="s in wsSlice(ws.skills.skills, wsQuery.skills, ['name','description'])" :key="s.path">
+                        <button type="button" class="btn btn-ghost-secondary btn-sm w-100 text-start px-2 py-1 sidebar-ws-item"
+                                @click="wsBrowse(s.path)" :title="s.loads ? (s.description || s.name) : s.problem">
+                            <i class="ti me-1" :class="!s.loads ? 'ti-alert-triangle text-orange' : (s.kind === 'plugin' ? 'ti-plug text-secondary' : 'ti-puzzle text-secondary')"></i>
+                            <span class="text-truncate" x-text="s.name"></span>
+                        </button>
+                    </template>
+                    <div x-show="wsMore(ws.skills.skills, wsQuery.skills, ['name','description'])" x-cloak>
+                        <a href="/workspace#skills" class="d-block small text-secondary px-2 pt-1"
+                           x-text="$i18n('ws_and_more', { n: wsMore(ws.skills.skills, wsQuery.skills, ['name','description']) })"></a>
+                    </div>
+                </div>
+            </div>
+        </template>
+
+        {# --- Knowledge base: areas, browsable into the notes --- #}
+        <template x-if="ws.wiki.exists">
+            <div class="mb-1">
+                <div class="d-flex align-items-center">
+                    <button type="button" class="btn btn-ghost-secondary px-0 py-0 border-0 flex-fill text-start sidebar-section-toggle"
+                            @click="toggleWsSection('wiki')" :aria-expanded="wsOpen.wiki">
+                        <span class="text-secondary small fw-bold">
+                            <i class="ti fs-3 sidebar-caret" :class="wsOpen.wiki ? 'ti-chevron-down' : 'ti-chevron-right'"></i>
+                            <i class="ti ti-book me-1"></i>
+                            <span x-text="$i18n('ws_knowledge')"></span>
+                        </span>
+                    </button>
+                    <span class="badge bg-secondary-lt ms-1" x-text="ws.wiki.total_notes"></span>
+                </div>
+                <div x-show="wsOpen.wiki" x-cloak class="ps-2 pt-1">
+                    <template x-for="a in wsSlice(ws.wiki.areas, wsQuery.wiki, ['name'])" :key="a.path">
+                        <button type="button" class="btn btn-ghost-secondary btn-sm w-100 text-start px-2 py-1 sidebar-ws-item"
+                                @click="wsBrowse(a.path)" :title="a.name">
+                            <i class="ti ti-folder me-1 text-secondary"></i>
+                            <span class="text-truncate flex-fill" x-text="a.name"></span>
+                            <span class="badge bg-secondary-lt ms-1" x-text="a.notes"></span>
+                        </button>
+                    </template>
+                    <button type="button" class="btn btn-ghost-secondary btn-sm w-100 text-start px-2 py-1 sidebar-ws-item"
+                            @click="wsBrowse(ws.wiki.path)">
+                        <i class="ti ti-folder-open me-1 text-secondary"></i>
+                        <span class="text-truncate" x-text="$i18n('ws_browse_root')"></span>
+                    </button>
+                </div>
+            </div>
+        </template>
+
+        {# --- Generated documents, newest first --- #}
+        <template x-if="ws.docs.exists">
+            <div class="mb-1">
+                <div class="d-flex align-items-center">
+                    <button type="button" class="btn btn-ghost-secondary px-0 py-0 border-0 flex-fill text-start sidebar-section-toggle"
+                            @click="toggleWsSection('docs')" :aria-expanded="wsOpen.docs">
+                        <span class="text-secondary small fw-bold">
+                            <i class="ti fs-3 sidebar-caret" :class="wsOpen.docs ? 'ti-chevron-down' : 'ti-chevron-right'"></i>
+                            <i class="ti ti-files me-1"></i>
+                            <span x-text="$i18n('ws_documents')"></span>
+                        </span>
+                    </button>
+                    <button type="button" class="btn btn-sm btn-ghost-secondary px-1 py-0 ms-1" x-show="wsOpen.docs"
+                            @click.stop="wsCreateNote(ws.docs.path)" :title="$i18n('ws_new_note')">
+                        <i class="ti ti-plus"></i>
+                    </button>
+                    <span class="badge bg-secondary-lt ms-1" x-text="ws.docs.total"></span>
+                </div>
+                <div x-show="wsOpen.docs" x-cloak class="ps-2 pt-1">
+                    <input type="search" class="form-control form-control-sm mb-1" x-show="ws.docs.total > 8"
+                           x-model="wsQuery.docs" :placeholder="$i18n('ws_search')">
+                    <template x-for="d in wsSlice(ws.docs.docs, wsQuery.docs, ['stem','name','suffix'])" :key="d.path">
+                        <button type="button" class="btn btn-ghost-secondary btn-sm w-100 text-start px-2 py-1 sidebar-ws-item"
+                                @click="d.previewable ? wsPreview(d.path) : wsRevealFile(d.path)" :title="d.name">
+                            <i class="ti me-1 text-secondary" :class="wsIcon(d.kind)"></i>
+                            <span class="text-truncate" x-text="d.stem"></span>
+                        </button>
+                    </template>
+                    <div x-show="wsMore(ws.docs.docs, wsQuery.docs, ['stem','name','suffix'])" x-cloak>
+                        <a href="/workspace#docs" class="d-block small text-secondary px-2 pt-1"
+                           x-text="$i18n('ws_and_more', { n: wsMore(ws.docs.docs, wsQuery.docs, ['stem','name','suffix']) })"></a>
+                    </div>
+                </div>
+            </div>
+        </template>
+    </div>
+</template>

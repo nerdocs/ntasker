@@ -51,7 +51,7 @@ if TYPE_CHECKING:
     from ntasker.agents import AgentSpec
 
 #: Built-in plugins, in load order. The order is also the UI order.
-BUILTIN: tuple[str, ...] = ("claude", "opencode", "pi", "task_context")
+BUILTIN: tuple[str, ...] = ("claude", "opencode", "pi", "task_context", "workspace")
 
 #: Where plugin packages (and their ``templates/`` + ``static/``) live.
 PLUGINS_DIR = files("ntasker") / "plugins"

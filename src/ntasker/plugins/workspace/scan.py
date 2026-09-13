@@ -26,8 +26,8 @@ change the filesystem, under two rules that are never relaxed:
 Directories come from settings (see :mod:`ntasker.settings`):
 
 * ``workspace_skills_dir`` -- defaults to ``~/.claude/skills``
+* ``workspace_team_dir``   -- defaults to ``~/.claude/agents`` (Claude Code subagents)
 * ``workspace_wiki_dir``   -- no default; unset means the card stays hidden
-* ``workspace_team_dir``   -- no default; unset means the card stays hidden
 * ``workspace_docs_dir``   -- no default; unset means the card stays hidden
 
 Design notes:
@@ -58,6 +58,11 @@ from ntasker.i18n import N_, _
 #: Fallback skills directory when ``workspace_skills_dir`` is unset. This is
 #: where Claude Code looks for user-level skills, so it is the right default.
 DEFAULT_SKILLS_DIR = "~/.claude/skills"
+
+#: Fallback team directory when ``workspace_team_dir`` is unset: Claude Code's
+#: user-level subagents, one Markdown file per agent with ``name`` /
+#: ``description`` (and optionally ``model`` / ``tools``) in its front matter.
+DEFAULT_TEAM_DIR = "~/.claude/agents"
 
 #: Claude Code's global config file -- source of the MCP server list.
 CLAUDE_CONFIG_PATH = "~/.claude.json"
@@ -537,29 +542,22 @@ def _obsidian_uri(vault: str, rel: Path) -> str:
 # Team personas
 # ---------------------------------------------------------------------------
 
-#: Front-matter keys and inline labels that carry a persona's role.
-_ROLE_KEYS = ("rolle", "role", "aufgabe", "funktion")
-#: Matches ``**Rolle:** text``, ``**Role**: text`` and the unadorned form --
-#: the emphasis markers sit on either side of the colon depending on who
-#: wrote the file, so both placements are stripped.
-_ROLE_INLINE_RE = re.compile(
-    r"^\s*\**\s*(?:Rolle|Role|Aufgabe)\s*\**\s*:\s*\**\s*(.+?)\s*\**\s*$",
-    re.MULTILINE | re.IGNORECASE,
-)
+def scan_team(team_dir: str | None = None) -> dict[str, Any]:
+    """Inventory the team: Claude Code subagent definitions, one file each.
 
-
-def scan_team(team_dir: str | None) -> dict[str, Any]:
-    """Inventory agent personas stored as one Markdown file each.
-
-    A persona file is expected to state its role either in front matter
-    (``role:`` / ``rolle:``) or as a bold inline label near the top --
-    both spellings appear in the wild, so both are accepted.
+    A member file is a Claude Code agent (``~/.claude/agents/<name>.md``):
+    front matter ``name`` and ``description`` are what Claude reads, and the
+    same two fields drive this listing -- ``role`` is the first line of the
+    description, shortened for a card. ``model`` and ``tools`` ride along so
+    the UI can badge them. No custom persona format: the files stay usable
+    by Claude Code as they are.
 
     Returns ``{configured, exists, path, members, total}``.
     """
-    root = _expand(team_dir)
+    raw = team_dir or DEFAULT_TEAM_DIR
+    root = _expand(raw)
     result: dict[str, Any] = {
-        "configured": bool(team_dir),
+        "configured": bool(raw),
         "path": str(root) if root else "",
         "exists": bool(root and root.is_dir()),
         "members": [],
@@ -577,21 +575,17 @@ def scan_team(team_dir: str | None) -> dict[str, Any]:
     for entry in files[:MAX_ENTRIES]:
         head = _read_head(entry)
         front = _parse_front_matter(head)
-        role = ""
-        for key in _ROLE_KEYS:
-            if front.get(key):
-                role = front[key]
-                break
-        if not role:
-            match = _ROLE_INLINE_RE.search(head)
-            if match:
-                role = match.group(1)
+        # A description written as a quoted YAML string carries literal
+        # ``\n`` sequences; the first line is the one-sentence summary.
+        description = front.get("description", "").replace("\\n", "\n")
         members.append(
             {
                 "name": front.get("name") or entry.stem,
                 "path": str(entry),
-                "role": _truncate(role, 160),
+                "role": _truncate(description.split("\n", 1)[0], 160),
                 "title": front.get("title") or _first_heading(head),
+                "model": front.get("model", ""),
+                "tools": front.get("tools", ""),
             }
         )
 
@@ -741,7 +735,7 @@ def allowed_roots(
     candidates = [
         skills_dir or DEFAULT_SKILLS_DIR,
         wiki_dir,
-        team_dir,
+        team_dir or DEFAULT_TEAM_DIR,
         docs_dir,
     ]
     roots: list[Path] = []
@@ -750,6 +744,22 @@ def allowed_roots(
         if resolved and resolved.is_dir():
             roots.append(resolved)
     return roots
+
+
+def configured_roots() -> list[Path]:
+    """:func:`allowed_roots` for the ``workspace_*_dir`` settings as stored.
+
+    The one place the settings are read for a filesystem boundary; the
+    workspace and task-context plugins both go through it.
+    """
+    from ntasker.settings import get_setting  # noqa: PLC0415 -- keep the scanners import-light
+
+    return allowed_roots(
+        skills_dir=get_setting("workspace_skills_dir"),
+        wiki_dir=get_setting("workspace_wiki_dir"),
+        team_dir=get_setting("workspace_team_dir"),
+        docs_dir=get_setting("workspace_docs_dir"),
+    )
 
 
 def within_roots(path: Path, roots: list[Path]) -> bool:

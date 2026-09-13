@@ -32,7 +32,6 @@ from ntasker.plugins.task_context.db import (
     remove_context,
 )
 from ntasker.plugins.workspace import scan
-from ntasker.settings import get_setting
 
 router = APIRouter()
 
@@ -58,18 +57,6 @@ _WRITE_STATUS = {"forbidden": 403, "not_found": 404, "exists": 409, "too_large":
 
 def _write_guard(exc: scan.WriteError) -> HTTPException:
     return HTTPException(status_code=_WRITE_STATUS.get(exc.reason, 400), detail=str(exc))
-
-
-def workspace_roots() -> list[Path]:
-    """The configured workspace directories -- the boundary for every
-    workspace-kind attachment (settings owned by the workspace plugin;
-    readable whether or not that plugin is enabled)."""
-    return scan.allowed_roots(
-        skills_dir=get_setting("workspace_skills_dir"),
-        wiki_dir=get_setting("workspace_wiki_dir"),
-        team_dir=get_setting("workspace_team_dir"),
-        docs_dir=get_setting("workspace_docs_dir"),
-    )
 
 
 def _mcp_server_names() -> set[str]:
@@ -123,7 +110,7 @@ def resolve_context_add(payload: ContextAdd) -> tuple[str, str, str, str]:
         label = payload.label.strip() or target.name or str(target)
         return payload.kind, str(target), label, payload.note.strip()
 
-    roots = workspace_roots()
+    roots = scan.configured_roots()
     if not roots or not scan.within_roots(target, roots):
         raise HTTPException(
             status_code=403, detail=_("Path lies outside every configured workspace directory.")

@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: ntasker 2.21.0\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-09-13 20:17+0200\n"
+"POT-Creation-Date: 2026-09-13 20:30+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -378,7 +378,8 @@ msgstr ""
 msgid "blocked by:"
 msgstr ""
 
-#: src/ntasker/app.py:490 src/ntasker/templates/index.html:688
+#: src/ntasker/app.py:490 src/ntasker/plugins/workspace/__init__.py:111
+#: src/ntasker/templates/index.html:688
 msgid "Create"
 msgstr ""
 
@@ -539,7 +540,7 @@ msgstr ""
 msgid "Filter: tag {name}"
 msgstr ""
 
-#: src/ntasker/app.py:539
+#: src/ntasker/app.py:539 src/ntasker/plugins/workspace/__init__.py:107
 msgid "Edit"
 msgstr ""
 
@@ -588,16 +589,18 @@ msgstr ""
 msgid "Task"
 msgstr ""
 
-#: src/ntasker/app.py:555
+#: src/ntasker/app.py:555 src/ntasker/plugins/workspace/__init__.py:92
 msgid "Close"
 msgstr ""
 
-#: src/ntasker/app.py:556 src/ntasker/templates/index.html:1645
-#: src/ntasker/templates/tags.html:162 src/ntasker/templates/tags.html:213
+#: src/ntasker/app.py:556 src/ntasker/plugins/workspace/__init__.py:110
+#: src/ntasker/templates/index.html:1645 src/ntasker/templates/tags.html:162
+#: src/ntasker/templates/tags.html:213
 msgid "Cancel"
 msgstr ""
 
-#: src/ntasker/app.py:557 src/ntasker/templates/index.html:1649
+#: src/ntasker/app.py:557 src/ntasker/plugins/workspace/__init__.py:109
+#: src/ntasker/templates/index.html:1649
 #: src/ntasker/templates/settings.html:143
 #: src/ntasker/templates/settings.html:258 src/ntasker/templates/tags.html:167
 msgid "Save"
@@ -665,8 +668,10 @@ msgstr ""
 msgid ", +{n} more"
 msgstr ""
 
-#: src/ntasker/app.py:575 src/ntasker/templates/info.html:49
-#: src/ntasker/templates/settings.html:60 src/ntasker/templates/tags.html:50
+#: src/ntasker/app.py:575
+#: src/ntasker/plugins/workspace/templates/workspace.html:50
+#: src/ntasker/templates/info.html:49 src/ntasker/templates/settings.html:60
+#: src/ntasker/templates/tags.html:50
 msgid "back to tasks"
 msgstr ""
 
@@ -973,7 +978,7 @@ msgstr ""
 msgid "Filter tags..."
 msgstr ""
 
-#: src/ntasker/app.py:691
+#: src/ntasker/app.py:691 src/ntasker/plugins/workspace/__init__.py:93
 msgid "Loading..."
 msgstr ""
 
@@ -1038,7 +1043,7 @@ msgstr ""
 
 #: src/ntasker/app.py:1266 src/ntasker/app.py:1842 src/ntasker/app.py:1984
 #: src/ntasker/app.py:1988 src/ntasker/app.py:2019
-#: src/ntasker/plugins/task_context/routes.py:142
+#: src/ntasker/plugins/task_context/routes.py:129
 msgid "Task not found"
 msgstr ""
 
@@ -2213,14 +2218,17 @@ msgid "Files"
 msgstr ""
 
 #: src/ntasker/plugins/task_context/__init__.py:144
+#: src/ntasker/plugins/workspace/__init__.py:94
 msgid "MCP servers"
 msgstr ""
 
 #: src/ntasker/plugins/task_context/__init__.py:145
+#: src/ntasker/plugins/workspace/__init__.py:80
 msgid "Search..."
 msgstr ""
 
 #: src/ntasker/plugins/task_context/__init__.py:146
+#: src/ntasker/plugins/workspace/__init__.py:81
 msgid "Nothing matches your search."
 msgstr ""
 
@@ -2267,10 +2275,12 @@ msgid "Create the task first, then open its attachments."
 msgstr ""
 
 #: src/ntasker/plugins/task_context/__init__.py:160
+#: src/ntasker/plugins/workspace/__init__.py:132
 msgid "Could not open it."
 msgstr ""
 
 #: src/ntasker/plugins/task_context/__init__.py:161
+#: src/ntasker/plugins/workspace/__init__.py:136
 msgid "runtime missing"
 msgstr ""
 
@@ -2279,94 +2289,410 @@ msgstr ""
 msgid "Use the tools of the MCP server {name} for this task."
 msgstr ""
 
-#: src/ntasker/plugins/task_context/routes.py:90
+#: src/ntasker/plugins/task_context/routes.py:77
 #, python-brace-format
 msgid "Unknown context kind: {kind}"
 msgstr ""
 
-#: src/ntasker/plugins/task_context/routes.py:102
+#: src/ntasker/plugins/task_context/routes.py:89
 #, python-brace-format
 msgid "No MCP server named {name} in ~/.claude.json."
 msgstr ""
 
-#: src/ntasker/plugins/task_context/routes.py:106
+#: src/ntasker/plugins/task_context/routes.py:93
 msgid "An mcp:// path needs kind 'mcp'."
 msgstr ""
 
+#: src/ntasker/plugins/task_context/routes.py:96
 #: src/ntasker/plugins/task_context/routes.py:109
-#: src/ntasker/plugins/task_context/routes.py:122
-#: src/ntasker/plugins/task_context/routes.py:132
-#: src/ntasker/plugins/task_context/routes.py:258
-#: src/ntasker/plugins/task_context/routes.py:264
-#: src/ntasker/plugins/workspace/scan.py:1157
-#: src/ntasker/plugins/workspace/scan.py:1187
-#: src/ntasker/plugins/workspace/scan.py:1283
+#: src/ntasker/plugins/task_context/routes.py:119
+#: src/ntasker/plugins/task_context/routes.py:245
+#: src/ntasker/plugins/task_context/routes.py:251
+#: src/ntasker/plugins/workspace/scan.py:1167
+#: src/ntasker/plugins/workspace/scan.py:1197
+#: src/ntasker/plugins/workspace/scan.py:1293
 msgid "No such file or directory."
 msgstr ""
 
-#: src/ntasker/plugins/task_context/routes.py:129
-#: src/ntasker/plugins/workspace/scan.py:797
-#: src/ntasker/plugins/workspace/scan.py:898
-#: src/ntasker/plugins/workspace/scan.py:1018
-#: src/ntasker/plugins/workspace/scan.py:1121
-#: src/ntasker/plugins/workspace/scan.py:1268
+#: src/ntasker/plugins/task_context/routes.py:116
+#: src/ntasker/plugins/workspace/scan.py:807
+#: src/ntasker/plugins/workspace/scan.py:908
+#: src/ntasker/plugins/workspace/scan.py:1028
+#: src/ntasker/plugins/workspace/scan.py:1131
+#: src/ntasker/plugins/workspace/scan.py:1278
 msgid "Path lies outside every configured workspace directory."
 msgstr ""
 
-#: src/ntasker/plugins/task_context/routes.py:149
-#: src/ntasker/plugins/task_context/routes.py:177
+#: src/ntasker/plugins/task_context/routes.py:136
+#: src/ntasker/plugins/task_context/routes.py:164
 msgid "Attachment not found"
 msgstr ""
 
-#: src/ntasker/plugins/task_context/routes.py:191
-#: src/ntasker/plugins/task_context/routes.py:205
+#: src/ntasker/plugins/task_context/routes.py:178
+#: src/ntasker/plugins/task_context/routes.py:192
 msgid "This attachment is not a file."
 msgstr ""
 
-#: src/ntasker/plugins/task_context/routes.py:237
-#: src/ntasker/plugins/workspace/scan.py:1343
+#: src/ntasker/plugins/task_context/routes.py:224
+#: src/ntasker/plugins/workspace/scan.py:1353
 msgid "No native file dialog is available here."
 msgstr ""
 
-#: src/ntasker/plugins/task_context/routes.py:238
+#: src/ntasker/plugins/task_context/routes.py:225
 msgid "Choose a folder to attach"
 msgstr ""
 
-#: src/ntasker/plugins/task_context/routes.py:238
+#: src/ntasker/plugins/task_context/routes.py:225
 msgid "Choose files to attach"
 msgstr ""
 
-#: src/ntasker/plugins/workspace/scan.py:100
-msgid "JavaScript runtime -- required by every npx-based MCP server"
+#: src/ntasker/plugins/workspace/__init__.py:26
+#: src/ntasker/plugins/workspace/__init__.py:59
+#: src/ntasker/plugins/workspace/templates/workspace.html:6
+#: src/ntasker/plugins/workspace/templates/workspace.html:44
+msgid "Workspace"
 msgstr ""
 
-#: src/ntasker/plugins/workspace/scan.py:101
-msgid "Node package runner -- launches npx-based MCP servers"
+#: src/ntasker/plugins/workspace/__init__.py:28
+msgid ""
+"Team, skills, knowledge base and documents: a /workspace page, sidebar "
+"sections and a file viewer with editing."
 msgstr ""
 
-#: src/ntasker/plugins/workspace/scan.py:102
-msgid "Python tool runner -- launches uvx-based MCP servers"
+#: src/ntasker/plugins/workspace/__init__.py:47
+#, python-brace-format
+msgid "{key} must not be empty -- unset it to clear."
 msgstr ""
 
-#: src/ntasker/plugins/workspace/scan.py:103
-msgid "Container runtime -- required by docker-based MCP servers"
+#: src/ntasker/plugins/workspace/__init__.py:50
+#, python-brace-format
+msgid "{key} must be an absolute path (got {value!r})."
 msgstr ""
 
-#: src/ntasker/plugins/workspace/scan.py:104
-msgid "Version control"
+#: src/ntasker/plugins/workspace/__init__.py:60
+msgid "Skills"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:61
+msgid "Knowledge base"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:62
+msgid "Team"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:63
+msgid "Documents"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:64
+msgid "Tooling"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:65
+msgid "Not configured"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:66
+msgid "Set this directory in the settings to fill this section."
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:67
+msgid "Open settings"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:68
+msgid "The configured directory does not exist:"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:70
+#, python-brace-format
+msgid "{n} load correctly"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:71
+#, python-brace-format
+msgid "{n} will not load"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:72
+msgid "Loads correctly"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:73
+msgid "Will not load"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:74
+#, python-brace-format
+msgid "{n} notes"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:75
+msgid "Areas"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:76
+msgid "Index notes"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:77
+msgid "Open in Obsidian"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:78
+#, python-brace-format
+msgid "{n} personas"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:79
+msgid "No role stated"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:82
+msgid "This directory is empty."
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:83
+msgid "All types"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:84
+msgid "Modified"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:85
+msgid "Size"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:86
+msgid "Preview"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:87
+msgid "This file type cannot be previewed."
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:88
+msgid "Could not load the file."
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:89
+msgid "Preview truncated -- the file is larger."
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:90
+msgid "Copy path"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:91
+msgid "Copied"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:95
+msgid "Runtimes"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:96
+msgid "Available"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:97
+msgid "Not found"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:98
+msgid "This server cannot start -- its runtime is not on PATH."
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:99
+#: src/ntasker/plugins/workspace/__init__.py:134
+msgid "Transport"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:100
+msgid "Value stored in the config file"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:101
+msgid "Read from an environment variable"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:102
+msgid "Empty value"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:103
+msgid "No Claude Code config found at"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:104
+msgid "Plugin"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:105
+msgid "Bundles:"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:108
+msgid "View"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:112
+msgid "Move to trash"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:113
+msgid "Rename"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:114
+msgid "Open in the default app"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:115
+msgid "Open the workspace page"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:116
+msgid "One level up"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:117
+msgid "Browse all notes"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:118
+msgid "New note"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:119
+msgid "Name of the new note:"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:120
+msgid "Name of the new note (.md is added)"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:121
+msgid "New name:"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:122
+msgid "Cmd/Ctrl+S saves"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:123
+msgid "Saved"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:124
+#, python-brace-format
+msgid "{n} more..."
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:125
+#, python-brace-format
+msgid "Move {name} to the trash?"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:126
+#, python-brace-format
+msgid "{name} moved to the trash."
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:127
+#, python-brace-format
+msgid "{name} moved to the .ntasker-trash folder."
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:128
+msgid "Could not save the file."
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:129
+msgid "Could not delete it."
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:130
+msgid "Could not rename it."
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:131
+msgid "Could not create it."
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:135
+msgid "Command"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:137
+msgid "This server is no longer declared in ~/.claude.json."
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:138
+msgid "Create the task first -- then the file opens from here."
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:148
+msgid ""
+"Directory holding your Claude Code skills, shown on the Workspace page "
+"with a load/broken verdict per skill. Defaults to ~/.claude/skills when "
+"unset."
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:157
+msgid ""
+"Directory of Claude Code subagent files (one Markdown file per agent with"
+" name/description front matter). Defaults to ~/.claude/agents when unset."
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:166
+msgid ""
+"Root of your Markdown knowledge base (e.g. an Obsidian vault). The "
+"Workspace page lists its areas with note counts and links straight into "
+"Obsidian. Unset hides the card."
+msgstr ""
+
+#: src/ntasker/plugins/workspace/__init__.py:175
+msgid ""
+"Output folder for generated documents (offers, reviews, exports, plans --"
+" ~/.claude/plans is a natural pick). The Workspace page lists them "
+"newest-first and previews Markdown, text and CSV files in place. Unset "
+"hides the card."
 msgstr ""
 
 #: src/ntasker/plugins/workspace/scan.py:105
+msgid "JavaScript runtime -- required by every npx-based MCP server"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/scan.py:106
+msgid "Node package runner -- launches npx-based MCP servers"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/scan.py:107
+msgid "Python tool runner -- launches uvx-based MCP servers"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/scan.py:108
+msgid "Container runtime -- required by docker-based MCP servers"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/scan.py:109
+msgid "Version control"
+msgstr ""
+
+#: src/ntasker/plugins/workspace/scan.py:110
 msgid "GitHub CLI"
 msgstr ""
 
-#: src/ntasker/plugins/workspace/scan.py:324
+#: src/ntasker/plugins/workspace/scan.py:329
 msgid ""
 "No SKILL.md -- holds a commands/ folder. That is a slash-command layout; "
 "add a SKILL.md to make it load as a skill."
 msgstr ""
 
-#: src/ntasker/plugins/workspace/scan.py:334
+#: src/ntasker/plugins/workspace/scan.py:339
 #, python-brace-format
 msgid ""
 "No SKILL.md -- but {n} Markdown files here carry skill front matter "
@@ -2374,132 +2700,132 @@ msgid ""
 "SKILL.md, otherwise none of them is ever loaded."
 msgstr ""
 
-#: src/ntasker/plugins/workspace/scan.py:341
+#: src/ntasker/plugins/workspace/scan.py:346
 msgid "No SKILL.md -- Markdown files present but none named SKILL.md."
 msgstr ""
 
-#: src/ntasker/plugins/workspace/scan.py:344
+#: src/ntasker/plugins/workspace/scan.py:349
 msgid "No SKILL.md in this directory."
 msgstr ""
 
-#: src/ntasker/plugins/workspace/scan.py:357
+#: src/ntasker/plugins/workspace/scan.py:362
 msgid "SKILL.md has no front matter (needs a leading --- block)."
 msgstr ""
 
-#: src/ntasker/plugins/workspace/scan.py:366
+#: src/ntasker/plugins/workspace/scan.py:371
 #, python-brace-format
 msgid "SKILL.md front matter is missing: {fields}."
 msgstr ""
 
-#: src/ntasker/plugins/workspace/scan.py:418
+#: src/ntasker/plugins/workspace/scan.py:423
 msgid "plugin.json cannot be read or is not valid JSON."
 msgstr ""
 
-#: src/ntasker/plugins/workspace/scan.py:443
+#: src/ntasker/plugins/workspace/scan.py:448
 msgid "Plugin manifest present but it bundles no skills and no commands."
 msgstr ""
 
-#: src/ntasker/plugins/workspace/scan.py:784
-#: src/ntasker/plugins/workspace/scan.py:886
+#: src/ntasker/plugins/workspace/scan.py:794
+#: src/ntasker/plugins/workspace/scan.py:896
 msgid "No workspace directories are configured, so nothing may be read."
 msgstr ""
 
-#: src/ntasker/plugins/workspace/scan.py:791
-#: src/ntasker/plugins/workspace/scan.py:892
-#: src/ntasker/plugins/workspace/scan.py:999
+#: src/ntasker/plugins/workspace/scan.py:801
+#: src/ntasker/plugins/workspace/scan.py:902
+#: src/ntasker/plugins/workspace/scan.py:1009
 #, python-brace-format
 msgid "Path cannot be resolved: {error}"
 msgstr ""
 
-#: src/ntasker/plugins/workspace/scan.py:827
-#: src/ntasker/plugins/workspace/scan.py:1059
+#: src/ntasker/plugins/workspace/scan.py:837
+#: src/ntasker/plugins/workspace/scan.py:1069
 msgid "No such file."
 msgstr ""
 
-#: src/ntasker/plugins/workspace/scan.py:851
+#: src/ntasker/plugins/workspace/scan.py:861
 #, python-brace-format
 msgid "File is {size} bytes; the preview limit is {limit}."
 msgstr ""
 
-#: src/ntasker/plugins/workspace/scan.py:911
-#: src/ntasker/plugins/workspace/scan.py:1124
+#: src/ntasker/plugins/workspace/scan.py:921
+#: src/ntasker/plugins/workspace/scan.py:1134
 msgid "No such directory."
 msgstr ""
 
-#: src/ntasker/plugins/workspace/scan.py:1013
-#: src/ntasker/plugins/workspace/scan.py:1116
+#: src/ntasker/plugins/workspace/scan.py:1023
+#: src/ntasker/plugins/workspace/scan.py:1126
 msgid "No workspace directories are configured, so nothing may be changed."
 msgstr ""
 
-#: src/ntasker/plugins/workspace/scan.py:1023
+#: src/ntasker/plugins/workspace/scan.py:1033
 msgid ""
 "This is a configured workspace directory itself -- it cannot be renamed "
 "or deleted from here."
 msgstr ""
 
-#: src/ntasker/plugins/workspace/scan.py:1033
+#: src/ntasker/plugins/workspace/scan.py:1043
 msgid "The name must not be empty."
 msgstr ""
 
-#: src/ntasker/plugins/workspace/scan.py:1035
+#: src/ntasker/plugins/workspace/scan.py:1045
 msgid "That name is reserved."
 msgstr ""
 
-#: src/ntasker/plugins/workspace/scan.py:1039
+#: src/ntasker/plugins/workspace/scan.py:1049
 #, python-brace-format
 msgid "The name must not contain any of: {chars}"
 msgstr ""
 
-#: src/ntasker/plugins/workspace/scan.py:1044
+#: src/ntasker/plugins/workspace/scan.py:1054
 msgid "The name is too long (max 255 characters)."
-msgstr ""
-
-#: src/ntasker/plugins/workspace/scan.py:1063
-#, python-brace-format
-msgid "Files of type {suffix} cannot be edited here."
 msgstr ""
 
 #: src/ntasker/plugins/workspace/scan.py:1073
 #, python-brace-format
+msgid "Files of type {suffix} cannot be edited here."
+msgstr ""
+
+#: src/ntasker/plugins/workspace/scan.py:1083
+#, python-brace-format
 msgid "File is {size} bytes; the write limit is {limit}."
 msgstr ""
 
-#: src/ntasker/plugins/workspace/scan.py:1101
+#: src/ntasker/plugins/workspace/scan.py:1111
 #, python-brace-format
 msgid "Could not write the file: {error}"
 msgstr ""
 
-#: src/ntasker/plugins/workspace/scan.py:1133
-#: src/ntasker/plugins/workspace/scan.py:1164
+#: src/ntasker/plugins/workspace/scan.py:1143
+#: src/ntasker/plugins/workspace/scan.py:1174
 #, python-brace-format
 msgid "{name} already exists here."
 msgstr ""
 
-#: src/ntasker/plugins/workspace/scan.py:1142
+#: src/ntasker/plugins/workspace/scan.py:1152
 #, python-brace-format
 msgid "Could not create it: {error}"
 msgstr ""
 
-#: src/ntasker/plugins/workspace/scan.py:1170
+#: src/ntasker/plugins/workspace/scan.py:1180
 #, python-brace-format
 msgid "Could not rename it: {error}"
 msgstr ""
 
-#: src/ntasker/plugins/workspace/scan.py:1251
+#: src/ntasker/plugins/workspace/scan.py:1261
 #, python-brace-format
 msgid "Could not move it to the trash: {error}"
 msgstr ""
 
-#: src/ntasker/plugins/workspace/scan.py:1292
+#: src/ntasker/plugins/workspace/scan.py:1302
 msgid "No desktop opener (xdg-open) is available."
 msgstr ""
 
-#: src/ntasker/plugins/workspace/scan.py:1301
+#: src/ntasker/plugins/workspace/scan.py:1311
 #, python-brace-format
 msgid "Could not open it: {error}"
 msgstr ""
 
-#: src/ntasker/plugins/workspace/scan.py:1388
+#: src/ntasker/plugins/workspace/scan.py:1398
 #, python-brace-format
 msgid "Could not open the file dialog: {error}"
 msgstr ""

@@ -276,7 +276,8 @@ Agent integrations and optional features are plugins that can be switched off in
 `NTASKER_PLUGINS_DISABLED=pi,opencode`. A disabled plugin's routes 404, its agent is neither listed nor resolvable, and
 its data stays intact. Contract and slots: [docs/plugins.md](docs/plugins.md). Built-in feature plugins:
 `task_context` -- attach files, notes, personas, skills and MCP servers to a task, handed to the agent in its
-briefing ([docs/task-context.md](docs/task-context.md)).
+briefing ([docs/task-context.md](docs/task-context.md)); `workspace` -- team (Claude Code subagents), skills, knowledge
+base and documents on a `/workspace` page and in the sidebar, plus a viewer ([docs/workspace.md](docs/workspace.md)).
 
 ## CLI
 
@@ -352,6 +353,7 @@ couple of CLI subcommands via subprocess.
 | GET | `/api/agents` | Read-only registry feed: per-agent availability + `/task` integration status, plus the default |
 | GET | `/api/plugins` | Built-in plugins + `enabled` flag; toggle via `PUT /api/settings/plugins_disabled` |
 | GET/POST/DELETE | `/api/tasks/{id}/context[/{cid}]` | Attachments ([docs/task-context.md](docs/task-context.md)) |
+| GET/PUT/POST | `/api/workspace[/file|browse|entry|rename|delete|reveal]` | Workspace ([docs/workspace.md](docs/workspace.md)) |
 | GET | `/api/claude-assets/status` | Read-only: `{installed, drift, package_version, claude_home, files[]}` |
 
 OpenAPI: <http://127.0.0.1:8766/api/docs>

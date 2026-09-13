@@ -2,8 +2,9 @@
 
 ntasker's core is the task store, the sidebar, the kanban and the run infrastructure. Everything a user may not want
 -- a particular AI coding agent, and (in later releases) the workspace browser or task-context attachments -- is a
-**plugin** that can be switched off individually. Built-ins live under `src/ntasker/plugins/<name>/`; today these are
-the three agent plugins `claude`, `opencode` and `pi`.
+**plugin** that can be switched off individually. Built-ins live under `src/ntasker/plugins/<name>/`: the three agent
+plugins `claude`, `opencode` and `pi`, plus `task_context` ([task-context.md](task-context.md)) and `workspace`
+([workspace.md](workspace.md)).
 
 ## Switching plugins on and off
 

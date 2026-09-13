@@ -1,0 +1,6 @@
+{# Markdown pipeline for the file viewer: marked renders, DOMPurify sanitizes #}
+{# (ws-common.js never skips either). Loaded before app.js builds the component. #}
+<script src="{{ asset('marked-js') }}" integrity="{{ asset_sri('marked-js') }}" crossorigin="anonymous"></script>
+<script src="{{ asset('dompurify-js') }}" integrity="{{ asset_sri('dompurify-js') }}" crossorigin="anonymous"></script>
+<script src="/static/plugins/workspace/ws-common.js?v={{ version }}"></script>
+<script src="/static/plugins/workspace/workspace-sidebar.js?v={{ version }}"></script>

@@ -120,6 +120,25 @@ MANIFEST: tuple[AssetSpec, ...] = (
         sri="sha384-iZD2X8o1Zdq0HR5H/7oa8W30WS4No+zWCKUPD7fHRay9I1Gf+C4F8sVmw7zec1wW",
         local_path="alpine/alpine.min.js",
     ),
+    # marked -- Markdown -> HTML for the workspace file previewer. Exposes
+    # ``window.marked`` for plain <script> use (no bundler).
+    AssetSpec(
+        name="marked-js",
+        cdn_url="https://cdn.jsdelivr.net/npm/marked@15.0.7/marked.min.js",
+        sri="sha384-H+hy9ULve6xfxRkWIh/YOtvDdpXgV2fmAGQkIDTxIgZwNoaoBal14Di2YTMR6MzR",
+        local_path="marked/marked.min.js",
+    ),
+    # DOMPurify -- sanitizes marked's output before it reaches the DOM.
+    # marked dropped its own sanitizer in v5 and explicitly delegates this;
+    # previewed files are local and user-owned, but a note pasted from the
+    # web can still carry a <script>, so the rendered HTML never bypasses
+    # this step. Exposes ``window.DOMPurify``.
+    AssetSpec(
+        name="dompurify-js",
+        cdn_url="https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.min.js",
+        sri="sha384-eEu5CTj3qGvu9PdJuS+YlkNi7d2XxQROAFYOr59zgObtlcux1ae1Il3u7jvdCSWu",
+        local_path="dompurify/purify.min.js",
+    ),
     # xterm.js -- terminal emulator for the interactive "Run with Claude" view.
     # The classic ``xterm`` package exposes ``window.Terminal`` /
     # ``window.FitAddon`` for plain <script> use (no bundler).

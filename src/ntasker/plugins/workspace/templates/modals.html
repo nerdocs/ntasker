@@ -1,0 +1,131 @@
+{# ---- Workspace viewer: one file, or one directory listing ------------- #}
+{# Opened from the sidebar and from a task's context chips. Shows the same #}
+{# read/edit/rename/delete affordances as the /workspace page, so the two  #}
+{# never disagree about what can be done to a file.                        #}
+<div class="modal modal-blur" :class="{ 'show d-block': wsViewer.open }" x-cloak
+     @keydown.escape.window="wsViewer.open = false">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="ws-min-w-0">
+                    <h5 class="modal-title text-truncate"
+                        x-text="wsViewer.dir ? (wsViewer.dir.name || wsViewer.dir.path) : (wsViewer.file?.name || '')"></h5>
+                    <div class="text-secondary small font-monospace text-truncate"
+                         x-text="wsViewer.dir ? wsViewer.dir.path : (wsViewer.file?.path || '')"></div>
+                </div>
+                <div class="ms-auto d-flex align-items-center gap-1">
+                    {# Directory actions #}
+                    <template x-if="wsViewer.dir">
+                        <span class="d-flex align-items-center gap-1">
+                            <button class="btn btn-sm btn-ghost-secondary" x-show="wsViewer.dir.parent"
+                                    @click="wsBrowse(wsViewer.dir.parent)" :title="$i18n('ws_up')">
+                                <i class="ti ti-arrow-up"></i>
+                            </button>
+                            <button class="btn btn-sm btn-ghost-primary" @click="wsCreateNote(wsViewer.dir.path)"
+                                    :title="$i18n('ws_new_note')">
+                                <i class="ti ti-file-plus"></i>
+                            </button>
+                        </span>
+                    </template>
+                    {# File actions -- an MCP fact sheet (remote) is read-only. #}
+                    <template x-if="wsViewer.file && !wsViewer.file.remote">
+                        <span class="d-flex align-items-center gap-1">
+                            <button class="btn btn-sm" x-show="wsEditable(wsViewer.file) && !wsViewer.file.external"
+                                    :class="wsViewer.editing ? 'btn-ghost-secondary' : 'btn-ghost-primary'" @click="wsToggleEdit()">
+                                <i class="ti me-1" :class="wsViewer.editing ? 'ti-eye' : 'ti-pencil'"></i>
+                                <span x-text="wsViewer.editing ? $i18n('ws_view') : $i18n('ws_edit')"></span>
+                            </button>
+                            <button class="btn btn-sm btn-ghost-secondary" @click="wsRevealFile(wsViewer.file.path)"
+                                    :title="$i18n('ws_open_external')">
+                                <i class="ti ti-external-link"></i>
+                            </button>
+                            <button class="btn btn-sm btn-ghost-secondary" x-show="!wsViewer.file.external"
+                                    @click="wsRename(wsViewer.file.path, wsViewer.file.name)" :title="$i18n('ws_rename')">
+                                <i class="ti ti-cursor-text"></i>
+                            </button>
+                            <button class="btn btn-sm btn-ghost-danger" x-show="!wsViewer.file.external"
+                                    @click="wsDelete(wsViewer.file.path, wsViewer.file.name)" :title="$i18n('ws_delete')">
+                                <i class="ti ti-trash"></i>
+                            </button>
+                        </span>
+                    </template>
+                    <button type="button" class="btn-close ms-1" @click="wsViewer.open = false" :aria-label="$i18n('close')"></button>
+                </div>
+            </div>
+            <div class="modal-body">
+                <div class="text-secondary text-center py-4" x-show="wsViewer.loading">
+                    <span class="spinner-border spinner-border-sm me-2"></span>
+                    <span x-text="$i18n('ws_loading')"></span>
+                </div>
+                <div class="alert alert-danger" x-show="wsViewer.error" x-text="wsViewer.error"></div>
+
+                {# Directory listing #}
+                <template x-if="wsViewer.dir">
+                    <div class="list-group list-group-flush">
+                        <template x-for="e in wsViewer.dir.entries" :key="e.path">
+                            <div class="list-group-item d-flex align-items-center">
+                                <button type="button" class="btn btn-ghost-secondary btn-sm flex-fill text-truncate px-1 ws-dir-entry"
+                                        @click="wsOpen(e)">
+                                    <i class="ti me-2 text-secondary" :class="wsIcon(e.kind)"></i>
+                                    <span x-text="e.name"></span>
+                                </button>
+                                <span class="text-secondary small font-monospace me-2 d-none d-md-inline"
+                                      x-show="!e.directory" x-text="wsSize(e.size)"></span>
+                                <button class="btn btn-sm btn-ghost-secondary px-1" @click="wsRename(e.path, e.name)" :title="$i18n('ws_rename')">
+                                    <i class="ti ti-cursor-text"></i>
+                                </button>
+                                <button class="btn btn-sm btn-ghost-danger px-1" @click="wsDelete(e.path, e.name)" :title="$i18n('ws_delete')">
+                                    <i class="ti ti-trash"></i>
+                                </button>
+                            </div>
+                        </template>
+                        <div class="list-group-item text-secondary text-center" x-show="!wsViewer.dir.entries.length"
+                             x-text="$i18n('ws_empty')"></div>
+                    </div>
+                </template>
+
+                {# Editor #}
+                <div x-show="wsViewer.editing" x-cloak>
+                    <textarea class="form-control font-monospace ws-editor" rows="24" x-model="wsViewer.draft"
+                              @keydown.meta.s.prevent="wsSave()" @keydown.ctrl.s.prevent="wsSave()"></textarea>
+                    <div class="d-flex align-items-center mt-2">
+                        <span class="text-secondary small" x-text="$i18n('ws_save_hint')"></span>
+                        <button class="btn btn-sm btn-ghost-secondary ms-auto me-2" @click="wsToggleEdit()" x-text="$i18n('cancel')"></button>
+                        <button class="btn btn-sm btn-primary" @click="wsSave()" :disabled="wsViewer.saving">
+                            <i class="ti ti-device-floppy me-1"></i>
+                            <span x-text="$i18n('ws_save')"></span>
+                        </button>
+                    </div>
+                </div>
+
+                {# Rendered file. Sanitized in ws-common.js before it lands here. #}
+                <div class="markdown-body" x-show="!wsViewer.editing && wsViewer.mode === 'markdown'" x-html="wsViewer.html"></div>
+                <div class="table-responsive" x-show="!wsViewer.editing && wsViewer.mode === 'csv'">
+                    <table class="table table-sm table-bordered table-vcenter">
+                        <thead>
+                        <tr>
+                            <template x-for="(h, i) in wsViewer.rows[0] || []" :key="i"><th x-text="h"></th></template>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        <template x-for="(row, ri) in wsViewer.rows.slice(1)" :key="ri">
+                            <tr>
+                                <template x-for="(cell, ci) in row" :key="ci"><td class="text-nowrap" x-text="cell"></td></template>
+                            </tr>
+                        </template>
+                        </tbody>
+                    </table>
+                </div>
+                <pre class="border rounded p-3 bg-secondary-lt ws-pre" x-show="!wsViewer.editing && wsViewer.mode === 'text'"><code x-text="wsViewer.file?.text || ''"></code></pre>
+                <div class="text-center py-4" x-show="!wsViewer.dir && !wsViewer.editing && !wsViewer.loading && wsViewer.mode === 'none'">
+                    <div class="text-secondary mb-2" x-text="$i18n('ws_preview_unavailable')"></div>
+                    <button class="btn btn-sm btn-primary" @click="wsRevealFile(wsViewer.file?.path)">
+                        <i class="ti ti-external-link me-1"></i>
+                        <span x-text="$i18n('ws_open_external')"></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="modal-backdrop fade show" x-show="wsViewer.open" x-cloak @click="wsViewer.open = false"></div>

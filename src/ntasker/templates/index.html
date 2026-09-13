@@ -115,16 +115,17 @@
                             <div class="dropdown-menu dropdown-menu-end" :class="{ show: menuOpen }" x-cloak>
                                 <template x-if="!grouping">
                                     <div>
-                                        {# "Board": kanban narrowed to this project, all phases. #}
+                                        {# "Only this project": kanban narrowed to this project, all phases. #}
                                         <button type="button" class="dropdown-item"
                                                 :title="$i18n('project_board_hint')"
                                                 @click.stop.prevent="menuOpen = false; showProjectBoard({{ p }}.name)">
-                                            <i class="ti ti-columns me-2"></i>
+                                            <i class="ti ti-focus-2 me-2"></i>
                                             <span x-text="$i18n('project_board')"></span>
                                         </button>
                                         {# "Group...": swaps the menu for an inline input, prefilled #}
                                         {# with the current family (manual or automatic).          #}
                                         <button type="button" class="dropdown-item"
+                                                :title="$i18n('group_project_hint')"
                                                 @click.stop.prevent="grouping = true; groupName = groupPrefill({{ p }}.name)">
                                             <i class="ti ti-folder-symlink me-2"></i>
                                             <span x-text="$i18n('group_project')"></span>

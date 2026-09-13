@@ -523,7 +523,10 @@ def build_js_strings() -> dict[str, str]:
         "hide_project": _("Hide"),
         "unhide_project": _("Unhide"),
         "group_project": _("Group..."),
-        "group_project_placeholder": _("Group name -- empty = none"),
+        "group_project_hint": _(
+            "Projects with the same group name are folded together in the sidebar"
+        ),
+        "group_project_placeholder": _("Group name -- same name = same group, empty = none"),
         "fold_project_family": _("Fold related projects"),
         "unfold_project_family": _("Show related projects"),
         "project_family_hint": _("{name} -- related projects, click to unfold"),
@@ -645,9 +648,9 @@ def build_js_strings() -> dict[str, str]:
             "in its way. You can still start this task if you want to."
         ),
         "new_task_for_project": _("New task in this project -- opens the form to fill in"),
-        "project_board": _("Board"),
+        "project_board": _("Only this project"),
         "project_board_hint": _(
-            "Show this project's tasks as a board -- planned, in progress, review, done"
+            "Show only this project's tasks, all phases -- planned, in progress, review, done"
         ),
         "quick_run_for_project": _(
             "Start an agent in this project right away -- creates a task "

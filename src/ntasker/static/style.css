@@ -885,6 +885,29 @@ a.running-chip-link:hover {
     border-color: var(--tblr-primary);
     color: var(--tblr-primary);
 }
+/* Project drag: while a row is in flight, every family reads as a landing
+ * spot -- a faint dashed outline, nothing louder. The row under the cursor
+ * (family or lone project) fills in; the dragged row fades. */
+.project-node {
+    border-radius: var(--tblr-border-radius);
+    outline: 1px dashed transparent;
+    outline-offset: -1px;
+    transition: outline-color 0.15s ease-out, background-color 0.15s ease-out;
+}
+.project-dragging .project-node.is-family {
+    outline-color: color-mix(in srgb, var(--tblr-primary) 45%, transparent);
+}
+.project-dragging .project-node.drop-target {
+    outline-style: solid;
+    outline-color: var(--tblr-primary);
+    background-color: color-mix(in srgb, var(--tblr-primary) 8%, transparent);
+}
+.project-row.is-dragging {
+    opacity: 0.4;
+}
+.project-row[draggable="true"] {
+    cursor: grab;
+}
 .project-children {
     margin-left: 0.55rem;
     padding-left: 0.6rem;

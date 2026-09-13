@@ -53,7 +53,10 @@
 {# follows the open-count badge (the folded-family pill on head rows).    #}
 {% macro project_row(p, after_badge='') %}
             <label class="form-check project-row d-flex align-items-center w-100 mb-1 flex-fill min-w-0"
-                   :class="{ 'project-hidden': isProjectHidden({{ p }}.name) }"
+                   :class="{ 'project-hidden': isProjectHidden({{ p }}.name), 'is-dragging': draggedProject === {{ p }}.name }"
+                   :draggable="{{ p }}.name !== '__none__'"
+                   @dragstart="onProjectDragStart($event, {{ p }}.name)"
+                   @dragend="onProjectDragEnd()"
                    :title="{{ p }}.name === '__none__' ? $i18n('tasks_without_project') : {{ p }}.name">
                 <input type="checkbox" class="form-check-input"
                        :checked="projectFilter.includes({{ p }}.name)"
@@ -157,6 +160,7 @@
     {# drive the bg so dark-mode behaves. Sidebar has its own scroll context; the main #}
     {# page-wrapper scrolls independently. #}
     <aside class="tracker-sidebar d-none d-md-flex flex-column border-end p-3"
+           :class="{ 'project-dragging': draggedProject !== null }"
            :style="{ width: sidebarWidth + 'px' }"
            style="flex-shrink: 0; position: sticky; top: 0; align-self: flex-start; max-height: 100vh; overflow-y: auto; background-color: var(--tblr-bg-surface-secondary, var(--tblr-bg-surface));">
 
@@ -202,7 +206,11 @@
         {# its head is the prefix project itself when one exists, else a   #}
         {# label-only header carrying the family's open-task total.        #}
         <template x-for="row in projectTree" :key="row.name">
-            <div class="project-node" :class="{ 'is-open': row.expanded }">
+            <div class="project-node"
+                 :class="{ 'is-open': row.expanded, 'is-family': row.children.length, 'drop-target': dragOverFamily === row.name && row.name !== '__none__' }"
+                 @dragover.prevent="onProjectDragOver($event, row)"
+                 @dragleave="onProjectDragLeave($event, row)"
+                 @drop.prevent="onProjectDrop($event, row)">
                 <div class="d-flex align-items-center">
                     <template x-if="row.children.length">
                         <button type="button" class="project-fold"

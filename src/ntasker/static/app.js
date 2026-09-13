@@ -194,6 +194,10 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // (Firefox is picky about reading text/plain mid-drag). ``dragOverColumn``
         // drives the column-highlight CSS class.
         draggedTaskId: null,
+        // Sidebar project drag: the dragged name and the family whose row is
+        // currently the drop target.
+        draggedProject: null,
+        dragOverFamily: null,
         dragOverColumn: null,
         // Intra-group reordering indicator: the card/row the cursor hovers and
         // whether the drop would land above (true) or below (false) it. Drives
@@ -477,13 +481,20 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
 
         // Put a project into a family by hand. Choosing what the prefix rule
         // would pick anyway drops the override so the map stays minimal.
-        async setProjectGroup(name, family) {
+        setProjectGroup(name, family) {
+            return this.updateProjectGroups({ [name]: family });
+        },
+
+        // Apply several {project: family} changes in one write.
+        async updateProjectGroups(changes) {
             const prev = this.projectGroups;
             const next = { ...prev };
-            family = family.trim();
-            const auto = projectPrefix(name);
-            if (family === auto || (family === '' && auto === name)) delete next[name];
-            else next[name] = family;
+            for (const [name, raw] of Object.entries(changes)) {
+                const family = raw.trim();
+                const auto = projectPrefix(name);
+                if (family === auto || (family === '' && auto === name)) delete next[name];
+                else next[name] = family;
+            }
             this.projectGroups = next;
             try {
                 const r = await fetch('/api/settings/project_groups', {
@@ -496,6 +507,63 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 this.projectGroups = prev;
                 this.showToast(_i('update_failed'), 'danger');
             }
+        },
+
+        // Drag a project row onto another row to put it into that row's
+        // family. Dropping on a family (head or child) joins it; dropping on
+        // a lone project founds a family headed by that project.
+        onProjectDragStart(event, name) {
+            this.draggedProject = name;
+            if (event.dataTransfer) {
+                event.dataTransfer.effectAllowed = 'move';
+                event.dataTransfer.setData('text/plain', name);
+            }
+        },
+
+        onProjectDragEnd() {
+            this.draggedProject = null;
+            this.dragOverFamily = null;
+        },
+
+        // Family a drop on this tree row would put the dragged project into,
+        // or null when the drop makes no sense (no project drag, own family).
+        dropFamilyFor(row) {
+            if (this.draggedProject === null || row.name === PROJECT_NONE) return null;
+            if (row.name === this.draggedProject) return null;
+            if (this.projectFamily(this.draggedProject) === row.name) return null;
+            return row.name;
+        },
+
+        onProjectDragOver(event, row) {
+            const family = this.dropFamilyFor(row);
+            if (family === null) {
+                if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
+                this.dragOverFamily = null;
+                return;
+            }
+            if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+            this.dragOverFamily = family;
+        },
+
+        onProjectDragLeave(event, row) {
+            const related = event.relatedTarget;
+            if (!related || !event.currentTarget.contains(related)) {
+                if (this.dragOverFamily === row.name) this.dragOverFamily = null;
+            }
+        },
+
+        onProjectDrop(event, row) {
+            const family = this.dropFamilyFor(row);
+            const dragged = this.draggedProject;
+            this.onProjectDragEnd();
+            if (family === null) return;
+            const changes = { [dragged]: family };
+            // A lone project becomes a head: make sure it counts itself in,
+            // even if it had opted out of its own prefix family.
+            if (!row.children.length && row.project && this.projectFamily(row.project.name) !== family) {
+                changes[row.project.name] = family;
+            }
+            this.updateProjectGroups(changes);
         },
 
         toggleProjectGroup(name) {

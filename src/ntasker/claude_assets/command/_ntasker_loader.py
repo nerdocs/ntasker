@@ -193,7 +193,78 @@ def render(data: dict) -> str:
             data.get("description") or "_(keine Beschreibung)_",
         ]
     )
+    lines.extend(render_context(data.get("context") or []))
     return "\n".join(lines)
+
+
+#: Wie eine angehaengte Workspace-Datei im Task-Kopf benannt wird.
+CONTEXT_LABELS = {
+    "member": "Teammitglied",
+    "skill": "Skill",
+    "note": "Wissensdatenbank",
+    "doc": "Dokument",
+    "file": "Datei",
+    "mcp": "MCP-Server",
+}
+
+
+def render_context(context: list) -> list:
+    """Angehaengte Workspace-Dateien als Markdown-Block.
+
+    Es werden Pfade uebergeben, keine Inhalte -- eine Persona-Datei oder
+    eine Notiz kann sehr lang sein, und der Agent hat ein Read-Tool. Was er
+    nicht raten kann, ist *welche* Dateien zaehlen; genau das hat der User
+    durch das Anhaengen festgelegt.
+    """
+    if not context:
+        return []
+    out = [
+        "",
+        "### Angehaengter Kontext",
+        "",
+        "Der User hat diese Workspace-Dateien an die Aufgabe angehaengt. "
+        "Lies die relevanten, bevor du loslegst -- sie tragen die "
+        "Konventionen, den Hintergrund und die Vorarbeiten dieser Aufgabe. "
+        "Ausnahme: Eintraege vom Typ *Teammitglied* sind Rollen, die du "
+        "als eigene Subagenten aktivierst (siehe Hinweis am Eintrag).",
+        "",
+    ]
+    for entry in context:
+        kind = CONTEXT_LABELS.get(entry.get("kind", ""), "Datei")
+        label = entry.get("label") or "?"
+        path = entry.get("path", "")
+        line = f'- **{kind}: {label}** -- `{path}`'
+        if not entry.get("exists", True):
+            line += "  _(Datei nicht gefunden -- sag das, statt zu raten)_"
+        out.append(line)
+        if entry.get("note"):
+            out.append(f'  - {entry["note"]}')
+        if entry.get("kind") == "file":
+            if os.path.isdir(path):
+                out.append(
+                    "  - Das ist ein Ordner: erst auflisten, dann lesen, was die "
+                    "Aufgabe braucht."
+                )
+            else:
+                out.append(
+                    "  - Lies diese Datei mit dem Read-Tool, bevor du dich darauf "
+                    "stuetzt (auch PDFs und Bilder)."
+                )
+        if entry.get("kind") == "member":
+            out.append(
+                "  - Das ist eine Rolle, keine Lektuere: starte dafuer einen "
+                "eigenen Subagenten (Agent-Tool), der die Rollen-Datei liest "
+                "und deren Aktivierungs-Prompt uebernimmt; gib ihm "
+                "Task-Beschreibung + relevante Dateien mit und fuehre sein "
+                "Ergebnis im Bericht zusammen."
+            )
+        if entry.get("kind") == "mcp":
+            out.append(
+                "  - Nutze die Tools dieses MCP-Servers fuer die Aufgabe (bei "
+                "deferred Tools per ToolSearch nach dem Servernamen suchen). "
+                "Ist der Server nicht verbunden, sag das."
+            )
+    return out
 
 
 def main(argv: list[str]) -> int:

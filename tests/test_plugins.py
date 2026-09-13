@@ -85,4 +85,4 @@ def test_slot_template_resolves_under_plugins_dir(tmp_path):
 def test_index_renders_with_slots(client):
     r = client.get("/")
     assert r.status_code == 200
-    assert 'window.__plugins = ["claude", "opencode", "pi"]' in r.text
+    assert 'window.__plugins = ["claude", "opencode", "pi", "task_context"]' in r.text

@@ -202,6 +202,10 @@ class TaskCreate(BaseModel):
     # Task ids this task depends on. Validated (existence + no cycles) on
     # insert; an invalid set yields HTTP 400.
     depends: list[int] = Field(default_factory=list)
+    # Plugin payload (task_context: entries to attach at creation). Plain
+    # dicts here; the owning plugin validates them in its create hook
+    # *before* the insert, so a bad entry never leaves a half-created task.
+    context: list[dict] = Field(default_factory=list)
 
 
 class TaskUpdate(BaseModel):
@@ -1718,8 +1722,7 @@ def api_list_tasks(
     with get_conn() as conn:
         tags_by_id = load_tags_bulk(conn, ids)
         deps_by_id = load_deps_bulk(conn, ids)
-    return JSONResponse(
-        [
+        tasks = [
             row_to_task(
                 r,
                 tags_by_id.get(int(r["id"]), []),
@@ -1727,7 +1730,8 @@ def api_list_tasks(
             )
             for r in rows
         ]
-    )
+        plugins.apply_task_hooks(conn, tasks)
+    return JSONResponse(tasks)
 
 
 @app.get("/api/stats")
@@ -1838,7 +1842,9 @@ def api_get_task(task_id: int) -> JSONResponse:
             raise HTTPException(status_code=404, detail=_("Task not found"))
         tags = load_tags_for(conn, task_id)
         depends = load_deps_for(conn, task_id)
-    return JSONResponse(row_to_task(row, tags, depends))
+        task = row_to_task(row, tags, depends)
+        plugins.apply_task_hooks(conn, [task])
+    return JSONResponse(task)
 
 
 def _dep_error_detail(e: DepError) -> str:
@@ -1876,6 +1882,9 @@ def api_create_task(payload: TaskCreate) -> JSONResponse:
     project_value = _normalize_project(payload.project)
     # Title is optional: fall back to the start of the description.
     title_value = payload.title.strip() or title_from_description(payload.description)
+    # Plugins validate their part of the payload now and hand back the steps
+    # to run once the row exists (task_context: attachments).
+    after_insert = plugins.run_create_hooks(payload.model_dump())
     with get_conn() as conn:
         cur = conn.execute(
             """
@@ -1905,10 +1914,14 @@ def api_create_task(payload: TaskCreate) -> JSONResponse:
             except DepError as e:
                 raise HTTPException(status_code=400, detail=_dep_error_detail(e))
             set_task_deps(conn, new_id, dep_ids)
+        for step in after_insert:
+            step(conn, new_id)
         row = conn.execute("SELECT * FROM tasks WHERE id = ?", (new_id,)).fetchone()
         tags = load_tags_for(conn, new_id)
         depends = load_deps_for(conn, new_id)
-    return JSONResponse(row_to_task(row, tags, depends), status_code=201)
+        task = row_to_task(row, tags, depends)
+        plugins.apply_task_hooks(conn, [task])
+    return JSONResponse(task, status_code=201)
 
 
 @app.patch("/api/tasks/{task_id}")
@@ -1988,12 +2001,14 @@ def api_update_task(task_id: int, payload: TaskUpdate) -> JSONResponse:
         row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         tags = load_tags_for(conn, task_id)
         depends = load_deps_for(conn, task_id)
+        task = row_to_task(row, tags, depends)
+        plugins.apply_task_hooks(conn, [task])
 
     # The task is finished -- tear down its interactive Claude session, if any.
     if fields.get("status") == "done":
         stop_session(task_id)
 
-    return JSONResponse(row_to_task(row, tags, depends))
+    return JSONResponse(task)
 
 
 @app.delete("/api/tasks/{task_id}", status_code=204)

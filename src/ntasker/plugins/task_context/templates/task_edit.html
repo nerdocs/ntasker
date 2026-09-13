@@ -1,0 +1,31 @@
+{# Attachments are written straight through, not on Save -- so the button #}
+{# works even before the rest of the form is valid.                        #}
+<div class="mb-2">
+    <label class="form-label d-flex align-items-center">
+        <span x-text="$i18n('ctx_attached')"></span>
+        <span class="badge bg-azure-lt ms-2" x-show="(editing.context || []).length"
+              x-text="(editing.context || []).length"></span>
+        <button type="button" class="btn btn-sm btn-outline-primary ms-auto" @click="openPicker(editing)">
+            <i class="ti ti-paperclip me-1"></i>
+            <span x-text="$i18n('ctx_attach')"></span>
+        </button>
+    </label>
+    <div x-show="(editing.context || []).length">
+    <div class="d-flex flex-wrap gap-1">
+        <template x-for="c in editing.context" :key="c.id">
+            <span class="badge d-inline-flex align-items-center context-chip"
+                  :class="c.exists ? 'bg-azure-lt' : 'bg-red-lt'"
+                  :title="c.note ? `${c.path}\n${c.note}` : c.path">
+                <i class="ti me-1" :class="contextChipIcon(c)"></i>
+                <button type="button" class="context-chip-label" @click="openContext(c)" x-text="c.label"></button>
+                <i class="ti ti-alert-triangle ms-1" x-show="!c.exists" :title="$i18n('ctx_missing')"></i>
+                <button type="button" class="context-chip-close ms-1" :aria-label="$i18n('ctx_detach')"
+                        @click.stop="detachContext(editing, c)">
+                    <i class="ti ti-x"></i>
+                </button>
+            </span>
+        </template>
+    </div>
+    </div>
+    <div class="text-secondary small" x-show="!(editing.context || []).length" x-text="$i18n('ctx_no_context')"></div>
+</div>

@@ -1,0 +1,40 @@
+/* Context chips (attached entries) in the create form and the edit modal.
+   Both controls are real <button>s so they are keyboard-reachable, but
+   inside a badge they must carry no button chrome at all -- Tabler's
+   .btn-close renders at its own fixed size and bursts a 20px chip. */
+.context-chip-label,
+.context-chip-close {
+    background: none;
+    border: 0;
+    padding: 0;
+    color: inherit;
+    font: inherit;
+    line-height: 1;
+    cursor: pointer;
+}
+.context-chip-label:hover,
+.context-chip-close:hover {
+    text-decoration: underline;
+}
+.context-chip-close {
+    display: inline-flex;
+    align-items: center;
+    opacity: 0.55;
+    text-decoration: none;
+}
+.context-chip-close:hover {
+    opacity: 1;
+    text-decoration: none;
+}
+.context-chip-close .ti {
+    font-size: 0.875em;
+}
+/* Read-only chips on task cards open the entry on click. */
+.context-chip-card {
+    cursor: pointer;
+}
+/* A flex child defaults to min-width:auto and refuses to shrink; the picker
+   rows need it so long paths truncate instead of overflowing. */
+.context-min-w-0 {
+    min-width: 0;
+}

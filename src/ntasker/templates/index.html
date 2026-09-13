@@ -1054,6 +1054,7 @@
                                                       :title="$i18n('filter_tag', {name: tag})"
                                                       @click.stop="toggleTag(tag)">#<span x-text="tag"></span></span>
                                             </template>
+                                            {% for tpl in plugin_slots['task_card'] %}{% include tpl %}{% endfor %}
 
                                             {# Blocked badge -- names the still-open dependencies that block this task. #}
                                             <template x-if="isBlocked(task)">
@@ -1335,6 +1336,7 @@
                                                 <template x-for="tag in task.tags" :key="tag">
                                                     <span class="badge bg-purple-lt">#<span x-text="tag"></span></span>
                                                 </template>
+                                                {% for tpl in plugin_slots['board_card'] %}{% include tpl %}{% endfor %}
 
                                                 <template x-if="isBlocked(task)">
                                                     <span class="badge bg-danger-lt" :title="$i18n('blocked_hint')">
@@ -1439,8 +1441,9 @@
          :class="editing ? 'show d-block' : ''"
          :style="editing ? 'background-color: rgba(0,0,0,0.4)' : ''"
          @keydown.enter="onDialogEnter($event, () => saveEdit())"
-         @keydown.escape.window="editing = null">
-        <div class="modal-dialog modal-xl edit-modal-dialog" role="document" x-show="editing" @click.outside="editing = null">
+         {# closeEdit() stands down while a plugin modal opened from here is up (see app.js). #}
+         @keydown.escape.window="closeEdit()">
+        <div class="modal-dialog modal-xl edit-modal-dialog" role="document" x-show="editing" @click.outside="closeEdit()">
             <div class="modal-content" x-show="editing">
                 <div class="modal-header">
                     <h5 class="modal-title">

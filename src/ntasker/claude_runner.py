@@ -256,6 +256,9 @@ def _compact_seed(task: dict, queued: bool = False) -> str:
     description = (task.get("description") or "").strip()
     if description:
         lines += ["", "## Description", "", description]
+    from ntasker import plugins  # noqa: PLC0415 -- lazy: avoid cycle
+
+    lines += plugins.run_briefings(int(task["id"]))
     if queued:
         lines += [
             "",

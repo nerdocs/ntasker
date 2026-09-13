@@ -51,7 +51,7 @@ if TYPE_CHECKING:
     from ntasker.agents import AgentSpec
 
 #: Built-in plugins, in load order. The order is also the UI order.
-BUILTIN: tuple[str, ...] = ("claude", "opencode", "pi")
+BUILTIN: tuple[str, ...] = ("claude", "opencode", "pi", "task_context")
 
 #: Where plugin packages (and their ``templates/`` + ``static/``) live.
 PLUGINS_DIR = files("ntasker") / "plugins"
@@ -63,6 +63,8 @@ SLOTS: tuple[str, ...] = (
     "sidebar",  # index.html: below the tags section
     "task_form",  # index.html: create form, after the description
     "task_edit",  # index.html: edit modal, after the description
+    "task_card",  # index.html: list-view card, after the tag chips (``task`` in scope)
+    "board_card",  # index.html: kanban card, after the tag chips (``task`` in scope)
     "modals",  # index.html: before the toast container
     "scripts",  # index.html: before app.js
     "settings",  # settings.html: below the Plugins card
@@ -108,6 +110,13 @@ class PluginContext:
     cli: list[Callable[[Any], None]] = field(default_factory=list)
     slots: dict[str, list[str]] = field(default_factory=dict)
     js_strings: list[Callable[[], dict[str, str]]] = field(default_factory=list)
+    task_hooks: list[Callable[[sqlite3.Connection, list[dict]], None]] = field(
+        default_factory=list
+    )
+    create_hooks: list[Callable[[dict], Callable[[sqlite3.Connection, int], None]]] = field(
+        default_factory=list
+    )
+    briefings: list[Callable[[int], list[str]]] = field(default_factory=list)
 
     @property
     def name(self) -> str:
@@ -146,6 +155,25 @@ class PluginContext:
     def add_js_strings(self, fn: Callable[[], dict[str, str]]) -> None:
         """Contribute translated keys to ``window.__i18n`` (called per request)."""
         self.js_strings.append(fn)
+
+    def add_task_hook(self, fn: Callable[[sqlite3.Connection, list[dict]], None]) -> None:
+        """Enrich task dicts in place (``fn(conn, tasks)``) wherever the core
+        serialises tasks -- list/get/create/update endpoints and ``ntasker show``.
+        Bulk by design: the list endpoint is the hot path."""
+        self.task_hooks.append(fn)
+
+    def add_create_hook(
+        self, fn: Callable[[dict], Callable[[sqlite3.Connection, int], None]]
+    ) -> None:
+        """Take part in ``POST /api/tasks``: ``fn(payload)`` validates the
+        plugin's part of the request *before* the insert (raise
+        ``HTTPException`` to abort) and returns ``after(conn, task_id)``,
+        run inside the same transaction once the row exists."""
+        self.create_hooks.append(fn)
+
+    def add_briefing(self, fn: Callable[[int], list[str]]) -> None:
+        """Extra Markdown lines for a task's agent briefing (``fn(task_id)``)."""
+        self.briefings.append(fn)
 
     def static_url(self, filename: str) -> str:
         """URL of a file under this plugin's ``static/`` directory."""
@@ -274,6 +302,29 @@ def enabled_js_strings() -> dict[str, str]:
         for fn in ctx.js_strings:
             out.update(fn())
     return out
+
+
+def apply_task_hooks(conn: sqlite3.Connection, tasks: list[dict]) -> None:
+    """Run every enabled plugin's task hooks over ``tasks`` (in place)."""
+    if not tasks:
+        return
+    for ctx in enabled():
+        for fn in ctx.task_hooks:
+            fn(conn, tasks)
+
+
+def run_create_hooks(payload: dict) -> list[Callable[[sqlite3.Connection, int], None]]:
+    """Validate the plugin parts of a create payload; return the after-insert steps."""
+    return [fn(payload) for ctx in enabled() for fn in ctx.create_hooks]
+
+
+def run_briefings(task_id: int) -> list[str]:
+    """Concatenated briefing lines of every enabled plugin for ``task_id``."""
+    lines: list[str] = []
+    for ctx in enabled():
+        for fn in ctx.briefings:
+            lines += fn(task_id)
+    return lines
 
 
 def init_schema(conn: sqlite3.Connection) -> None:

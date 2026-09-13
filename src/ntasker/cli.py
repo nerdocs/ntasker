@@ -124,6 +124,16 @@ def _print_task_detail(t: dict) -> None:
     print(f"  {_('Created'):<14}{t.get('created_at') or '-'}")
     if t.get("completed_at"):
         print(f"  {_('Completed'):<14}{t['completed_at']}")
+    context = t.get("context") or []
+    if context:
+        print()
+        print(f"  --- {_('Attached context')} ---")
+        for entry in context:
+            missing = "" if entry.get("exists", True) else f"  [{_('missing')}]"
+            print(f"  [{entry['kind']}] {entry['label']}{missing}")
+            print(f"      {entry['path']}")
+            if entry.get("note"):
+                print(f"      {entry['note']}")
     if t.get("description"):
         print()
         print(f"  --- {_('Description')} ---")
@@ -612,7 +622,8 @@ def cmd_show(args: argparse.Namespace) -> int:
             return 1
         tags = load_tags_for(conn, args.task_id)
         depends = load_deps_for(conn, args.task_id)
-    task = row_to_task(row, tags, depends)
+        task = row_to_task(row, tags, depends)
+        plugins.apply_task_hooks(conn, [task])
     if args.json:
         _print_json(task)
     else:

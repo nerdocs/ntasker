@@ -1,0 +1,12 @@
+{# Attached context chips on a task card -- click opens the entry. Shown on #}
+{# the card because "which persona / which notes does this task run with"  #}
+{# is exactly the kind of thing you want to see without opening anything.  #}
+<template x-for="c in (task.context || [])" :key="c.id">
+    <span class="badge d-inline-flex align-items-center context-chip-card"
+          :class="c.exists ? 'bg-azure-lt' : 'bg-red-lt'" role="button"
+          :title="c.note ? `${c.path}\n${c.note}` : c.path"
+          @click.stop="c.exists ? openContext(c) : null">
+        <i class="ti me-1" :class="contextChipIcon(c)"></i>
+        <span x-text="c.label"></span>
+    </span>
+</template>

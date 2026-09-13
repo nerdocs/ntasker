@@ -1610,6 +1610,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 tags: this.form.tags,
                 depends: this.form.depends.map(d => d.id),
             };
+            if (typeof this.pluginCreatePayload === 'function') this.pluginCreatePayload(payload);
             const r = await fetch('/api/tasks', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1629,6 +1630,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             this.form.tagInput = '';
             this.form.depends = [];
             this.form.depInput = '';
+            if (typeof this.pluginResetForm === 'function') this.pluginResetForm();
             // Keep project selection for rapid same-project entry.
             await this.refreshAll();
             // Create + Run: hand the fresh task straight to its agent. The run
@@ -1710,7 +1712,17 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 depends: (task.depends || []).map(d => ({ ...d })),
                 _depInput: '',
             };
+            if (typeof this.pluginStartEdit === 'function') this.pluginStartEdit(this.editing, task);
             this.depSuggest = [];
+        },
+
+        // Escape / click-outside on the edit modal. A plugin modal opened from
+        // the edit dialog (the context picker, say) lives outside it in the
+        // DOM, so every click in it reads as "outside" -- while such a modal
+        // reports itself open, the edit dialog stays.
+        closeEdit() {
+            if (typeof this.pluginModalOpen === 'function' && this.pluginModalOpen()) return;
+            this.editing = null;
         },
 
         async saveEdit() {
@@ -2869,6 +2881,12 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
     // Plugin mixins: each enabled plugin's script pushed a factory onto
     // window.ntaskerPlugins (see index.html); its state + methods merge into
     // the component. A plugin may define pluginInit(), called from init().
-    for (const factory of (window.ntaskerPlugins || [])) Object.assign(base, factory());
+    // The factory receives the base object so it can extend nested state
+    // (form.context, say) before Alpine makes the component reactive. Merged
+    // via property descriptors, not Object.assign, so a mixin's getters stay
+    // getters instead of being evaluated once at construction.
+    for (const factory of (window.ntaskerPlugins || [])) {
+        Object.defineProperties(base, Object.getOwnPropertyDescriptors(factory(base)));
+    }
     return base;
 }

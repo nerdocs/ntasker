@@ -442,7 +442,7 @@ def build_js_strings() -> dict[str, str]:
         "queue_pause_title": _(
             "Stop starting new tasks. A task already running keeps going."
         ),
-        "queue_empty": _("Empty. Press a task's run button to queue it here."),
+        "queue_empty": _("Empty. Press a task's run button or drop a card here to queue it."),
         "queue_run_next": _("Run next"),
         "queued_front": _("Task #{id} queued -- it starts as soon as its project is free."),
         "queue_paused_hint": _("Paused -- press Resume to work through these."),

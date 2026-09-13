@@ -7,9 +7,10 @@ next.
 
 It sits in a panel above the board and is visible in both the list and the kanban view.
 
-Tasks get in through the **run button** on each row / card. Pressing it on an already-queued task moves it to the front
-of its lane; pressing it on a task with a live session just opens that session. The panel's `✕` takes an entry out.
-Dragging a card *into* the panel is not a thing, precisely so the run button is the one obvious way in.
+Tasks get in through the **run button** on each row / card -- or by dragging a card onto the panel, which appends it
+(the whole panel is the drop target, the empty state included). Pressing the run button on an already-queued task
+moves it to the front of its lane; pressing it on a task with a live session just opens that session. The panel's `✕`
+takes an entry out.
 
 ## Rules in one paragraph
 
@@ -37,7 +38,8 @@ you can see when a task runs without looking at the panel.
 
 Dragging an entry **inside its column** reorders it. Across columns it is refused: that would have to silently reassign
 the task's project, which belongs in the edit dialog. The one gesture that legitimately crosses columns is setting a
-dependency -- see below.
+dependency -- see below. A queue entry never leaves the panel by drag (the board does not accept it), and a running
+entry is not draggable at all -- nothing about it can change any more.
 
 ## Pause and resume
 

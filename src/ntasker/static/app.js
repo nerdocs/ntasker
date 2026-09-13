@@ -226,6 +226,12 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         queueSkipped: {},
         queueOverId: null,
         queueZone: 'before',
+        // True while a board card hovers the queue panel -- the whole panel
+        // is the drop target then (drop = append). See onQueuePanelDragOver.
+        queuePanelOver: false,
+        // Where the current drag started: 'board' or 'queue'. A queue entry
+        // may only be reordered inside the panel, never dropped on the board.
+        dragSource: null,
         // Raw body of the last /api/queue response; an unchanged payload skips
         // the state update (same trick as the session poll).
         _queueRaw: null,
@@ -947,8 +953,9 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         },
 
         // ---- Drag & Drop (kanban) ----
-        onCardDragStart(event, task) {
+        onCardDragStart(event, task, source = 'board') {
             this.draggedTaskId = task.id;
+            this.dragSource = source;
             // dataTransfer.setData is required for Firefox to even initiate
             // the drag; the value itself is unused (we keep the id in state).
             try {
@@ -961,9 +968,11 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
 
         onCardDragEnd() {
             this.draggedTaskId = null;
+            this.dragSource = null;
             this.dragOverColumn = null;
             this.dragOverTaskId = null;
             this.queueOverId = null;
+            this.queuePanelOver = false;
             // A change detected mid-drag was deferred (re-rendering would abort
             // the drag); apply it now that the drag is over.
             if (this._liveRefreshPending) {
@@ -1034,6 +1043,10 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
 
         onCardDragOver(event, task, colKey) {
             if (this.draggedTaskId == null) return;
+            if (this.dragSource === 'queue') {   // queue entries stay in the panel
+                if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
+                return;
+            }
             // Hovering the dragged card itself: no insertion line, but keep the
             // column highlighted and the drop allowed (a no-op drop is fine).
             if (this.draggedTaskId === task.id) {
@@ -1073,10 +1086,11 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         async onCardDrop(event, task, colKey) {
             const id = this.draggedTaskId;
             const zone = this.dragZone;
+            const fromQueue = this.dragSource === 'queue';
             this.dragOverTaskId = null;
             this.dragOverColumn = null;
             this.draggedTaskId = null;
-            if (id == null || id === task.id) return; // dropped on itself
+            if (id == null || id === task.id || fromQueue) return; // itself / queue entry
             if (zone === 'link') {
                 await this.setDependency(id, task);
                 return;
@@ -1191,6 +1205,11 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         },
 
         onColumnDragOver(event, colKey) {
+            if (this.dragSource === 'queue') {   // queue entries stay in the panel
+                if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
+                this.dragOverColumn = null;
+                return;
+            }
             const task = this.draggedTaskId != null
                 ? this.tasks.find(t => t.id === this.draggedTaskId)
                 : null;
@@ -1220,10 +1239,11 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
 
         async onColumnDrop(event, colKey) {
             const id = this.draggedTaskId;
+            const fromQueue = this.dragSource === 'queue';
             this.dragOverColumn = null;
             this.dragOverTaskId = null;
             this.draggedTaskId = null;
-            if (id == null) return;
+            if (id == null || fromQueue) return;
             const task = this.tasks.find(t => t.id === id);
             if (!task) return;
             // Safety net behind onColumnDragOver: a blocked task can't move to
@@ -1403,23 +1423,56 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             return _i('queue_blocked') + '\n' + parts.join('\n');
         },
 
-        // Drag inside the queue panel reorders it. Dragging a card *into* the
-        // queue is deliberately not a thing -- the board's run button is the
-        // way in, so a drop here only ever moves an entry that is already
-        // queued, and a card dragged off the board is ignored.
+        // ---- Drag & Drop: the queue panel ----
+        // Two gestures. A board card dragged onto the panel -- anywhere on it,
+        // the empty state included -- is appended to the queue. A queue entry
+        // dragged inside the panel is reordered (edges) or linked (middle);
+        // it is never a drop source for the board, and a running entry is not
+        // draggable at all (nothing about it can change any more).
         //
-        // Reordering stays inside one column: dropping into a foreign column
-        // would have to silently reassign the task's project, which belongs in
-        // the edit dialog, not in a reorder gesture.
-        // The same three bands as on the board: edges reorder, middle links.
         // Reordering stays inside one column -- dropping into a foreign column
         // would have to silently reassign the task's project, which belongs in
         // the edit dialog. Linking, by contrast, is *expected* to cross
         // columns: that is exactly how a cross-project dependency is made.
+
+        // Whether the dragged board card can be queued: open, not archived,
+        // an agent that can run it, and not queued already.
+        _queueableDrag() {
+            if (this.dragSource !== 'board' || this.draggedTaskId == null) return null;
+            const task = this.tasks.find(t => t.id === this.draggedTaskId);
+            if (!task || task.status !== 'open' || task.archived) return null;
+            if (!this.taskRunnable(task) || this.queuePosition(task.id)) return null;
+            return task;
+        },
+
+        onQueuePanelDragOver(event) {
+            const ok = !!this._queueableDrag();
+            this.queuePanelOver = ok;
+            if (event.dataTransfer) event.dataTransfer.dropEffect = ok ? 'move' : 'none';
+        },
+
+        onQueuePanelDragLeave(event) {
+            const related = event.relatedTarget;
+            if (!related || !event.currentTarget.contains(related)) this.queuePanelOver = false;
+        },
+
+        async onQueuePanelDrop() {
+            const task = this._queueableDrag();
+            this.queuePanelOver = false;
+            this.draggedTaskId = null;
+            if (!task) return;
+            await this._saveQueue([...this.queue, task]);
+        },
+
         onQueueItemDragOver(event, item) {
             if (this.draggedTaskId == null) return;
+            if (this.dragSource !== 'queue') {   // a board card: the panel is the target
+                this.queueOverId = null;
+                this.onQueuePanelDragOver(event);
+                return;
+            }
             const dragged = this.queue.find(t => t.id === this.draggedTaskId);
-            if (!dragged) {   // dragged in from the board -- not our business
+            if (!dragged) {
                 if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
                 this.queueOverId = null;
                 return;
@@ -1449,6 +1502,10 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // substitutes the column back into the global queue so no other
         // project shifts.
         async onQueueDrop(event, item) {
+            if (this.dragSource !== 'queue') {   // a board card lands anywhere: append
+                await this.onQueuePanelDrop();
+                return;
+            }
             const id = this.draggedTaskId;
             const zone = this.queueZone;
             this.queueOverId = null;

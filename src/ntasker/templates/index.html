@@ -753,8 +753,13 @@
                 {# the panel reorders it; the header button pauses / resumes. #}
                 {# The rail down the left side marches while the queue runs and #}
                 {# freezes when it is paused -- that is the state indicator. #}
+                {# The whole panel is a drop target for a board card (appends it). #}
                 <div class="task-queue mb-3"
-                     :class="{'task-queue-live': queueEnabled && queue.length}">
+                     :class="{'task-queue-live': queueEnabled && queue.length,
+                              'task-queue-drop-target': queuePanelOver}"
+                     @dragover.prevent="onQueuePanelDragOver($event)"
+                     @dragleave="onQueuePanelDragLeave($event)"
+                     @drop.prevent="onQueuePanelDrop()">
 
                     <div class="d-flex align-items-center gap-2">
                         <span class="text-secondary text-uppercase small fw-bold d-flex align-items-center">
@@ -808,8 +813,9 @@
                                          'drop-after': queueOverId === item.id && queueZone === 'after',
                                          'drop-link': queueOverId === item.id && queueZone === 'link'}"
                                 :data-drop-link="queueOverId === item.id && queueZone === 'link' ? linkHint(item) : null"
-                                draggable="true"
-                                @dragstart="onCardDragStart($event, item)"
+                                {# Only a not-yet-running entry can still be reordered. #}
+                                :draggable="taskRunPhase(item.id) === null"
+                                @dragstart="onCardDragStart($event, item, 'queue')"
                                 @dragend="onCardDragEnd($event)"
                                 @dragover.prevent.stop="onQueueItemDragOver($event, item)"
                                 @drop.prevent.stop="onQueueDrop($event, item)">

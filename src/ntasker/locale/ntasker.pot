@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: ntasker 3.0.0\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-09-14 00:51+0200\n"
+"POT-Creation-Date: 2026-09-14 01:18+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -18,38 +18,38 @@ msgstr ""
 "Generated-By: Babel 2.18.0\n"
 
 #: src/ntasker/app.py:122 src/ntasker/app.py:484
-#: src/ntasker/templates/index.html:571 src/ntasker/templates/index.html:1467
+#: src/ntasker/templates/index.html:571 src/ntasker/templates/index.html:1473
 msgid "Planned"
 msgstr ""
 
 #: src/ntasker/app.py:123 src/ntasker/app.py:483
-#: src/ntasker/templates/index.html:572 src/ntasker/templates/index.html:1468
+#: src/ntasker/templates/index.html:572 src/ntasker/templates/index.html:1474
 msgid "In Progress"
 msgstr ""
 
 #: src/ntasker/app.py:124 src/ntasker/app.py:485
-#: src/ntasker/templates/index.html:573 src/ntasker/templates/index.html:1469
+#: src/ntasker/templates/index.html:573 src/ntasker/templates/index.html:1475
 msgid "Review"
 msgstr ""
 
 #: src/ntasker/app.py:131 src/ntasker/app.py:486
-#: src/ntasker/templates/index.html:579 src/ntasker/templates/index.html:1475
+#: src/ntasker/templates/index.html:579 src/ntasker/templates/index.html:1481
 msgid "Critical"
 msgstr ""
 
 #: src/ntasker/app.py:132 src/ntasker/app.py:487
-#: src/ntasker/templates/index.html:580 src/ntasker/templates/index.html:1476
+#: src/ntasker/templates/index.html:580 src/ntasker/templates/index.html:1482
 msgid "High"
 msgstr ""
 
 #: src/ntasker/app.py:133 src/ntasker/app.py:488
-#: src/ntasker/templates/index.html:581 src/ntasker/templates/index.html:1477
+#: src/ntasker/templates/index.html:581 src/ntasker/templates/index.html:1483
 #: src/ntasker/templates/settings.html:280
 msgid "Normal"
 msgstr ""
 
 #: src/ntasker/app.py:134 src/ntasker/app.py:489
-#: src/ntasker/templates/index.html:582 src/ntasker/templates/index.html:1478
+#: src/ntasker/templates/index.html:582 src/ntasker/templates/index.html:1484
 msgid "Low"
 msgstr ""
 
@@ -91,7 +91,7 @@ msgstr ""
 
 #: src/ntasker/app.py:403 src/ntasker/cli.py:119
 #: src/ntasker/templates/index.html:299 src/ntasker/templates/index.html:577
-#: src/ntasker/templates/index.html:1473
+#: src/ntasker/templates/index.html:1479
 msgid "Priority"
 msgstr ""
 
@@ -101,7 +101,7 @@ msgstr ""
 
 #: src/ntasker/app.py:406 src/ntasker/cli.py:120
 #: src/ntasker/templates/index.html:366 src/ntasker/templates/index.html:610
-#: src/ntasker/templates/index.html:1503 src/ntasker/templates/tags.html:63
+#: src/ntasker/templates/index.html:1509 src/ntasker/templates/tags.html:63
 msgid "Tags"
 msgstr ""
 
@@ -181,7 +181,7 @@ msgstr ""
 
 #: src/ntasker/app.py:430 src/ntasker/app.py:528
 #: src/ntasker/plugins/task_context/__init__.py:147
-#: src/ntasker/templates/index.html:885
+#: src/ntasker/templates/index.html:891
 msgid "Done"
 msgstr ""
 
@@ -222,7 +222,7 @@ msgid "Stop starting new tasks. A task already running keeps going."
 msgstr ""
 
 #: src/ntasker/app.py:445
-msgid "Empty. Press a task's run button to queue it here."
+msgid "Empty. Press a task's run button or drop a card here to queue it."
 msgstr ""
 
 #: src/ntasker/app.py:446
@@ -281,7 +281,7 @@ msgid "Waiting -- a directory it holds has uncommitted changes."
 msgstr ""
 
 #: src/ntasker/app.py:460 src/ntasker/templates/index.html:705
-#: src/ntasker/templates/index.html:1598
+#: src/ntasker/templates/index.html:1604
 msgid "Also locks"
 msgstr ""
 
@@ -332,7 +332,7 @@ msgid "New task"
 msgstr ""
 
 #: src/ntasker/app.py:475 src/ntasker/cli.py:116
-#: src/ntasker/templates/index.html:522 src/ntasker/templates/index.html:1425
+#: src/ntasker/templates/index.html:522 src/ntasker/templates/index.html:1431
 msgid "Project"
 msgstr ""
 
@@ -352,7 +352,7 @@ msgid ""
 msgstr ""
 
 #: src/ntasker/app.py:481 src/ntasker/cli.py:118
-#: src/ntasker/templates/index.html:569 src/ntasker/templates/index.html:1465
+#: src/ntasker/templates/index.html:569 src/ntasker/templates/index.html:1471
 msgid "Phase"
 msgstr ""
 
@@ -361,7 +361,7 @@ msgid "--"
 msgstr ""
 
 #: src/ntasker/app.py:490 src/ntasker/templates/index.html:596
-#: src/ntasker/templates/index.html:1494
+#: src/ntasker/templates/index.html:1500
 msgid "Title"
 msgstr ""
 
@@ -370,7 +370,7 @@ msgid "What needs to be done?"
 msgstr ""
 
 #: src/ntasker/app.py:492 src/ntasker/cli.py:140
-#: src/ntasker/templates/index.html:602 src/ntasker/templates/index.html:1498
+#: src/ntasker/templates/index.html:602 src/ntasker/templates/index.html:1504
 msgid "Description"
 msgstr ""
 
@@ -479,11 +479,11 @@ msgid "Cleanup failed -- try again."
 msgstr ""
 
 #: src/ntasker/app.py:527 src/ntasker/app.py:672
-#: src/ntasker/templates/index.html:878 src/ntasker/templates/tags.html:93
+#: src/ntasker/templates/index.html:884 src/ntasker/templates/tags.html:93
 msgid "Open"
 msgstr ""
 
-#: src/ntasker/app.py:529 src/ntasker/templates/index.html:892
+#: src/ntasker/app.py:529 src/ntasker/templates/index.html:898
 msgid "Archive"
 msgstr ""
 
@@ -589,11 +589,11 @@ msgid "Delete permanently"
 msgstr ""
 
 #: src/ntasker/app.py:559 src/ntasker/app.py:694
-#: src/ntasker/templates/index.html:1631
+#: src/ntasker/templates/index.html:1637
 msgid "Delete"
 msgstr ""
 
-#: src/ntasker/app.py:561 src/ntasker/templates/index.html:1150
+#: src/ntasker/app.py:561 src/ntasker/templates/index.html:1156
 msgid "No tasks"
 msgstr ""
 
@@ -626,13 +626,13 @@ msgid "Close"
 msgstr ""
 
 #: src/ntasker/app.py:570 src/ntasker/plugins/workspace/__init__.py:110
-#: src/ntasker/templates/index.html:1634 src/ntasker/templates/tags.html:162
+#: src/ntasker/templates/index.html:1640 src/ntasker/templates/tags.html:162
 #: src/ntasker/templates/tags.html:213
 msgid "Cancel"
 msgstr ""
 
 #: src/ntasker/app.py:571 src/ntasker/plugins/workspace/__init__.py:109
-#: src/ntasker/templates/index.html:1638
+#: src/ntasker/templates/index.html:1644
 #: src/ntasker/templates/settings.html:143
 #: src/ntasker/templates/settings.html:258 src/ntasker/templates/tags.html:167
 msgid "Save"
@@ -1155,7 +1155,7 @@ msgid "Status"
 msgstr ""
 
 #: src/ntasker/cli.py:123 src/ntasker/templates/index.html:663
-#: src/ntasker/templates/index.html:1556
+#: src/ntasker/templates/index.html:1562
 msgid "Depends on"
 msgstr ""
 

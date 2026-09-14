@@ -45,7 +45,7 @@ from ntasker.claude_runner import (
 )
 from ntasker.claude_runner import serve as claude_serve
 from ntasker.projects import discover_claude_projects
-from ntasker import locks, plugins, taskqueue
+from ntasker import completion, locks, plugins, taskqueue
 from ntasker import db as _db_module
 from ntasker.db import (
     DepError,
@@ -537,6 +537,14 @@ def build_js_strings() -> dict[str, str]:
         "db_cleanup_done": _("Database cleaned up -- {freed} freed."),
         "db_cleanup_compact": _("Database cleaned up -- already compact."),
         "db_cleanup_failed": _("Cleanup failed -- try again."),
+        # Settings -- shell completion
+        "completion_installed": _("Installed"),
+        "completion_not_installed": _("Not installed"),
+        "completion_install": _("Install"),
+        "completion_remove": _("Remove"),
+        "completion_done": _("Completion installed -- open a new shell to use it."),
+        "completion_removed": _("Completion removed."),
+        "completion_failed": _("Could not change the completion setup -- try again."),
         # Tabs
         "tab_open": _("Open"),
         "tab_done": _("Done"),
@@ -814,6 +822,9 @@ def on_startup() -> None:
     # have not been run through ``ntasker init`` yet.
     with get_conn() as conn:
         ensure_settings_table(conn)
+    # An installed completion script is static -- regenerate it so a new
+    # version's subcommands show up without a manual reinstall.
+    completion.refresh_installed()
 
 
 # How often the background poll actively refreshes the PyPI update-check cache.
@@ -974,6 +985,29 @@ def maintenance_cleanup() -> JSONResponse:
     """
     stats = cleanup_database()
     return JSONResponse({"ok": True, **stats})
+
+
+@app.get("/api/completion")
+def api_completion_status() -> JSONResponse:
+    """Per-shell install state of the CLI completion script + the rc file it hooks into."""
+    return JSONResponse(completion.status())
+
+
+@app.post("/api/completion/{shell}")
+def api_completion_install(shell: str) -> JSONResponse:
+    """Write the completion script and source it from the shell's rc file."""
+    if shell not in completion.SHELLS:
+        raise HTTPException(status_code=404, detail=_("Unknown shell"))
+    rc = completion.install(shell)
+    return JSONResponse({"ok": True, "rc": str(rc)})
+
+
+@app.delete("/api/completion/{shell}")
+def api_completion_uninstall(shell: str) -> JSONResponse:
+    """Remove the completion script and its rc-file block."""
+    if shell not in completion.SHELLS:
+        raise HTTPException(status_code=404, detail=_("Unknown shell"))
+    return JSONResponse({"ok": True, "removed": completion.uninstall(shell)})
 
 
 # ---------------------------------------------------------------------------

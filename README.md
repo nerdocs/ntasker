@@ -315,6 +315,7 @@ Coming from the drfoehn fork? See [docs/migrating-from-fork.md](docs/migrating-f
 | `ntasker assets fetch / status / remove` | Manage the optional local vendor-asset cache |
 | `ntasker service install / uninstall / status / start / stop` | Run ntasker as an OS service (systemd / launchd) |
 | `ntasker self-update`       | Upgrade the package from PyPI, then restart the service        |
+| `ntasker completion <shell>` | Print the bash/zsh completion script; `--install` / `--uninstall` hook it into the shell rc |
 
 Global flags:
 
@@ -322,6 +323,13 @@ Global flags:
 - `--version` -- print the package version and exit.
 
 Most listing commands accept `--json` for machine-readable output.
+
+### Shell completion
+
+`ntasker completion bash --install` (or `zsh`) writes a completion script to the user-data dir and sources it from
+`~/.bashrc` (`~/.bash_profile` on macOS) / `~/.zshrc`; the same switch lives under *Settings → Maintenance*. The
+script is generated from the CLI's own argument tree and refreshed on every server start, so new subcommands
+(including plugin ones) complete without a reinstall. Without installing: `eval "$(ntasker completion bash)"`.
 
 ## Smoke test
 

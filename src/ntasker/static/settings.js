@@ -51,6 +51,10 @@ function settingsPage() {
         activeTasks: [],
         // True while a VACUUM/optimize is in flight -- disables the button.
         cleaning: false,
+        // Shell completion state (GET /api/completion): shell -> {installed, rc}.
+        completion: {},
+        // Shell whose install/remove request is in flight -- disables its button.
+        completionBusy: null,
         // Agent registry (GET /api/agents): enabled agents only, each with
         // {key,label,icon,available,assets}. Drives the agent cards.
         agents: [],
@@ -66,6 +70,7 @@ function settingsPage() {
             await this.refreshPlugins();
             await this.refreshAgents();
             await this.refreshSessions();
+            await this.refreshCompletion();
             // Keep the restart guard live -- a task may start or end while the
             // page is open. Cheap poll; the page reloads itself on restart.
             setInterval(() => this.refreshSessions(), 4000);
@@ -350,6 +355,30 @@ function settingsPage() {
                 this.toast(this.i18n('db_cleanup_failed'));
             } finally {
                 this.cleaning = false;
+            }
+        },
+
+        async refreshCompletion() {
+            try {
+                const r = await fetch('/api/completion');
+                if (r.ok) this.completion = await r.json();
+            } catch (e) { /* leave the table empty */ }
+        },
+
+        // Install or remove the completion script for one shell.
+        async toggleCompletion(shell) {
+            if (this.completionBusy) return;
+            this.completionBusy = shell;
+            const installed = this.completion[shell]?.installed;
+            try {
+                const r = await fetch(`/api/completion/${shell}`, {method: installed ? 'DELETE' : 'POST'});
+                if (!r.ok) { this.toast(this.i18n('completion_failed')); return; }
+                this.toast(this.i18n(installed ? 'completion_removed' : 'completion_done'));
+                await this.refreshCompletion();
+            } catch (e) {
+                this.toast(this.i18n('completion_failed'));
+            } finally {
+                this.completionBusy = null;
             }
         },
 

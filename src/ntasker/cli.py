@@ -16,6 +16,7 @@ Subcommands:
 | ``stats``            | Tab counts honoring filters                        |
 | ``config``           | KV-store: list / get / set / unset                 |
 | ``assets``           | Vendor-asset cache: fetch / remove / status        |
+| ``completion``       | Shell completion script: print / install / remove  |
 
 Global flags: ``--db <path>`` (highest precedence) and ``--version``.
 """
@@ -39,7 +40,7 @@ from ntasker.assets import (
     local_path_for,
     resolve_mode,
 )
-from ntasker import plugins
+from ntasker import completion, plugins
 from ntasker.agents import AGENTS, agent_available, agent_keys, enabled_agents, resolve_home
 from ntasker.claude_assets import (
     install_assets,
@@ -2008,6 +2009,21 @@ def _task_id(value: str) -> int:
     return int(value.strip().lstrip("#"))
 
 
+def cmd_completion(args: argparse.Namespace) -> int:
+    """Print the shell completion script, or install / remove it."""
+    if args.install:
+        rc = completion.install(args.shell)
+        print(_("Completion installed -- open a new shell or run: source {rc}").format(rc=rc))
+    elif args.uninstall:
+        if completion.uninstall(args.shell):
+            print(_("Completion removed."))
+        else:
+            print(_("Completion was not installed."))
+    else:
+        sys.stdout.write(completion.render(args.shell))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="ntasker",
@@ -2463,6 +2479,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sp_su.set_defaults(func=cmd_self_update)
 
+    # completion ----------------------------------------------------------
+    sp_comp = sub.add_parser(
+        "completion",
+        help=_("Print or install the shell completion script (bash, zsh)."),
+    )
+    sp_comp.add_argument("shell", choices=list(completion.SHELLS))
+    comp_mode = sp_comp.add_mutually_exclusive_group()
+    comp_mode.add_argument(
+        "--install",
+        action="store_true",
+        help=_("Write the script to the user-data dir and source it from the shell's rc file."),
+    )
+    comp_mode.add_argument(
+        "--uninstall", action="store_true", help=_("Remove the script and the rc-file line.")
+    )
+    sp_comp.set_defaults(func=cmd_completion)
+
     for _ctx in plugins.REGISTRY.values():
         for _add in _ctx.cli:
             _add(sub)
@@ -2506,9 +2539,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command in {"stop", "lock", "hook"}:
         set_active_language(resolve_for_cli())
         return args.func(args)
-    # `service` (install/uninstall/status) and `self-update` manage OS units
-    # and package upgrades -- never touch or create the task DB.
-    if args.command in {"service", "self-update"}:
+    # `service` (install/uninstall/status), `self-update` and `completion`
+    # manage OS units, package upgrades and shell rc files -- never touch or
+    # create the task DB.
+    if args.command in {"service", "self-update", "completion"}:
         set_active_language(resolve_for_cli())
         return args.func(args)
 

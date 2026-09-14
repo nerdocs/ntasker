@@ -422,6 +422,37 @@
                                     </div>
                                 </div>
                                 {% call row('update_command') %}{{ text('update_command', 'uv tool upgrade ntasker', 'font-monospace') }}{% endcall %}
+                                <div class="setting-row row gx-2 gx-md-4">
+                                    <div class="col-md-5">
+                                        <div class="setting-label">{{ t('Shell completion') }}</div>
+                                        <div class="text-secondary small mt-1">{{ t("Tab completion for the ntasker CLI. Installing writes a script to the user-data dir and sources it from the shell's startup file; open a new shell afterwards.") }}</div>
+                                    </div>
+                                    <div class="col-md-7">
+                                        <table class="table table-sm table-vcenter mb-2">
+                                            <tbody>
+                                                <template x-for="[shell, st] in Object.entries(completion)" :key="shell">
+                                                    <tr>
+                                                        <td class="w-1"><code x-text="shell"></code></td>
+                                                        <td class="w-1">
+                                                            <span class="badge" :class="st.installed ? 'bg-success-lt' : 'bg-secondary-lt'"
+                                                                  x-text="st.installed ? $i18n('completion_installed') : $i18n('completion_not_installed')"></span>
+                                                        </td>
+                                                        <td><code class="text-secondary small" x-text="st.rc"></code></td>
+                                                        <td class="text-end">
+                                                            <button type="button" class="btn btn-sm"
+                                                                    :class="st.installed ? 'btn-outline-danger' : 'btn-outline-primary'"
+                                                                    @click="toggleCompletion(shell)" :disabled="completionBusy === shell"
+                                                                    x-text="st.installed ? $i18n('completion_remove') : $i18n('completion_install')"></button>
+                                                        </td>
+                                                    </tr>
+                                                </template>
+                                            </tbody>
+                                        </table>
+                                        <div class="text-secondary small">
+                                            {{ t('Or via CLI:') }} <code>ntasker completion bash --install</code>
+                                        </div>
+                                    </div>
+                                </div>
 
                                 <h3 class="mt-4 mb-1">{{ t('Stored values') }}</h3>
                                 <p class="text-secondary small mb-2">{{ t('Everything in the settings table, including keys written by the UI or the CLI. Deleting a row resets that key to its default.') }}</p>

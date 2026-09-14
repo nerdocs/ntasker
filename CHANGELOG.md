@@ -5,6 +5,7 @@ All notable changes to ntasker.
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
 ## [Unreleased]
+Feature: bash/zsh completion for the CLI -- `ntasker completion <shell> --install` or via Settings → Maintenance.
 
 ## [3.2.2] — 2026-09-14
 Fix: `status=done` kills the task's session again (any path: UI, API, CLI) -- the tab no longer resurfaces.

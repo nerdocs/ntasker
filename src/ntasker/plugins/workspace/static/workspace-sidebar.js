@@ -19,7 +19,7 @@
 
     const freshViewer = () => ({
         open: true, loading: true, error: '', file: null, dir: null,
-        mode: 'none', html: '', rows: [], editing: false, draft: '',
+        mode: 'none', html: '', rows: [], editing: false, draft: '', form: null,
     });
 
     window.ntaskerPlugins.push(function (base) {
@@ -37,7 +37,7 @@
             wsViewer: {
                 open: false, loading: false, error: '',
                 file: null, mode: 'none', html: '', rows: [],
-                editing: false, draft: '', saving: false,
+                editing: false, draft: '', form: null, saving: false,
                 // Set while browsing a directory instead of showing a file.
                 dir: null,
             },
@@ -134,13 +134,17 @@
                 return this.wsRevealFile(entry.path);
             },
 
+            // Same split as workspace.js: front matter as fields, else raw.
             wsToggleEdit() {
                 if (this.wsViewer.editing) {
                     this.wsViewer.editing = false;
                     this.wsViewer.draft = '';
+                    this.wsViewer.form = null;
                     return;
                 }
-                this.wsViewer.draft = this.wsViewer.file?.text ?? '';
+                const text = this.wsViewer.file?.text ?? '';
+                this.wsViewer.form = this.wsViewer.file?.kind === 'markdown' ? WS.splitFrontMatter(text) : null;
+                this.wsViewer.draft = this.wsViewer.form ? '' : text;
                 this.wsViewer.editing = true;
             },
 
@@ -152,7 +156,10 @@
                     const res = await fetch('/api/workspace/file', {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ path: file.path, text: this.wsViewer.draft }),
+                        body: JSON.stringify({
+                            path: file.path,
+                            text: this.wsViewer.form ? WS.joinFrontMatter(this.wsViewer.form) : this.wsViewer.draft,
+                        }),
                     });
                     if (!res.ok) {
                         this.showToast(await WS.errorDetail(res, WS.t('ws_save_failed')), 'danger');
@@ -163,6 +170,7 @@
                     Object.assign(this.wsViewer, WS.renderFile(fresh));
                     this.wsViewer.editing = false;
                     this.wsViewer.draft = '';
+                    this.wsViewer.form = null;
                     this.showToast(WS.t('ws_saved'), 'success');
                 } finally {
                     this.wsViewer.saving = false;

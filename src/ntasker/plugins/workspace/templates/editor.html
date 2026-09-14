@@ -1,0 +1,55 @@
+{# Shared file editor for the /workspace viewer and the task-list modal.    #}
+{# Included with `v` (the viewer state), `save` and `cancel` expressions.   #}
+{# A Markdown file with front matter is edited as one field per top-level   #}
+{# key plus the body (ws-common.js splitFrontMatter); anything else as one  #}
+{# textarea over the whole file. Cmd/Ctrl+S is caught on the wrapper so it  #}
+{# works from every field.                                                  #}
+<div x-show="{{ v }}.editing" x-cloak
+     @keydown.meta.s.prevent="{{ save }}" @keydown.ctrl.s.prevent="{{ save }}">
+    <template x-if="{{ v }}.form">
+        <div>
+            <template x-for="(f, i) in {{ v }}.form.fields" :key="i">
+                <div class="row g-2 mb-2 align-items-start">
+                    <label class="col-sm-2 col-form-label font-monospace text-truncate pt-1" x-text="f.key"
+                           :title="f.key"></label>
+                    <div class="col-sm-10 d-flex align-items-start gap-1">
+                        <textarea class="form-control form-control-sm font-monospace ws-field" x-model="f.value"
+                                  :rows="ntaskerWs.fieldRows(f)"></textarea>
+                        <button type="button" class="btn btn-sm btn-ghost-danger px-1"
+                                @click="{{ v }}.form.fields.splice(i, 1)" :title="$i18n('ws_field_remove')">
+                            <i class="ti ti-x"></i>
+                        </button>
+                    </div>
+                </div>
+            </template>
+            <div class="row g-2 mb-3">
+                <div class="col-sm-2 col-form-label pt-1 text-secondary" x-text="$i18n('ws_field_new')"></div>
+                <div class="col-sm-10">
+                    <div class="input-group input-group-sm ws-field-add">
+                        <input type="text" class="form-control font-monospace" x-model="{{ v }}.form.newKey"
+                               :placeholder="$i18n('ws_field_key')"
+                               @keydown.enter.prevent="ntaskerWs.addField({{ v }}.form)">
+                        <button type="button" class="btn" @click="ntaskerWs.addField({{ v }}.form)">
+                            <i class="ti ti-plus me-1"></i>
+                            <span x-text="$i18n('ws_field_add')"></span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <textarea class="form-control font-monospace ws-editor" rows="16"
+                      x-model="{{ v }}.form.body"></textarea>
+        </div>
+    </template>
+    <textarea class="form-control font-monospace ws-editor" rows="24" x-show="!{{ v }}.form"
+              x-model="{{ v }}.draft"></textarea>
+    <div class="d-flex align-items-center mt-2">
+        <span class="text-secondary small" x-text="$i18n('ws_save_hint')"></span>
+        <button class="btn btn-sm btn-ghost-secondary ms-auto me-2" @click="{{ cancel }}"
+                x-text="$i18n('ws_cancel')"></button>
+        <button class="btn btn-sm btn-primary" @click="{{ save }}" :disabled="{{ v }}.saving">
+            <span class="spinner-border spinner-border-sm me-1" x-show="{{ v }}.saving" x-cloak></span>
+            <i class="ti ti-device-floppy me-1" x-show="!{{ v }}.saving"></i>
+            <span x-text="$i18n('ws_save')"></span>
+        </button>
+    </div>
+</div>

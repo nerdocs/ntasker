@@ -158,6 +158,18 @@
     tab-size: 4;
 }
 
+/* One front-matter field. Rows come from the value; no drag handle, the
+   height follows the content instead. */
+.ws-field {
+    resize: none;
+}
+
+/* The "add field" row: a key name is short, a full-width input for it
+   looks like it expects a sentence. */
+.ws-field-add {
+    max-width: 24rem;
+}
+
 /* A row in the directory browser. Same reason as .sidebar-section-toggle:
    Tabler's .btn centers its content, and a file name centered in a
    full-width row reads as a heading rather than as a list entry. */

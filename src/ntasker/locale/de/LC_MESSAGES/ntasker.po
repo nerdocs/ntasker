@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: ntasker 1.3.0\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-09-14 02:03+0200\n"
+"POT-Creation-Date: 2026-09-14 08:35+0200\n"
 "PO-Revision-Date: 2026-05-02 09:19+0200\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: de\n"
@@ -2593,6 +2593,7 @@ msgid "/path/to/file-or-folder (one per line)"
 msgstr "/pfad/zu/datei-oder-ordner (einer pro Zeile)"
 
 #: src/ntasker/plugins/task_context/__init__.py:155
+#: src/ntasker/plugins/workspace/__init__.py:125
 msgid "Add"
 msgstr "Hinzufügen"
 
@@ -2609,12 +2610,12 @@ msgid "Create the task first, then open its attachments."
 msgstr "Lege die Aufgabe zuerst an, dann lassen sich ihre Anhänge öffnen."
 
 #: src/ntasker/plugins/task_context/__init__.py:159
-#: src/ntasker/plugins/workspace/__init__.py:132
+#: src/ntasker/plugins/workspace/__init__.py:136
 msgid "Could not open it."
 msgstr "Das konnte nicht geöffnet werden."
 
 #: src/ntasker/plugins/task_context/__init__.py:160
-#: src/ntasker/plugins/workspace/__init__.py:136
+#: src/ntasker/plugins/workspace/__init__.py:140
 msgid "runtime missing"
 msgstr "Laufzeit fehlt"
 
@@ -2856,7 +2857,7 @@ msgstr ""
 "PATH."
 
 #: src/ntasker/plugins/workspace/__init__.py:99
-#: src/ntasker/plugins/workspace/__init__.py:134
+#: src/ntasker/plugins/workspace/__init__.py:138
 msgid "Transport"
 msgstr "Transport"
 
@@ -2933,58 +2934,70 @@ msgid "Cmd/Ctrl+S saves"
 msgstr "Cmd/Strg+S speichert"
 
 #: src/ntasker/plugins/workspace/__init__.py:123
+msgid "New field"
+msgstr "Neues Feld"
+
+#: src/ntasker/plugins/workspace/__init__.py:124
+msgid "Key, e.g. tools"
+msgstr "Schlüssel, z. B. tools"
+
+#: src/ntasker/plugins/workspace/__init__.py:126
+msgid "Remove field"
+msgstr "Feld entfernen"
+
+#: src/ntasker/plugins/workspace/__init__.py:127
 msgid "Saved"
 msgstr "Gespeichert"
 
-#: src/ntasker/plugins/workspace/__init__.py:124
+#: src/ntasker/plugins/workspace/__init__.py:128
 #, python-brace-format
 msgid "{n} more..."
 msgstr "{n} weitere ..."
 
-#: src/ntasker/plugins/workspace/__init__.py:125
+#: src/ntasker/plugins/workspace/__init__.py:129
 #, python-brace-format
 msgid "Move {name} to the trash?"
 msgstr "{name} in den Papierkorb verschieben?"
 
-#: src/ntasker/plugins/workspace/__init__.py:126
+#: src/ntasker/plugins/workspace/__init__.py:130
 #, python-brace-format
 msgid "{name} moved to the trash."
 msgstr "{name} liegt jetzt im Papierkorb."
 
-#: src/ntasker/plugins/workspace/__init__.py:127
+#: src/ntasker/plugins/workspace/__init__.py:131
 #, python-brace-format
 msgid "{name} moved to the .ntasker-trash folder."
 msgstr "{name} liegt jetzt im Ordner .ntasker-trash."
 
-#: src/ntasker/plugins/workspace/__init__.py:128
+#: src/ntasker/plugins/workspace/__init__.py:132
 msgid "Could not save the file."
 msgstr "Die Datei konnte nicht gespeichert werden."
 
-#: src/ntasker/plugins/workspace/__init__.py:129
+#: src/ntasker/plugins/workspace/__init__.py:133
 msgid "Could not delete it."
 msgstr "Das konnte nicht gelöscht werden."
 
-#: src/ntasker/plugins/workspace/__init__.py:130
+#: src/ntasker/plugins/workspace/__init__.py:134
 msgid "Could not rename it."
 msgstr "Das konnte nicht umbenannt werden."
 
-#: src/ntasker/plugins/workspace/__init__.py:131
+#: src/ntasker/plugins/workspace/__init__.py:135
 msgid "Could not create it."
 msgstr "Das konnte nicht angelegt werden."
 
-#: src/ntasker/plugins/workspace/__init__.py:135
+#: src/ntasker/plugins/workspace/__init__.py:139
 msgid "Command"
 msgstr "Befehl"
 
-#: src/ntasker/plugins/workspace/__init__.py:137
+#: src/ntasker/plugins/workspace/__init__.py:141
 msgid "This server is no longer declared in ~/.claude.json."
 msgstr "Dieser Server ist nicht mehr in ~/.claude.json eingetragen."
 
-#: src/ntasker/plugins/workspace/__init__.py:138
+#: src/ntasker/plugins/workspace/__init__.py:142
 msgid "Create the task first -- then the file opens from here."
 msgstr "Lege die Aufgabe zuerst an -- dann öffnet sich die Datei von hier aus."
 
-#: src/ntasker/plugins/workspace/__init__.py:148
+#: src/ntasker/plugins/workspace/__init__.py:152
 msgid ""
 "Directory holding your Claude Code skills, shown on the Workspace page "
 "with a load/broken verdict per skill. Defaults to ~/.claude/skills when "
@@ -2993,7 +3006,7 @@ msgstr ""
 "Verzeichnis mit deinen Claude-Code-Skills. Die Arbeitsumgebung zeigt pro "
 "Skill an, ob er lädt oder defekt ist. Ohne Angabe gilt ~/.claude/skills."
 
-#: src/ntasker/plugins/workspace/__init__.py:157
+#: src/ntasker/plugins/workspace/__init__.py:161
 msgid ""
 "Directory of Claude Code subagent files (one Markdown file per agent with"
 " name/description front matter). Defaults to ~/.claude/agents when unset."
@@ -3002,7 +3015,7 @@ msgstr ""
 " name/description im Frontmatter). Standard ~/.claude/agents, wenn nicht "
 "gesetzt."
 
-#: src/ntasker/plugins/workspace/__init__.py:166
+#: src/ntasker/plugins/workspace/__init__.py:170
 msgid ""
 "Root of your Markdown knowledge base (e.g. an Obsidian vault). The "
 "Workspace page lists its areas with note counts and links straight into "
@@ -3012,7 +3025,7 @@ msgstr ""
 "Arbeitsumgebung listet die Bereiche mit Notiz-Zahlen und verlinkt direkt "
 "nach Obsidian. Ohne Angabe bleibt die Karte ausgeblendet."
 
-#: src/ntasker/plugins/workspace/__init__.py:175
+#: src/ntasker/plugins/workspace/__init__.py:179
 msgid ""
 "Output folder for generated documents (offers, reviews, exports, plans --"
 " ~/.claude/plans is a natural pick). The Workspace page lists them "

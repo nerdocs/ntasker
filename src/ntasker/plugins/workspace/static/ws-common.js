@@ -150,6 +150,72 @@
         return { mode: 'text', html: '', rows: [] };
     }
 
+    // ---- front matter editing ----------------------------------------
+    //
+    // A Markdown file with a leading `---` block is edited as one field per
+    // top-level key plus the body, not as one big textarea. Nothing in the
+    // block is interpreted: a field's value is the raw text after `key:` up
+    // to the next top-level key -- block scalars, nested mappings, list
+    // items and comments included -- so joinFrontMatter() reproduces
+    // whatever YAML we did not understand byte for byte.
+
+    // Leading `---` block; the `m` flag lets `^` find the closing line.
+    const FRONT_MATTER_RE = /^---[ \t]*\r?\n([\s\S]*?)^---[ \t]*(?:\r?\n|$)/m;
+    const FIELD_KEY_RE = /^([A-Za-z0-9_.-]+):(.*)$/;
+
+    // Returns {preamble, fields: [{key, value}], body, newKey}, or null when
+    // the text has no front matter.
+    function splitFrontMatter(text) {
+        const match = FRONT_MATTER_RE.exec(text || '');
+        if (!match) return null;
+        const fields = [];
+        const preamble = [];
+        let current = null;
+        const block = match[1].replace(/\r?\n$/, '');
+        for (const line of block ? block.split(/\r?\n/) : []) {
+            const key = FIELD_KEY_RE.exec(line);
+            if (key) {
+                current = { key: key[1], value: key[2].replace(/^ /, '') };
+                fields.push(current);
+            } else if (current) {
+                current.value += '\n' + line;
+            } else {
+                preamble.push(line);
+            }
+        }
+        return { preamble: preamble.join('\n'), fields, body: text.slice(match[0].length), newKey: '' };
+    }
+
+    function joinFrontMatter(form) {
+        const lines = [];
+        if (form.preamble) lines.push(form.preamble);
+        for (const field of form.fields) {
+            const key = field.key.trim();
+            const value = field.value;
+            if (!key) continue;
+            if (value === '') lines.push(`${key}:`);
+            else if (value.startsWith('\n')) lines.push(`${key}:${value}`);
+            else lines.push(`${key}: ${value}`);
+        }
+        const block = lines.join('\n');
+        return '---\n' + (block ? block + '\n' : '') + '---\n' + form.body;
+    }
+
+    function addField(form) {
+        const key = (form.newKey || '').trim();
+        if (key && !form.fields.some((f) => f.key === key)) {
+            form.fields.push({ key, value: '' });
+        }
+        form.newKey = '';
+    }
+
+    // Textarea height for a field: one row per line, more for a long
+    // single-line value (quoted descriptions run to thousands of chars).
+    function fieldRows(field) {
+        const value = field.value || '';
+        return Math.min(12, Math.max(value.split('\n').length, Math.ceil(value.length / 90), 1));
+    }
+
     // Suffixes the server will accept a write for (workspace.EDITABLE).
     const EDITABLE_SUFFIXES = ['md', 'markdown', 'txt', 'csv', 'tsv', 'json', 'log'];
 
@@ -184,6 +250,7 @@
         KIND_ICONS, CONTEXT_ICONS, EDITABLE_SUFFIXES,
         emptyInventory, iconFor, contextIcon, escapeHtml, fmtSize, fmtDate,
         filterItems, renderMarkdown, parseDelimited, renderFile, isEditable,
+        splitFrontMatter, joinFrontMatter, addField, fieldRows,
         errorDetail, t,
     };
 })(window);

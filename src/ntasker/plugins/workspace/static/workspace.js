@@ -39,6 +39,9 @@ function workspacePage() {
             // that opens by default would make every peek feel risky.
             editing: false,
             draft: '',
+            // Front-matter form (fields + body) when the file has one,
+            // otherwise the whole file is edited in `draft`.
+            form: null,
             saving: false,
         },
 
@@ -158,9 +161,12 @@ function workspacePage() {
             if (this.viewer.editing) {
                 this.viewer.editing = false;
                 this.viewer.draft = '';
+                this.viewer.form = null;
                 return;
             }
-            this.viewer.draft = this.viewer.file?.text ?? '';
+            const text = this.viewer.file?.text ?? '';
+            this.viewer.form = this.viewer.file?.kind === 'markdown' ? WS.splitFrontMatter(text) : null;
+            this.viewer.draft = this.viewer.form ? '' : text;
             this.viewer.editing = true;
         },
 
@@ -173,7 +179,10 @@ function workspacePage() {
                 const res = await fetch('/api/workspace/file', {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ path: file.path, text: this.viewer.draft }),
+                    body: JSON.stringify({
+                        path: file.path,
+                        text: this.viewer.form ? WS.joinFrontMatter(this.viewer.form) : this.viewer.draft,
+                    }),
                 });
                 if (!res.ok) {
                     this.viewer.error = await WS.errorDetail(res, this.i18n('ws_save_failed'));
@@ -184,6 +193,7 @@ function workspacePage() {
                 this.render(fresh);
                 this.viewer.editing = false;
                 this.viewer.draft = '';
+                this.viewer.form = null;
                 // A write changes size and mtime, both of which the document
                 // list shows -- refetch rather than patching the row by hand.
                 await this.load();

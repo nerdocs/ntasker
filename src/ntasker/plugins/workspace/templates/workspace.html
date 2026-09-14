@@ -475,24 +475,9 @@
                     {# Editor. Replaces the rendered view rather than sitting #}
                     {# beside it -- a split view in a modal leaves neither     #}
                     {# half wide enough to be worth reading.                   #}
-                    <div x-show="viewer.editing" x-cloak>
-                        <textarea class="form-control font-monospace ws-editor" rows="24"
-                                  x-model="viewer.draft"
-                                  @keydown.meta.s.prevent="saveFile()"
-                                  @keydown.ctrl.s.prevent="saveFile()"></textarea>
-                        <div class="d-flex align-items-center mt-2">
-                            <span class="text-secondary small" x-text="$i18n('ws_save_hint')"></span>
-                            <button class="btn btn-sm btn-ghost-secondary ms-auto me-2"
-                                    @click="toggleEdit()" x-text="$i18n('ws_cancel')"></button>
-                            <button class="btn btn-sm btn-primary" @click="saveFile()"
-                                    :disabled="viewer.saving">
-                                <span class="spinner-border spinner-border-sm me-1"
-                                      x-show="viewer.saving" x-cloak></span>
-                                <i class="ti ti-device-floppy me-1" x-show="!viewer.saving"></i>
-                                <span x-text="$i18n('ws_save')"></span>
-                            </button>
-                        </div>
-                    </div>
+                    {% with v='viewer', save='saveFile()', cancel='toggleEdit()' %}
+                        {% include "workspace/templates/editor.html" %}
+                    {% endwith %}
 
                     {# Rendered Markdown. Sanitized in ws-common.js before it lands here. #}
                     <div class="markdown-body" x-show="!viewer.editing && viewer.mode === 'markdown'"

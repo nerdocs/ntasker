@@ -3,8 +3,8 @@
 ntasker's core is the task store, the sidebar, the kanban and the run infrastructure. Everything a user may not want
 -- a particular AI coding agent, and (in later releases) the workspace browser or task-context attachments -- is a
 **plugin** that can be switched off individually. Built-ins live under `src/ntasker/plugins/<name>/`: the three agent
-plugins `claude`, `opencode` and `pi`, plus `task_context` ([task-context.md](task-context.md)) and `workspace`
-([workspace.md](workspace.md)).
+plugins `claude`, `opencode` and `pi`, plus `task_context` ([task-context.md](task-context.md)), `workspace`
+([workspace.md](workspace.md)) and the opt-in `voice` ([voice.md](voice.md)).
 
 ## Switching plugins on and off
 
@@ -15,6 +15,10 @@ plugins `claude`, `opencode` and `pi`, plus `task_context` ([task-context.md](ta
 The list is a *disabled* list so that a plugin added in a later release is on by default and an existing DB needs no
 migration. The validator rejects unknown names and any list that would leave no agent plugin enabled: every task needs
 an agent to resolve to. (The ENV path is not validated; a value that disables every agent is ignored for the agents.)
+
+**Opt-in plugins** (`PluginSpec.default_on=False`, e.g. `voice`, which needs the `ntasker[voice]` extra) are off until
+listed in the `plugins_enabled` setting (ENV `NTASKER_PLUGINS_ENABLED`). `ntasker enable <plugin>` /
+`ntasker disable <plugin>` write whichever of the two lists applies to the plugin; the Plugins card does the same.
 
 What "disabled" means:
 
@@ -49,6 +53,7 @@ SPEC = PluginSpec(
     label=_lazy("Example"),               # shown on the Plugins card
     description=_lazy("What it adds."),
     kind="feature",                       # "feature" | "agent"
+    default_on=True,                      # False = opt-in via plugins_enabled
 )
 
 def register(ctx: PluginContext) -> None:
@@ -91,8 +96,8 @@ usual.
 
 ## API
 
-`GET /api/plugins` lists every built-in with `name`, `label`, `description`, `kind` and `enabled`. Toggling goes
-through `PUT /api/settings/plugins_disabled`.
+`GET /api/plugins` lists every built-in with `name`, `label`, `description`, `kind`, `default_on` and `enabled`.
+Toggling goes through `PUT /api/settings/plugins_disabled` (default-on plugins) or `plugins_enabled` (opt-in).
 
 ## Not included
 

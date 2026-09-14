@@ -185,6 +185,8 @@
                         </template>
                         <div class="invalid-feedback" :class="errors['plugins_disabled'] ? 'd-block' : ''"
                              x-text="errors['plugins_disabled']"></div>
+                        <div class="invalid-feedback" :class="errors['plugins_enabled'] ? 'd-block' : ''"
+                             x-text="errors['plugins_enabled']"></div>
                     </div>
                 </div>
                 {% for tpl in plugin_slots['settings'] %}{% include tpl %}{% endfor %}
@@ -561,14 +563,20 @@ function settingsPage() {
             }
         },
 
-        // Flip one plugin switch: rewrite the plugins_disabled list and let
-        // the server validate it (unknown name, last agent). The agent cards
+        // Flip one plugin switch: rewrite the plugins_disabled list (default-on
+        // plugins) or the plugins_enabled list (opt-in plugins) and let the
+        // server validate it (unknown name, last agent). The agent cards
         // follow, since /api/agents lists only enabled agents.
         async setPluginEnabled(name, enabled) {
-            const disabled = this.plugins.filter(p => !p.enabled && p.name !== name).map(p => p.name);
-            if (!enabled) disabled.push(name);
-            this.known['plugins_disabled'] = JSON.stringify(disabled);
-            await this.saveKnown('plugins_disabled');
+            const plugin = this.plugins.find(p => p.name === name);
+            const key = plugin.default_on ? 'plugins_disabled' : 'plugins_enabled';
+            const listed = plugin.default_on ? !enabled : enabled;
+            const names = this.plugins
+                .filter(p => p.default_on === plugin.default_on && p.name !== name && p.enabled !== plugin.default_on)
+                .map(p => p.name);
+            if (listed) names.push(name);
+            this.known[key] = JSON.stringify(names);
+            await this.saveKnown(key);
             await this.refreshPlugins();
             await this.refreshAgents();
         },

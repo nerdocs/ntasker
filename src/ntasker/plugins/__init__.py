@@ -18,7 +18,9 @@ once per process (at import of :mod:`ntasker.app`, in
 ``ntasker.cli.build_parser``, or lazily from :mod:`ntasker.agents`) and
 wires every built-in plugin regardless of its switch. Whether a plugin
 *acts* is decided per call by :func:`is_enabled`, which reads the
-``plugins_disabled`` setting (ENV ``NTASKER_PLUGINS_DISABLED`` wins). So
+``plugins_disabled`` setting (ENV ``NTASKER_PLUGINS_DISABLED`` wins) --
+or, for an opt-in plugin (``PluginSpec.default_on=False``), the
+``plugins_enabled`` setting (ENV ``NTASKER_PLUGINS_ENABLED``). So
 toggling a plugin in /settings needs no restart, and routes exist before
 the DB is even bound.
 
@@ -51,7 +53,7 @@ if TYPE_CHECKING:
     from ntasker.agents import AgentSpec
 
 #: Built-in plugins, in load order. The order is also the UI order.
-BUILTIN: tuple[str, ...] = ("claude", "opencode", "pi", "task_context", "workspace")
+BUILTIN: tuple[str, ...] = ("claude", "opencode", "pi", "task_context", "workspace", "voice")
 
 #: Where plugin packages (and their ``templates/`` + ``static/``) live.
 PLUGINS_DIR = files("ntasker") / "plugins"
@@ -70,10 +72,13 @@ SLOTS: tuple[str, ...] = (
     "settings",  # settings.html: below the Plugins card
 )
 
-#: Settings key holding the JSON array of disabled plugin names.
+#: Settings key holding the JSON array of disabled plugin names (default-on plugins).
 SETTING_DISABLED = "plugins_disabled"
-#: ENV override: comma-separated plugin names. Wins over the setting.
+#: Settings key holding the JSON array of enabled plugin names (opt-in plugins).
+SETTING_ENABLED = "plugins_enabled"
+#: ENV overrides: comma-separated plugin names. Each wins over its setting.
 ENV_DISABLED = "NTASKER_PLUGINS_DISABLED"
+ENV_ENABLED = "NTASKER_PLUGINS_ENABLED"
 
 
 @dataclass(frozen=True)
@@ -91,6 +96,10 @@ class PluginSpec:
 
     kind: str = "feature"
     """``"feature"`` or ``"agent"``. At least one agent plugin stays enabled."""
+
+    default_on: bool = True
+    """Enabled unless listed in ``plugins_disabled`` (True), or only when
+    listed in ``plugins_enabled`` (False -- opt-in, e.g. needs an extra)."""
 
 
 @dataclass
@@ -226,28 +235,38 @@ def _apply_to_core() -> None:
                 settings.HINTS[key] = hint
 
 
+def _names_from(env_var: str, setting: str) -> set[str]:
+    """Plugin names listed in ``env_var`` (comma list) or else in ``setting`` (JSON array).
+
+    Reads the DB only when the ENV override is absent; an unbound DB
+    (``ntasker --version``, parser construction) counts as an empty list.
+    """
+    raw_env = os.environ.get(env_var)
+    if raw_env is not None:
+        return {n.strip() for n in raw_env.split(",") if n.strip()}
+    from ntasker.settings import get_setting  # noqa: PLC0415
+
+    try:
+        parsed = json.loads(get_setting(setting) or "[]")
+    except Exception:  # noqa: BLE001 -- unbound DB or bad JSON: empty list
+        parsed = []
+    return {str(n) for n in parsed} if isinstance(parsed, list) else set()
+
+
 def disabled_plugins() -> set[str]:
     """Names currently switched off. ENV wins over the setting.
 
-    Reads the DB only when the ENV override is absent; an unbound DB
-    (``ntasker --version``, parser construction) counts as "nothing
-    disabled". If the result would leave no agent plugin enabled, the
-    agent names are dropped from it -- a task must always have an agent to
-    resolve to, and the setting validator already refuses that state; this
-    guard covers the unvalidated ENV path.
+    A default-on plugin is off when listed in ``plugins_disabled``; an
+    opt-in plugin is off unless listed in ``plugins_enabled``. If the
+    result would leave no agent plugin enabled, the agent names are
+    dropped from it -- a task must always have an agent to resolve to, and
+    the setting validator already refuses that state; this guard covers
+    the unvalidated ENV path.
     """
     load_all()
-    raw_env = os.environ.get(ENV_DISABLED)
-    if raw_env is not None:
-        names = {n.strip() for n in raw_env.split(",") if n.strip()}
-    else:
-        from ntasker.settings import get_setting  # noqa: PLC0415
-
-        try:
-            parsed = json.loads(get_setting(SETTING_DISABLED) or "[]")
-        except Exception:  # noqa: BLE001 -- unbound DB or bad JSON: nothing disabled
-            parsed = []
-        names = {str(n) for n in parsed} if isinstance(parsed, list) else set()
+    names = _names_from(ENV_DISABLED, SETTING_DISABLED)
+    opted_in = _names_from(ENV_ENABLED, SETTING_ENABLED)
+    names |= {n for n, c in REGISTRY.items() if not c.spec.default_on and n not in opted_in}
     agent_names = {n for n, c in REGISTRY.items() if c.spec.kind == "agent"}
     if agent_names and agent_names <= names:
         names -= agent_names
@@ -346,6 +365,7 @@ def describe() -> list[dict[str, Any]]:
             "label": str(ctx.spec.label),
             "description": str(ctx.spec.description),
             "kind": ctx.spec.kind,
+            "default_on": ctx.spec.default_on,
             "enabled": ctx.name not in off,
         }
         for ctx in REGISTRY.values()

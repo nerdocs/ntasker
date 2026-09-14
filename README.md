@@ -278,7 +278,9 @@ Agent integrations and optional features are plugins that can be switched off in
 its data stays intact. Contract and slots: [docs/plugins.md](docs/plugins.md). Built-in feature plugins:
 `task_context` -- attach files, notes, personas, skills and MCP servers to a task, handed to the agent in its
 briefing ([docs/task-context.md](docs/task-context.md)); `workspace` -- team (Claude Code subagents), skills, knowledge
-base and documents on a `/workspace` page and in the sidebar, plus a viewer ([docs/workspace.md](docs/workspace.md)).
+base and documents on a `/workspace` page and in the sidebar, plus a viewer ([docs/workspace.md](docs/workspace.md));
+`voice` (opt-in: `pip install 'ntasker[voice]'` + `ntasker enable voice`) -- dictate task descriptions with local
+speech recognition ([docs/voice.md](docs/voice.md)).
 Coming from the drfoehn fork? See [docs/migrating-from-fork.md](docs/migrating-from-fork.md).
 
 ## CLI
@@ -306,6 +308,8 @@ Coming from the drfoehn fork? See [docs/migrating-from-fork.md](docs/migrating-f
 | `ntasker config get <k>`    | Read a setting                                                |
 | `ntasker config set <k> <v>`| Write a setting (validated)                                   |
 | `ntasker config unset <k>`  | Remove a setting                                              |
+| `ntasker enable <plugin>`   | Switch a plugin on (opt-in plugins such as `voice`)          |
+| `ntasker disable <plugin>`  | Switch a plugin off                                           |
 | `ntasker agent list`        | List agents with CLI availability + `/task` integration status |
 | `ntasker agent install <key>` | Install / check an agent's skill + `/task` slash-command (`claude`/`opencode`/`pi`) |
 | `ntasker assets fetch / status / remove` | Manage the optional local vendor-asset cache |
@@ -353,7 +357,8 @@ couple of CLI subcommands via subprocess.
 | GET | `/api/queue` | `{enabled, items[]}` -- the auto-run task queue in run order. See [docs/task-queue.md](docs/task-queue.md). |
 | PUT | `/api/queue` | `{ids: [...]}` replaces the whole queue, head first. Closed / archived / missing ids are dropped. |
 | GET | `/api/agents` | Read-only registry feed: per-agent availability + `/task` integration status, plus the default |
-| GET | `/api/plugins` | Built-in plugins + `enabled` flag; toggle via `PUT /api/settings/plugins_disabled` |
+| GET | `/api/plugins` | Built-in plugins + `enabled` flag; toggle via `PUT /api/settings/plugins_disabled` / `plugins_enabled` |
+| WS | `/api/voice/ws` | Voice plugin: 16 kHz PCM in, `partial` / `final` text out ([docs/voice.md](docs/voice.md)) |
 | GET/POST/DELETE | `/api/tasks/{id}/context[/{cid}]` | Attachments ([docs/task-context.md](docs/task-context.md)) |
 | GET/PUT/POST | `/api/workspace[/file|browse|entry|rename|delete|reveal]` | Workspace ([docs/workspace.md](docs/workspace.md)) |
 | GET | `/api/claude-assets/status` | Read-only: `{installed, drift, package_version, claude_home, files[]}` |

@@ -1022,6 +1022,48 @@ def cmd_config_unset(args: argparse.Namespace) -> int:
     return 0
 
 
+def _set_plugin_enabled(name: str, enabled: bool) -> int:
+    """``ntasker enable|disable <plugin>``: rewrite the matching plugin list.
+
+    A default-on plugin lives in ``plugins_disabled``, an opt-in plugin in
+    ``plugins_enabled`` -- the same two lists the /settings card writes.
+    The validators reject unknown names and switching off the last agent.
+    """
+    plugins.load_all()
+    ctx = plugins.REGISTRY.get(name)
+    if ctx is None:
+        print(
+            _("ntasker: unknown plugin {name!r}. Known: {known}").format(
+                name=name, known=", ".join(plugins.REGISTRY)
+            ),
+            file=sys.stderr,
+        )
+        return 2
+    key = plugins.SETTING_DISABLED if ctx.spec.default_on else plugins.SETTING_ENABLED
+    listed = enabled != ctx.spec.default_on
+    row = get_setting_raw(key)
+    names = set(json.loads(row["value"])) if row else set()
+    names.discard(name)
+    if listed:
+        names.add(name)
+    try:
+        set_setting(key, json.dumps(sorted(names)))
+    except ValueError as exc:
+        print(f"ntasker: {exc}", file=sys.stderr)
+        return 2
+    state = _("enabled") if enabled else _("disabled")
+    print(f"{name}: {state}")
+    return 0
+
+
+def cmd_enable(args: argparse.Namespace) -> int:
+    return _set_plugin_enabled(args.plugin, True)
+
+
+def cmd_disable(args: argparse.Namespace) -> int:
+    return _set_plugin_enabled(args.plugin, False)
+
+
 # Task queue -----------------------------------------------------------------
 # Thin wrappers around :mod:`ntasker.taskqueue` -- the same functions the web UI
 # drives through /api/queue, so both surfaces stay in step. The CLI only edits
@@ -2158,6 +2200,15 @@ def build_parser() -> argparse.ArgumentParser:
     cfg_unset = cfg_sub.add_parser("unset", help=_("Remove one key"))
     cfg_unset.add_argument("key")
     cfg_unset.set_defaults(func=cmd_config_unset)
+
+    # enable / disable ----------------------------------------------------
+    sp_enable = sub.add_parser("enable", help=_("Switch a plugin on (e.g. voice)"))
+    sp_enable.add_argument("plugin", metavar="PLUGIN")
+    sp_enable.set_defaults(func=cmd_enable)
+
+    sp_disable = sub.add_parser("disable", help=_("Switch a plugin off"))
+    sp_disable.add_argument("plugin", metavar="PLUGIN")
+    sp_disable.set_defaults(func=cmd_disable)
 
     # queue ---------------------------------------------------------------
     sp_q = sub.add_parser("queue", help=_("Auto-run task queue"))

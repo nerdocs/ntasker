@@ -1,0 +1,107 @@
+/* Dictation tray under a description field.
+   Idle: a quiet ghost row -- mic glyph, "Dictate", the hold/click hint.
+   Live: the row turns into a level-driven waveform with the current
+   hypothesis flowing beside it; the mic itself glows red. */
+.voice-tray {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 2.25rem;
+    padding: 0.125rem 0.5rem 0.125rem 0.25rem;
+    border: 1px dashed var(--tblr-border-color);
+    border-radius: var(--tblr-border-radius);
+    color: var(--tblr-secondary);
+    font-size: 0.8125rem;
+    transition: border-color 0.2s, background-color 0.2s;
+}
+.voice-tray.is-live {
+    border-style: solid;
+    border-color: var(--tblr-red);
+    background: var(--tblr-red-lt);
+    color: var(--tblr-body-color);
+}
+
+.voice-mic {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: inherit;
+    font-size: 1rem;
+    cursor: pointer;
+    touch-action: none;           /* pointer events stay ours on touch */
+    user-select: none;
+    -webkit-user-select: none;
+}
+.voice-mic:hover,
+.voice-tray:hover .voice-mic {
+    color: var(--tblr-primary);
+}
+.voice-mic:focus-visible {
+    outline: 2px solid var(--tblr-primary);
+    outline-offset: 1px;
+}
+.voice-mic.is-live {
+    color: #fff;
+    background: var(--tblr-red);
+    animation: voice-pulse 1.6s ease-out infinite;
+}
+
+.voice-idle {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    min-width: 0;
+}
+.voice-idle-hint {
+    opacity: 0.7;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.voice-live {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+.voice-wave {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    height: 1.25rem;
+}
+.voice-wave span {
+    display: block;
+    width: 2px;
+    min-height: 2px;
+    border-radius: 1px;
+    background: var(--tblr-red);
+    transition: height 0.05s linear;
+}
+.voice-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: var(--tblr-secondary);
+    font-style: italic;
+}
+.voice-text.is-status {
+    font-style: normal;
+}
+
+@keyframes voice-pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(214, 57, 57, 0.45); }
+    100% { box-shadow: 0 0 0 0.6rem rgba(214, 57, 57, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .voice-mic.is-live { animation: none; }
+    .voice-wave span { transition: none; }
+}

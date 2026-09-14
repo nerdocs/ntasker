@@ -1,0 +1,31 @@
+{# The dictation tray under a description field. `target` is 'form' or 'edit'. #}
+<div class="voice-tray" :class="{ 'is-live': voice.active && voice.target === '{{ target }}' }">
+    <button type="button" class="voice-mic"
+            :class="{ 'is-live': voice.active && voice.target === '{{ target }}' }"
+            :title="voice.active && voice.target === '{{ target }}' ? $i18n('voice_stop') : $i18n('voice_hint')"
+            :aria-pressed="voice.active && voice.target === '{{ target }}'"
+            @pointerdown.prevent="voiceDown('{{ target }}')"
+            @pointerup="voiceUp()"
+            @pointercancel="voiceUp()"
+            @keydown.enter.prevent="voiceToggle('{{ target }}')"
+            @keydown.space.prevent="voiceToggle('{{ target }}')">
+        <i class="ti ti-microphone"></i>
+    </button>
+    <template x-if="voice.active && voice.target === '{{ target }}'">
+        <div class="voice-live">
+            <div class="voice-wave" aria-hidden="true">
+                <template x-for="(level, i) in voice.bars" :key="i">
+                    <span :style="`height:${8 + Math.round(level * 92)}%`"></span>
+                </template>
+            </div>
+            <span class="voice-text" x-text="voice.status || voice.partial || $i18n('voice_listening')"
+                  :class="{ 'is-status': voice.status }"></span>
+        </div>
+    </template>
+    <template x-if="!(voice.active && voice.target === '{{ target }}')">
+        <span class="voice-idle">
+            <span x-text="$i18n('voice_dictate')"></span>
+            <span class="voice-idle-hint" x-text="$i18n('voice_hint')"></span>
+        </span>
+    </template>
+</div>

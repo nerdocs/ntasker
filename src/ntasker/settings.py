@@ -306,6 +306,36 @@ def validate_plugins_disabled(value: str) -> str:
     return json.dumps([n for n in plugins.REGISTRY if n in names])
 
 
+def validate_plugins_enabled(value: str) -> str:
+    """Validator for the ``plugins_enabled`` setting.
+
+    JSON array of opt-in plugin names switched on (``PluginSpec.default_on``
+    is False for those). Unknown names are rejected; names are
+    de-duplicated and kept in registry order. ENV
+    ``NTASKER_PLUGINS_ENABLED`` (comma list) overrides the stored value.
+    """
+    import json  # noqa: PLC0415
+
+    from ntasker import plugins  # noqa: PLC0415 -- lazy: plugins import settings
+
+    plugins.load_all()
+    try:
+        parsed = json.loads(value or "[]")
+    except ValueError as exc:
+        raise ValueError(_("plugins_enabled must be a JSON array of plugin names.")) from exc
+    if not isinstance(parsed, list) or not all(isinstance(v, str) for v in parsed):
+        raise ValueError(_("plugins_enabled must be a JSON array of plugin names."))
+    names = {v.strip() for v in parsed if v.strip()}
+    unknown = sorted(names - set(plugins.REGISTRY))
+    if unknown:
+        raise ValueError(
+            _("Unknown plugin(s): {names}. Known: {known}").format(
+                names=", ".join(unknown), known=", ".join(plugins.REGISTRY)
+            )
+        )
+    return json.dumps([n for n in plugins.REGISTRY if n in names])
+
+
 def validate_queue_enabled(value: str) -> str:
     """Validator for the ``queue_enabled`` boolean setting.
 
@@ -341,6 +371,7 @@ VALIDATORS: dict[str, Validator] = {
     "dir_locks": validate_on_off,
     "require_clean": validate_on_off,
     "plugins_disabled": validate_plugins_disabled,
+    "plugins_enabled": validate_plugins_enabled,
     "update_command": validate_update_command,
 }
 """Registry of known settings keys with their validators.
@@ -429,6 +460,11 @@ HINTS: dict[str, object] = {
         "JSON array of plugins switched off, e.g. [\"pi\", \"workspace\"]. "
         "Toggle them on the Plugins card above; at least one agent plugin "
         "stays enabled. ENV: NTASKER_PLUGINS_DISABLED (comma-separated)."
+    ),
+    "plugins_enabled": _lazy(
+        "JSON array of opt-in plugins switched on, e.g. [\"voice\"]. Toggle "
+        "them on the Plugins card above or with `ntasker enable <plugin>`. "
+        "ENV: NTASKER_PLUGINS_ENABLED (comma-separated)."
     ),
 }
 

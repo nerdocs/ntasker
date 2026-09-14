@@ -60,13 +60,14 @@ def test_disable_agent_via_setting(client):
 def test_env_wins_over_setting(client, monkeypatch):
     client.put("/api/settings/plugins_disabled", json={"value": '["pi"]'})
     monkeypatch.setenv(plugins.ENV_DISABLED, "opencode")
-    assert plugins.disabled_plugins() == {"opencode"}
+    # opt-in plugins (voice) count as disabled until switched on
+    assert plugins.disabled_plugins() == {"opencode", "voice"}
     assert agent_keys() == ("claude", "pi")
 
 
 def test_env_never_disables_every_agent(client, monkeypatch):
     monkeypatch.setenv(plugins.ENV_DISABLED, "claude,opencode,pi")
-    assert plugins.disabled_plugins() == set()
+    assert plugins.disabled_plugins() == {"voice"}
 
 
 def test_default_agent_follows_enablement(client, monkeypatch):

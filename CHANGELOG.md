@@ -4,7 +4,7 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
-## [Unreleased]
+## [3.1.2] — 2026-09-14
 Queue: only `done` finishes a run; nTasker never kills a session (not on hand-off, done or delete).
 
 ## [3.1.1] — 2026-09-14

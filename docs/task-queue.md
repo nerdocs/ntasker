@@ -159,8 +159,8 @@ ntasker report <id> [--file f.md]  # store the agent's final report (Markdown fr
 ntasker patch <id> --report "..."  # same; '' clears
 ```
 
-`ntasker queue add <id> --top` is the CLI's run button: it puts the task at the head of the queue, exactly like the
-button on the board. There is no separate `ntasker run`.
+`ntasker queue add <id>` is the CLI's run button: it appends the task to the queue, exactly like the button on the
+board; `--top` jumps the line. There is no separate `ntasker run`.
 
 The CLI only edits the queue and its switch; the running server's worker is what actually starts tasks. `queue start`
 therefore probes `/healthz` and points it out when nothing is listening -- otherwise the queue would sit there looking
@@ -175,9 +175,9 @@ id deserves to be told.
 |---|---|
 | `GET /api/queue` | `{enabled, items: [task, ...], skipped: {id: {reason, project, holder}}}` -- full task rows in run order (a queued task may be filtered off the board and the panel still has to render it); `skipped` holds the reasons `lock` / `dirty` / `ended`. |
 | `PUT /api/queue` | Body `{ids: [...]}` replaces the whole queue, head first. Ids that are closed, archived or gone are dropped. An empty list clears the queue. Never restarts an `ended` entry. |
-| `POST /api/queue/run` | Body `{id}` -- the run button: puts the task at the head of the queue and clears its `ended` flag. Returns the queue. |
+| `POST /api/queue/run` | Body `{id}` -- the run button: appends the task to the queue (an already-queued id keeps its place) and clears its `ended` flag. Returns the queue. |
 | `POST /api/queue/resume` | Body `{id}` -- the resume button on an `ended` entry: the worker reopens the task's stored session next tick, in place; the flag clears once it is live. 409 when the task is not queued or has nothing to resume. Returns the queue. |
-| `POST /api/projects/quick-run` | Body `{project}` -- the sidebar quick run: creates a placeholder `wip` task, queues it at the head, marks it as a blank-prompt run. Returns the task. |
+| `POST /api/projects/quick-run` | Body `{project}` -- the sidebar quick run: creates a placeholder `wip` task, appends it to the queue, marks it as a blank-prompt run. Returns the task. |
 | `PUT /api/settings/queue_enabled` | `{"value": "true" \| "false"}` -- the pause switch (default `true`). |
 
 Add, reorder and remove are all the same `PUT`: the frontend owns the ordered list and sends it after every edit, so

@@ -111,7 +111,7 @@ def test_ended_session_flags_entry_and_blocks_lane(env):
     taskqueue.tick()
     assert env["started"] == [a, c]
     # run again clears the flag and restarts
-    taskqueue.enqueue_front(a)
+    taskqueue.enqueue(a)
     assert env["col"](a, "session_ended_at") is None
     taskqueue.tick()
     assert env["started"][-1] == a
@@ -181,9 +181,9 @@ def test_queue_run_route_and_skipped_ended(env):
     client.put("/api/settings/dir_locks", json={"value": "off"})
     body = client.get("/api/queue").json()
     assert body["skipped"][str(a)]["reason"] == "ended"
-    r = client.post("/api/queue/run", json={"id": b})
-    assert r.status_code == 200 and [t["id"] for t in r.json()["items"]] == [b, a]
-    r = client.post("/api/queue/run", json={"id": a})
+    r = client.post("/api/queue/run", json={"id": b})   # already queued: keeps its place
+    assert r.status_code == 200 and [t["id"] for t in r.json()["items"]] == [a, b]
+    r = client.post("/api/queue/run", json={"id": a})   # run again: clears the flag in place
     assert [t["id"] for t in r.json()["items"]] == [a, b] and r.json()["skipped"] == {}
 
 

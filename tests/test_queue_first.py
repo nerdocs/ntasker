@@ -42,7 +42,7 @@ def test_attach_without_live_session_does_not_spawn(client, monkeypatch):
         assert ws.receive_json()["type"] == "error"
 
 
-def test_quick_run_creates_wip_task_at_queue_head(client):
+def test_quick_run_creates_wip_task_at_queue_end(client):
     other = client.post("/api/tasks", json={"title": "o", "project": "x"}).json()
     client.put("/api/queue", json={"ids": [other["id"]]})
     r = client.post("/api/projects/quick-run", json={"project": "x"})
@@ -50,7 +50,7 @@ def test_quick_run_creates_wip_task_at_queue_head(client):
     task = r.json()
     assert task["phase"] == "wip" and task["project"] == "x"
     items = client.get("/api/queue").json()["items"]
-    assert [t["id"] for t in items] == [task["id"], other["id"]]
+    assert [t["id"] for t in items] == [other["id"], task["id"]]
     assert task["id"] in taskqueue.QUICK
 
 
@@ -72,8 +72,10 @@ def test_sessions_payload_has_no_agents(client):
     assert "agents" not in body and set(body) == {"active", "waiting", "projects", "titles"}
 
 
-def test_enqueue_front_moves_existing_entry(client):
+def test_enqueue_appends_and_keeps_existing_position(client):
     a = client.post("/api/tasks", json={"title": "a"}).json()["id"]
     b = client.post("/api/tasks", json={"title": "b"}).json()["id"]
+    c = client.post("/api/tasks", json={"title": "c"}).json()["id"]
     taskqueue.set_queue([a, b])
-    assert [int(r["id"]) for r in taskqueue.enqueue_front(b)] == [b, a]
+    assert [int(r["id"]) for r in taskqueue.enqueue(c)] == [a, b, c]
+    assert [int(r["id"]) for r in taskqueue.enqueue(a)] == [a, b, c]

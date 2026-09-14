@@ -24,7 +24,7 @@ read and drive your tracker, no copy-paste:
 ## Run with an agent (web UI)
 
 The flip side of the integration above: every task row has a **run** button -- showing that task's agent logo -- that
-queues the task to run next and opens a real interactive session -- the genuine TUI, embedded in the page via xterm.js
+queues the task and opens a real interactive session -- the genuine TUI, embedded in the page via xterm.js
 -- running in the task's project directory and seeded with the task. You answer the agent's questions, approve its tool
 prompts and interrupt it exactly as in a terminal; it is the same CLI with the same `CLAUDE.md`, skills, MCP and
 permissions.

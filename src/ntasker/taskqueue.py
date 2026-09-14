@@ -38,9 +38,9 @@ and leave the session open. Closing stays the user's call unless the task
 description grants it -- so a queue run leaves its results in the review
 column, and the next task in that project starts when the user closes it.
 
-The queue is the **only** way a session starts: every run button enqueues at
-the front of the task's project lane (:func:`enqueue_front`), and the worker
-picks it up on its next tick. ``queue_enabled`` (default on) is a pause switch.
+The queue is the **only** way a session starts: every run button appends to
+the queue (:func:`enqueue`), and the worker picks the task up once its project
+lane is free. ``queue_enabled`` (default on) is a pause switch.
 """
 
 from __future__ import annotations
@@ -135,15 +135,19 @@ def set_queue(ids: list[int]) -> list[sqlite3.Row]:
         ).fetchall()
 
 
-def enqueue_front(task_id: int) -> list[sqlite3.Row]:
-    """Put ``task_id`` at the head of the queue -- "run this next".
+def enqueue(task_id: int) -> list[sqlite3.Row]:
+    """Append ``task_id`` to the queue -- "run this when its lane is free".
 
-    What every run button does: an already-queued id moves to the front, a new
-    one is inserted there. Same filtering as :func:`set_queue`.
+    What every run button does: a new id goes to the end, so the running task
+    stays at the top of its project and the rest follow in the order they
+    were queued; an already-queued id keeps its position. Same filtering as
+    :func:`set_queue`.
     """
     clear_ended([task_id])   # "run it again" for an entry whose session ended
-    rest = [int(r["id"]) for r in load_queue() if int(r["id"]) != task_id]
-    return set_queue([task_id, *rest])
+    ids = [int(r["id"]) for r in load_queue()]
+    if task_id in ids:
+        return load_queue()
+    return set_queue([*ids, task_id])
 
 
 def clear_ended(ids: list[int]) -> None:

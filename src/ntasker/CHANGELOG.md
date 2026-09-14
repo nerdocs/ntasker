@@ -5,6 +5,7 @@ All notable changes to ntasker.
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
 ## [Unreleased]
+Queue: run buttons and quick run append to the queue -- the running task stays on top, new ones line up below.
 Feature: bash/zsh completion for the CLI -- `ntasker completion <shell> --install` or via Settings → Maintenance.
 
 ## [3.2.2] — 2026-09-14

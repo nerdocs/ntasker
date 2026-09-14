@@ -40,6 +40,7 @@ from ntasker.claude_runner import (
     projects_base_dir,
     session_states,
     set_hook_state,
+    stop_session,
     terminal_available,
 )
 from ntasker.claude_runner import serve as claude_serve
@@ -2142,6 +2143,11 @@ def api_update_task(task_id: int, payload: TaskUpdate) -> JSONResponse:
         depends = load_deps_for(conn, task_id)
         task = row_to_task(row, tags, depends)
         plugins.apply_task_hooks(conn, [task])
+
+    # The task is finished -- tear down its interactive session, if any. The
+    # queue worker sweeps for the same condition (CLI / direct DB paths).
+    if fields.get("status") == "done":
+        stop_session(task_id)
 
     return JSONResponse(task)
 

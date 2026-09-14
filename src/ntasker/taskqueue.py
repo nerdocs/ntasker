@@ -14,12 +14,14 @@ does exactly two things:
   session holds one of its directories (see :mod:`ntasker.locks`), and with
   ``require_clean`` while one is git-dirty.
 
-nTasker **never ends a session itself**. A session ends when its process exits
-or the user stops it from the terminal view; a session whose task is done just
-stops counting -- it no longer occupies its lane or holds directory locks, and
-stays in the tab strip until the user closes it. The agent's review hand-off
+``done`` is the **only** thing that makes nTasker end a session: once a task
+is done its session is finished work, so :func:`tick` kills it -- whichever way
+the status was set (UI, API, ``ntasker done`` from inside the session, a direct
+DB write). Nothing else ends a session: it otherwise runs until its process
+exits or the user stops it from the terminal view. The agent's review hand-off
 (``ntasker patch <id> --phase review``) is a phase change like any other: the
-task waits in the review column, and the queue moves on only once it is done.
+task waits in the review column, its session alive, and the queue moves on
+only once it is done.
 
 Session ended without the task being done (agent stopped, crashed, hit a
 blocker)? The entry **stays** queued, flagged ``session_ended_at``, and blocks
@@ -50,6 +52,7 @@ from ntasker.claude_runner import (
     mark_wip,
     queue_seed_for_task,
     start_detached_session,
+    stop_session,
     terminal_available,
 )
 from ntasker.db import get_conn
@@ -153,9 +156,8 @@ def _busy_buckets(live: set[int], conn: sqlite3.Connection) -> set[str]:
 
     A manually opened session in a project blocks the queue there too: two
     agents in one working directory is exactly what the one-per-project rule
-    exists to prevent. A session outlives its task's ``done`` (nTasker never
-    ends a session), but such a session is just waiting to be closed and does
-    not count.
+    exists to prevent. A done task's session is being killed (see
+    :func:`_kill_done`) and does not count in the meantime.
     """
     if not live:
         return set()
@@ -255,8 +257,28 @@ def skipped(rows: list[sqlite3.Row], live: set[int]) -> dict[int, dict]:
     return out
 
 
+def _kill_done(live: set[int]) -> None:
+    """Stop every live session whose task is done.
+
+    The DB is the single source of truth and the status can flip in another
+    process (``ntasker done`` run inside the session, a direct DB write), so
+    the worker sweeps rather than relying on the API path alone. The PATCH
+    handler still stops synchronously so the UI does not have to wait a tick.
+    """
+    if not live:
+        return
+    placeholders = ",".join("?" * len(live))
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"SELECT id FROM tasks WHERE id IN ({placeholders}) AND status = 'done'",
+            list(live),
+        ).fetchall()
+    for r in rows:
+        stop_session(int(r["id"]))
+
+
 def tick() -> None:
-    """One pass: retire what is finished, start what is next. Never raises."""
+    """One pass: kill the done, retire what is finished, start what is next. Never raises."""
     from ntasker.settings import (  # noqa: PLC0415 -- lazy: avoid cycle
         get_dir_locks,
         get_queue_enabled,
@@ -265,6 +287,7 @@ def tick() -> None:
 
     enabled = get_queue_enabled()
     live = set(active_session_ids())
+    _kill_done(live)
     rows = load_queue()
     queued_ids = {int(r["id"]) for r in rows}
 
@@ -278,9 +301,9 @@ def tick() -> None:
     _running.intersection_update(queued_ids)
 
     # Finished: ``status=done`` (the user closed it, or the agent did because
-    # the task told it to) or archived. The entry just leaves the queue -- a
-    # session that is still open stays untouched and simply stops counting
-    # (see ``_open_live``). A review hand-off is not a finish.
+    # the task told it to) or archived. The entry leaves the queue; a done
+    # task's session is already being killed by ``_kill_done``. A review
+    # hand-off is not a finish.
     retired = [int(r["id"]) for r in rows if r["status"] == "done" or r["archived"]]
     if retired:
         with get_conn() as conn:

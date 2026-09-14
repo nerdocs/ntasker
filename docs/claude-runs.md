@@ -96,17 +96,19 @@ it keeps running when you press **Back** or even reload the page. Re-opening the
 the recent output buffer to reconstruct the screen, then streams live again. Several tasks can run at once, each with
 its own indicator.
 
-ntasker never ends a session on its own -- not on the agent's review hand-off, not on `done`, not on delete. A session
-ends when its process exits or you press **Stop**. Before it hands off, the agent writes its **final report**
+ntasker ends a session on its own in exactly one case: the task being set to `done`. Everything else -- the agent's
+review hand-off, moving a task around the board, deleting it -- leaves the session alone; it ends when its process
+exits or you press **Stop**. Before it hands off, the agent writes its **final report**
 (`ntasker report <id>`) -- read it via the report icon on the card, no need to reopen the session. See
 [task-queue.md](task-queue.md).
 
 A page reload drops the *client* terminal but not the *server* session -- reopening reattaches. Stopping the session,
 or the `claude` process exiting on its own, ends it; the next run click queues a fresh one.
 
-**Marking the task done leaves its session alone.** The session stays in the tab strip until you stop it, but it no
-longer occupies its project's queue lane or holds directory locks. A done task shows **no run button** -- you cannot
-start a *fresh* session from the Done column.
+**Marking the task done ends its session.** When a task's status flips to `done` -- from the board, the run header,
+the API, or `ntasker done` run inside the session itself -- ntasker terminates that task's session completely: the
+work is finished, so the interactive process is torn down and its tab disappears. A done task shows **no run
+button** -- you cannot start a *fresh* session from the Done column.
 
 ## Resuming a finished session (Claude only)
 

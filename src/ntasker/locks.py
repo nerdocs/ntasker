@@ -68,8 +68,8 @@ def task_dirs(project: str | None, locks: list[str]) -> set[str]:
 def held_dirs(conn: sqlite3.Connection, live_ids: set[int]) -> dict[str, int]:
     """Directory -> holder task id, over every *open* task with a live session.
 
-    A done task's session may still be alive (nTasker never ends a session),
-    but it no longer holds anything.
+    A done task's session may still be alive for a moment (it is being
+    killed), but it no longer holds anything.
     """
     if not live_ids:
         return {}

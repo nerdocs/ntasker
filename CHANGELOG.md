@@ -4,6 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [Unreleased]
+Fix: `status=done` kills the task's session again (any path: UI, API, CLI) -- the tab no longer resurfaces.
+
 ## [3.2.1] — 2026-09-14
 Fix: workspace sidebar rows (team, skills, knowledge, documents) turned white-on-white on hover.
 

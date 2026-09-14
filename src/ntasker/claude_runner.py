@@ -256,8 +256,8 @@ def queue_seed_for_task(task: dict) -> str:
         "  tried), leave the phase as-is and stop. Do not hand off.",
         "- Never set status=done or archive on your own initiative -- only when",
         "  the user or the task description explicitly tells you to (then:",
-        f"  finish, commit if asked, `ntasker done {tid}` -- that releases the",
-        "  next queued task).",
+        f"  finish, commit if asked, then `ntasker done {tid}` as the very last",
+        "  command -- it ends this session and releases the next queued task).",
         "- No new tracker tasks, no deletes, no writes to other task IDs.",
     ]
     return "\n".join(lines)
@@ -636,8 +636,9 @@ def _stop(sess: TermSession) -> None:
 def stop_session(task_id: int) -> bool:
     """Terminate a task's session completely, if one is running.
 
-    Only the user's own Stop button reaches this -- nTasker never ends a
-    session on its own. Returns ``True`` iff a live session was stopped.
+    Reached by the user's Stop button and by ``status=done`` -- the one case in
+    which nTasker ends a session on its own (the PATCH handler and the queue
+    worker's sweep). Returns ``True`` iff a live session was stopped.
     """
     sess = SESSIONS.get(task_id)
     if sess is None or not sess.alive:

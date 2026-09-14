@@ -16,8 +16,8 @@ takes an entry out.
 
 One task runs **per project** at a time, so several projects progress in parallel while a single project stays strictly
 sequential. Exactly one thing finishes a queued run: the task reaching `status=done` -- closed by you, or by the agent
-itself when the task description told it to. ntasker **never ends a session**: a done task's session stays open in
-the tab strip until you close it, it just stops counting for its lane and its directory locks. The agent's review
+itself when the task description told it to. `done` is also the **only** thing that makes ntasker end a session: the
+done task's session is killed, its tab disappears, and its lane and directory locks are free. The agent's review
 hand-off is a phase change like any other -- the task waits in the review column, with its session alive, and the
 next task of that project starts once you close it. A session that ends before the task is done leaves its entry
 queued, flagged **ended**, blocking its lane until you have looked at it.

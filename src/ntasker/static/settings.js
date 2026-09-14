@@ -38,6 +38,9 @@ function settingsPage() {
         known: {},
         // Text-field drafts; a field saves when its draft differs from known.
         draft: {},
+        // Editor rows of the `quick_prompts` list ([{label, prompt}]); saved
+        // as one JSON value via savePrompts().
+        prompts: [],
         errors: {},
         // True while a restart is in flight -- disables the button and drives
         // the "Restarting..." label until the server answers /healthz again.
@@ -156,6 +159,7 @@ function settingsPage() {
                 this.known[k] = byKey[k] || cfg.fieldDefaults[k] || '';
                 this.draft[k] = this.known[k];
             }
+            this.prompts = JSON.parse(this.known['quick_prompts'] || '[]');
         },
 
         // Refresh the live-session list that gates the restart button.
@@ -230,6 +234,18 @@ function settingsPage() {
             // A CLI path override changes whether the agent is launchable.
             if (key.endsWith('_bin')) await this.refreshAgents();
             this.toast(this.i18n('saved'));
+        },
+
+        promptsDirty() {
+            return JSON.stringify(this.prompts) !== JSON.stringify(JSON.parse(this.known['quick_prompts'] || '[]'));
+        },
+
+        // Save the prompt rows as one JSON value. On a validation error the
+        // rows stay as typed so the offending entry can be fixed in place.
+        async savePrompts() {
+            const rows = this.prompts.map(p => ({...p}));
+            await this.setKnown('quick_prompts', JSON.stringify(rows));
+            if (this.errors['quick_prompts']) this.prompts = rows;
         },
 
         async unsetKnown(key) {

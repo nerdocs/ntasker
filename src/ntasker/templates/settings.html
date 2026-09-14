@@ -206,6 +206,32 @@
                                 </div>
                                 {% endcall %}
 
+                                <h3 class="mt-4 mb-1">{{ t('Quick prompts') }}</h3>
+                                <p class="text-secondary small mb-2">{{ t('One button per row in the run view. The prompt is typed into the session and sent as if you had entered it.') }}</p>
+                                {% call row('quick_prompts') %}
+                                <template x-for="(p, i) in prompts" :key="i">
+                                    <div class="input-group mb-2">
+                                        <input type="text" class="form-control quick-prompt-label" x-model="p.label"
+                                               placeholder="{{ t('Label') }}">
+                                        <input type="text" class="form-control" x-model="p.prompt"
+                                               placeholder="{{ t('Prompt') }}">
+                                        <button type="button" class="btn btn-ghost-danger" @click="prompts.splice(i, 1)"
+                                                :aria-label="$i18n('delete')" :title="$i18n('delete')">
+                                            <i class="ti ti-trash"></i>
+                                        </button>
+                                    </div>
+                                </template>
+                                <div class="d-flex gap-2">
+                                    <button type="button" class="btn btn-ghost-secondary" @click="prompts.push({label: '', prompt: ''})">
+                                        <i class="ti ti-plus me-1"></i>{{ t('Add prompt') }}
+                                    </button>
+                                    <button type="button" class="btn" :class="promptsDirty() ? 'btn-primary' : 'btn-ghost-secondary'"
+                                            :disabled="!promptsDirty()" @click="savePrompts()">
+                                        <i class="ti ti-check me-1"></i><span x-text="$i18n('save')"></span>
+                                    </button>
+                                </div>
+                                {% endcall %}
+
                                 <h3 class="mt-4 mb-1">{{ t('Queue') }}</h3>
                                 <p class="text-secondary small mb-2">{{ t('Every run goes through the queue; one task runs per project at a time.') }}</p>
                                 {% call row('queue_enabled') %}{{ switch('queue_enabled') }}{% endcall %}

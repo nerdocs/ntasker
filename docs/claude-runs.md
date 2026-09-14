@@ -148,6 +148,20 @@ curl -X PUT 127.0.0.1:8766/api/settings/claude_idle_seconds -H 'Content-Type: ap
 The indicators self-heal: a poll refreshes them every ~1.5 s, so a stale "busy" state (e.g. after a server restart)
 clears on its own rather than spinning forever.
 
+## Quick prompts
+
+The run view's toolbar can carry buttons that type a canned prompt into the live session and send it -- the same
+as if you had entered it in the terminal. Configure them under *Settings -> Agents & runs -> Quick prompts* (one
+label + prompt per row), or set the `quick_prompts` key directly:
+
+```
+ntasker config set quick_prompts '[{"label": "Review", "prompt": "Write the report and hand the task off to review."}]'
+```
+
+The text goes straight to the agent's input line, so use them while the session is idle at its prompt. While the
+agent is working, Claude Code queues the text for the next turn; at a permission dialog or a selection prompt the
+keystrokes land in that dialog instead.
+
 ## Security
 
 ntasker has no authentication and binds to `127.0.0.1` only. A session is your **full interactive Claude Code, shell

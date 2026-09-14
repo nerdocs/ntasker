@@ -1024,6 +1024,9 @@ h3 + p + .setting-row {
 .setting-raw-value {
     max-width: 24rem;
 }
+.quick-prompt-label {
+    flex: 0 0 9rem;
+}
 .agent-icon {
     width: 1.25rem;
     height: 1.25rem;

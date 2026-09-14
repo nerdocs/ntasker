@@ -93,6 +93,7 @@ from ntasker.settings import (
     get_default_view,
     get_dir_locks,
     get_queue_enabled,
+    get_quick_prompts,
     get_sidebar_sections,
     get_setting_raw,
     list_settings,
@@ -1047,6 +1048,7 @@ def index(request: Request) -> HTMLResponse:
             # input show where a new project's directory will be created.
             "projects_base": str(projects_base_dir() or ""),
             "sidebar_sections": get_sidebar_sections(),
+            "quick_prompts": get_quick_prompts(),
             "links": LINKS,
             **_page_plugins(),
         },

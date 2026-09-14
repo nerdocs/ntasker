@@ -206,6 +206,8 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // Open/folded state per sidebar section (the `sidebar_sections`
         // setting, rendered into the page so nothing flashes on load).
         sectionOpen: window.__sidebarSections || {},
+        // Canned prompts for the run view's toolbar (the `quick_prompts` setting).
+        quickPrompts: window.__quickPrompts || [],
         // Drag&drop state. ``draggedTaskId`` is captured on dragstart so the
         // drop handler can identify the moving task without parsing dataTransfer
         // (Firefox is picky about reading text/plain mid-drag). ``dragOverColumn``
@@ -2972,6 +2974,19 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         backFromClaudeRun() {
             location.hash = '#/';
             this.loadClaudeSessions();
+        },
+
+        // Type a canned prompt into the active session and submit it. The Enter
+        // goes out on its own tick so the agent's input line sees "text, then
+        // Return" instead of one pasted block with a trailing newline.
+        sendQuickPrompt(prompt) {
+            const s = _claudeTerms.get(this.claudeView);
+            if (!s || s.ws.readyState !== WebSocket.OPEN) return;
+            s.ws.send(JSON.stringify({ type: 'input', data: prompt }));
+            setTimeout(() => {
+                if (s.ws.readyState === WebSocket.OPEN) s.ws.send(JSON.stringify({ type: 'input', data: '\r' }));
+            }, 50);
+            s.term.focus();
         },
 
         // Ask the server to terminate the active session (kills the process group).

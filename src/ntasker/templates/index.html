@@ -38,6 +38,8 @@
         // Folded/open state of the sidebar sections (the `sidebar_sections`
         // setting) -- rendered server-side so nothing flashes on load.
         window.__sidebarSections = {{ sidebar_sections | tojson }};
+        // Quick-prompt buttons of the run view (the `quick_prompts` setting).
+        window.__quickPrompts = {{ quick_prompts | tojson }};
         // Names of the enabled plugins; plugin scripts register mixins on
         // window.ntaskerPlugins (merged into tracker() in app.js).
         window.__plugins = {{ plugins_enabled | tojson }};
@@ -1399,6 +1401,12 @@
                         </ul>
                         <template x-if="activeTab">
                         <span class="ms-auto d-flex align-items-center gap-2">
+                            <template x-for="p in quickPrompts" :key="p.label">
+                                <button type="button" class="btn btn-ghost-secondary" :title="p.prompt"
+                                        :disabled="activeTab.status === 'exited'" @click="sendQuickPrompt(p.prompt)">
+                                    <i class="ti ti-message-forward me-1 fs-3"></i><span x-text="p.label"></span>
+                                </button>
+                            </template>
                             <button type="button" class="btn btn-ghost-success" @click="markDoneFromClaudeRun()">
                                 <i class="ti ti-check me-1 fs-3"></i><span x-text="$i18n('claude_mark_done')"></span>
                             </button>

@@ -127,6 +127,35 @@ def validate_project_groups(value: str) -> str:
     return json.dumps(groups)
 
 
+def validate_quick_prompts(value: str) -> str:
+    """Validator for the ``quick_prompts`` setting.
+
+    JSON array of ``{"label": ..., "prompt": ...}`` objects -- the buttons in
+    the run view's toolbar that type a canned prompt into the live session.
+    Both strings are trimmed; entries with an empty label or prompt are
+    rejected rather than dropped, so a half-filled row surfaces as an error.
+    """
+    import json  # noqa: PLC0415
+
+    err = _("quick_prompts must be a JSON array of {label, prompt} objects with non-empty strings.")
+    try:
+        parsed = json.loads(value or "[]")
+    except ValueError as exc:
+        raise ValueError(err) from exc
+    if not isinstance(parsed, list):
+        raise ValueError(err)
+    items = []
+    for entry in parsed:
+        if not isinstance(entry, dict):
+            raise ValueError(err)
+        label = str(entry.get("label", "")).strip()
+        prompt = str(entry.get("prompt", "")).strip()
+        if not label or not prompt:
+            raise ValueError(err)
+        items.append({"label": label, "prompt": prompt})
+    return json.dumps(items)
+
+
 SIDEBAR_SECTIONS = ("projects", "priority", "phases", "tags", "workspace")
 
 
@@ -364,6 +393,7 @@ VALIDATORS: dict[str, Validator] = {
     "projects_base": validate_projects_base,
     "project_groups": validate_project_groups,
     "sidebar_sections": validate_sidebar_sections,
+    "quick_prompts": validate_quick_prompts,
     "no_project_dir": validate_no_project_dir,
     "claude_idle_seconds": validate_claude_idle_seconds,
     "claude_open_terminal": validate_claude_open_terminal,
@@ -441,6 +471,10 @@ HINTS: dict[str, object] = {
         "Which sidebar sections are folded -- written by the fold buttons in the "
         "sidebar. JSON object {section: true|false}; a missing section is open."
     ),
+    "quick_prompts": _lazy(
+        "Buttons in the run view that type a prompt into the live session "
+        "and send it, e.g. \"write the report and hand off to review\"."
+    ),
     "update_command": _lazy(
         "Shell command run by 'self-update' to upgrade ntasker "
         "(e.g. `uv tool upgrade ntasker`). Unset to auto-detect how ntasker "
@@ -475,6 +509,7 @@ LABELS: dict[str, object] = {
     "dir_locks": _lazy("Directory locks"),
     "require_clean": _lazy("Require a clean git state"),
     "update_command": _lazy("Update command"),
+    "quick_prompts": _lazy("Quick prompts"),
 }
 
 
@@ -736,6 +771,14 @@ def get_sidebar_sections() -> dict[str, bool]:
     raw = get_setting("sidebar_sections")
     saved = json.loads(raw) if raw else {}
     return {name: saved.get(name, True) for name in SIDEBAR_SECTIONS}
+
+
+def get_quick_prompts() -> list[dict[str, str]]:
+    """The configured quick-prompt buttons (``[]`` when unset)."""
+    import json  # noqa: PLC0415
+
+    raw = get_setting("quick_prompts")
+    return json.loads(raw) if raw else []
 
 
 def get_language_setting() -> str:

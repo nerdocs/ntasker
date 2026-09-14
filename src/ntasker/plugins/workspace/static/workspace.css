@@ -138,14 +138,20 @@
     min-height: 1.5rem;
     background: transparent;
     box-shadow: none;
+    /* Tabler's ghost button flips to white-on-grey when hovered or pressed.
+       These rows only get a faint surface tint, so the text must stay in the
+       body colour -- set through Tabler's own button variables so hover and
+       active agree. */
+    --tblr-btn-hover-color: var(--tblr-body-color);
+    --tblr-btn-hover-bg: var(--tblr-bg-surface-tertiary, rgba(0, 0, 0, 0.04));
+    --tblr-btn-active-color: var(--tblr-body-color);
+    --tblr-btn-active-bg: var(--tblr-bg-surface-tertiary, rgba(0, 0, 0, 0.04));
+    --tblr-btn-active-shadow: none;
 }
 .sidebar-ws-item > span {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-}
-.sidebar-ws-item:hover {
-    background-color: var(--tblr-bg-surface-tertiary, rgba(0, 0, 0, 0.04));
 }
 
 /* The workspace file editor. Monospace comes from the utility class; what

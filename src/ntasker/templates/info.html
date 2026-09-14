@@ -108,21 +108,8 @@
                     </div>
                 </div>
 
-                {# What's new -- bundled CHANGELOG.md, rendered client-side. #}
-                {% if changelog %}
-                <div class="card mb-3">
-                    <div class="card-header">
-                        <h3 class="card-title">
-                            <i class="ti ti-sparkles me-1"></i>
-                            {{ t("What's new") }}
-                        </h3>
-                    </div>
-                    <div class="card-body markdown changelog" x-html="changelogHtml"></div>
-                </div>
-                {% endif %}
-
                 {# About / author. #}
-                <div class="card">
+                <div class="card mb-3">
                     <div class="card-header">
                         <h3 class="card-title">
                             <i class="ti ti-heart me-1"></i>
@@ -177,6 +164,19 @@
                         </div>
                     </div>
                 </div>
+
+                {# What's new -- bundled CHANGELOG.md, rendered client-side. #}
+                {% if changelog %}
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="ti ti-sparkles me-1"></i>
+                            {{ t("What's new") }}
+                        </h3>
+                    </div>
+                    <div class="card-body markdown changelog" x-html="changelogHtml"></div>
+                </div>
+                {% endif %}
 
             </div>
         </div>

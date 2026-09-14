@@ -1116,7 +1116,7 @@ msgstr "Lädt …"
 
 #: src/ntasker/app.py:723 src/ntasker/templates/info.html:64
 msgid "News"
-msgstr "Neuigkeiten"
+msgstr "Nachrichten"
 
 #: src/ntasker/app.py:724
 msgid "A new version is available"

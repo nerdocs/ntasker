@@ -1702,7 +1702,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 depends: this.form.depends.map(d => d.id),
                 locks: this.form.locks,
             };
-            if (typeof this.pluginCreatePayload === 'function') this.pluginCreatePayload(payload);
+            if (typeof this.pluginCreatePayload === 'function') this.pluginCreatePayload(body);
             const r = await fetch('/api/tasks', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

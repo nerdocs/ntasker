@@ -4,6 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [3.1.1] — 2026-09-14
+Workspace editor splits front matter into one field per key (agents, skills, notes); fix task creation buttons.
+
 ## [3.1.0] — 2026-09-14
 Task report: `tasks.report`/`report_at`, `ntasker report <id>`, `patch --report`; card icon opens a Markdown modal.
 Queue: only the agent's own hand-off or `done` end a run; an ended session stays queued, flagged, blocking its lane.

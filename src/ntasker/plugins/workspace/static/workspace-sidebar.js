@@ -128,7 +128,7 @@
             },
 
             // One click handler for both kinds of row in a directory listing.
-            wsOpen(entry) {
+            wsOpenEntry(entry) {
                 if (entry.directory) return this.wsBrowse(entry.path);
                 if (entry.previewable) return this.wsPreview(entry.path);
                 return this.wsRevealFile(entry.path);

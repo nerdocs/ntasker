@@ -65,7 +65,7 @@
                         <template x-for="e in wsViewer.dir.entries" :key="e.path">
                             <div class="list-group-item d-flex align-items-center">
                                 <button type="button" class="btn btn-ghost-secondary btn-sm flex-fill text-truncate px-1 ws-dir-entry"
-                                        @click="wsOpen(e)">
+                                        @click="wsOpenEntry(e)">
                                     <i class="ti me-2 text-secondary" :class="wsIcon(e.kind)"></i>
                                     <span x-text="e.name"></span>
                                 </button>

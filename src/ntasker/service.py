@@ -102,6 +102,22 @@ def resolve_update_command(setting: str | None) -> list[str]:
     return [sys.executable, "-m", "pip", "install", "-U", "ntasker"]
 
 
+def resolve_install_command(packages: list[str]) -> list[str]:
+    """Command that installs ``packages`` into the running interpreter's
+    environment -- the same detection as :func:`resolve_update_command`.
+
+    Inside a ``uv tool`` environment the packages are added with ``uv pip``;
+    note that ``uv tool upgrade`` re-resolves from the tool's receipt and
+    drops them again -- ``uv tool install 'ntasker[voice]'`` is the durable
+    form for such installs.
+    """
+    if _has_pip():
+        return [sys.executable, "-m", "pip", "install", *packages]
+    if shutil.which("uv"):
+        return ["uv", "pip", "install", "--python", sys.executable, *packages]
+    return [sys.executable, "-m", "pip", "install", *packages]
+
+
 def _has_pip() -> bool:
     """Whether ``pip`` is importable in the current interpreter."""
     import importlib.util  # noqa: PLC0415

@@ -90,7 +90,10 @@
                     v.partial = '';
                     if (msg.text) this.voiceAppend(msg.text);
                 } else if (msg.type === 'error') {
-                    this.showToast(t('voice_unavailable', { detail: msg.text }), 'danger');
+                    const settings = msg.code === 'no_model' || msg.code === 'no_vosk'
+                        ? { label: t('voice_open_settings'), run: () => { location.href = '/settings'; } }
+                        : null;
+                    this.showToast(t('voice_unavailable', { detail: msg.text }), 'danger', settings);
                     this.voiceStop();
                 }
             },

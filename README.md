@@ -279,8 +279,8 @@ its data stays intact. Contract and slots: [docs/plugins.md](docs/plugins.md). B
 `task_context` -- attach files, notes, personas, skills and MCP servers to a task, handed to the agent in its
 briefing ([docs/task-context.md](docs/task-context.md)); `workspace` -- team (Claude Code subagents), skills, knowledge
 base and documents on a `/workspace` page and in the sidebar, plus a viewer ([docs/workspace.md](docs/workspace.md));
-`voice` (opt-in: `pip install 'ntasker[voice]'` + `ntasker enable voice`) -- dictate task descriptions with local
-speech recognition ([docs/voice.md](docs/voice.md)).
+`voice` (opt-in: `ntasker enable voice` installs the `ntasker[voice]` extra; models are downloaded from a catalog
+on `/settings`) -- dictate task descriptions with local speech recognition ([docs/voice.md](docs/voice.md)).
 Coming from the drfoehn fork? See [docs/migrating-from-fork.md](docs/migrating-from-fork.md).
 
 ## CLI
@@ -308,7 +308,7 @@ Coming from the drfoehn fork? See [docs/migrating-from-fork.md](docs/migrating-f
 | `ntasker config get <k>`    | Read a setting                                                |
 | `ntasker config set <k> <v>`| Write a setting (validated)                                   |
 | `ntasker config unset <k>`  | Remove a setting                                              |
-| `ntasker enable <plugin>`   | Switch a plugin on (opt-in plugins such as `voice`)          |
+| `ntasker enable <plugin>`   | Switch a plugin on; installs its extra's packages if missing |
 | `ntasker disable <plugin>`  | Switch a plugin off                                           |
 | `ntasker agent list`        | List agents with CLI availability + `/task` integration status |
 | `ntasker agent install <key>` | Install / check an agent's skill + `/task` slash-command (`claude`/`opencode`/`pi`) |
@@ -359,6 +359,7 @@ couple of CLI subcommands via subprocess.
 | GET | `/api/agents` | Read-only registry feed: per-agent availability + `/task` integration status, plus the default |
 | GET | `/api/plugins` | Built-in plugins + `enabled` flag; toggle via `PUT /api/settings/plugins_disabled` / `plugins_enabled` |
 | WS | `/api/voice/ws` | Voice plugin: 16 kHz PCM in, `partial` / `final` text out ([docs/voice.md](docs/voice.md)) |
+| GET/POST | `/api/voice/models[/{name}|/job]` | Voice plugin: installed models + catalog, background model download |
 | GET/POST/DELETE | `/api/tasks/{id}/context[/{cid}]` | Attachments ([docs/task-context.md](docs/task-context.md)) |
 | GET/PUT/POST | `/api/workspace[/file|browse|entry|rename|delete|reveal]` | Workspace ([docs/workspace.md](docs/workspace.md)) |
 | GET | `/api/claude-assets/status` | Read-only: `{installed, drift, package_version, claude_home, files[]}` |

@@ -1028,6 +1028,9 @@ def _set_plugin_enabled(name: str, enabled: bool) -> int:
     A default-on plugin lives in ``plugins_disabled``, an opt-in plugin in
     ``plugins_enabled`` -- the same two lists the /settings card writes.
     The validators reject unknown names and switching off the last agent.
+    Enabling a plugin that declares an extra first installs the packages
+    of that extra which are missing (like ``self-update``, into this
+    interpreter's environment).
     """
     plugins.load_all()
     ctx = plugins.REGISTRY.get(name)
@@ -1039,6 +1042,21 @@ def _set_plugin_enabled(name: str, enabled: bool) -> int:
             file=sys.stderr,
         )
         return 2
+    if enabled and ctx.spec.extra:
+        missing = plugins.missing_requirements(ctx.spec.extra)
+        if missing:
+            import subprocess  # noqa: PLC0415
+
+            from ntasker import service  # noqa: PLC0415
+
+            cmd = service.resolve_install_command(missing)
+            print(_("ntasker: installing {pkgs} -- `{cmd}`").format(
+                pkgs=", ".join(missing), cmd=" ".join(cmd)
+            ))
+            rc = subprocess.run(cmd).returncode  # noqa: S603 -- auto-detected installer
+            if rc != 0:
+                print(_("ntasker: install failed (exit {rc})").format(rc=rc), file=sys.stderr)
+                return rc
     key = plugins.SETTING_DISABLED if ctx.spec.default_on else plugins.SETTING_ENABLED
     listed = enabled != ctx.spec.default_on
     row = get_setting_raw(key)

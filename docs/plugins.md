@@ -16,9 +16,11 @@ The list is a *disabled* list so that a plugin added in a later release is on by
 migration. The validator rejects unknown names and any list that would leave no agent plugin enabled: every task needs
 an agent to resolve to. (The ENV path is not validated; a value that disables every agent is ignored for the agents.)
 
-**Opt-in plugins** (`PluginSpec.default_on=False`, e.g. `voice`, which needs the `ntasker[voice]` extra) are off until
-listed in the `plugins_enabled` setting (ENV `NTASKER_PLUGINS_ENABLED`). `ntasker enable <plugin>` /
-`ntasker disable <plugin>` write whichever of the two lists applies to the plugin; the Plugins card does the same.
+**Opt-in plugins** (`PluginSpec.default_on=False`, e.g. `voice`) are off until listed in the `plugins_enabled` setting
+(ENV `NTASKER_PLUGINS_ENABLED`). `ntasker enable <plugin>` / `ntasker disable <plugin>` write whichever of the two
+lists applies to the plugin; the Plugins card does the same. A plugin that names an `extra` (`PluginSpec.extra`, the
+`ntasker[<extra>]` optional dependency group) gets its missing packages installed by `ntasker enable` first, via
+the same installer detection as `self-update`; the card can only switch, not install.
 
 What "disabled" means:
 
@@ -54,6 +56,7 @@ SPEC = PluginSpec(
     description=_lazy("What it adds."),
     kind="feature",                       # "feature" | "agent"
     default_on=True,                      # False = opt-in via plugins_enabled
+    extra=None,                           # "voice" = packages of ntasker[voice]
 )
 
 def register(ctx: PluginContext) -> None:
@@ -96,7 +99,8 @@ usual.
 
 ## API
 
-`GET /api/plugins` lists every built-in with `name`, `label`, `description`, `kind`, `default_on` and `enabled`.
+`GET /api/plugins` lists every built-in with `name`, `label`, `description`, `kind`, `default_on`, `enabled` and
+`settings` (whether it renders its own card on `/settings`; toggling such a plugin reloads the page).
 Toggling goes through `PUT /api/settings/plugins_disabled` (default-on plugins) or `plugins_enabled` (opt-in).
 
 ## Not included

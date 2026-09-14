@@ -101,6 +101,10 @@ class PluginSpec:
     """Enabled unless listed in ``plugins_disabled`` (True), or only when
     listed in ``plugins_enabled`` (False -- opt-in, e.g. needs an extra)."""
 
+    extra: str | None = None
+    """Name of the ``ntasker[<extra>]`` whose packages the plugin needs;
+    ``ntasker enable`` installs what is missing (:func:`missing_requirements`)."""
+
 
 @dataclass
 class PluginContext:
@@ -346,6 +350,25 @@ def run_briefings(task_id: int) -> list[str]:
     return lines
 
 
+def missing_requirements(extra: str) -> list[str]:
+    """Requirement specs of the ``ntasker[extra]`` extra whose distribution
+    is not installed in this interpreter (empty = the extra is complete)."""
+    import importlib.metadata as md  # noqa: PLC0415
+    import re  # noqa: PLC0415
+
+    missing: list[str] = []
+    for req in md.requires("ntasker") or []:
+        if f'extra == "{extra}"' not in req:
+            continue
+        spec = req.split(";", 1)[0].strip()
+        name = re.match(r"[A-Za-z0-9][A-Za-z0-9._-]*", spec)
+        try:
+            md.distribution(name.group(0) if name else spec)
+        except md.PackageNotFoundError:
+            missing.append(spec)
+    return missing
+
+
 def init_schema(conn: sqlite3.Connection) -> None:
     """Run every plugin's schema + migrations (enabled or not; additive only)."""
     load_all()
@@ -367,6 +390,7 @@ def describe() -> list[dict[str, Any]]:
             "kind": ctx.spec.kind,
             "default_on": ctx.spec.default_on,
             "enabled": ctx.name not in off,
+            "settings": "settings" in ctx.slots,
         }
         for ctx in REGISTRY.values()
     ]

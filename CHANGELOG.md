@@ -4,6 +4,11 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [3.2.0] — 2026-09-14
+Voice plugin: local dictation via Vosk with model catalog, background download and spoken punctuation (de/en).
+Settings page reworked into tabs; every plugin gets its own card with switch and settings on the Plugins tab.
+Fix: workspace sidebar sections never expanded.
+
 ## [3.1.2] — 2026-09-14
 Queue: only `done` finishes a run; nTasker never kills a session (not on hand-off, done or delete).
 

@@ -70,10 +70,11 @@
                 {# the agent reads, and once per file is the realistic amount of effort. #}
                 <input type="text" class="form-control mb-3" x-model="picker.note" :placeholder="$i18n('ctx_note_placeholder')">
 
+                {# A row toggles: attached -> detach, not attached -> attach. #}
                 <div class="list-group list-group-flush" x-show="picker.tab !== 'files'">
                     <template x-for="item in pickerItems.slice(0, 100)" :key="item.path">
                         <button type="button" class="list-group-item list-group-item-action d-flex align-items-center"
-                                :disabled="picker.busy" @click="attachContext(item)">
+                                :disabled="picker.busy" @click="toggleContext(item)">
                             <i class="ti me-2 text-secondary" :class="contextChipIcon(item)"></i>
                             <span class="flex-fill context-min-w-0">
                                 <span class="d-block text-truncate fw-bold" x-text="item.label"></span>
@@ -88,7 +89,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-sm btn-primary" @click="picker.open = false" x-text="$i18n('ctx_done')"></button>
+                <button type="button" class="btn btn-sm btn-primary" @click="picker.open = false" x-text="$i18n('close')"></button>
             </div>
         </div>
     </div>

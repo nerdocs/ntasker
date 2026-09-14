@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: ntasker 3.0.0\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-09-14 01:59+0200\n"
+"POT-Creation-Date: 2026-09-14 02:02+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -180,7 +180,6 @@ msgid "Restore the default priority order (discards manual drag order)"
 msgstr ""
 
 #: src/ntasker/app.py:433 src/ntasker/app.py:541
-#: src/ntasker/plugins/task_context/__init__.py:147
 #: src/ntasker/templates/index.html:891
 msgid "Done"
 msgstr ""
@@ -2384,59 +2383,59 @@ msgstr ""
 msgid "Nothing matches your search."
 msgstr ""
 
-#: src/ntasker/plugins/task_context/__init__.py:149
+#: src/ntasker/plugins/task_context/__init__.py:148
 msgid ""
 "Any file or folder on this machine. The agent reads it at the start of "
 "the run."
 msgstr ""
 
-#: src/ntasker/plugins/task_context/__init__.py:151
+#: src/ntasker/plugins/task_context/__init__.py:150
 msgid "Choose files..."
 msgstr ""
 
-#: src/ntasker/plugins/task_context/__init__.py:152
+#: src/ntasker/plugins/task_context/__init__.py:151
 msgid "Choose a folder..."
 msgstr ""
 
-#: src/ntasker/plugins/task_context/__init__.py:153
+#: src/ntasker/plugins/task_context/__init__.py:152
 msgid "Waiting for the file dialog..."
 msgstr ""
 
-#: src/ntasker/plugins/task_context/__init__.py:154
+#: src/ntasker/plugins/task_context/__init__.py:153
 msgid "...or paste a path:"
 msgstr ""
 
-#: src/ntasker/plugins/task_context/__init__.py:155
+#: src/ntasker/plugins/task_context/__init__.py:154
 msgid "/path/to/file-or-folder (one per line)"
 msgstr ""
 
-#: src/ntasker/plugins/task_context/__init__.py:156
+#: src/ntasker/plugins/task_context/__init__.py:155
 msgid "Add"
 msgstr ""
 
-#: src/ntasker/plugins/task_context/__init__.py:157
+#: src/ntasker/plugins/task_context/__init__.py:156
 msgid "No files attached yet."
 msgstr ""
 
-#: src/ntasker/plugins/task_context/__init__.py:158
+#: src/ntasker/plugins/task_context/__init__.py:157
 msgid "Could not open the file dialog."
 msgstr ""
 
-#: src/ntasker/plugins/task_context/__init__.py:159
+#: src/ntasker/plugins/task_context/__init__.py:158
 msgid "Create the task first, then open its attachments."
 msgstr ""
 
-#: src/ntasker/plugins/task_context/__init__.py:160
+#: src/ntasker/plugins/task_context/__init__.py:159
 #: src/ntasker/plugins/workspace/__init__.py:132
 msgid "Could not open it."
 msgstr ""
 
-#: src/ntasker/plugins/task_context/__init__.py:161
+#: src/ntasker/plugins/task_context/__init__.py:160
 #: src/ntasker/plugins/workspace/__init__.py:136
 msgid "runtime missing"
 msgstr ""
 
-#: src/ntasker/plugins/task_context/__init__.py:162
+#: src/ntasker/plugins/task_context/__init__.py:161
 #, python-brace-format
 msgid "Use the tools of the MCP server {name} for this task."
 msgstr ""

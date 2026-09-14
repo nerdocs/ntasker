@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: ntasker 1.3.0\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-09-14 01:59+0200\n"
+"POT-Creation-Date: 2026-09-14 02:02+0200\n"
 "PO-Revision-Date: 2026-05-02 09:19+0200\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: de\n"
@@ -185,7 +185,6 @@ msgstr ""
 "manuelle Reihenfolge)"
 
 #: src/ntasker/app.py:433 src/ntasker/app.py:541
-#: src/ntasker/plugins/task_context/__init__.py:147
 #: src/ntasker/templates/index.html:891
 msgid "Done"
 msgstr "Erledigt"
@@ -288,8 +287,8 @@ msgid ""
 "Session ended without hand-off -- check the task, then remove it or run "
 "it again."
 msgstr ""
-"Sitzung ohne Übergabe beendet -- Aufgabe prüfen, dann entfernen oder erneut "
-"starten."
+"Sitzung ohne Übergabe beendet -- Aufgabe prüfen, dann entfernen oder "
+"erneut starten."
 
 #: src/ntasker/app.py:463
 msgid "ended"
@@ -2565,7 +2564,7 @@ msgstr "Suchen …"
 msgid "Nothing matches your search."
 msgstr "Keine Treffer für deine Suche."
 
-#: src/ntasker/plugins/task_context/__init__.py:149
+#: src/ntasker/plugins/task_context/__init__.py:148
 msgid ""
 "Any file or folder on this machine. The agent reads it at the start of "
 "the run."
@@ -2573,53 +2572,53 @@ msgstr ""
 "Beliebige Datei oder Ordner auf diesem Rechner. Der Agent liest sie zu "
 "Beginn des Laufs."
 
-#: src/ntasker/plugins/task_context/__init__.py:151
+#: src/ntasker/plugins/task_context/__init__.py:150
 msgid "Choose files..."
 msgstr "Dateien wählen…"
 
-#: src/ntasker/plugins/task_context/__init__.py:152
+#: src/ntasker/plugins/task_context/__init__.py:151
 msgid "Choose a folder..."
 msgstr "Ordner wählen…"
 
-#: src/ntasker/plugins/task_context/__init__.py:153
+#: src/ntasker/plugins/task_context/__init__.py:152
 msgid "Waiting for the file dialog..."
 msgstr "Warte auf den Dateidialog…"
 
-#: src/ntasker/plugins/task_context/__init__.py:154
+#: src/ntasker/plugins/task_context/__init__.py:153
 msgid "...or paste a path:"
 msgstr "…oder einen Pfad einfügen:"
 
-#: src/ntasker/plugins/task_context/__init__.py:155
+#: src/ntasker/plugins/task_context/__init__.py:154
 msgid "/path/to/file-or-folder (one per line)"
 msgstr "/pfad/zu/datei-oder-ordner (einer pro Zeile)"
 
-#: src/ntasker/plugins/task_context/__init__.py:156
+#: src/ntasker/plugins/task_context/__init__.py:155
 msgid "Add"
 msgstr "Hinzufügen"
 
-#: src/ntasker/plugins/task_context/__init__.py:157
+#: src/ntasker/plugins/task_context/__init__.py:156
 msgid "No files attached yet."
 msgstr "Noch keine Dateien angehängt."
 
-#: src/ntasker/plugins/task_context/__init__.py:158
+#: src/ntasker/plugins/task_context/__init__.py:157
 msgid "Could not open the file dialog."
 msgstr "Der Datei-Dialog konnte nicht geöffnet werden."
 
-#: src/ntasker/plugins/task_context/__init__.py:159
+#: src/ntasker/plugins/task_context/__init__.py:158
 msgid "Create the task first, then open its attachments."
 msgstr "Lege die Aufgabe zuerst an, dann lassen sich ihre Anhänge öffnen."
 
-#: src/ntasker/plugins/task_context/__init__.py:160
+#: src/ntasker/plugins/task_context/__init__.py:159
 #: src/ntasker/plugins/workspace/__init__.py:132
 msgid "Could not open it."
 msgstr "Das konnte nicht geöffnet werden."
 
-#: src/ntasker/plugins/task_context/__init__.py:161
+#: src/ntasker/plugins/task_context/__init__.py:160
 #: src/ntasker/plugins/workspace/__init__.py:136
 msgid "runtime missing"
 msgstr "Laufzeit fehlt"
 
-#: src/ntasker/plugins/task_context/__init__.py:162
+#: src/ntasker/plugins/task_context/__init__.py:161
 #, python-brace-format
 msgid "Use the tools of the MCP server {name} for this task."
 msgstr "Nutze die Tools des MCP-Servers {name} für diese Aufgabe."

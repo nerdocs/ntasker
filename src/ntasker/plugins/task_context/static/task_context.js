@@ -227,6 +227,26 @@
                 return list.some(c => c.path === path);
             },
 
+            // A picker row toggles: the same click that attached an entry
+            // detaches it again (by path -- the picker knows no entry ids).
+            async toggleContext(item) {
+                const task = this.picker.target;
+                const list = task ? (task.context || []) : this.form.context;
+                const attached = list.find(c => c.path === item.path);
+                if (!attached) return this.attachContext(item);
+                if (!task) {
+                    this.form.context = this.form.context.filter(c => c.path !== item.path);
+                    return;
+                }
+                if (this.picker.busy) return;
+                this.picker.busy = true;
+                try {
+                    await this.detachContext(task, attached);
+                } finally {
+                    this.picker.busy = false;
+                }
+            },
+
             async attachContext(item) {
                 const task = this.picker.target;
                 // Draft mode: no task exists yet -- collect locally, createTask

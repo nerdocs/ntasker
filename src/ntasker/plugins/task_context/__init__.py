@@ -144,7 +144,6 @@ def _js_strings() -> dict[str, str]:
         "ctx_mcp": _("MCP servers"),
         "ctx_search": _("Search..."),
         "ctx_no_match": _("Nothing matches your search."),
-        "ctx_done": _("Done"),
         "ctx_file_hint": _(
             "Any file or folder on this machine. The agent reads it at the start of the run."
         ),

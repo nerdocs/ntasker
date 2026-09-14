@@ -11,6 +11,7 @@ from ntasker.settings import (
     _FALSE_STRINGS,
     _TRUE_STRINGS,
     BIN_OVERRIDE_HINT,
+    BIN_OVERRIDE_LABEL,
     get_setting,
     make_bin_validator,
 )
@@ -78,4 +79,4 @@ def register(ctx: PluginContext) -> None:
             "Yes/no, default no."
         ),
     )
-    ctx.add_setting("opencode_bin", make_bin_validator("opencode"), BIN_OVERRIDE_HINT)
+    ctx.add_setting("opencode_bin", make_bin_validator("opencode"), BIN_OVERRIDE_HINT, BIN_OVERRIDE_LABEL)

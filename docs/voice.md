@@ -23,10 +23,10 @@ this way -- `uv tool install 'ntasker[voice]'` records the extra durably.
 
 ## Models
 
-`/settings` -> *Voice input* card. It lists the installed models (pick one with the radio button) and Vosk's
-catalog, filtered to the UI language by default. *Download* fetches the model in the background -- ntasker streams
-the zip, verifies the catalog's MD5, unpacks and deletes the archive; the card shows the progress and the model is
-selected once it is ready (first one installed becomes the default). Store:
+`/settings` -> *Plugins* -> *Voice input* card. It lists the installed models (pick one with the radio button) and
+Vosk's catalog, filtered to the UI language by default. *Download* fetches the model in the background -- ntasker
+streams the zip, verifies the catalog's MD5, unpacks and deletes the archive; the card shows the progress and the model
+is selected once it is ready (first one installed becomes the default). Store:
 `platformdirs.user_data_dir("nTasker")/vosk-models/<name>` (Linux: `~/.local/share/nTasker/vosk-models/`).
 
 Small models (~50 MB) answer fastest; the big ones (1-2 GB, e.g. `vosk-model-de-0.21`) are noticeably more

@@ -21,6 +21,7 @@ from ntasker.settings import (
     _FALSE_STRINGS,
     _TRUE_STRINGS,
     BIN_OVERRIDE_HINT,
+    BIN_OVERRIDE_LABEL,
     get_setting,
     make_bin_validator,
 )
@@ -139,4 +140,4 @@ def register(ctx: PluginContext) -> None:
         ),
     )
     ctx.add_setting("claude_auto_mode", validate_claude_auto_mode)
-    ctx.add_setting("claude_bin", make_bin_validator("claude"), BIN_OVERRIDE_HINT)
+    ctx.add_setting("claude_bin", make_bin_validator("claude"), BIN_OVERRIDE_HINT, BIN_OVERRIDE_LABEL)

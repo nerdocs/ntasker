@@ -35,6 +35,7 @@ SPEC = PluginSpec(
         "Attach files, notes, personas, skills and MCP servers to a task; "
         "the agent gets them in its briefing."
     ),
+    icon="ti-paperclip",
 )
 
 

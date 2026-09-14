@@ -8,7 +8,8 @@ plugins `claude`, `opencode` and `pi`, plus `task_context` ([task-context.md](ta
 
 ## Switching plugins on and off
 
-- **UI:** `/settings` -> *Plugins* card, one switch per plugin. Takes effect immediately, no restart.
+- **UI:** `/settings` -> *Plugins* tab, one card per plugin with a switch in its header. Takes effect immediately,
+  no restart. A plugin's own settings sit inside its card and are shown only while it is on.
 - **CLI:** `ntasker config set plugins_disabled '["pi"]'` -- a JSON array of plugin names to switch *off*.
 - **ENV:** `NTASKER_PLUGINS_DISABLED=pi,opencode` (comma-separated) wins over the stored setting.
 
@@ -68,7 +69,7 @@ def register(ctx: PluginContext) -> None:
 | Method | What it contributes |
 |---|---|
 | `add_router(router)` | FastAPI `APIRouter`; every route carries a `require_enabled` dependency |
-| `add_setting(key, validator, hint=None)` | settings key: validator into `VALIDATORS`, hint into `HINTS` |
+| `add_setting(key, validator, hint=None, label=None)` | settings key: validator, hint, label registries (see below) |
 | `add_schema(sql)` | `CREATE TABLE IF NOT EXISTS ...` script, run on every `init_db()` |
 | `add_migration(fn)` | idempotent `fn(conn)`, run after the schema on `init_db()` |
 | `add_agent(spec)` | an `AgentSpec` (see [agents.md](agents.md)) |
@@ -76,6 +77,9 @@ def register(ctx: PluginContext) -> None:
 | `add_template_slot(slot, template)` | Jinja template rendered inside a core page slot (below) |
 | `add_js_strings(fn)` | `fn() -> {key: translated}` merged into `window.__i18n` per request |
 | `static_url(filename)` | URL of a file under the plugin's `static/` (`/static/plugins/<name>/<file>`) |
+
+A key registered *with* a `label` is rendered as a text field on the plugin's card on the Plugins tab; one without
+stays CLI/API-only (or is driven by the plugin's own `settings` slot template, like `voice_model`).
 
 Slot templates are addressed relative to `plugins/`, e.g. `"example/templates/sidebar.html"`, and render with the
 page's full context. Slots:
@@ -88,7 +92,7 @@ page's full context. Slots:
 | `task_edit` | `index.html`, edit modal, after the description |
 | `modals` | `index.html`, before the toast container |
 | `scripts` | `index.html`, before `app.js` |
-| `settings` | `settings.html`, below the Plugins card |
+| `settings` | `settings.html`, inside the plugin's card on the Plugins tab (a card-body fragment, no card of its own) |
 
 Frontend: a plugin's `scripts` slot loads a script that pushes a factory onto `window.ntaskerPlugins`. The object it
 returns (state + methods) is merged into the `tracker()` Alpine component; a `pluginInit()` method, if present, is
@@ -99,8 +103,9 @@ usual.
 
 ## API
 
-`GET /api/plugins` lists every built-in with `name`, `label`, `description`, `kind`, `default_on`, `enabled` and
-`settings` (whether it renders its own card on `/settings`; toggling such a plugin reloads the page).
+`GET /api/plugins` lists every built-in with `name`, `label`, `description`, `kind`, `default_on`, `enabled`,
+`fields` (its labelled settings keys), `icon`/`image` and `settings` (whether it fills the `settings` slot; toggling
+such a plugin reloads the page).
 Toggling goes through `PUT /api/settings/plugins_disabled` (default-on plugins) or `plugins_enabled` (opt-in).
 
 ## Not included

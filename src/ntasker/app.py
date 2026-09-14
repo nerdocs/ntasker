@@ -82,6 +82,7 @@ from ntasker.settings import (
     FIELD_CHOICES,
     FIELD_DEFAULTS,
     HINTS,
+    LABELS,
     VALIDATORS,
     delete_setting,
     ensure_settings_table,
@@ -599,10 +600,13 @@ def build_js_strings() -> dict[str, str]:
         # Settings page
         "settings_title": _("Settings"),
         "back_to_tasks": _("back to tasks"),
-        "known_keys": _("Known keys"),
         "unset_placeholder": _("(not set yet)"),
-        "saved": _("{key} saved."),
-        "removed": _("{key} removed."),
+        "saved": _("Saved."),
+        "removed": _("Reset to default."),
+        "plugins_on_count": _("{on} of {total} on"),
+        "on": _("On"),
+        "off": _("Off"),
+        "reset": _("Reset"),
         "agent_integration": _("AI agent integration"),
         "agent_integration_intro": _(
             "ntasker ships a skill (SKILL.md) and a /task <id> slash command for "
@@ -1019,15 +1023,25 @@ def settings_page(request: Request) -> HTMLResponse:
         ]
         for key, opts in FIELD_CHOICES.items()
     }
+    # Plugins tab: one card per plugin; an enabled plugin's ``settings`` slot
+    # templates render inside its card (a disabled plugin's are not loaded).
+    plugin_cards = [
+        {**card, "slot_templates": plugins.REGISTRY[card["name"]].slots.get("settings", [])}
+        if card["enabled"]
+        else {**card, "slot_templates": []}
+        for card in plugins.describe()
+    ]
     response = templates.TemplateResponse(
         request,
         "settings.html",
         context={
             "version": VERSION,
             "hints": hints_text,
+            "labels": {key: str(val) for key, val in LABELS.items()},
             "field_choices": field_choices,
             "field_defaults": FIELD_DEFAULTS,
             "known_keys": sorted(VALIDATORS.keys()),
+            "plugin_cards": plugin_cards,
             "language": get_active_language(),
             "js_strings": build_js_strings(),
             "can_restart": service.service_installed(),

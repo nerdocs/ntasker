@@ -11,22 +11,79 @@
           integrity="{{ asset_sri('tabler-icons-css') }}" crossorigin="anonymous">
     <link rel="stylesheet" href="/static/style.css?v={{ static_bust('style.css') }}">
 
-    {# Frontend i18n bridge -- same pattern as index.html. #}
+    {# Data bridge only -- the page logic lives in settings.js. #}
     <script>
         window.__i18n = {{ js_strings | tojson }};
-        document.addEventListener('alpine:init', () => {
-            Alpine.magic('i18n', () => (key, params) => {
-                let s = (window.__i18n && window.__i18n[key]) || key;
-                if (params) {
-                    for (const [k, v] of Object.entries(params)) {
-                        s = s.replace(new RegExp('\\{' + k + '\\}', 'g'), v);
-                    }
-                }
-                return s;
-            });
-        });
+        window.__settings = {
+            knownKeys: {{ known_keys | tojson }},
+            fieldDefaults: {{ field_defaults | tojson }},
+            fieldChoices: {{ field_choices | tojson }},
+            plugins: {{ plugin_cards | tojson }},
+        };
     </script>
 </head>
+
+{# ---- Macros: one setting = one row (label + hint left, control right). ---- #}
+{% macro row(key) %}
+<div class="setting-row row gx-2 gx-md-4">
+    <div class="col-md-5">
+        <div class="setting-label">{{ labels.get(key, key) }}</div>
+        {% if hints.get(key) %}<div class="text-secondary small mt-1">{{ hints[key] }}</div>{% endif %}
+        <code class="setting-key">{{ key }}</code>
+    </div>
+    <div class="col-md-7">
+        {{ caller() }}
+        {# d-block via :class -- a fixed d-block would defeat x-show (Bootstrap !important). #}
+        <div class="invalid-feedback" :class="errors['{{ key }}'] ? 'd-block' : ''"
+             x-text="errors['{{ key }}']"></div>
+    </div>
+</div>
+{% endmacro %}
+
+{# Enum setting as a segmented control; the active option's description below. #}
+{% macro segmented(key, icons={}) %}
+<div class="btn-group setting-segmented" role="group" aria-label="{{ labels.get(key, key) }}">
+    {% for opt in field_choices[key] %}
+    <input type="radio" class="btn-check" name="seg-{{ key }}" id="seg-{{ key }}-{{ opt.value }}"
+           autocomplete="off" :checked="known['{{ key }}'] === '{{ opt.value }}'"
+           @change="setKnown('{{ key }}', '{{ opt.value }}')">
+    <label class="btn" for="seg-{{ key }}-{{ opt.value }}">
+        {% if icons.get(opt.value) %}<i class="ti {{ icons[opt.value] }} me-1"></i>{% endif %}{{ opt.label }}
+    </label>
+    {% endfor %}
+</div>
+<div class="text-secondary small mt-2" x-show="choiceDesc('{{ key }}')" x-text="choiceDesc('{{ key }}')"></div>
+{% endmacro %}
+
+{# Boolean setting as a switch. on/off are the stored spellings. #}
+{% macro switch(key, on='true', off='false') %}
+<label class="form-check form-switch form-switch-lg mb-0 setting-switch">
+    <input class="form-check-input" type="checkbox" :checked="isOn('{{ key }}')"
+           {% if key == 'require_clean' %}:disabled="!isOn('dir_locks')"{% endif %}
+           @change="setKnown('{{ key }}', $event.target.checked ? '{{ on }}' : '{{ off }}')">
+    <span class="form-check-label" x-text="isOn('{{ key }}') ? $i18n('on') : $i18n('off')"></span>
+</label>
+{% endmacro %}
+
+{# Free-text setting (paths, a command line). Saves on Enter or via the button #}
+{# that appears once the draft differs; Esc reverts; the same slot resets a #}
+{# stored value to its default. #}
+{% macro text(key, placeholder='', extra_class='') %}
+<div class="input-group">
+    <input type="text" class="form-control {{ extra_class }}" x-model="draft['{{ key }}']"
+           @keydown.enter.prevent="saveDraft('{{ key }}')"
+           @keydown.escape.prevent="revert('{{ key }}')"
+           placeholder="{{ placeholder or t('(not set yet)') }}">
+    <button type="button" class="btn"
+            :class="isDirty('{{ key }}') ? 'btn-primary' : 'btn-ghost-secondary'"
+            :disabled="!isDirty('{{ key }}') && !known['{{ key }}']"
+            @click="isDirty('{{ key }}') ? saveDraft('{{ key }}') : unsetKnown('{{ key }}')">
+        <i class="ti me-1" :class="isDirty('{{ key }}') ? 'ti-check' : 'ti-rotate'"></i>
+        <span x-text="isDirty('{{ key }}') ? $i18n('save') : $i18n('reset')"></span>
+    </button>
+</div>
+{% endmacro %}
+
 <body>
 <div class="page" x-data="settingsPage()" x-init="init()">
 
@@ -66,391 +123,348 @@
 
         <div class="page-body">
             <div class="container-fluid">
+                <div class="card settings-card">
+                    <div class="row g-0">
 
-                {# Known-keys section: bekannte Settings mit Hint-Text. #}
-                <div class="card mb-3">
-                    <div class="card-header">
-                        <h3 class="card-title">
-                            <i class="ti ti-key me-1"></i>
-                            {{ t('Known keys') }}
-                        </h3>
-                    </div>
-                    <div class="card-body">
-                        {% for key in known_keys %}
-                        {# These keys have dedicated widgets in the AI-agent cards #}
-                        {# below; claude_auto_mode is the legacy boolean replaced by #}
-                        {# claude_permission_mode. None is shown as free text here. #}
-                        {% if key not in ('claude_auto_mode', 'claude_permission_mode', 'claude_open_terminal', 'default_agent', 'opencode_auto') and not key.endswith('_bin') %}
-                        <div class="mb-3">
-                            <label class="form-label fw-bold" :for="`known-{{ key }}`">
-                                <code>{{ key }}</code>
-                            </label>
-                            {% if hints.get(key) %}
-                            <div class="text-muted small mb-1">{{ hints[key] }}</div>
-                            {% endif %}
-                            {% if (field_choices | default({})).get(key) %}
-                            {# Enum setting -- radio group, saved on change (like the #}
-                            {# permission-mode / default-agent widgets). #}
-                            {% for opt in field_choices[key] %}
-                            <label class="form-check">
-                                <input class="form-check-input" type="radio" name="known-{{ key }}"
-                                       value="{{ opt.value }}"
-                                       :checked="known['{{ key }}'] === '{{ opt.value }}'"
-                                       @change="known['{{ key }}'] = '{{ opt.value }}'; saveKnown('{{ key }}')">
-                                <span class="form-check-label">
-                                    <strong>{{ opt.label }}</strong>{% if opt.desc %} — {{ opt.desc }}{% endif %}
-                                </span>
-                            </label>
-                            {% endfor %}
-                            {# Fields without a default option (e.g. language) fall back #}
-                            {# to the app's automatic behaviour when unset -- offer a #}
-                            {# reset so the user can leave the en/de radios again. #}
-                            {% if key not in (field_defaults | default({})) %}
-                            <button type="button" class="btn btn-sm btn-ghost-secondary mt-1"
-                                    x-show="known['{{ key }}']" x-cloak
-                                    @click="unsetKnown('{{ key }}')">
-                                <i class="ti ti-rotate-clockwise me-1"></i>{{ t('Automatic') }}
-                            </button>
-                            {% endif %}
-                            {% elif key == 'claude_idle_seconds' %}
-                            {# Numeric setting -- number input with a unit affordance. #}
-                            <div class="input-group" style="max-width: 16rem">
-                                <input type="number" min="0.5" step="0.5" class="form-control"
-                                       id="known-{{ key }}"
-                                       x-model="known['{{ key }}']"
-                                       :placeholder="$i18n('unset_placeholder')">
-                                <span class="input-group-text">{{ t('seconds') }}</span>
-                                <button type="button" class="btn btn-primary"
-                                        @click="saveKnown('{{ key }}')">
-                                    <i class="ti ti-device-floppy fs-3"></i>
-                                </button>
-                                <button type="button" class="btn btn-ghost-danger"
-                                        @click="unsetKnown('{{ key }}')"
-                                        :disabled="!known['{{ key }}']">
-                                    <i class="ti ti-trash fs-3"></i>
-                                </button>
+                        {# ---- Section rail. Badges carry live state, not decoration. ---- #}
+                        <div class="col-12 col-md-3 border-end settings-nav">
+                            <div class="card-body">
+                                <div class="list-group list-group-transparent">
+                                    <a href="#general" class="list-group-item list-group-item-action d-flex align-items-center"
+                                       :class="tab === 'general' && 'active'" @click.prevent="go('general')">
+                                        <i class="ti ti-adjustments-horizontal me-2 fs-3"></i>{{ t('General') }}
+                                    </a>
+                                    <a href="#agents" class="list-group-item list-group-item-action d-flex align-items-center"
+                                       :class="tab === 'agents' && 'active'" @click.prevent="go('agents')">
+                                        <i class="ti ti-robot me-2 fs-3"></i>{{ t('Agents & runs') }}
+                                        <span class="badge bg-yellow ms-auto" x-show="agentsMissing()" x-cloak
+                                              :title="$i18n('agent_cli_missing')"></span>
+                                    </a>
+                                    <a href="#plugins" class="list-group-item list-group-item-action d-flex align-items-center"
+                                       :class="tab === 'plugins' && 'active'" @click.prevent="go('plugins')">
+                                        <i class="ti ti-puzzle me-2 fs-3"></i>{{ t('Plugins') }}
+                                        <span class="badge bg-secondary-lt ms-auto font-monospace"
+                                              x-text="pluginsOn() + '/' + plugins.length"></span>
+                                    </a>
+                                    <a href="#maintenance" class="list-group-item list-group-item-action d-flex align-items-center"
+                                       :class="tab === 'maintenance' && 'active'" @click.prevent="go('maintenance')">
+                                        <i class="ti ti-tool me-2 fs-3"></i>{{ t('Maintenance') }}
+                                    </a>
+                                </div>
                             </div>
-                            {% else %}
-                            {# Free-text setting (paths, shell command). #}
-                            <div class="input-group">
-                                <input type="text" class="form-control"
-                                       id="known-{{ key }}"
-                                       x-model="known['{{ key }}']"
-                                       :placeholder="$i18n('unset_placeholder')">
-                                <button type="button" class="btn btn-primary"
-                                        @click="saveKnown('{{ key }}')">
-                                    <i class="ti ti-device-floppy me-1 fs-3"></i>
-                                    {{ t('Save') }}
-                                </button>
-                                <button type="button" class="btn btn-ghost-danger"
-                                        @click="unsetKnown('{{ key }}')"
-                                        :disabled="!known['{{ key }}']">
-                                    <i class="ti ti-trash fs-3"></i>
-                                </button>
-                            </div>
-                            {% endif %}
-                            {# CAVE: `d-block` via :class instead of fixed -- Bootstrap sets #}
-                            {# `.d-block { display: block !important }` which would override #}
-                            {# AlpineJS x-show's `style="display: none"` (same bug as the #}
-                            {# projects_dir banner). Only assign d-block when an error exists. #}
-                            <div class="invalid-feedback"
-                                 :class="errors['{{ key }}'] ? 'd-block' : ''"
-                                 x-text="errors['{{ key }}']"></div>
                         </div>
-                        {% endif %}
-                        {% endfor %}
-                    </div>
-                </div>
 
-                {# Plugins: switch optional features and agent integrations. #}
-                <div class="card mb-3">
-                    <div class="card-header">
-                        <h3 class="card-title">
-                            <i class="ti ti-puzzle me-1"></i>
-                            <span x-text="$i18n('plugins')"></span>
-                        </h3>
-                    </div>
-                    <div class="card-body">
-                        <p class="text-muted small mb-3" x-text="$i18n('plugins_intro')"></p>
-                        <template x-for="p in plugins" :key="p.name">
-                            <label class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox"
-                                       :checked="p.enabled"
-                                       @change="setPluginEnabled(p.name, $event.target.checked)">
-                                <span class="form-check-label">
-                                    <strong x-text="p.label"></strong>
-                                    — <span x-text="p.description"></span>
-                                </span>
-                            </label>
-                        </template>
-                        <div class="invalid-feedback" :class="errors['plugins_disabled'] ? 'd-block' : ''"
-                             x-text="errors['plugins_disabled']"></div>
-                        <div class="invalid-feedback" :class="errors['plugins_enabled'] ? 'd-block' : ''"
-                             x-text="errors['plugins_enabled']"></div>
-                    </div>
-                </div>
-                {% for tpl in plugin_slots['settings'] %}{% include tpl %}{% endfor %}
+                        <div class="col-12 col-md-9 settings-panels">
 
-                {# AI agent integration: common settings shared by every agent. #}
-                <div class="card mb-3">
-                    <div class="card-header">
-                        <h3 class="card-title">
-                            <i class="ti ti-robot me-1"></i>
-                            <span x-text="$i18n('agent_integration')"></span>
-                        </h3>
-                    </div>
-                    <div class="card-body">
-                        <p class="text-muted small mb-3" x-text="$i18n('agent_integration_intro')"></p>
+                            {# ================= General ================= #}
+                            <div class="card-body" x-show="tab === 'general'">
+                                <h2 class="mb-1">{{ t('General') }}</h2>
+                                <p class="text-secondary mb-3">{{ t('Language, start view and where the UI libraries come from.') }}</p>
 
-                        {# Default agent for new tasks. #}
-                        <label class="form-label fw-bold" x-text="$i18n('default_agent_label')"></label>
-                        <div class="text-muted small mb-2" x-text="$i18n('default_agent_hint')"></div>
-                        <select class="form-select mb-3" style="max-width: 24rem"
-                                x-model="known['default_agent']" @change="saveKnown('default_agent')">
-                            <template x-for="a in agents" :key="a.key">
-                                <option :value="a.key" x-text="a.label"></option>
-                            </template>
-                        </select>
+                                {% call row('language') %}{{ segmented('language') }}{% endcall %}
+                                {% call row('default_view') %}
+                                    {{ segmented('default_view', {'list': 'ti-list', 'kanban': 'ti-layout-kanban'}) }}
+                                {% endcall %}
+                                {% call row('assets_mode') %}
+                                    {{ segmented('assets_mode', {'auto': 'ti-wand', 'cdn': 'ti-cloud', 'local': 'ti-database'}) }}
+                                {% endcall %}
 
-                        <hr class="my-3">
-
-                        {# Open terminal immediately -- common to every agent run. #}
-                        <label class="form-check form-switch mb-0">
-                            <input class="form-check-input" type="checkbox"
-                                   :checked="openTerminal"
-                                   @change="setOpenTerminal($event.target.checked)">
-                            <span class="form-check-label">
-                                <strong>{{ t('Open terminal immediately on start') }}</strong>
-                                — {{ t('When off, Create + Run and the per-task run button start the session in the background and keep you on the board. Click the running task to open its terminal.') }}
-                            </span>
-                        </label>
-                    </div>
-                </div>
-
-                {# Per-agent integration cards (Claude / OpenCode / Pi): availability, #}
-                {# agent-specific run options, and the /task install status. Read-only #}
-                {# status -- installs go through the `ntasker agent install` CLI. #}
-                <template x-for="a in agents" :key="a.key">
-                    <div class="card mb-3">
-                        <div class="card-header d-flex align-items-center">
-                            <img :src="a.icon" alt=""
-                                 style="width: 1.4rem; height: 1.4rem; object-fit: contain;" class="me-2">
-                            <h3 class="card-title mb-0" x-text="a.label"></h3>
-                            <span class="badge ms-2"
-                                  :class="a.available ? 'bg-success-lt' : 'bg-secondary-lt'"
-                                  x-text="a.available ? $i18n('agent_available_badge') : $i18n('agent_unavailable_badge')"></span>
-                        </div>
-                        <div class="card-body">
-                            <div class="alert alert-warning mb-3" x-show="!a.available" x-cloak>
-                                <i class="ti ti-alert-triangle me-1"></i>
-                                <span x-text="$i18n('agent_cli_missing')"></span>
+                                <h3 class="mt-4 mb-1">{{ t('Projects') }}</h3>
+                                <p class="text-secondary small mb-2">{{ t('Where projects live on disk. Paths may start with ~.') }}</p>
+                                {% call row('projects_base') %}{{ text('projects_base', '~/Projects', 'font-monospace') }}{% endcall %}
+                                {% call row('no_project_dir') %}{{ text('no_project_dir', '~/Projects', 'font-monospace') }}{% endcall %}
                             </div>
 
-                            {# Binary-path override: point ntasker at the CLI when it #}
-                            {# is not on the server's PATH. Saved on blur/Enter. #}
-                            <label class="form-label fw-bold" x-text="$i18n('agent_bin_label')"></label>
-                            <div class="text-muted small mb-1" x-text="$i18n('agent_bin_hint')"></div>
-                            <div class="input-group mb-3" style="max-width: 38rem">
-                                <input type="text" class="form-control font-monospace"
-                                       x-model="known[a.key + '_bin']"
-                                       @keydown.enter.prevent="saveKnown(a.key + '_bin'); refreshAgents()"
-                                       :placeholder="a.key === 'opencode' ? '/home/you/.opencode/bin/opencode' : ('/path/to/' + a.key)">
-                                <button type="button" class="btn btn-primary"
-                                        @click="saveKnown(a.key + '_bin'); refreshAgents()">
-                                    <i class="ti ti-device-floppy me-1 fs-3"></i>{{ t('Save') }}
-                                </button>
-                                <button type="button" class="btn btn-ghost-danger"
-                                        @click="unsetKnown(a.key + '_bin'); refreshAgents()"
-                                        :disabled="!known[a.key + '_bin']">
-                                    <i class="ti ti-trash fs-3"></i>
-                                </button>
-                            </div>
-                            <div class="invalid-feedback mb-2"
-                                 :class="errors[a.key + '_bin'] ? 'd-block' : ''"
-                                 x-text="errors[a.key + '_bin']"></div>
+                            {# ================= Agents & runs ================= #}
+                            <div class="card-body" x-show="tab === 'agents'" x-cloak>
+                                <h2 class="mb-1">{{ t('Agents & runs') }}</h2>
+                                <p class="text-secondary mb-3">{{ t('How runs start and how the queue hands out work. Configure each agent on the Plugins tab.') }}</p>
 
-                            {# Claude: permission mode for spawned sessions. #}
-                            <template x-if="a.key === 'claude'">
-                                <div class="mb-3">
-                                    <label class="form-label fw-bold">{{ t('Permission mode') }}</label>
-                                    <div class="text-muted small mb-2">
-                                        {{ t('How a spawned Claude session handles permissions. Passed to the CLI as --permission-mode.') }}
+                                {% call row('default_agent') %}
+                                <div class="form-selectgroup">
+                                    <template x-for="a in agents" :key="a.key">
+                                        <label class="form-selectgroup-item">
+                                            <input type="radio" name="default-agent" class="form-selectgroup-input"
+                                                   :value="a.key" :checked="known['default_agent'] === a.key"
+                                                   @change="setKnown('default_agent', a.key)">
+                                            <span class="form-selectgroup-label d-flex align-items-center">
+                                                <img :src="a.icon" alt="" class="agent-icon me-2">
+                                                <span x-text="a.label"></span>
+                                            </span>
+                                        </label>
+                                    </template>
+                                </div>
+                                {% endcall %}
+                                {% call row('claude_open_terminal') %}{{ switch('claude_open_terminal') }}{% endcall %}
+                                {% call row('claude_idle_seconds') %}
+                                <div class="d-flex align-items-center gap-3">
+                                    <input type="range" class="form-range flex-fill" min="1" max="30" step="0.5"
+                                           x-model="draft['claude_idle_seconds']"
+                                           @change="saveDraft('claude_idle_seconds')">
+                                    <span class="badge bg-secondary-lt font-monospace setting-range-value"
+                                          x-text="draft['claude_idle_seconds'] + ' s'"></span>
+                                </div>
+                                {% endcall %}
+
+                                <h3 class="mt-4 mb-1">{{ t('Queue') }}</h3>
+                                <p class="text-secondary small mb-2">{{ t('Every run goes through the queue; one task runs per project at a time.') }}</p>
+                                {% call row('queue_enabled') %}{{ switch('queue_enabled') }}{% endcall %}
+                                {% call row('dir_locks') %}{{ switch('dir_locks', 'on', 'off') }}{% endcall %}
+                                {% call row('require_clean') %}{{ switch('require_clean', 'on', 'off') }}{% endcall %}
+                            </div>
+
+                            {# ================= Plugins ================= #}
+                            <div class="card-body" x-show="tab === 'plugins'" x-cloak>
+                                <div class="d-flex align-items-center mb-1">
+                                    <h2 class="mb-0">{{ t('Plugins') }}</h2>
+                                    <span class="badge bg-secondary-lt ms-auto"
+                                          x-text="$i18n('plugins_on_count', {on: pluginsOn(), total: plugins.length})"></span>
+                                </div>
+                                <p class="text-secondary mb-3">{{ t('Switch optional features and agent integrations on or off. Takes effect immediately; at least one agent stays enabled. A plugin shows its settings only while it is on.') }}</p>
+                                <div class="invalid-feedback mb-2" :class="errors['plugins_disabled'] ? 'd-block' : ''"
+                                     x-text="errors['plugins_disabled']"></div>
+                                <div class="invalid-feedback mb-2" :class="errors['plugins_enabled'] ? 'd-block' : ''"
+                                     x-text="errors['plugins_enabled']"></div>
+
+                                {% for kind, heading in [('agent', t('Agents')), ('feature', t('Features'))] %}
+                                <div class="hr-text {{ 'mt-2' if loop.first else 'mt-4' }}">{{ heading }}</div>
+                                {% for p in plugin_cards if p.kind == kind %}
+                                <div class="card plugin-card mb-3" id="plugin-{{ p.name }}"
+                                     :class="pluginOn('{{ p.name }}') ? '' : 'plugin-off'">
+                                    <div class="card-header">
+                                        <span class="plugin-icon">
+                                            {% if p.image %}<img src="{{ p.image }}" alt="">
+                                            {% else %}<i class="ti {{ p.icon }}"></i>{% endif %}
+                                        </span>
+                                        <div class="flex-fill min-w-0">
+                                            <h3 class="card-title mb-0">
+                                                {{ p.label }}
+                                                {% if p.kind == 'agent' %}
+                                                <template x-if="agentFor('{{ p.name }}')">
+                                                    <span class="badge ms-2"
+                                                          :class="agentFor('{{ p.name }}').available ? 'bg-success-lt' : 'bg-warning-lt'"
+                                                          x-text="agentFor('{{ p.name }}').available ? $i18n('agent_available_badge') : $i18n('agent_unavailable_badge')"></span>
+                                                </template>
+                                                {% endif %}
+                                            </h3>
+                                            <div class="text-secondary small">{{ p.description }}</div>
+                                        </div>
+                                        <label class="form-check form-switch form-switch-lg mb-0 ms-3 plugin-switch">
+                                            <input class="form-check-input" type="checkbox"
+                                                   :checked="pluginOn('{{ p.name }}')"
+                                                   @change="setPluginEnabled('{{ p.name }}', $event.target.checked)"
+                                                   aria-label="{{ p.label }}">
+                                        </label>
                                     </div>
-                                    <label class="form-check">
-                                        <input class="form-check-input" name="permission-mode" type="radio" value="default"
-                                               :checked="permissionMode === 'default'" @change="setPermissionMode('default')">
-                                        <span class="form-check-label"><strong>{{ t('Normal') }}</strong>
-                                            — {{ t('Claude asks before it edits a file or runs a command.') }}</span>
-                                    </label>
-                                    <label class="form-check">
-                                        <input class="form-check-input" name="permission-mode" type="radio" value="auto"
-                                               :checked="permissionMode === 'auto'" @change="setPermissionMode('auto')">
-                                        <span class="form-check-label"><strong>{{ t('Auto') }}</strong>
-                                            — {{ t('Claude accepts its own actions automatically.') }}</span>
-                                    </label>
-                                    <label class="form-check">
-                                        <input class="form-check-input" name="permission-mode" type="radio" value="plan"
-                                               :checked="permissionMode === 'plan'" @change="setPermissionMode('plan')">
-                                        <span class="form-check-label"><strong>{{ t('Plan') }}</strong>
-                                            — {{ t('Claude only plans and makes no changes.') }}</span>
-                                    </label>
-                                    <label class="form-check mb-0">
-                                        <input class="form-check-input" name="permission-mode" type="radio" value="bypassPermissions"
-                                               :checked="permissionMode === 'bypassPermissions'" @change="setPermissionMode('bypassPermissions')">
-                                        <span class="form-check-label"><strong>{{ t('Bypass permissions') }}</strong>
-                                            — {{ t('Claude skips every confirmation and runs unattended.') }}</span>
-                                    </label>
-                                    <div class="alert alert-danger mt-3 mb-0"
-                                         x-show="permissionMode === 'bypassPermissions'" x-cloak>
-                                        <div class="d-flex">
-                                            <i class="ti ti-alert-triangle-filled me-2 fs-3"></i>
-                                            <div>
-                                                <strong>{{ t('This can be dangerous.') }}</strong>
-                                                {{ t('With permissions bypassed, Claude can change or delete files and run shell commands in the project directory without asking first. Only use it for projects you fully trust.') }}
+                                    {# A plugin without settings is header-only. #}
+                                    {% if p.kind == 'agent' or p.fields or p.slot_templates %}
+                                    <div class="card-body" x-show="pluginOn('{{ p.name }}')" x-cloak>
+                                        {% if p.kind == 'agent' %}
+                                        <template x-if="agentFor('{{ p.name }}') && !agentFor('{{ p.name }}').available">
+                                            <div class="alert alert-warning mb-3">
+                                                <i class="ti ti-alert-triangle me-1"></i>
+                                                <span x-text="$i18n('agent_cli_missing')"></span>
                                             </div>
+                                        </template>
+                                        {% endif %}
+
+                                        {% for key in p.fields %}
+                                        {% call row(key) %}
+                                            {{ text(key, '/path/to/' + p.name if key.endswith('_bin') else '', 'font-monospace') }}
+                                        {% endcall %}
+                                        {% endfor %}
+
+                                        {% if p.name == 'claude' %}
+                                        <div class="setting-row row gx-2 gx-md-4">
+                                            <div class="col-md-5">
+                                                <div class="setting-label">{{ t('Permission mode') }}</div>
+                                                <div class="text-secondary small mt-1">{{ t('How a spawned Claude session handles permissions. Passed to the CLI as --permission-mode.') }}</div>
+                                                <code class="setting-key">claude_permission_mode</code>
+                                            </div>
+                                            <div class="col-md-7">
+                                                {% for value, label, desc in [
+                                                    ('default', t('Normal'), t('Claude asks before it edits a file or runs a command.')),
+                                                    ('auto', t('Auto'), t('Claude accepts its own actions automatically.')),
+                                                    ('plan', t('Plan'), t('Claude only plans and makes no changes.')),
+                                                    ('bypassPermissions', t('Bypass permissions'), t('Claude skips every confirmation and runs unattended.')),
+                                                ] %}
+                                                <label class="form-check">
+                                                    <input class="form-check-input" name="permission-mode" type="radio" value="{{ value }}"
+                                                           :checked="permissionMode === '{{ value }}'" @change="setPermissionMode('{{ value }}')">
+                                                    <span class="form-check-label"><strong>{{ label }}</strong>
+                                                        <span class="text-secondary">— {{ desc }}</span></span>
+                                                </label>
+                                                {% endfor %}
+                                                <div class="alert alert-danger mt-3 mb-0"
+                                                     x-show="permissionMode === 'bypassPermissions'" x-cloak>
+                                                    <div class="d-flex">
+                                                        <i class="ti ti-alert-triangle-filled me-2 fs-3"></i>
+                                                        <div>
+                                                            <strong>{{ t('This can be dangerous.') }}</strong>
+                                                            {{ t('With permissions bypassed, Claude can change or delete files and run shell commands in the project directory without asking first. Only use it for projects you fully trust.') }}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div class="invalid-feedback" :class="errors['claude_permission_mode'] ? 'd-block' : ''"
+                                                     x-text="errors['claude_permission_mode']"></div>
+                                            </div>
+                                        </div>
+                                        {% endif %}
+
+                                        {% if p.name == 'opencode' %}
+                                        <div class="setting-row row gx-2 gx-md-4">
+                                            <div class="col-md-5">
+                                                <div class="setting-label" x-text="$i18n('opencode_auto_label')"></div>
+                                                <div class="text-secondary small mt-1" x-text="$i18n('opencode_auto_hint')"></div>
+                                                <code class="setting-key">opencode_auto</code>
+                                            </div>
+                                            <div class="col-md-7">{{ switch('opencode_auto') }}</div>
+                                        </div>
+                                        {% endif %}
+
+                                        {% if p.kind == 'agent' %}
+                                        {# /task integration status -- read-only, installs go through the CLI. #}
+                                        <template x-if="agentFor('{{ p.name }}')">
+                                            <div class="setting-row row gx-2 gx-md-4">
+                                                <div class="col-md-5">
+                                                    <div class="setting-label" x-text="$i18n('agent_integration')"></div>
+                                                    <div class="text-secondary small mt-1" x-text="$i18n('agent_integration_intro')"></div>
+                                                </div>
+                                                <div class="col-md-7">
+                                                    <div class="datagrid">
+                                                        <div class="datagrid-item">
+                                                            <div class="datagrid-title" x-text="$i18n('installed')"></div>
+                                                            <div class="datagrid-content">
+                                                                <span class="badge"
+                                                                      :class="agentFor('{{ p.name }}').assets.installed ? 'bg-success-lt' : 'bg-secondary-lt'"
+                                                                      x-text="agentFor('{{ p.name }}').assets.installed ? $i18n('yes') : $i18n('no')"></span>
+                                                            </div>
+                                                        </div>
+                                                        <div class="datagrid-item">
+                                                            <div class="datagrid-title" x-text="$i18n('drift')"></div>
+                                                            <div class="datagrid-content">
+                                                                <span class="badge"
+                                                                      :class="agentFor('{{ p.name }}').assets.drift ? 'bg-warning-lt' : 'bg-success-lt'"
+                                                                      x-text="agentFor('{{ p.name }}').assets.drift ? $i18n('yes') : $i18n('no')"></span>
+                                                            </div>
+                                                        </div>
+                                                        <div class="datagrid-item">
+                                                            <div class="datagrid-title" x-text="$i18n('agent_home')"></div>
+                                                            <div class="datagrid-content">
+                                                                <code class="text-secondary small" x-text="agentFor('{{ p.name }}').assets.home || '-'"></code>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="alert alert-info mt-3 mb-0" x-show="agentFor('{{ p.name }}').assets.installed === false">
+                                                        <div class="mb-1">
+                                                            <i class="ti ti-info-circle me-1"></i>
+                                                            <span x-text="$i18n('agent_not_installed')"></span>
+                                                        </div>
+                                                        <pre class="mb-0"><code>ntasker agent install {{ p.name }}</code></pre>
+                                                    </div>
+                                                    <div class="alert alert-warning mt-3 mb-0"
+                                                         x-show="agentFor('{{ p.name }}').assets.installed === true && agentFor('{{ p.name }}').assets.drift === true">
+                                                        <div class="mb-1">
+                                                            <i class="ti ti-alert-triangle me-1"></i>
+                                                            <span x-text="$i18n('agent_drift')"></span>
+                                                        </div>
+                                                        <pre class="mb-0"><code>ntasker agent install {{ p.name }} --force</code></pre>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </template>
+                                        {% endif %}
+
+                                        {% for tpl in p.slot_templates %}{% include tpl %}{% endfor %}
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                {% endfor %}
+                                {% endfor %}
+                            </div>
+
+                            {# ================= Maintenance ================= #}
+                            <div class="card-body" x-show="tab === 'maintenance'" x-cloak>
+                                <h2 class="mb-1">{{ t('Maintenance') }}</h2>
+                                <p class="text-secondary mb-3">{{ t('Service, updates and the raw settings store.') }}</p>
+
+                                {% if can_restart %}
+                                {# Restart only recovers under an installed systemd/launchd unit. #}
+                                <div class="setting-row row gx-2 gx-md-4">
+                                    <div class="col-md-5">
+                                        <div class="setting-label">{{ t('Restart the service') }}</div>
+                                        <div class="text-secondary small mt-1">{{ t('Needed to pick up a new version or apply changes that require a fresh start.') }}</div>
+                                    </div>
+                                    <div class="col-md-7">
+                                        <button type="button" class="btn btn-warning"
+                                                @click="restartServer()" :disabled="restarting || activeTasks.length > 0">
+                                            <i class="ti ti-refresh me-1"></i>
+                                            <span x-text="restarting ? $i18n('restart_initiated') : $i18n('restart_server')"></span>
+                                        </button>
+                                        <div class="alert alert-info mt-3 mb-0" x-show="activeTasks.length > 0" x-cloak>
+                                            <i class="ti ti-player-pause me-1"></i>
+                                            <span x-text="i18n('restart_blocked_tasks', {n: activeTasks.length})"></span>
                                         </div>
                                     </div>
                                 </div>
-                            </template>
-
-                            {# OpenCode: auto-approve actions (--auto). #}
-                            <template x-if="a.key === 'opencode'">
-                                <label class="form-check form-switch mb-3">
-                                    <input class="form-check-input" type="checkbox"
-                                           :checked="opencodeAuto" @change="setOpencodeAuto($event.target.checked)">
-                                    <span class="form-check-label">
-                                        <strong x-text="$i18n('opencode_auto_label')"></strong>
-                                        — <span x-text="$i18n('opencode_auto_hint')"></span>
-                                    </span>
-                                </label>
-                            </template>
-
-                            {# /task integration status. #}
-                            <div class="datagrid">
-                                <div class="datagrid-item">
-                                    <div class="datagrid-title" x-text="$i18n('installed')"></div>
-                                    <div class="datagrid-content">
-                                        <span class="badge"
-                                              :class="a.assets.installed ? 'bg-success-lt' : 'bg-secondary-lt'"
-                                              x-text="a.assets.installed ? $i18n('yes') : $i18n('no')"></span>
+                                {% endif %}
+                                <div class="setting-row row gx-2 gx-md-4">
+                                    <div class="col-md-5">
+                                        <div class="setting-label">{{ t('Compact the database') }}</div>
+                                        <div class="text-secondary small mt-1">{{ t('Reclaim the space left by deleted and archived tasks and refresh the query optimizer.') }}</div>
+                                    </div>
+                                    <div class="col-md-7">
+                                        <button type="button" class="btn btn-outline-secondary"
+                                                @click="cleanupDatabase()" :disabled="cleaning">
+                                            <i class="ti ti-database-cog me-1"></i>
+                                            <span x-text="cleaning ? $i18n('db_cleanup_running') : $i18n('db_cleanup')"></span>
+                                        </button>
                                     </div>
                                 </div>
-                                <div class="datagrid-item">
-                                    <div class="datagrid-title" x-text="$i18n('drift')"></div>
-                                    <div class="datagrid-content">
-                                        <span class="badge"
-                                              :class="a.assets.drift ? 'bg-warning-lt' : 'bg-success-lt'"
-                                              x-text="a.assets.drift ? $i18n('yes') : $i18n('no')"></span>
-                                    </div>
+                                {% call row('update_command') %}{{ text('update_command', 'uv tool upgrade ntasker', 'font-monospace') }}{% endcall %}
+
+                                <h3 class="mt-4 mb-1">{{ t('Stored values') }}</h3>
+                                <p class="text-secondary small mb-2">{{ t('Everything in the settings table, including keys written by the UI or the CLI. Deleting a row resets that key to its default.') }}</p>
+                                <div class="table-responsive" x-show="rows.length > 0">
+                                    <table class="table table-sm table-vcenter">
+                                        <thead>
+                                            <tr>
+                                                <th>{{ t('Key') }}</th>
+                                                <th>{{ t('Value') }}</th>
+                                                <th>{{ t('updated') }}</th>
+                                                <th></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <template x-for="r in rows" :key="r.key">
+                                                <tr>
+                                                    <td><code x-text="r.key"></code></td>
+                                                    <td class="text-truncate setting-raw-value" x-text="r.value"></td>
+                                                    <td class="text-secondary small text-nowrap" x-text="r.updated_at"></td>
+                                                    <td class="text-end">
+                                                        <button class="btn btn-sm btn-ghost-danger"
+                                                                @click="unsetKnown(r.key)"
+                                                                :aria-label="$i18n('delete')">
+                                                            <i class="ti ti-trash fs-3"></i>
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            </template>
+                                        </tbody>
+                                    </table>
                                 </div>
-                                <div class="datagrid-item">
-                                    <div class="datagrid-title" x-text="$i18n('agent_home')"></div>
-                                    <div class="datagrid-content">
-                                        <code class="text-muted small" x-text="a.assets.home || '-'"></code>
-                                    </div>
+                                <div x-show="rows.length === 0" class="empty" x-cloak>
+                                    <p class="empty-title">{{ t('No settings configured.') }}</p>
+                                    <p class="empty-subtitle text-secondary">
+                                        {{ t('Everything runs on defaults. Change a setting on any tab, or via CLI:') }}
+                                        <code>ntasker config set &lt;key&gt; &lt;value&gt;</code>
+                                    </p>
                                 </div>
                             </div>
 
-                            <div class="alert alert-info mt-3 mb-0" x-show="a.assets.installed === false" x-cloak>
-                                <div class="mb-1">
-                                    <i class="ti ti-info-circle me-1"></i>
-                                    <span x-text="$i18n('agent_not_installed')"></span>
-                                </div>
-                                <pre class="mb-0"><code x-text="'ntasker agent install ' + a.key"></code></pre>
-                            </div>
-                            <div class="alert alert-warning mt-3 mb-0"
-                                 x-show="a.assets.installed === true && a.assets.drift === true" x-cloak>
-                                <div class="mb-1">
-                                    <i class="ti ti-alert-triangle me-1"></i>
-                                    <span x-text="$i18n('agent_drift')"></span>
-                                </div>
-                                <pre class="mb-0"><code x-text="'ntasker agent install ' + a.key + ' --force'"></code></pre>
-                            </div>
-                        </div>
-                    </div>
-                </template>
-
-                {# All settings (read-only listing, includes ad-hoc keys). #}
-                <div class="card">
-                    <div class="card-header">
-                        <h3 class="card-title">
-                            <i class="ti ti-list me-1"></i>
-                            {{ t('All settings (DB content)') }}
-                        </h3>
-                    </div>
-                    <div class="card-body">
-                        <table class="table table-sm" x-show="rows.length > 0">
-                            <thead>
-                                <tr>
-                                    <th>{{ t('Key') }}</th>
-                                    <th>{{ t('Value') }}</th>
-                                    <th>{{ t('updated') }}</th>
-                                    <th></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <template x-for="r in rows" :key="r.key">
-                                    <tr>
-                                        <td><code x-text="r.key"></code></td>
-                                        <td class="text-truncate" style="max-width: 24rem;" x-text="r.value"></td>
-                                        <td class="text-muted small" x-text="r.updated_at"></td>
-                                        <td class="text-end">
-                                            <button class="btn btn-sm btn-ghost-danger"
-                                                    @click="unsetRow(r.key)"
-                                                    :aria-label="$i18n('delete')">
-                                                <i class="ti ti-trash fs-3"></i>
-                                            </button>
-                                        </td>
-                                    </tr>
-                                </template>
-                            </tbody>
-                        </table>
-                        <div x-show="rows.length === 0" class="empty">
-                            <p class="empty-title">{{ t('No settings configured.') }}</p>
-                            <p class="empty-subtitle text-muted">
-                                {{ t('Configure a known key above, or set one via CLI:') }}
-                                <code>ntasker config set &lt;key&gt; &lt;value&gt;</code>.
-                            </p>
                         </div>
                     </div>
                 </div>
-
-                {# House keeping: server restart (service-only) + database compaction. #}
-                <div class="card mb-3">
-                    <div class="card-header">
-                        <h3 class="card-title">
-                            <i class="ti ti-tools me-2"></i>
-                            {{ t('House keeping') }}
-                        </h3>
-                    </div>
-                    <div class="card-body">
-                        {% if can_restart %}
-                        {# Restart only recovers under an installed systemd/launchd unit. #}
-                        <p class="text-muted small mb-2">
-                            {{ t('Restart the ntasker service -- needed to pick up a new version or apply changes that require a fresh start.') }}
-                        </p>
-                        <button type="button" class="btn btn-warning"
-                                @click="restartServer()" :disabled="restarting || activeTasks.length > 0">
-                            <i class="ti ti-refresh me-1"></i>
-                            <span x-text="restarting ? $i18n('restart_initiated') : $i18n('restart_server')"></span>
-                        </button>
-                        <div class="alert alert-info mt-3 mb-0" x-show="activeTasks.length > 0" x-cloak>
-                            <i class="ti ti-player-pause me-1"></i>
-                            <span x-text="i18n('restart_blocked_tasks', {n: activeTasks.length})"></span>
-                        </div>
-                        <hr class="my-3">
-                        {% endif %}
-                        <p class="text-muted small mb-2">
-                            {{ t('Compact the database: reclaim the space left by deleted and archived tasks and refresh the query optimizer.') }}
-                        </p>
-                        <button type="button" class="btn btn-outline-secondary"
-                                @click="cleanupDatabase()" :disabled="cleaning">
-                            <i class="ti ti-database-cog me-1"></i>
-                            <span x-text="cleaning ? $i18n('db_cleanup_running') : $i18n('db_cleanup')"></span>
-                        </button>
-                    </div>
-                </div>
-
             </div>
         </div>
     </div>
@@ -464,295 +478,8 @@
 </div>
 
 <script src="/static/topnav.js?v={{ static_bust('topnav.js') }}"></script>
+<script src="/static/settings.js?v={{ static_bust('settings.js') }}"></script>
 <script src="{{ asset('alpine-js') }}"
         integrity="{{ asset_sri('alpine-js') }}" crossorigin="anonymous" defer></script>
-<script>
-function settingsPage() {
-    return {
-        rows: [],
-        known: {},
-        errors: {},
-        // True while a restart is in flight -- disables the button and drives
-        // the "Restarting..." label until the server answers /healthz again.
-        restarting: false,
-        // boot_id of the server we asked to restart, captured before the POST.
-        // waitForServer reloads only once a *different* process answers.
-        _bootId: null,
-        // Task ids with a live Claude session (running OR input-waiting). A
-        // restart kills the whole cgroup, so while this is non-empty the button
-        // is disabled and an info banner explains why. Polled by refreshSessions.
-        activeTasks: [],
-        // True while a VACUUM/optimize is in flight -- disables the button.
-        cleaning: false,
-        // Agent registry (GET /api/agents): one entry per agent with
-        // {key,label,icon,available,assets}. Drives the per-agent cards.
-        agents: [],
-        agentDefault: 'claude',
-        // Plugin list (GET /api/plugins): {name,label,description,kind,enabled}.
-        plugins: [],
-
-        async init() {
-            await this.refresh();
-            await this.refreshPlugins();
-            await this.refreshAgents();
-            await this.refreshSessions();
-            // Keep the restart guard live -- a task may start or end while the
-            // page is open. Cheap poll; the page reloads itself on restart.
-            setInterval(() => this.refreshSessions(), 4000);
-        },
-
-        // Refresh the live-session list that gates the restart button.
-        async refreshSessions() {
-            try {
-                const r = await fetch('/api/claude/sessions', {cache: 'no-store'});
-                if (!r.ok) return;
-                const body = await r.json();
-                this.activeTasks = body.active || [];
-            } catch (e) {
-                // Best-effort -- leave the previous value on a transient error.
-            }
-        },
-
-        // Translate an i18n key with optional {placeholder} substitution.
-        // Mirrors the Alpine `$i18n` magic so the same dict drives both.
-        i18n(key, params) {
-            let s = (window.__i18n && window.__i18n[key]) || key;
-            if (params) {
-                for (const [k, v] of Object.entries(params)) {
-                    s = s.replace(new RegExp('\\{' + k + '\\}', 'g'), v);
-                }
-            }
-            return s;
-        },
-
-        async refresh() {
-            const r = await fetch('/api/settings');
-            this.rows = await r.json();
-            // Snapshot known-key values into the editable fields.
-            const byKey = {};
-            for (const row of this.rows) byKey[row.key] = row.value;
-            // Populate ALL known keys (incl. unset ones) so x-model bindings
-            // have a slot. Unset enum keys fall back to their effective default
-            // so the matching radio shows selected; everything else to ''.
-            const knownKeys = {{ known_keys | tojson }};
-            const fieldDefaults = {{ field_defaults | default({}) | tojson }};
-            for (const k of knownKeys) this.known[k] = byKey[k] || fieldDefaults[k] || '';
-        },
-
-        async refreshAgents() {
-            try {
-                const r = await fetch('/api/agents');
-                if (!r.ok) return;
-                const data = await r.json();
-                this.agents = data.agents || [];
-                this.agentDefault = data.default || 'claude';
-                // Reflect the effective default in the selector when unset, so
-                // the dropdown shows the agent tasks actually fall back to.
-                if (!this.known['default_agent']) this.known['default_agent'] = this.agentDefault;
-            } catch (e) {
-                // Best-effort -- the cards stay empty.
-            }
-        },
-
-        async refreshPlugins() {
-            try {
-                const r = await fetch('/api/plugins');
-                if (r.ok) this.plugins = await r.json();
-            } catch (e) {
-                // Best-effort -- the card stays empty.
-            }
-        },
-
-        // Flip one plugin switch: rewrite the plugins_disabled list (default-on
-        // plugins) or the plugins_enabled list (opt-in plugins) and let the
-        // server validate it (unknown name, last agent). The agent cards
-        // follow, since /api/agents lists only enabled agents.
-        async setPluginEnabled(name, enabled) {
-            const plugin = this.plugins.find(p => p.name === name);
-            const key = plugin.default_on ? 'plugins_disabled' : 'plugins_enabled';
-            const listed = plugin.default_on ? !enabled : enabled;
-            const names = this.plugins
-                .filter(p => p.default_on === plugin.default_on && p.name !== name && p.enabled !== plugin.default_on)
-                .map(p => p.name);
-            if (listed) names.push(name);
-            this.known[key] = JSON.stringify(names);
-            await this.saveKnown(key);
-            await this.refreshPlugins();
-            await this.refreshAgents();
-            // A plugin with its own settings card renders server-side.
-            if (plugin.settings && !this.errors[key]) location.reload();
-        },
-
-        async saveKnown(key) {
-            this.errors[key] = '';
-            const value = this.known[key];
-            const r = await fetch(`/api/settings/${encodeURIComponent(key)}`, {
-                method: 'PUT',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({value: value}),
-            });
-            if (!r.ok) {
-                const body = await r.json().catch(() => ({}));
-                this.errors[key] = body.detail || `HTTP ${r.status}`;
-                return;
-            }
-            await this.refresh();
-            this.toast(this.i18n('saved', {key: key}));
-        },
-
-        async unsetKnown(key) {
-            const r = await fetch(`/api/settings/${encodeURIComponent(key)}`, {method: 'DELETE'});
-            if (r.status === 204) {
-                this.known[key] = '';
-                await this.refresh();
-                this.toast(this.i18n('removed', {key: key}));
-            }
-        },
-
-        async unsetRow(key) {
-            await this.unsetKnown(key);
-        },
-
-        // Permission mode, read from the known-key slot refresh() fills. Falls
-        // back to the legacy claude_auto_mode boolean (true -> bypass) and then
-        // to 'default' so the radios always reflect the effective mode.
-        get permissionMode() {
-            const m = (this.known['claude_permission_mode'] || '').trim();
-            if (['default', 'auto', 'plan', 'bypassPermissions'].includes(m)) return m;
-            if (['1', 'true', 'yes', 'on'].includes(
-                (this.known['claude_auto_mode'] || '').toLowerCase())) return 'bypassPermissions';
-            return 'default';
-        },
-
-        async setPermissionMode(mode) {
-            this.known['claude_permission_mode'] = mode;
-            await this.saveKnown('claude_permission_mode');
-        },
-
-        // "Open terminal immediately on start" toggle. Defaults to true (the
-        // historical behaviour) when the key is unset; only a stored falsy
-        // value flips it off.
-        get openTerminal() {
-            const v = (this.known['claude_open_terminal'] || '').toLowerCase();
-            return !['0', 'false', 'no', 'off'].includes(v);
-        },
-
-        async setOpenTerminal(checked) {
-            this.known['claude_open_terminal'] = checked ? 'true' : 'false';
-            await this.saveKnown('claude_open_terminal');
-        },
-
-        // OpenCode "--auto" toggle. Defaults to off when the key is unset.
-        get opencodeAuto() {
-            const v = (this.known['opencode_auto'] || '').toLowerCase();
-            return ['1', 'true', 'yes', 'on'].includes(v);
-        },
-
-        async setOpencodeAuto(checked) {
-            this.known['opencode_auto'] = checked ? 'true' : 'false';
-            await this.saveKnown('opencode_auto');
-        },
-
-        // Restart the supervised server, then poll /healthz until it answers
-        // again and reload. Only reachable when the service is installed -- the
-        // button is server-rendered behind a can_restart guard.
-        async restartServer() {
-            if (this.restarting) return;
-            this.restarting = true;
-            // Remember which process we are talking to. A restart that failed to
-            // replace it (e.g. the supervisor cannot bind because something else
-            // holds the port) would otherwise answer /healthz straight away and
-            // look like a success -- while still serving the old code.
-            this._bootId = await this.serverBootId();
-            try {
-                const r = await fetch('/api/service/restart', {method: 'POST'});
-                if (!r.ok) {
-                    this.restarting = false;
-                    // 409 tasks_running: a task slipped in between poll and click.
-                    // Refresh the guard so the button disables, and explain.
-                    const body = await r.json().catch(() => ({}));
-                    if (body.reason === 'tasks_running') {
-                        this.activeTasks = body.tasks || [];
-                        this.toast(this.i18n('restart_blocked_tasks', {n: this.activeTasks.length}));
-                    } else {
-                        this.toast(this.i18n('restart_failed'));
-                    }
-                    return;
-                }
-            } catch (e) {
-                // The socket may drop as the process goes down -- expected.
-            }
-            this.waitForServer();
-        },
-
-        // The running server's process identity, or null when it is unreachable.
-        async serverBootId() {
-            try {
-                const r = await fetch('/healthz', {cache: 'no-store'});
-                if (!r.ok) return null;
-                return (await r.json()).boot_id || null;
-            } catch (e) {
-                return null;
-            }
-        },
-
-        // Poll /healthz after a restart; reload once a *different* process
-        // answers. Waiting for any answer is not enough -- see restartServer.
-        waitForServer(tries = 0) {
-            setTimeout(async () => {
-                const id = await this.serverBootId();
-                if (id && id !== this._bootId) { location.reload(); return; }
-                if (tries < 40) {
-                    this.waitForServer(tries + 1);
-                    return;
-                }
-                this.restarting = false;
-                // Still the same process: the restart was accepted but never
-                // took effect. Say that instead of reloading into old code.
-                this.toast(this.i18n(id ? 'restart_unchanged' : 'restart_timeout'));
-            }, tries === 0 ? 1000 : 500);
-        },
-
-        // Compact the database (VACUUM + optimize) and report the bytes freed.
-        async cleanupDatabase() {
-            if (this.cleaning) return;
-            this.cleaning = true;
-            try {
-                const r = await fetch('/api/maintenance/cleanup', {method: 'POST'});
-                if (!r.ok) { this.toast(this.i18n('db_cleanup_failed')); return; }
-                const body = await r.json();
-                if (body.bytes_freed > 0) {
-                    this.toast(this.i18n('db_cleanup_done', {freed: this.fmtBytes(body.bytes_freed)}));
-                } else {
-                    this.toast(this.i18n('db_cleanup_compact'));
-                }
-            } catch (e) {
-                this.toast(this.i18n('db_cleanup_failed'));
-            } finally {
-                this.cleaning = false;
-            }
-        },
-
-        // Human-readable byte count for the cleanup toast (e.g. "12.3 KB").
-        fmtBytes(n) {
-            if (n < 1024) return `${n} B`;
-            const units = ['KB', 'MB', 'GB'];
-            let v = n / 1024, i = 0;
-            while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
-            return `${v.toFixed(1)} ${units[i]}`;
-        },
-
-        toast(msg) {
-            const c = document.getElementById('toast-container');
-            const el = document.createElement('div');
-            el.className = 'toast show align-items-center text-bg-secondary border-0';
-            el.setAttribute('role', 'alert');
-            el.innerHTML = `<div class="d-flex"><div class="toast-body">${msg}</div></div>`;
-            c.appendChild(el);
-            setTimeout(() => el.remove(), 3000);
-        },
-    };
-}
-</script>
 </body>
 </html>

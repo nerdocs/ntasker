@@ -32,6 +32,7 @@ SPEC = PluginSpec(
     ),
     default_on=False,
     extra="voice",
+    icon="ti-microphone",
 )
 
 
@@ -59,7 +60,6 @@ def _js_strings() -> dict[str, str]:
         "voice_unavailable": _("Voice input is not available: {detail}"),
         "voice_open_settings": _("Open settings"),
         # settings card
-        "voice_card": _("Voice input"),
         "voice_vosk_missing": _(
             "The speech recognition package is not installed. Run `ntasker enable voice` "
             "in a terminal -- it installs the ntasker[voice] extra."

@@ -928,3 +928,129 @@ body {
     max-height: 70vh;
     overflow-y: auto;
 }
+
+/* ---------------- Settings page ----------------
+ * Tabler's settings layout: a section rail on the left, one panel per
+ * section on the right. A setting is one row -- label + hint left, control
+ * right -- so every tab scans the same way. */
+.settings-nav .list-group-item {
+    border-radius: var(--tblr-border-radius);
+}
+@media (min-width: 768px) {
+    .settings-nav .card-body {
+        position: sticky;
+        top: 1rem;
+    }
+}
+/* Narrow screens: the rail becomes a horizontally scrolling pill row. */
+@media (max-width: 767.98px) {
+    .settings-nav {
+        border-right: 0 !important;
+        border-bottom: var(--tblr-border-width) var(--tblr-border-style) var(--tblr-border-color);
+    }
+    .settings-nav .list-group {
+        flex-direction: row;
+        gap: .25rem;
+        overflow-x: auto;
+        white-space: nowrap;
+    }
+    .settings-nav .list-group-item {
+        flex: 0 0 auto;
+        width: auto;
+    }
+    .settings-nav .list-group-item .ms-auto {
+        margin-left: .5rem !important;
+    }
+}
+.settings-panels > .card-body h2 {
+    font-size: 1.25rem;
+}
+.setting-row {
+    padding: 1rem 0;
+    row-gap: .5rem;
+    border-top: var(--tblr-border-width) var(--tblr-border-style) var(--tblr-border-color-translucent);
+}
+.setting-row:first-of-type,
+h3 + p + .setting-row {
+    border-top: 0;
+}
+.setting-label {
+    font-weight: var(--tblr-font-weight-medium);
+}
+/* The stored key, for the CLI (`ntasker config set <key> ...`). Quiet on
+ * purpose -- the label is what the eye reads. */
+.setting-key {
+    display: inline-block;
+    margin-top: .35rem;
+    font-size: .7rem;
+    color: var(--tblr-secondary);
+    background: none;
+    padding: 0;
+}
+.setting-segmented .btn {
+    --tblr-btn-bg: var(--tblr-bg-surface);
+    --tblr-btn-color: var(--tblr-body-color);
+    --tblr-btn-border-color: var(--tblr-border-color);
+}
+.setting-switch .form-check-label {
+    padding-top: .15rem;
+}
+.setting-range-value {
+    min-width: 3.5rem;
+    text-align: center;
+}
+.setting-raw-value {
+    max-width: 24rem;
+}
+.agent-icon {
+    width: 1.25rem;
+    height: 1.25rem;
+    object-fit: contain;
+}
+
+/* Plugin cards: a switchboard. Off = header only, faded; the body (the
+ * plugin's own settings) exists only while it is on. */
+.plugin-card {
+    transition: opacity .15s ease;
+}
+.plugin-card.plugin-off {
+    opacity: .6;
+}
+.plugin-card.plugin-off:hover,
+.plugin-card.plugin-off:focus-within {
+    opacity: 1;
+}
+.plugin-card .card-header {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+}
+.plugin-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: var(--tblr-border-radius);
+    background: var(--tblr-bg-surface-secondary);
+    font-size: 1.25rem;
+    color: var(--tblr-secondary);
+}
+.plugin-icon img {
+    width: 1.4rem;
+    height: 1.4rem;
+    object-fit: contain;
+}
+.plugin-switch .form-check-input {
+    cursor: pointer;
+}
+.plugin-card .card-body .setting-row:first-child {
+    padding-top: 0;
+    border-top: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+    .plugin-card {
+        transition: none;
+    }
+}

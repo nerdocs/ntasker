@@ -88,3 +88,17 @@ def test_index_renders_with_slots(client):
     assert r.status_code == 200
     enabled = json.loads(r.text.split("window.__plugins = ")[1].split(";")[0])
     assert enabled[:3] == ["claude", "opencode", "pi"] and "task_context" in enabled
+
+
+def test_settings_page_plugin_cards(client):
+    # Every plugin gets a card; a plugin's ``settings`` slot renders inside
+    # its card only while it is enabled (voice is opt-in, so off by default).
+    r = client.get("/settings")
+    assert r.status_code == 200
+    for name in plugins.BUILTIN:
+        assert f'id="plugin-{name}"' in r.text
+    assert "voice-settings.js" not in r.text
+    client.put("/api/settings/plugins_enabled", json={"value": '["voice"]'})
+    r = client.get("/settings")
+    assert "voice-settings.js" in r.text
+    assert "voice_model" in r.text

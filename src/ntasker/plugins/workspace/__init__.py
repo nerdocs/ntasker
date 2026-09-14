@@ -28,6 +28,7 @@ SPEC = PluginSpec(
         "Team, skills, knowledge base and documents: a /workspace page, sidebar "
         "sections and a file viewer with editing."
     ),
+    icon="ti-layout-grid",
 )
 
 
@@ -148,7 +149,8 @@ def register(ctx: PluginContext) -> None:
     ctx.add_setting(
         "workspace_skills_dir",
         _make_dir_validator("workspace_skills_dir"),
-        _lazy(
+        label=_lazy("Skills directory"),
+        hint=_lazy(
             "Directory holding your Claude Code skills, shown on the Workspace "
             "page with a load/broken verdict per skill. Defaults to "
             "~/.claude/skills when unset."
@@ -157,7 +159,8 @@ def register(ctx: PluginContext) -> None:
     ctx.add_setting(
         "workspace_team_dir",
         _make_dir_validator("workspace_team_dir"),
-        _lazy(
+        label=_lazy("Team directory"),
+        hint=_lazy(
             "Directory of Claude Code subagent files (one Markdown file per agent "
             "with name/description front matter). Defaults to ~/.claude/agents "
             "when unset."
@@ -166,7 +169,8 @@ def register(ctx: PluginContext) -> None:
     ctx.add_setting(
         "workspace_wiki_dir",
         _make_dir_validator("workspace_wiki_dir"),
-        _lazy(
+        label=_lazy("Knowledge base"),
+        hint=_lazy(
             "Root of your Markdown knowledge base (e.g. an Obsidian vault). The "
             "Workspace page lists its areas with note counts and links straight "
             "into Obsidian. Unset hides the card."
@@ -175,7 +179,8 @@ def register(ctx: PluginContext) -> None:
     ctx.add_setting(
         "workspace_docs_dir",
         _make_dir_validator("workspace_docs_dir"),
-        _lazy(
+        label=_lazy("Documents directory"),
+        hint=_lazy(
             "Output folder for generated documents (offers, reviews, exports, "
             "plans -- ~/.claude/plans is a natural pick). The Workspace page "
             "lists them newest-first and previews Markdown, text and CSV files "

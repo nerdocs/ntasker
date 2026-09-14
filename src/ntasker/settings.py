@@ -387,18 +387,13 @@ it before any DB write.
 # evaluated at import time, but each entry stays bound to its msgid.
 HINTS: dict[str, object] = {
     "assets_mode": _lazy(
-        "Vendor assets (Tabler/Alpine): cdn (default, jsDelivr + SRI), "
-        "local (from user-data dir, populate via `ntasker assets fetch`), "
-        "auto (local if cache complete, else cdn)."
+        "Where the UI libraries (Tabler, Alpine) load from. Fill the local "
+        "cache with `ntasker assets fetch`."
     ),
-    "language": _lazy(
-        "UI language. Leave unset for automatic (follows the browser's "
-        "Accept-Language header, fallback English), or pick English or German."
-    ),
+    "language": _lazy("Language of the web UI and the CLI."),
     "default_view": _lazy(
-        "Default view on startup: 'list' (classic task list) or 'kanban' "
-        "(4-column board). The frontend remembers the last user choice in "
-        "localStorage; this setting drives the initial pick on a fresh browser."
+        "View a fresh browser opens with. The browser remembers your last "
+        "choice afterwards."
     ),
     "projects_base": _lazy(
         "Base path for project names, e.g. '~/Projekte'. Discovered Claude "
@@ -415,37 +410,32 @@ HINTS: dict[str, object] = {
         "answer its trust prompt. ENV: NTASKER_NO_PROJECT_DIR."
     ),
     "default_agent": _lazy(
-        "Default AI coding agent for new tasks (and the fallback for any task "
-        "without an explicit agent): claude, opencode or pi. ENV: "
-        "NTASKER_DEFAULT_AGENT."
+        "Agent new tasks use, and the fallback for any task without one. "
+        "ENV: NTASKER_DEFAULT_AGENT."
     ),
     "claude_open_terminal": _lazy(
-        "When starting a Claude session (Create + Run or the per-task run "
-        "button), open the terminal immediately (true, default) or start it in "
-        "the background and stay on the board (false). ENV: "
-        "NTASKER_CLAUDE_OPEN_TERMINAL."
+        "When off, Create + Run and the per-task run button start the session "
+        "in the background and keep you on the board. Click the running task "
+        "to open its terminal. ENV: NTASKER_CLAUDE_OPEN_TERMINAL."
     ),
     "claude_idle_seconds": _lazy(
-        "How many seconds a live Claude session may stay silent before ntasker "
-        "treats it as waiting for your input (the CLI sends no explicit "
-        "'I have a question' signal). Lower = quicker 'waiting' badge but more "
-        "false positives; higher = fewer false positives but slower. Default 8."
+        "How long a live session may stay silent before it counts as waiting "
+        "for your input (the CLI sends no explicit signal). Shorter reacts "
+        "faster but flags more false alarms. Default 8 seconds."
     ),
     "queue_enabled": _lazy(
-        "Pause switch for the task queue -- the only way a session starts. On "
-        "by default; off pauses it: run buttons still queue tasks, but nothing "
-        "new starts until you press Resume on the queue panel. One task runs "
-        "per project at a time. ENV: NTASKER_QUEUE_ENABLED."
+        "When off, run buttons still queue tasks, but nothing new starts until "
+        "you press Resume on the queue panel. One task runs per project at a "
+        "time. ENV: NTASKER_QUEUE_ENABLED."
     ),
     "dir_locks": _lazy(
-        "Directory locks: a queued task waits while another live session holds "
-        "one of its directories (its own project's or a locked project's), and "
-        "Claude Code sessions refuse edits inside other projects' directories "
-        "they do not hold. Off: one task per project lane only."
+        "A queued task waits while another live session holds one of its "
+        "directories, and sessions refuse edits inside directories they do not "
+        "hold. Off: one task per project lane only."
     ),
     "require_clean": _lazy(
-        "Only start a queued task when every directory it holds is git-clean "
-        "(no uncommitted changes). Needs directory locks on."
+        "Only start a queued task when every directory it holds has no "
+        "uncommitted changes. Needs directory locks."
     ),
     "sidebar_sections": _lazy(
         "Which sidebar sections are folded -- written by the fold buttons in the "
@@ -458,14 +448,33 @@ HINTS: dict[str, object] = {
     ),
     "plugins_disabled": _lazy(
         "JSON array of plugins switched off, e.g. [\"pi\", \"workspace\"]. "
-        "Toggle them on the Plugins card above; at least one agent plugin "
-        "stays enabled. ENV: NTASKER_PLUGINS_DISABLED (comma-separated)."
+        "Toggle them on the Plugins tab; at least one agent plugin stays "
+        "enabled. ENV: NTASKER_PLUGINS_DISABLED (comma-separated)."
     ),
     "plugins_enabled": _lazy(
         "JSON array of opt-in plugins switched on, e.g. [\"voice\"]. Toggle "
-        "them on the Plugins card above or with `ntasker enable <plugin>`. "
+        "them on the Plugins tab or with `ntasker enable <plugin>`. "
         "ENV: NTASKER_PLUGINS_ENABLED (comma-separated)."
     ),
+}
+
+
+# Human-facing labels for the keys the /settings page renders as form
+# fields. Plugins contribute theirs through ``PluginContext.add_setting``.
+# A key without a label is shown by its raw name (the CLI spelling).
+LABELS: dict[str, object] = {
+    "assets_mode": _lazy("UI libraries"),
+    "language": _lazy("Language"),
+    "default_view": _lazy("Start view"),
+    "projects_base": _lazy("Projects directory"),
+    "no_project_dir": _lazy("Directory for runs without a project"),
+    "default_agent": _lazy("Default agent"),
+    "claude_open_terminal": _lazy("Open the terminal when a run starts"),
+    "claude_idle_seconds": _lazy("Silence before a session counts as waiting"),
+    "queue_enabled": _lazy("Queue starts tasks automatically"),
+    "dir_locks": _lazy("Directory locks"),
+    "require_clean": _lazy("Require a clean git state"),
+    "update_command": _lazy("Update command"),
 }
 
 
@@ -476,11 +485,12 @@ HINTS: dict[str, object] = {
 # default so an unset key still shows its active choice pre-selected.
 FIELD_CHOICES: dict[str, list[tuple[str, object, object]]] = {
     "assets_mode": [
+        ("auto", _lazy("Auto"), _lazy("Use the local cache when complete, otherwise fall back to the CDN.")),
         ("cdn", _lazy("CDN"), _lazy("Load Tabler/Alpine from jsDelivr (with SRI). Needs internet.")),
         ("local", _lazy("Local"), _lazy("Serve from the user-data cache (fill it via `ntasker assets fetch`).")),
-        ("auto", _lazy("Auto"), _lazy("Use the local cache when complete, otherwise fall back to the CDN.")),
     ],
     "language": [
+        ("auto", _lazy("Automatic"), _lazy("Follows the browser language, falls back to English.")),
         ("en", _lazy("English"), None),
         ("de", _lazy("Deutsch"), None),
     ],
@@ -500,7 +510,9 @@ FIELD_CHOICES: dict[str, list[tuple[str, object, object]]] = {
 
 FIELD_DEFAULTS: dict[str, str] = {
     "assets_mode": "auto",
+    "language": "auto",
     "default_view": DEFAULT_VIEW_FALLBACK,
+    "claude_idle_seconds": f"{CLAUDE_IDLE_SECONDS_DEFAULT:g}",
     "dir_locks": "on",
     "require_clean": "off",
 }
@@ -547,6 +559,7 @@ BIN_OVERRIDE_HINT = _lazy(
     "Full path to the agent's CLI when it is not on the server's PATH "
     "(e.g. an absolute path under your home). Unset to auto-detect."
 )
+BIN_OVERRIDE_LABEL = _lazy("CLI path")
 
 
 # ---------------------------------------------------------------------------

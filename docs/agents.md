@@ -41,8 +41,8 @@ Permission/auto-approve flags are produced by `AgentSpec.permission_args()`, whi
    slash command.
 
 That is the whole surface. The validation whitelists, the run button, the new-task picker and the `/settings` cards
-are all derived from the registry, so they pick the new agent up automatically -- and its switch appears on the
-Plugins card.
+are all derived from the registry, so they pick the new agent up automatically -- and its card appears on the
+Plugins tab.
 
 ## Per-task agent
 
@@ -104,9 +104,9 @@ ntasker agent install claude --home /tmp/test-home  # redirect to a non-default 
 | `opencode_auto`          | `NTASKER_OPENCODE_AUTO`   | Run OpenCode sessions with `--auto` (auto-approve)       |
 | `claude_open_terminal`   | `NTASKER_CLAUDE_OPEN_TERMINAL` | Open the terminal now vs. start in the background   |
 
-In the `/settings` UI these are grouped under an **AI agent integration** card (common: default agent + open-terminal)
-with one sub-card per agent showing availability, the CLI-path field, the agent-specific run options, and the install
-status.
+In the `/settings` UI the common ones (default agent, open-terminal, idle seconds) live on the **Agents & runs** tab;
+each agent's card on the **Plugins** tab shows availability, the CLI-path field, the agent-specific run options and the
+install status -- only while the agent's plugin is on.
 
 ### Configurable CLI path
 

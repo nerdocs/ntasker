@@ -7,7 +7,7 @@ from pathlib import Path
 from ntasker.agents import AgentSpec
 from ntasker.i18n import _lazy
 from ntasker.plugins import PluginContext, PluginSpec
-from ntasker.settings import BIN_OVERRIDE_HINT, make_bin_validator
+from ntasker.settings import BIN_OVERRIDE_HINT, BIN_OVERRIDE_LABEL, make_bin_validator
 
 SPEC = PluginSpec(
     name="pi",
@@ -36,4 +36,4 @@ def register(ctx: PluginContext) -> None:
             # pi: no documented permission flag yet.
         )
     )
-    ctx.add_setting("pi_bin", make_bin_validator("pi"), BIN_OVERRIDE_HINT)
+    ctx.add_setting("pi_bin", make_bin_validator("pi"), BIN_OVERRIDE_HINT, BIN_OVERRIDE_LABEL)

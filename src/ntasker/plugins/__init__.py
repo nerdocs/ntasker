@@ -69,7 +69,7 @@ SLOTS: tuple[str, ...] = (
     "board_card",  # index.html: kanban card, after the tag chips (``task`` in scope)
     "modals",  # index.html: before the toast container
     "scripts",  # index.html: before app.js
-    "settings",  # settings.html: below the Plugins card
+    "settings",  # settings.html: inside the plugin's own card on the Plugins tab
 )
 
 #: Settings key holding the JSON array of disabled plugin names (default-on plugins).
@@ -105,6 +105,10 @@ class PluginSpec:
     """Name of the ``ntasker[<extra>]`` whose packages the plugin needs;
     ``ntasker enable`` installs what is missing (:func:`missing_requirements`)."""
 
+    icon: str = "ti-puzzle"
+    """Tabler icon class for the plugin's card on the /settings Plugins tab.
+    Agent plugins show their agent's image instead (see :func:`describe`)."""
+
 
 @dataclass
 class PluginContext:
@@ -116,7 +120,7 @@ class PluginContext:
 
     spec: PluginSpec
     routers: list[APIRouter] = field(default_factory=list)
-    settings: list[tuple[str, Callable[[str], str], Any]] = field(default_factory=list)
+    settings: list[tuple[str, Callable[[str], str], Any, Any]] = field(default_factory=list)
     schema: list[str] = field(default_factory=list)
     migrations: list[Callable[[sqlite3.Connection], None]] = field(default_factory=list)
     agents: list[AgentSpec] = field(default_factory=list)
@@ -139,9 +143,19 @@ class PluginContext:
         """Mount an ``APIRouter``; every route 404s while the plugin is disabled."""
         self.routers.append(router)
 
-    def add_setting(self, key: str, validator: Callable[[str], str], hint: Any = None) -> None:
-        """Register a settings key (validator + optional /settings hint)."""
-        self.settings.append((key, validator, hint))
+    def add_setting(
+        self,
+        key: str,
+        validator: Callable[[str], str],
+        hint: Any = None,
+        label: Any = None,
+    ) -> None:
+        """Register a settings key (validator + optional /settings hint and label).
+
+        A key with a ``label`` is rendered as a text field on the plugin's
+        card on the /settings Plugins tab; one without stays CLI/API-only
+        (or is driven by the plugin's own ``settings`` slot template)."""
+        self.settings.append((key, validator, hint, label))
 
     def add_schema(self, sql: str) -> None:
         """``CREATE TABLE IF NOT EXISTS ...`` script, run on every ``init_db()``."""
@@ -233,10 +247,12 @@ def _apply_to_core() -> None:
     for ctx in REGISTRY.values():
         for spec in ctx.agents:
             agents.AGENTS[spec.key] = spec
-        for key, validator, hint in ctx.settings:
+        for key, validator, hint, label in ctx.settings:
             settings.VALIDATORS[key] = validator
             if hint is not None:
                 settings.HINTS[key] = hint
+            if label is not None:
+                settings.LABELS[key] = label
 
 
 def _names_from(env_var: str, setting: str) -> set[str]:
@@ -380,7 +396,11 @@ def init_schema(conn: sqlite3.Connection) -> None:
 
 
 def describe() -> list[dict[str, Any]]:
-    """Plugin list for ``GET /api/plugins`` and the /settings card."""
+    """Plugin list for ``GET /api/plugins`` and the /settings Plugins tab.
+
+    ``fields`` are the plugin's labelled settings keys -- the ones the
+    Plugins tab renders as text fields on the plugin's card.
+    """
     off = disabled_plugins()
     return [
         {
@@ -391,6 +411,9 @@ def describe() -> list[dict[str, Any]]:
             "default_on": ctx.spec.default_on,
             "enabled": ctx.name not in off,
             "settings": "settings" in ctx.slots,
+            "fields": [key for key, _v, _h, label in ctx.settings if label is not None],
+            "icon": ctx.spec.icon,
+            "image": ctx.agents[0].icon if ctx.agents else None,
         }
         for ctx in REGISTRY.values()
     ]

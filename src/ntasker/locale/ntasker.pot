@@ -3322,6 +3322,10 @@ msgstr ""
 msgid "Create + Run"
 msgstr ""
 
+#: src/ntasker/templates/info.html:117
+msgid "What's new"
+msgstr ""
+
 #: src/ntasker/templates/info.html:132
 msgid ""
 "ntasker is a lightweight, single-user tracker for your AI coding agent "

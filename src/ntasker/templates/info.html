@@ -14,6 +14,7 @@
     {# i18n data bridge -- registration + logic live in info.js (no inline logic). #}
     <script>
         window.__i18n = {{ js_strings | tojson }};
+        window.__changelog = {{ changelog | tojson }};
     </script>
 </head>
 <body>
@@ -107,6 +108,19 @@
                     </div>
                 </div>
 
+                {# What's new -- bundled CHANGELOG.md, rendered client-side. #}
+                {% if changelog %}
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="ti ti-sparkles me-1"></i>
+                            {{ t("What's new") }}
+                        </h3>
+                    </div>
+                    <div class="card-body markdown changelog" x-html="changelogHtml"></div>
+                </div>
+                {% endif %}
+
                 {# About / author. #}
                 <div class="card">
                     <div class="card-header">
@@ -171,6 +185,8 @@
 </div>
 
 {# info.js must define infoPage() + register $i18n BEFORE Alpine boots. #}
+<script src="{{ asset('marked-js') }}" integrity="{{ asset_sri('marked-js') }}" crossorigin="anonymous"></script>
+<script src="{{ asset('dompurify-js') }}" integrity="{{ asset_sri('dompurify-js') }}" crossorigin="anonymous"></script>
 <script src="/static/info.js?v={{ static_bust('info.js') }}"></script>
 <script src="/static/topnav.js?v={{ static_bust('topnav.js') }}"></script>
 <script src="{{ asset('alpine-js') }}"

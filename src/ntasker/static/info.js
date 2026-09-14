@@ -14,6 +14,19 @@ document.addEventListener('alpine:init', () => {
     });
 });
 
+// Bundled CHANGELOG.md -> sanitised HTML (same marked + DOMPurify pair as the
+// workspace previewer). Falls back to preformatted text without the libs.
+function renderChangelog(text) {
+    if (!text) return '';
+    if (!window.marked) {
+        const pre = document.createElement('pre');
+        pre.textContent = text;
+        return pre.outerHTML;
+    }
+    const raw = window.marked.parse(text);
+    return window.DOMPurify ? window.DOMPurify.sanitize(raw) : '';
+}
+
 function infoPage() {
     return {
         loading: true,
@@ -21,8 +34,10 @@ function infoPage() {
         latest: null,
         updateAvailable: false,
         error: null,
+        changelogHtml: '',
 
         async init() {
+            this.changelogHtml = renderChangelog(window.__changelog || '');
             // Honour the theme the user picked on the main page (the sibling
             // subpages stay light; the info page is new, so sync it).
             const theme = localStorage.getItem('ntasker.theme') || 'light';

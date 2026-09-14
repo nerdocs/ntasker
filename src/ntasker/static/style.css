@@ -838,6 +838,16 @@ body {
     display: block;
 }
 
+/* Changelog (info page): CHANGELOG.md headings are h2 per version -- scale
+ * them down to card-title size so the list reads as a compact history. */
+.changelog h2 {
+    font-size: 1rem;
+    margin-top: 1.25rem;
+}
+.changelog h2:first-child {
+    margin-top: 0;
+}
+
 /* Sidebar project tree. A family ("thrito", "thrito-meta", ...) folds behind
  * a chevron; children hang off a thin rail so the eye reads the indent as
  * "belongs to", not as a random offset. The chevron rotates on unfold. */

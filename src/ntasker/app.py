@@ -365,6 +365,19 @@ def get_git_commit() -> str | None:
     return out.stdout.strip() or None
 
 
+def get_changelog() -> str:
+    """Markdown body of the bundled ``CHANGELOG.md`` from the first version
+    section on (title + format preamble dropped). Empty string when the file
+    is missing so the info page degrades to no "What's new" card.
+    """
+    try:
+        text = (Path(__file__).resolve().parent / "CHANGELOG.md").read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    idx = text.find("\n## ")
+    return text[idx + 1 :] if idx >= 0 else text
+
+
 templates.env.globals["asset"] = _asset
 templates.env.globals["asset_sri"] = _asset_sri
 templates.env.globals["asset_mode"] = _asset_mode
@@ -1115,6 +1128,7 @@ def info_page(request: Request) -> HTMLResponse:
         context={
             "version": VERSION,
             "commit": get_git_commit(),
+            "changelog": get_changelog(),
             "language": get_active_language(),
             "js_strings": build_js_strings(),
             "links": LINKS,

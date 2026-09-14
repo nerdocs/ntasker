@@ -4,6 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [Unreleased]
+Queue: only `done` finishes a run; nTasker never kills a session (not on hand-off, done or delete).
+
 ## [3.1.1] — 2026-09-14
 Workspace editor splits front matter into one field per key (agents, skills, notes); fix task creation buttons.
 

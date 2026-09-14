@@ -842,11 +842,6 @@ def cmd_patch(args: argparse.Namespace) -> int:
         fields["agent"] = candidate or None
     if args.archived is not None:
         fields["archived"] = 1 if args.archived else 0
-    # A hand-off from inside the task's own agent session (the runner sets
-    # NTASKER_TASK_ID there) is what the queue worker acts on; the same patch
-    # from anywhere else only moves the phase. See ntasker.taskqueue.
-    if fields.get("phase") == "review" and os.environ.get("NTASKER_TASK_ID") == str(args.task_id):
-        fields["handed_off_at"] = datetime.now().isoformat(timespec="seconds")
     if args.locks is not None:
         fields["locks"] = _parse_locks(args.locks)   # normalised below, once the project is known
     if args.report is not None:

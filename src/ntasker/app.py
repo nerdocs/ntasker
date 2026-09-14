@@ -40,7 +40,6 @@ from ntasker.claude_runner import (
     projects_base_dir,
     session_states,
     set_hook_state,
-    stop_session,
     terminal_available,
 )
 from ntasker.claude_runner import serve as claude_serve
@@ -458,7 +457,7 @@ def build_js_strings() -> dict[str, str]:
         "queue_blocked": _("Skipped while a dependency is still open."),
         "queue_agent_missing": _("Skipped -- this task's agent is not installed."),
         "queue_ended": _(
-            "Session ended without hand-off -- check the task, then remove it or run it again."
+            "Session ended before the task was done -- check the task, then remove it or run it again."
         ),
         "queue_ended_badge": _("ended"),
         "queue_locked": _("Waiting -- another task's session holds one of its directories."),
@@ -812,54 +811,11 @@ def on_startup() -> None:
         ensure_settings_table(conn)
 
 
-# How often the background sweep checks whether a live Claude session's task has
-# been finished behind the server's back (CLI / direct DB write / deletion).
-CLAUDE_REAP_INTERVAL = 3.0
-
 # How often the background poll actively refreshes the PyPI update-check cache.
 UPDATE_POLL_INTERVAL = 24 * 60 * 60  # once a day
 
-_reaper_task: asyncio.Task | None = None
 _update_poll_task: asyncio.Task | None = None
 _queue_task: asyncio.Task | None = None
-
-
-async def _reap_finished_claude_sessions() -> None:
-    """Tear down any live Claude session whose task is no longer open.
-
-    The DB is the single source of truth, and *both* the HTTP API and the CLI
-    write task status straight to SQLite -- but only the API path reaches
-    :func:`stop_session` synchronously. ``ntasker done`` / ``ntasker patch
-    --status done`` (and any direct DB edit or delete) flip the bit in another
-    process, so this loop watches the DB and stops the now-orphaned session no
-    matter which path finished the task. Reliability backstop -- the immediate
-    teardown in the PATCH handler still fires first on the UI path.
-    """
-    while True:
-        await asyncio.sleep(CLAUDE_REAP_INTERVAL)
-        tids = active_session_ids()
-        if not tids:
-            continue
-        try:
-            placeholders = ",".join("?" * len(tids))
-            with get_conn() as conn:
-                rows = conn.execute(
-                    f"SELECT id, status FROM tasks WHERE id IN ({placeholders})",
-                    tids,
-                ).fetchall()
-        except Exception:  # noqa: BLE001 -- a DB hiccup must never kill the loop
-            continue
-        still_open = {r["id"] for r in rows if r["status"] != "done"}
-        for tid in tids:
-            # ``done`` or row gone (deleted) -> the session is orphaned, stop it.
-            if tid not in still_open:
-                stop_session(tid)
-
-
-@app.on_event("startup")
-async def _start_claude_reaper() -> None:
-    global _reaper_task
-    _reaper_task = asyncio.create_task(_reap_finished_claude_sessions())
 
 
 @app.on_event("startup")
@@ -897,14 +853,6 @@ async def _poll_updates() -> None:
 async def _start_update_poll() -> None:
     global _update_poll_task
     _update_poll_task = asyncio.create_task(_poll_updates())
-
-
-@app.on_event("shutdown")
-async def _stop_claude_reaper() -> None:
-    if _reaper_task is not None:
-        _reaper_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await _reaper_task
 
 
 @app.on_event("shutdown")
@@ -1353,7 +1301,7 @@ class RunIn(BaseModel):
 def api_queue_run(payload: RunIn) -> JSONResponse:
     """The run button: put the task at the head of the queue.
 
-    Also the way to run an entry again whose session ended without a hand-off
+    Also the way to run an entry again whose session ended before it was done
     -- it clears that flag (see :func:`ntasker.taskqueue.enqueue_front`), which
     a plain ``PUT /api/queue`` reorder deliberately does not.
     """
@@ -2180,10 +2128,6 @@ def api_update_task(task_id: int, payload: TaskUpdate) -> JSONResponse:
         depends = load_deps_for(conn, task_id)
         task = row_to_task(row, tags, depends)
         plugins.apply_task_hooks(conn, [task])
-
-    # The task is finished -- tear down its interactive Claude session, if any.
-    if fields.get("status") == "done":
-        stop_session(task_id)
 
     return JSONResponse(task)
 

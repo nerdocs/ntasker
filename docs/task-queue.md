@@ -15,11 +15,12 @@ takes an entry out.
 ## Rules in one paragraph
 
 One task runs **per project** at a time, so several projects progress in parallel while a single project stays strictly
-sequential. Exactly two things end a queued run: the agent's **own hand-off from inside its session**
-(`ntasker patch <id> --phase review` run there) and `status=done` (set by anyone). Both stop the session and free the
-lane. Everything else keeps the entry and never kills: a session that ends without a hand-off leaves its entry queued,
-flagged **ended**, blocking its lane until you have looked at it; a task you move to review from the board or a
-terminal outside the session is simply not the worker's business.
+sequential. Exactly one thing finishes a queued run: the task reaching `status=done` -- closed by you, or by the agent
+itself when the task description told it to. ntasker **never ends a session**: a done task's session stays open in
+the tab strip until you close it, it just stops counting for its lane and its directory locks. The agent's review
+hand-off is a phase change like any other -- the task waits in the review column, with its session alive, and the
+next task of that project starts once you close it. A session that ends before the task is done leaves its entry
+queued, flagged **ended**, blocking its lane until you have looked at it.
 
 ## The panel
 
@@ -63,17 +64,17 @@ A run does **not** use the `/task <id>` slash command. It gets a self-contained 
 
 > When the work is done, do two things in this order, without asking:
 > 1. write your final report: `ntasker report <id>` (Markdown on stdin -- what you did, verified, left open)
-> 2. as the very last command: `ntasker patch <id> --phase review`
+> 2. hand the task over for review, then stop and wait: `ntasker patch <id> --phase review`
 
 The report lands on the task (`report`, `report_at`) and is read from the report icon on its card -- you never have to
-open the session for it. The hand-off is what advances the queue: the CLI patch run inside the session marks the task
-`handed_off_at`, the worker retires the entry and tears the session down (a live session would keep the lane busy), so
-the next task of that project starts. That is why the report has to come first. **A queue run never closes a task** --
-the results wait for you in the review column, exactly like a run you started by hand. The seed allows `done` only
-when you or the task description explicitly ask for it.
+open the session for it. The session stays open after the hand-off: you review the task there, and closing it (`done`)
+is what retires the entry and lets the next task of that project start. **A queue run never closes a task on its
+own** -- the results wait for you in the review column, exactly like a run you started by hand. The seed allows
+`done` only when you or the task description explicitly ask for it; a task that says so closes itself and the queue
+moves on unattended.
 
 The seed also tells the agent what to do when it *cannot* finish: still write the report (the blocker), leave the phase
-as-is and stop. The session then ends without a hand-off -- see **ended** below.
+as-is and stop. If its session then ends -- see **ended** below.
 
 ## Skipped entries
 
@@ -87,7 +88,7 @@ An entry stays queued but is passed over when
 The last two are [directory locks](directory-locks.md). The queue then looks at the next entry **in the same project**
 instead of stalling behind it. Every case is labelled on the entry, so a queue that looks idle always says why.
 
-**Ended** is different: an entry whose session ended without the agent's hand-off (stopped, crashed, blocker) stays at
+**Ended** is different: an entry whose session ended before the task was done (stopped, crashed, blocker) stays at
 the head of its lane with the badge `ended` and **blocks that lane** -- nothing else in the project starts until you
 act. Read its report, then either `✕` it out (lane free), set the task done, or run it again (the run button /
 `ntasker queue add --top` clear the flag and start a fresh session). Dragging it inside the column does not restart

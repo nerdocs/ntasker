@@ -96,25 +96,23 @@ it keeps running when you press **Back** or even reload the page. Re-opening the
 the recent output buffer to reconstruct the screen, then streams live again. Several tasks can run at once, each with
 its own indicator.
 
-ntasker ends a session on its own in exactly two cases: the agent's own hand-off from inside the session
-(`ntasker patch <id> --phase review` there) and the task being set to `done`. Moving a task to review from the board
-or a terminal outside the session leaves it running. Before it hands off, the agent writes its **final report**
+ntasker never ends a session on its own -- not on the agent's review hand-off, not on `done`, not on delete. A session
+ends when its process exits or you press **Stop**. Before it hands off, the agent writes its **final report**
 (`ntasker report <id>`) -- read it via the report icon on the card, no need to reopen the session. See
 [task-queue.md](task-queue.md).
 
 A page reload drops the *client* terminal but not the *server* session -- reopening reattaches. Stopping the session,
 or the `claude` process exiting on its own, ends it; the next run click queues a fresh one.
 
-**Marking the task done ends its session.** When a task's status flips to `done` (via the API -- which is also how
-the ntasker skill closes a task), ntasker terminates that task's session completely: the work is finished, so the
-interactive process is torn down. A done task shows **no run button** -- you cannot start a *fresh* session from the
-Done column.
+**Marking the task done leaves its session alone.** The session stays in the tab strip until you stop it, but it no
+longer occupies its project's queue lane or holds directory locks. A done task shows **no run button** -- you cannot
+start a *fresh* session from the Done column.
 
 ## Resuming a finished session (Claude only)
 
 Every Claude web-terminal run is started with a forced session id (`--session-id <uuid>`), which ntasker persists on
-the task. Because Claude Code keeps its conversation on disk, tearing down the live process on `done` does not lose
-the history. A done task whose run was Claude therefore shows a **Resume session** button (the Claude logo with a small
+the task. Because Claude Code keeps its conversation on disk, a session that has ended does not lose the history. A
+done task whose run was Claude therefore shows a **Resume session** button (the Claude logo with a small
 rotate glyph) in place of the run button. Clicking it reopens the terminal on `claude --resume <uuid>` in the task's
 project directory -- the whole conversation replays and you can keep working where you left off.
 

@@ -91,11 +91,9 @@ CREATE TABLE IF NOT EXISTS tasks (
     -- off. One per task -- a new run overwrites it. NULL until the first run.
     report TEXT,
     report_at TEXT,
-    -- Queue-run state, see ntasker.taskqueue. ``handed_off_at``: the agent
-    -- handed the task off from inside its own session (the only hand-off the
-    -- worker acts on). ``session_ended_at``: its session ended without one --
-    -- the entry stays queued, flagged, until the user acts. Never user-facing.
-    handed_off_at TEXT,
+    -- Queue-run state, see ntasker.taskqueue. ``session_ended_at``: the
+    -- queued task's session ended before the task was done -- the entry stays
+    -- queued, flagged, until the user acts. Never user-facing.
     session_ended_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_archived ON tasks(archived);
@@ -207,11 +205,17 @@ def init_db(path: Path | None = None) -> None:
         except sqlite3.OperationalError:
             pass
         # v3.1 report + queue-run state columns (see the schema comments).
-        for column in ("report", "report_at", "handed_off_at", "session_ended_at"):
+        for column in ("report", "report_at", "session_ended_at"):
             try:
                 conn.execute(f"ALTER TABLE tasks ADD COLUMN {column} TEXT")
             except sqlite3.OperationalError:
                 pass
+        # v3.2: the queue no longer acts on the agent's hand-off, so the
+        # handed_off_at column (v3.1) goes. No-op once dropped.
+        try:
+            conn.execute("ALTER TABLE tasks DROP COLUMN handed_off_at")
+        except sqlite3.OperationalError:
+            pass
         # v2.0 phase migration: legacy values `later` and NULL collapse into
         # `planned`. The new vocabulary is {planned, wip, review}; the column
         # also becomes NOT NULL. We update existing rows in-place; SQLite

@@ -41,8 +41,8 @@ pseudo-terminal, otherwise the button stays hidden. See [docs/claude-runs.md](do
 
 The queue is the only way a session starts: every run button puts its task at the head of its project's lane, and
 ntasker works through the queue unattended, one task per project at a time, taking the next one as soon as the previous
-session ends. Runs are told to finish the task and hand it to review themselves -- that hand-off is what advances the
-queue. **Pause** stops new starts; running tasks keep going.
+task is done -- closed by you after review, or by the agent when the task told it to. ntasker never ends a session
+itself. **Pause** stops new starts; running tasks keep going.
 
 The panel shows one column per project, because that is what runs in parallel. To make one task wait for another --
 across projects too -- drop it on the **middle** of the other; the edges keep reordering.

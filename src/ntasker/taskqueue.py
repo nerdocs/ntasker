@@ -4,28 +4,33 @@ A task is *queued* when its ``queue_order`` is not NULL; queued tasks are worked
 top-down (``queue_order ASC``). :func:`worker` ticks a few times a second and
 does exactly two things:
 
-* **retire** entries that are finished: the agent handed the task off **from
-  inside its own session** (``ntasker patch <id> --phase review`` there sets
-  ``handed_off_at``), or the task is ``status=done`` -- both end the session --
-  or it was archived / deleted (no kill);
+* **retire** entries that are finished: the task is ``status=done`` (closed by
+  the user, or by the agent itself when the task told it to), or it was
+  archived / deleted;
 * **start** the head-most startable task of every project that has no live
-  session yet -- one concurrent run per project, so several projects progress in
-  parallel while a single project stays strictly sequential. With ``dir_locks``
-  on, a task also waits while another live session holds one of its directories
-  (see :mod:`ntasker.locks`), and with ``require_clean`` while one is git-dirty.
+  session of an *open* task yet -- one concurrent run per project, so several
+  projects progress in parallel while a single project stays strictly
+  sequential. With ``dir_locks`` on, a task also waits while another live
+  session holds one of its directories (see :mod:`ntasker.locks`), and with
+  ``require_clean`` while one is git-dirty.
 
-Session ended without a hand-off (agent stopped, crashed, hit a blocker)? The
-entry **stays** queued, flagged ``session_ended_at``, and blocks its lane until
-the user looks at it: remove it, set the task done, or run it again (the run
-button / ``queue add --top`` clear the flag). nTasker never kills a session on
-its own except on the agent's own hand-off and on ``done``; a task moved to
-review from the board or a CLI outside the session is simply not the worker's
-business.
+nTasker **never ends a session itself**. A session ends when its process exits
+or the user stops it from the terminal view; a session whose task is done just
+stops counting -- it no longer occupies its lane or holds directory locks, and
+stays in the tab strip until the user closes it. The agent's review hand-off
+(``ntasker patch <id> --phase review``) is a phase change like any other: the
+task waits in the review column, and the queue moves on only once it is done.
+
+Session ended without the task being done (agent stopped, crashed, hit a
+blocker)? The entry **stays** queued, flagged ``session_ended_at``, and blocks
+its lane until the user looks at it: remove it, set the task done, or run it
+again (the run button / ``queue add --top`` clear the flag).
 
 A queued run gets its own seed (:func:`~ntasker.claude_runner.queue_seed_for_task`)
-which tells the agent to hand the finished task to ``phase=review`` unprompted.
-That hand-off is what advances the queue -- closing stays the user's call, so a
-queue run leaves its results in the review column instead of closing them out.
+which tells the agent to hand the finished task to ``phase=review`` unprompted
+and leave the session open. Closing stays the user's call unless the task
+description grants it -- so a queue run leaves its results in the review
+column, and the next task in that project starts when the user closes it.
 
 The queue is the **only** way a session starts: every run button enqueues at
 the front of the task's project lane (:func:`enqueue_front`), and the worker
@@ -45,7 +50,6 @@ from ntasker.claude_runner import (
     mark_wip,
     queue_seed_for_task,
     start_detached_session,
-    stop_session,
     terminal_available,
 )
 from ntasker.db import get_conn
@@ -106,9 +110,8 @@ def set_queue(ids: list[int]) -> list[sqlite3.Row]:
         # Queue-run state belongs to a queued row only; a removed entry must
         # not carry a stale flag into its next run.
         conn.execute(
-            "UPDATE tasks SET handed_off_at = NULL, session_ended_at = NULL "
-            "WHERE queue_order IS NULL "
-            "AND (handed_off_at IS NOT NULL OR session_ended_at IS NOT NULL)"
+            "UPDATE tasks SET session_ended_at = NULL "
+            "WHERE queue_order IS NULL AND session_ended_at IS NOT NULL"
         )
         return conn.execute(
             "SELECT * FROM tasks WHERE queue_order IS NOT NULL ORDER BY queue_order ASC"
@@ -138,24 +141,28 @@ def clear_ended(ids: list[int]) -> None:
 def _dequeue(conn: sqlite3.Connection, ids: list[int]) -> None:
     placeholders = ",".join("?" * len(ids))
     conn.execute(
-        f"UPDATE tasks SET queue_order = NULL, handed_off_at = NULL, session_ended_at = NULL "
+        f"UPDATE tasks SET queue_order = NULL, session_ended_at = NULL "
         f"WHERE id IN ({placeholders})",
         ids,
     )
 
 
 def _busy_buckets(live: set[int], conn: sqlite3.Connection) -> set[str]:
-    """Buckets occupied by a live session -- queued or started by hand.
+    """Buckets occupied by a live session of an open task -- queued or started
+    by hand.
 
     A manually opened session in a project blocks the queue there too: two
     agents in one working directory is exactly what the one-per-project rule
-    exists to prevent.
+    exists to prevent. A session outlives its task's ``done`` (nTasker never
+    ends a session), but such a session is just waiting to be closed and does
+    not count.
     """
     if not live:
         return set()
     placeholders = ",".join("?" * len(live))
     rows = conn.execute(
-        f"SELECT project FROM tasks WHERE id IN ({placeholders})", list(live)
+        f"SELECT project FROM tasks WHERE id IN ({placeholders}) AND status != 'done'",
+        list(live),
     ).fetchall()
     return {_bucket(r["project"]) for r in rows}
 
@@ -270,20 +277,14 @@ def tick() -> None:
         _running.update(queued_ids & live)
     _running.intersection_update(queued_ids)
 
-    # Finished: the agent's own in-session hand-off (``handed_off_at``, set by
-    # the CLI patch that ran inside the session) or ``status=done``. Both end
-    # the session -- a hand-off leaves the task open, so nothing else tears
-    # its session down, and a live session would keep its lane busy. Archived
-    # entries just leave the queue; nothing else is ever killed by nTasker.
-    finished = {
-        int(r["id"]) for r in rows if r["handed_off_at"] or r["status"] == "done"
-    }
-    retired = [int(r["id"]) for r in rows if int(r["id"]) in finished or r["archived"]]
+    # Finished: ``status=done`` (the user closed it, or the agent did because
+    # the task told it to) or archived. The entry just leaves the queue -- a
+    # session that is still open stays untouched and simply stops counting
+    # (see ``_open_live``). A review hand-off is not a finish.
+    retired = [int(r["id"]) for r in rows if r["status"] == "done" or r["archived"]]
     if retired:
         with get_conn() as conn:
             _dequeue(conn, retired)
-        for task_id in finished:
-            stop_session(task_id)
         _running.difference_update(retired)
         rows = [r for r in rows if int(r["id"]) not in retired]
 

@@ -1,4 +1,4 @@
-"""Hand-off rules: only the agent's own in-session hand-off or `done` end a run."""
+"""Queue end-of-run rules: only ``done`` retires an entry, and nothing is ever killed."""
 
 from __future__ import annotations
 
@@ -23,9 +23,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(taskqueue, "_runnable_agents", lambda: {"claude"})
     live: set[int] = set()
     started: list[int] = []
-    stopped: list[int] = []
     monkeypatch.setattr(taskqueue, "active_session_ids", lambda: list(live))
-    monkeypatch.setattr(taskqueue, "stop_session", lambda tid: stopped.append(tid) or True)
 
     def fake_start(task_id, seed, quick=False):
         started.append(task_id)
@@ -51,40 +49,45 @@ def env(tmp_path, monkeypatch):
 
     return {
         "db": path, "add": add, "col": col, "queued": queued,
-        "live": live, "started": started, "stopped": stopped, "monkeypatch": monkeypatch,
+        "live": live, "started": started, "monkeypatch": monkeypatch,
     }
 
 
-def _handoff_in_session(env, task_id):
-    env["monkeypatch"].setenv("NTASKER_TASK_ID", str(task_id))
-    assert cli.main(["--db", str(env["db"]), "patch", str(task_id), "--phase", "review"]) == 0
-    env["monkeypatch"].delenv("NTASKER_TASK_ID")
-
-
-def test_self_handoff_retires_and_stops(env):
+def test_in_session_review_handoff_does_not_retire(env):
     a, b = env["add"]("A", "x"), env["add"]("B", "x")
     taskqueue.set_queue([a, b])
     taskqueue.tick()
     assert env["started"] == [a]
-    _handoff_in_session(env, a)
-    assert env["col"](a, "handed_off_at")
+    env["monkeypatch"].setenv("NTASKER_TASK_ID", str(a))
+    assert cli.main(["--db", str(env["db"]), "patch", str(a), "--phase", "review"]) == 0
     taskqueue.tick()
-    assert env["queued"]() == [b] and env["stopped"] == [a]
-    env["live"].discard(a)   # stop_session took effect
-    taskqueue.tick()
-    assert env["started"] == [a, b]
-    assert env["col"](a, "handed_off_at") is None
+    # a waits in review with its session alive; b stays behind it
+    assert env["queued"]() == [a, b] and env["started"] == [a] and a in env["live"]
 
 
-def test_external_review_does_not_retire(env):
+def test_done_retires_without_killing_and_frees_lane(env):
     a, b = env["add"]("A", "x"), env["add"]("B", "x")
     taskqueue.set_queue([a, b])
     taskqueue.tick()
     with get_conn() as conn:
-        conn.execute("UPDATE tasks SET phase = 'review' WHERE id = ?", (a,))
-    assert cli.main(["--db", str(env["db"]), "patch", str(b), "--phase", "review"]) == 0  # no env
+        conn.execute("UPDATE tasks SET status = 'done' WHERE id = ?", (a,))
     taskqueue.tick()
-    assert env["queued"]() == [a, b] and env["stopped"] == [] and env["started"] == [a]
+    # a's session is still alive, yet b starts: a done task's session holds no lane
+    assert env["queued"]() == [b] and a in env["live"] and env["started"] == [a, b]
+
+
+def test_done_session_holds_no_dir_locks(env):
+    a, b = env["add"]("A", "x"), env["add"]("B", "y")
+    with get_conn() as conn:
+        conn.execute("UPDATE tasks SET locks = '[\"y\"]' WHERE id = ?", (a,))
+    env["monkeypatch"].setenv("NTASKER_DIR_LOCKS", "on")
+    taskqueue.set_queue([a, b])
+    taskqueue.tick()
+    assert env["started"] == [a]          # b waits: a holds y
+    with get_conn() as conn:
+        conn.execute("UPDATE tasks SET status = 'done' WHERE id = ?", (a,))
+    taskqueue.tick()
+    assert env["started"] == [a, b] and a in env["live"]
 
 
 def test_ended_session_flags_entry_and_blocks_lane(env):
@@ -97,7 +100,6 @@ def test_ended_session_flags_entry_and_blocks_lane(env):
     assert env["queued"]() == [a, b, c] and env["col"](a, "session_ended_at")
     assert taskqueue.skipped(taskqueue.load_queue(), env["live"])[a]["reason"] == "ended"
     assert env["started"] == [a, c]           # b waits behind the flagged a
-    assert env["stopped"] == []
     # survives a restart (in-memory state gone)
     taskqueue._running.clear()
     taskqueue.tick()
@@ -134,15 +136,14 @@ def test_reorder_keeps_ended_flag(env):
     assert env["started"] == [a]
 
 
-def test_done_retires_and_stops_archived_does_not_stop(env):
-    a, b = env["add"]("A", "x"), env["add"]("B", "y")
-    taskqueue.set_queue([a, b])
+def test_archived_retires(env):
+    a = env["add"]("A", "x")
+    taskqueue.set_queue([a])
     taskqueue.tick()
     with get_conn() as conn:
-        conn.execute("UPDATE tasks SET status = 'done' WHERE id = ?", (a,))
-        conn.execute("UPDATE tasks SET archived = 1 WHERE id = ?", (b,))
+        conn.execute("UPDATE tasks SET archived = 1 WHERE id = ?", (a,))
     taskqueue.tick()
-    assert env["queued"]() == [] and env["stopped"] == [a]
+    assert env["queued"]() == [] and a in env["live"]
 
 
 def test_queue_add_top_clears_flag(env):
@@ -156,16 +157,13 @@ def test_queue_add_top_clears_flag(env):
     assert env["col"](a, "session_ended_at") is None
 
 
-def test_patch_env_detection(env):
+def test_api_done_leaves_session_alive(env):
+    client = TestClient(app, base_url=BASE)
     a = env["add"]("A", "x")
-    env["monkeypatch"].setenv("NTASKER_TASK_ID", "999")
-    assert cli.main(["--db", str(env["db"]), "patch", str(a), "--phase", "review"]) == 0
-    assert env["col"](a, "handed_off_at") is None          # wrong task id
-    env["monkeypatch"].setenv("NTASKER_TASK_ID", str(a))
-    assert cli.main(["--db", str(env["db"]), "patch", str(a), "--phase", "wip"]) == 0
-    assert env["col"](a, "handed_off_at") is None          # not a hand-off
-    assert cli.main(["--db", str(env["db"]), "patch", str(a), "--phase", "review"]) == 0
-    assert env["col"](a, "handed_off_at")
+    taskqueue.set_queue([a])
+    taskqueue.tick()
+    r = client.patch(f"/api/tasks/{a}", json={"status": "done"})
+    assert r.status_code == 200 and a in env["live"]
 
 
 def test_queue_run_route_and_skipped_ended(env):

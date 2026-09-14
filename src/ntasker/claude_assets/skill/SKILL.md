@@ -236,12 +236,11 @@ ntasker patch 43 --phase review
 The report (Markdown; `--file <path>` instead of stdin also works) is stored
 on the task (`report`, `report_at`; one per task, a new run overwrites) and
 shown in the UI via the report icon on the card -- the user reads it there,
-without opening the session. Write it *before* the hand-off: inside an
-nTasker-spawned queue session the hand-off ends the session at once.
+without opening the session. Write it *before* the hand-off, then stop
+and wait -- the session stays open for the user's review. The queue only
+moves on to the next task of the project once this one is `done`.
 
-Inside such a session use the **CLI** form `ntasker patch <id> --phase
-review` -- that is what the queue recognises as the agent's own hand-off.
-The equivalent HTTP call moves the phase but is not a queue hand-off:
+The equivalent HTTP call:
 
 ```bash
 curl -s -X PATCH http://127.0.0.1:8766/api/tasks/43 \

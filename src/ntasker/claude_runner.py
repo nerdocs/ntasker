@@ -246,16 +246,18 @@ def queue_seed_for_task(task: dict) -> str:
         f"       ntasker report {tid} <<'EOF'",
         "       ...",
         "       EOF",
-        "  2. As the VERY LAST command of this session -- nothing after it:",
+        "  2. Hand the task over for review, then stop and wait:",
         f"       ntasker patch {tid} --phase review",
-        "- That hand-off ends this session and starts the next queued task, so",
-        "  never hand off on a guess, and never run it before the report.",
+        "- This session stays open after the hand-off; the user reviews the",
+        "  task here and closes it. The next queued task in this project only",
+        "  starts once this task is done -- so never hand off on a guess.",
         "- If you cannot finish (blocker, missing info, a decision only the",
         "  user can make): still write the report (the blocker, what you",
         "  tried), leave the phase as-is and stop. Do not hand off.",
         "- Never set status=done or archive on your own initiative -- only when",
         "  the user or the task description explicitly tells you to (then:",
-        f"  finish, commit if asked, `ntasker done {tid}`).",
+        f"  finish, commit if asked, `ntasker done {tid}` -- that releases the",
+        "  next queued task).",
         "- No new tracker tasks, no deletes, no writes to other task IDs.",
     ]
     return "\n".join(lines)
@@ -634,8 +636,8 @@ def _stop(sess: TermSession) -> None:
 def stop_session(task_id: int) -> bool:
     """Terminate a task's session completely, if one is running.
 
-    Used when a task is marked done -- the work is finished, so the interactive
-    session is torn down. Returns ``True`` iff a live session was stopped.
+    Only the user's own Stop button reaches this -- nTasker never ends a
+    session on its own. Returns ``True`` iff a live session was stopped.
     """
     sess = SESSIONS.get(task_id)
     if sess is None or not sess.alive:

@@ -66,12 +66,18 @@ def task_dirs(project: str | None, locks: list[str]) -> set[str]:
 
 
 def held_dirs(conn: sqlite3.Connection, live_ids: set[int]) -> dict[str, int]:
-    """Directory -> holder task id, over every task with a live session."""
+    """Directory -> holder task id, over every *open* task with a live session.
+
+    A done task's session may still be alive (nTasker never ends a session),
+    but it no longer holds anything.
+    """
     if not live_ids:
         return {}
     placeholders = ",".join("?" * len(live_ids))
     rows = conn.execute(
-        f"SELECT id, project, locks FROM tasks WHERE id IN ({placeholders})", list(live_ids)
+        f"SELECT id, project, locks FROM tasks "
+        f"WHERE id IN ({placeholders}) AND status != 'done'",
+        list(live_ids),
     ).fetchall()
     held: dict[str, int] = {}
     for row in rows:

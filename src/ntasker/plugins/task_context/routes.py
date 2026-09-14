@@ -15,8 +15,13 @@ confined to the workspace roots (``workspace_*_dir`` settings).
 
 from __future__ import annotations
 
+import base64
+import binascii
 import os
+import uuid
 from pathlib import Path
+
+import platformdirs
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
@@ -49,6 +54,23 @@ class PickRequest(BaseModel):
     """Options for the native file dialog."""
 
     folder: bool = False
+
+
+class UploadIn(BaseModel):
+    """An image pasted into a description: file name + base64 bytes."""
+
+    name: str
+    data: str
+
+
+# Cap on one pasted image (decoded). A screenshot is a few MB at most.
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+
+
+def uploads_dir() -> Path:
+    """Where pasted images live: the user-data dir, so an attachment keeps
+    pointing at a file that exists after a reboot (a temp dir would not)."""
+    return Path(platformdirs.user_data_dir("nTasker")) / "uploads"
 
 
 #: Maps a :class:`~ntasker.plugins.workspace.scan.WriteError` reason to HTTP.
@@ -194,6 +216,28 @@ def api_context_reveal(task_id: int, context_id: int) -> JSONResponse:
         return JSONResponse(scan.open_with_desktop(Path(entry["path"])))
     except scan.WriteError as exc:
         raise _write_guard(exc) from exc
+
+
+@router.post("/api/context/upload", status_code=201)
+def api_context_upload(payload: UploadIn) -> JSONResponse:
+    """Store an image pasted into a task description; returns its path.
+
+    The frontend then attaches that path as a ``file`` context entry -- the
+    same as picking the file by hand, so the agent reads it at the start of
+    the run. The name is reduced to a basename so a crafted value cannot
+    escape the uploads dir.
+    """
+    try:
+        blob = base64.b64decode(payload.data, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise HTTPException(status_code=400, detail=_("Invalid image data.")) from exc
+    if not blob or len(blob) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail=_("Image is too large (max 25 MB)."))
+    base = os.path.basename(payload.name).lstrip(".") or "image.png"
+    target = uploads_dir() / f"{uuid.uuid4().hex[:8]}-{base}"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(blob)
+    return JSONResponse({"path": str(target), "name": target.name}, status_code=201)
 
 
 @router.get("/api/context/mcp")

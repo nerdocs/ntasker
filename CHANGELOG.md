@@ -7,6 +7,7 @@ Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 ## [Unreleased]
 Task report: `tasks.report`/`report_at`, `ntasker report <id>`, `patch --report`; card icon opens a Markdown modal.
 Queue: only the agent's own hand-off or `done` end a run; an ended session stays queued, flagged, blocking its lane.
+Context picker rows toggle attach/detach; an image pasted into a description is stored and attached as a file.
 Run buttons and the sidebar quick run now enqueue at the front; the queue is the only way to start a session.
 Directory locks: `tasks.locks`, cross-repo start condition, `ntasker lock add|rm|list`, `dir_locks`/`require_clean`.
 Claude Code hooks via `--settings`: explicit waiting/running state and a PreToolUse guard for unlocked dirs.

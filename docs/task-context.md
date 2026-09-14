@@ -25,6 +25,9 @@ Because a `file` attachment escapes the workspace roots by design, the write end
 - **Create form** -- *Attach* opens the picker; picks collect in the draft and go with `POST /api/tasks` (`context`
   list), validated before the insert so a bad path never leaves a half-created task.
 - **Edit modal** -- attach/detach writes straight through to the server, independent of Save.
+- **Pasted images** -- `Ctrl+V` of an image (a screenshot from the clipboard) into either description field stores it
+  under the user-data dir (`nTasker/uploads/`, via `POST /api/context/upload`) and attaches that file, exactly as if
+  picked by hand. Text pastes are untouched.
 - **Task cards** (list and board) -- chips; red when the file has moved away. Clicking a chip opens the entry in the
   desktop's default application (or in the workspace viewer when that plugin is enabled).
 - **Briefing** -- `## Attached context` block in the compact seed and in the `/task` loader output; a `note` on an
@@ -36,7 +39,8 @@ Because a `file` attachment escapes the workspace roots by design, the write end
 The *Files* tab opens the OS file dialog on this desktop (`POST /api/fs/pick`; macOS `osascript`, Linux `zenity`,
 otherwise 501 and the buttons stay hidden) or takes pasted paths, one per line, each checked via `GET /api/fs/resolve`.
 The *MCP servers* tab lists `~/.claude.json`. Team / Skills / Knowledge / Documents tabs appear only with the workspace
-plugin enabled and the directory configured.
+plugin enabled and the directory configured. A row in any list **toggles**: one click attaches the entry (check mark),
+the next click detaches it again.
 
 ## API
 
@@ -47,6 +51,7 @@ plugin enabled and the directory configured.
 | DELETE | `/api/tasks/{id}/context/{cid}` | detach (never touches the file) |
 | GET | `/api/tasks/{id}/context/{cid}/file` | preview payload of the attached file |
 | POST | `/api/tasks/{id}/context/{cid}/reveal` | open the file in the desktop's default app |
+| POST | `/api/context/upload` | store a pasted image `{name, data(base64)}`; returns `{path, name}` to attach as `file` |
 | GET | `/api/context/mcp` | MCP servers for the picker (no secrets) |
 | GET / POST | `/api/fs/pick` | native dialog availability / open it |
 | GET | `/api/fs/resolve?path=` | normalise a typed path, report existence |

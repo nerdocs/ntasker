@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: ntasker 3.0.0\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-09-14 02:02+0200\n"
+"POT-Creation-Date: 2026-09-14 02:03+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -18,38 +18,38 @@ msgstr ""
 "Generated-By: Babel 2.18.0\n"
 
 #: src/ntasker/app.py:123 src/ntasker/app.py:497
-#: src/ntasker/templates/index.html:571 src/ntasker/templates/index.html:1487
+#: src/ntasker/templates/index.html:571 src/ntasker/templates/index.html:1489
 msgid "Planned"
 msgstr ""
 
 #: src/ntasker/app.py:124 src/ntasker/app.py:496
-#: src/ntasker/templates/index.html:572 src/ntasker/templates/index.html:1488
+#: src/ntasker/templates/index.html:572 src/ntasker/templates/index.html:1490
 msgid "In Progress"
 msgstr ""
 
 #: src/ntasker/app.py:125 src/ntasker/app.py:498
-#: src/ntasker/templates/index.html:573 src/ntasker/templates/index.html:1489
+#: src/ntasker/templates/index.html:573 src/ntasker/templates/index.html:1491
 msgid "Review"
 msgstr ""
 
 #: src/ntasker/app.py:132 src/ntasker/app.py:499
-#: src/ntasker/templates/index.html:579 src/ntasker/templates/index.html:1495
+#: src/ntasker/templates/index.html:579 src/ntasker/templates/index.html:1497
 msgid "Critical"
 msgstr ""
 
 #: src/ntasker/app.py:133 src/ntasker/app.py:500
-#: src/ntasker/templates/index.html:580 src/ntasker/templates/index.html:1496
+#: src/ntasker/templates/index.html:580 src/ntasker/templates/index.html:1498
 msgid "High"
 msgstr ""
 
 #: src/ntasker/app.py:134 src/ntasker/app.py:501
-#: src/ntasker/templates/index.html:581 src/ntasker/templates/index.html:1497
+#: src/ntasker/templates/index.html:581 src/ntasker/templates/index.html:1499
 #: src/ntasker/templates/settings.html:280
 msgid "Normal"
 msgstr ""
 
 #: src/ntasker/app.py:135 src/ntasker/app.py:502
-#: src/ntasker/templates/index.html:582 src/ntasker/templates/index.html:1498
+#: src/ntasker/templates/index.html:582 src/ntasker/templates/index.html:1500
 msgid "Low"
 msgstr ""
 
@@ -91,7 +91,7 @@ msgstr ""
 
 #: src/ntasker/app.py:406 src/ntasker/cli.py:122
 #: src/ntasker/templates/index.html:299 src/ntasker/templates/index.html:577
-#: src/ntasker/templates/index.html:1493
+#: src/ntasker/templates/index.html:1495
 msgid "Priority"
 msgstr ""
 
@@ -100,8 +100,8 @@ msgid "Clear priority filter"
 msgstr ""
 
 #: src/ntasker/app.py:409 src/ntasker/cli.py:123
-#: src/ntasker/templates/index.html:366 src/ntasker/templates/index.html:610
-#: src/ntasker/templates/index.html:1523 src/ntasker/templates/tags.html:63
+#: src/ntasker/templates/index.html:366 src/ntasker/templates/index.html:612
+#: src/ntasker/templates/index.html:1526 src/ntasker/templates/tags.html:63
 msgid "Tags"
 msgstr ""
 
@@ -180,7 +180,7 @@ msgid "Restore the default priority order (discards manual drag order)"
 msgstr ""
 
 #: src/ntasker/app.py:433 src/ntasker/app.py:541
-#: src/ntasker/templates/index.html:891
+#: src/ntasker/templates/index.html:893
 msgid "Done"
 msgstr ""
 
@@ -289,8 +289,8 @@ msgstr ""
 msgid "Waiting -- a directory it holds has uncommitted changes."
 msgstr ""
 
-#: src/ntasker/app.py:467 src/ntasker/templates/index.html:705
-#: src/ntasker/templates/index.html:1618
+#: src/ntasker/app.py:467 src/ntasker/templates/index.html:707
+#: src/ntasker/templates/index.html:1621
 msgid "Also locks"
 msgstr ""
 
@@ -362,7 +362,7 @@ msgid "New task"
 msgstr ""
 
 #: src/ntasker/app.py:488 src/ntasker/cli.py:119
-#: src/ntasker/templates/index.html:522 src/ntasker/templates/index.html:1445
+#: src/ntasker/templates/index.html:522 src/ntasker/templates/index.html:1447
 msgid "Project"
 msgstr ""
 
@@ -382,7 +382,7 @@ msgid ""
 msgstr ""
 
 #: src/ntasker/app.py:494 src/ntasker/cli.py:121
-#: src/ntasker/templates/index.html:569 src/ntasker/templates/index.html:1485
+#: src/ntasker/templates/index.html:569 src/ntasker/templates/index.html:1487
 msgid "Phase"
 msgstr ""
 
@@ -391,7 +391,7 @@ msgid "--"
 msgstr ""
 
 #: src/ntasker/app.py:503 src/ntasker/templates/index.html:596
-#: src/ntasker/templates/index.html:1514
+#: src/ntasker/templates/index.html:1516
 msgid "Title"
 msgstr ""
 
@@ -400,7 +400,7 @@ msgid "What needs to be done?"
 msgstr ""
 
 #: src/ntasker/app.py:505 src/ntasker/cli.py:143
-#: src/ntasker/templates/index.html:602 src/ntasker/templates/index.html:1518
+#: src/ntasker/templates/index.html:602 src/ntasker/templates/index.html:1520
 msgid "Description"
 msgstr ""
 
@@ -437,7 +437,7 @@ msgid "blocked by:"
 msgstr ""
 
 #: src/ntasker/app.py:514 src/ntasker/plugins/workspace/__init__.py:111
-#: src/ntasker/templates/index.html:731
+#: src/ntasker/templates/index.html:733
 msgid "Create"
 msgstr ""
 
@@ -509,11 +509,11 @@ msgid "Cleanup failed -- try again."
 msgstr ""
 
 #: src/ntasker/app.py:540 src/ntasker/app.py:685
-#: src/ntasker/templates/index.html:884 src/ntasker/templates/tags.html:93
+#: src/ntasker/templates/index.html:886 src/ntasker/templates/tags.html:93
 msgid "Open"
 msgstr ""
 
-#: src/ntasker/app.py:542 src/ntasker/templates/index.html:898
+#: src/ntasker/app.py:542 src/ntasker/templates/index.html:900
 msgid "Archive"
 msgstr ""
 
@@ -619,11 +619,11 @@ msgid "Delete permanently"
 msgstr ""
 
 #: src/ntasker/app.py:572 src/ntasker/app.py:707
-#: src/ntasker/templates/index.html:1651
+#: src/ntasker/templates/index.html:1654
 msgid "Delete"
 msgstr ""
 
-#: src/ntasker/app.py:574 src/ntasker/templates/index.html:1163
+#: src/ntasker/app.py:574 src/ntasker/templates/index.html:1165
 msgid "No tasks"
 msgstr ""
 
@@ -652,18 +652,18 @@ msgid "Task"
 msgstr ""
 
 #: src/ntasker/app.py:582 src/ntasker/plugins/workspace/__init__.py:92
-#: src/ntasker/templates/index.html:1698
+#: src/ntasker/templates/index.html:1701
 msgid "Close"
 msgstr ""
 
 #: src/ntasker/app.py:583 src/ntasker/plugins/workspace/__init__.py:110
-#: src/ntasker/templates/index.html:1654 src/ntasker/templates/tags.html:162
+#: src/ntasker/templates/index.html:1657 src/ntasker/templates/tags.html:162
 #: src/ntasker/templates/tags.html:213
 msgid "Cancel"
 msgstr ""
 
 #: src/ntasker/app.py:584 src/ntasker/plugins/workspace/__init__.py:109
-#: src/ntasker/templates/index.html:1658
+#: src/ntasker/templates/index.html:1661
 #: src/ntasker/templates/settings.html:143
 #: src/ntasker/templates/settings.html:258 src/ntasker/templates/tags.html:167
 msgid "Save"
@@ -1099,7 +1099,7 @@ msgstr ""
 
 #: src/ntasker/app.py:1443 src/ntasker/app.py:1456 src/ntasker/app.py:1475
 #: src/ntasker/app.py:2002 src/ntasker/app.py:2161 src/ntasker/app.py:2165
-#: src/ntasker/app.py:2196 src/ntasker/plugins/task_context/routes.py:129
+#: src/ntasker/app.py:2196 src/ntasker/plugins/task_context/routes.py:151
 msgid "Task not found"
 msgstr ""
 
@@ -1181,8 +1181,8 @@ msgstr ""
 msgid "Status"
 msgstr ""
 
-#: src/ntasker/cli.py:126 src/ntasker/templates/index.html:663
-#: src/ntasker/templates/index.html:1576
+#: src/ntasker/cli.py:126 src/ntasker/templates/index.html:665
+#: src/ntasker/templates/index.html:1579
 msgid "Depends on"
 msgstr ""
 
@@ -2440,32 +2440,32 @@ msgstr ""
 msgid "Use the tools of the MCP server {name} for this task."
 msgstr ""
 
-#: src/ntasker/plugins/task_context/routes.py:77
+#: src/ntasker/plugins/task_context/routes.py:99
 #, python-brace-format
 msgid "Unknown context kind: {kind}"
 msgstr ""
 
-#: src/ntasker/plugins/task_context/routes.py:89
+#: src/ntasker/plugins/task_context/routes.py:111
 #, python-brace-format
 msgid "No MCP server named {name} in ~/.claude.json."
 msgstr ""
 
-#: src/ntasker/plugins/task_context/routes.py:93
+#: src/ntasker/plugins/task_context/routes.py:115
 msgid "An mcp:// path needs kind 'mcp'."
 msgstr ""
 
-#: src/ntasker/plugins/task_context/routes.py:96
-#: src/ntasker/plugins/task_context/routes.py:109
-#: src/ntasker/plugins/task_context/routes.py:119
-#: src/ntasker/plugins/task_context/routes.py:245
-#: src/ntasker/plugins/task_context/routes.py:251
+#: src/ntasker/plugins/task_context/routes.py:118
+#: src/ntasker/plugins/task_context/routes.py:131
+#: src/ntasker/plugins/task_context/routes.py:141
+#: src/ntasker/plugins/task_context/routes.py:289
+#: src/ntasker/plugins/task_context/routes.py:295
 #: src/ntasker/plugins/workspace/scan.py:1167
 #: src/ntasker/plugins/workspace/scan.py:1197
 #: src/ntasker/plugins/workspace/scan.py:1293
 msgid "No such file or directory."
 msgstr ""
 
-#: src/ntasker/plugins/task_context/routes.py:116
+#: src/ntasker/plugins/task_context/routes.py:138
 #: src/ntasker/plugins/workspace/scan.py:807
 #: src/ntasker/plugins/workspace/scan.py:908
 #: src/ntasker/plugins/workspace/scan.py:1028
@@ -2474,26 +2474,34 @@ msgstr ""
 msgid "Path lies outside every configured workspace directory."
 msgstr ""
 
-#: src/ntasker/plugins/task_context/routes.py:136
-#: src/ntasker/plugins/task_context/routes.py:164
+#: src/ntasker/plugins/task_context/routes.py:158
+#: src/ntasker/plugins/task_context/routes.py:186
 msgid "Attachment not found"
 msgstr ""
 
-#: src/ntasker/plugins/task_context/routes.py:178
-#: src/ntasker/plugins/task_context/routes.py:192
+#: src/ntasker/plugins/task_context/routes.py:200
+#: src/ntasker/plugins/task_context/routes.py:214
 msgid "This attachment is not a file."
 msgstr ""
 
-#: src/ntasker/plugins/task_context/routes.py:224
+#: src/ntasker/plugins/task_context/routes.py:233
+msgid "Invalid image data."
+msgstr ""
+
+#: src/ntasker/plugins/task_context/routes.py:235
+msgid "Image is too large (max 25 MB)."
+msgstr ""
+
+#: src/ntasker/plugins/task_context/routes.py:268
 #: src/ntasker/plugins/workspace/scan.py:1353
 msgid "No native file dialog is available here."
 msgstr ""
 
-#: src/ntasker/plugins/task_context/routes.py:225
+#: src/ntasker/plugins/task_context/routes.py:269
 msgid "Choose a folder to attach"
 msgstr ""
 
-#: src/ntasker/plugins/task_context/routes.py:225
+#: src/ntasker/plugins/task_context/routes.py:269
 msgid "Choose files to attach"
 msgstr ""
 
@@ -2997,7 +3005,7 @@ msgstr ""
 msgid "Hidden"
 msgstr ""
 
-#: src/ntasker/templates/index.html:740
+#: src/ntasker/templates/index.html:742
 msgid "Create + Run"
 msgstr ""
 

@@ -247,6 +247,63 @@
                 }
             },
 
+            // Ctrl+V of an image into a description (new-task form: target
+            // null; edit dialog: the task being edited). The bytes go to the
+            // server (POST /api/context/upload), which stores them under the
+            // user-data dir and answers with a path -- attached from there
+            // exactly like a file picked by hand. Text pastes are untouched.
+            async pluginPaste(event, target) {
+                const items = [...((event.clipboardData && event.clipboardData.items) || [])];
+                const images = items.filter(i => i.kind === 'file' && i.type.startsWith('image/'));
+                if (!images.length) return;
+                event.preventDefault();
+                for (const it of images) {
+                    const file = it.getAsFile();
+                    if (!file) continue;
+                    const ext = (it.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
+                    const name = file.name && file.name !== 'image.png' ? file.name
+                        : 'pasted-' + new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19) + '.' + ext;
+                    const data = await new Promise((resolve, reject) => {
+                        const r = new FileReader();
+                        r.onload = () => resolve(String(r.result).split(',')[1] || '');
+                        r.onerror = reject;
+                        r.readAsDataURL(file);
+                    });
+                    const res = await fetch('/api/context/upload', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name, data }),
+                    });
+                    if (!res.ok) {
+                        this.showToast(await errorDetail(res, t('ctx_attach_failed')), 'danger');
+                        continue;
+                    }
+                    const info = await res.json();
+                    const item = { kind: 'file', path: info.path, label: info.name, is_dir: false };
+                    if (!target) {
+                        this.form.context = [...this.form.context.filter(c => c.path !== item.path), { ...item, note: '' }];
+                    } else {
+                        const entry = await this._postContext(target, item, '');
+                        if (entry) target.context = [...(target.context || []).filter(c => c.path !== entry.path), entry];
+                    }
+                }
+                await this.refreshAll();
+            },
+
+            // POST one attachment; the stored entry, or null after a toast.
+            async _postContext(task, item, note) {
+                const res = await fetch(`/api/tasks/${task.id}/context`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ kind: item.kind, path: item.path, label: item.label, note }),
+                });
+                if (!res.ok) {
+                    this.showToast(await errorDetail(res, t('ctx_attach_failed')), 'danger');
+                    return null;
+                }
+                return res.json();
+            },
+
             async attachContext(item) {
                 const task = this.picker.target;
                 // Draft mode: no task exists yet -- collect locally, createTask
@@ -262,16 +319,8 @@
                 if (this.picker.busy) return;
                 this.picker.busy = true;
                 try {
-                    const res = await fetch(`/api/tasks/${task.id}/context`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ kind: item.kind, path: item.path, label: item.label, note: this.picker.note }),
-                    });
-                    if (!res.ok) {
-                        this.showToast(await errorDetail(res, t('ctx_attach_failed')), 'danger');
-                        return;
-                    }
-                    const entry = await res.json();
+                    const entry = await this._postContext(task, item, this.picker.note);
+                    if (!entry) return;
                     // Patch the open task object in place: the edit modal holds
                     // a clone, so refreshAll() would not reach it.
                     task.context = [...(task.context || []).filter(c => c.path !== entry.path), entry];

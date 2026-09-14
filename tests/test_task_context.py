@@ -124,3 +124,22 @@ def test_briefing_lines(client, task, tmp_path):
     assert "## Attached context" in text and str(f) in text and "read me" in text
     assert context_briefing([]) == []
     assert "file not found" in "\n".join(context_briefing([{"kind": "doc", "path": "/x", "label": "x", "exists": False}]))
+
+
+def test_upload_pasted_image_and_attach(client, task, tmp_path, monkeypatch):
+    import base64
+
+    from ntasker.plugins.task_context import routes
+
+    monkeypatch.setattr(routes, "uploads_dir", lambda: tmp_path / "uploads")
+    data = base64.b64encode(b"\x89PNG fake").decode()
+    r = client.post("/api/context/upload", json={"name": "../../evil.png", "data": data})
+    assert r.status_code == 201, r.text
+    path = r.json()["path"]
+    assert path.startswith(str(tmp_path / "uploads")) and path.endswith("-evil.png")
+    assert open(path, "rb").read() == b"\x89PNG fake"
+    # attach it like any file -- what the paste handler does next
+    r = client.post(f"/api/tasks/{task['id']}/context", json={"kind": "file", "path": path})
+    assert r.status_code == 201 and r.json()["label"] == r.json()["path"].rsplit("/", 1)[-1]
+    assert client.post("/api/context/upload", json={"name": "x.png", "data": "not base64!"}).status_code == 400
+    assert client.post("/api/context/upload", json={"name": "x.png", "data": ""}).status_code == 413

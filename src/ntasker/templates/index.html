@@ -600,7 +600,9 @@
                                 </div>
                                 <div class="col-12">
                                     <label class="form-label">{{ t('Description') }}</label>
+                                    {# An image pasted here becomes a context attachment (task_context plugin). #}
                                     <textarea class="form-control" rows="2" x-model="form.description"
+                                              @paste="typeof pluginPaste === 'function' && pluginPaste($event, null)"
                                               @keydown.enter.ctrl.prevent="createTask()"
                                               @keydown.enter.meta.prevent="createTask()"
                                               :placeholder="$i18n('description_placeholder')"></textarea>
@@ -1516,7 +1518,8 @@
                     </div>
                     <div class="mb-2">
                         <label class="form-label">{{ t('Description') }}</label>
-                        <textarea class="form-control edit-description" rows="16" x-model="editing.description"></textarea>
+                        <textarea class="form-control edit-description" rows="16" x-model="editing.description"
+                                  @paste="typeof pluginPaste === 'function' && pluginPaste($event, editing)"></textarea>
                     </div>
                     {% for tpl in plugin_slots['task_edit'] %}{% include tpl %}{% endfor %}
                     <div class="mb-2">

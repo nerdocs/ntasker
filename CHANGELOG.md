@@ -4,6 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [3.2.1] — 2026-09-14
+Fix: workspace sidebar rows (team, skills, knowledge, documents) turned white-on-white on hover.
+
 ## [3.2.0] — 2026-09-14
 Voice plugin: local dictation via Vosk with model catalog, background download and spoken punctuation (de/en).
 Settings page reworked into tabs; every plugin gets its own card with switch and settings on the Plugins tab.

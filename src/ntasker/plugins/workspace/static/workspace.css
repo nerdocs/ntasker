@@ -158,6 +158,33 @@
     tab-size: 4;
 }
 
+/* Front matter in the viewer: a two-column key/value grid above the body.
+   Values keep their line breaks -- a description is a paragraph or two,
+   not a single line. */
+.ws-fm {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 0.25rem 1rem;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1.5rem;
+    border: var(--tblr-border-width) solid var(--tblr-border-color);
+    border-radius: var(--tblr-border-radius);
+    background: var(--tblr-bg-surface-secondary);
+    font-size: 0.875rem;
+}
+.ws-fm-key {
+    font-family: var(--tblr-font-monospace);
+    color: var(--tblr-secondary);
+}
+.ws-fm-value {
+    white-space: pre-wrap;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+.ws-fm-value code {
+    white-space: pre-wrap;
+}
+
 /* One front-matter field. Rows come from the value; no drag handle, the
    height follows the content instead. */
 .ws-field {

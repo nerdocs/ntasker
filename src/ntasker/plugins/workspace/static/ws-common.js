@@ -136,12 +136,27 @@
         return rows.filter((r) => r.some((c) => c !== ''));
     }
 
+    // Front matter as a key/value block above the body. Fed through marked
+    // it comes out as a rule plus a heading (the closing --- is a setext
+    // underline), with every quoted description shown escapes and all.
+    function renderFrontMatter(form) {
+        const rows = form.fields.map((f) => {
+            const value = f.text ? escapeHtml(f.value) : `<code>${escapeHtml(f.value)}</code>`;
+            return `<div class="ws-fm-key">${escapeHtml(f.key)}</div><div class="ws-fm-value">${value}</div>`;
+        });
+        return `<div class="ws-fm">${rows.join('')}</div>`;
+    }
+
     // Decide how a fetched file renders and produce the payload for it.
     // Returns {mode, html, rows} -- mode is markdown | csv | text | none.
     function renderFile(file) {
         if (!file || file.text == null) return { mode: 'none', html: '', rows: [] };
         if (file.kind === 'markdown') {
-            return { mode: 'markdown', html: renderMarkdown(file.text), rows: [] };
+            const form = splitFrontMatter(file.text);
+            const html = form
+                ? renderFrontMatter(form) + renderMarkdown(form.body)
+                : renderMarkdown(file.text);
+            return { mode: 'markdown', html, rows: [] };
         }
         if (file.kind === 'csv') {
             const rows = parseDelimited(file.text, file.suffix === 'tsv' ? '\t' : null);
@@ -153,55 +168,114 @@
     // ---- front matter editing ----------------------------------------
     //
     // A Markdown file with a leading `---` block is edited as one field per
-    // top-level key plus the body, not as one big textarea. Nothing in the
-    // block is interpreted: a field's value is the raw text after `key:` up
-    // to the next top-level key -- block scalars, nested mappings, list
-    // items and comments included -- so joinFrontMatter() reproduces
-    // whatever YAML we did not understand byte for byte.
+    // top-level key plus the body, not as one big textarea. Claude Code
+    // reads these blocks with a full YAML parser, so scalars are decoded
+    // the YAML way for editing (quotes and escapes removed, block scalars
+    // unwrapped) and encoded again on save. A field the user did not touch
+    // is written back from its original raw text, so an unchanged file
+    // round-trips byte for byte no matter how its YAML was styled.
+    // Lists, nested mappings (hooks, mcpServers), flow collections and
+    // escapes we do not handle are edited as raw YAML instead.
 
     // Leading `---` block; the `m` flag lets `^` find the closing line.
     const FRONT_MATTER_RE = /^---[ \t]*\r?\n([\s\S]*?)^---[ \t]*(?:\r?\n|$)/m;
     const FIELD_KEY_RE = /^([A-Za-z0-9_.-]+):(.*)$/;
-
-    // A single-line scalar is edited as text: a quoted one is unescaped so
-    // the field shows the words, not the YAML around them, and gets quoted
-    // again on save. Escapes we do not handle (\x41, \u00e9) keep the raw
-    // form so a save cannot change their meaning. Block scalars, nested
-    // mappings, lists and flow collections stay raw as well.
     const DOUBLE_QUOTED_RE = /^"((?:[^"\\]|\\.)*)"$/;
     const SINGLE_QUOTED_RE = /^'((?:[^']|'')*)'$/;
     const UNSUPPORTED_ESCAPE_RE = /\\[^\\"ntr/]/;
-    const RAW_START_RE = /^[>|[{&*!]/;
-    // Plain scalars YAML would misread: a leading indicator, a newline, a
-    // ` #` comment start, a trailing colon. A mid-string `: ` is left alone
-    // on purpose -- skill descriptions are full of them and Claude Code
-    // reads those files fine, so quoting would only churn the file.
-    const NEEDS_QUOTES_RE = /^(?:[\s"'#&*!|>%@`[\]{},?]|- |: |\? )|\n|\s#|:$|\s$/;
+    // `|` / `>` header: chomping (+ -) and indentation indicator, any order.
+    const BLOCK_HEADER_RE = /^([|>])([+-]?)([1-9]?)([+-]?)[ \t]*(?:#.*)?$/;
+    const RAW_START_RE = /^[[{&*!]/;
+    // Plain scalars YAML would misread: a leading indicator, a ` #` comment
+    // start, a `: ` that opens a nested mapping, a trailing colon.
+    const NEEDS_QUOTES_RE = /^(?:[\s"'#&*!|>%@`[\]{},?]|- |: |\? )|\s#|: |:$|\s$/;
     const DECODE = { n: '\n', t: '\t', r: '\r', '"': '"', '\\': '\\', '/': '/' };
     const ENCODE = { '\n': '\\n', '\t': '\\t', '\r': '\\r', '"': '\\"', '\\': '\\\\' };
 
-    // {value, quoted} for a scalar the editor may decode, else null (raw).
+    // Unwrap a `|` or `>` block scalar. `lines` are the raw continuation
+    // lines; returns the text, or null when the block is malformed.
+    function decodeBlock(header, lines) {
+        const [, kind, chompA, indentDigit, chompB] = header;
+        const chomp = chompA || chompB;
+        const first = lines.find((l) => l.trim());
+        const indent = indentDigit ? Number(indentDigit) : (first ? first.match(/^ */)[0].length : 0);
+        if (first && indent === 0) return null;
+        const body = [];
+        for (const line of lines) {
+            if (line.trim() && !line.startsWith(' '.repeat(indent))) return null;
+            body.push(line.slice(indent));
+        }
+        // Trailing blank lines are the chomping's business, not content.
+        let trailing = 0;
+        while (body.length && !body[body.length - 1].trim()) { body.pop(); trailing++; }
+
+        let text;
+        if (kind === '|') {
+            text = body.join('\n');
+        } else {
+            // Folded: a break between two normal lines is a space, blank
+            // lines in between count one newline each, and a break next to
+            // a more-indented line is kept as a newline (plus the blanks).
+            text = '';
+            let prev = null;
+            let blanks = 0;
+            for (const line of body) {
+                if (!line.trim()) { blanks++; continue; }
+                if (prev === null) text = '\n'.repeat(blanks) + line;
+                else if (line.startsWith(' ') || prev.startsWith(' ')) text += '\n'.repeat(blanks + 1) + line;
+                else text += (blanks ? '\n'.repeat(blanks) : ' ') + line;
+                prev = line;
+                blanks = 0;
+            }
+        }
+        if (!body.length) return chomp === '+' ? '\n'.repeat(trailing) : '';
+        if (chomp === '+') text += '\n'.repeat(trailing + 1);
+        else if (chomp !== '-') text += '\n';
+        return text;
+    }
+
+    // {value, style} for a scalar the editor can decode as text, else null.
+    // style is plain | double | single | literal | folded.
     function decodeScalar(raw) {
-        if (raw.includes('\n') || RAW_START_RE.test(raw)) return null;
+        const lines = raw.split('\n');
+        const head = lines[0];
+        const block = BLOCK_HEADER_RE.exec(head);
+        if (block) {
+            const value = decodeBlock(block, lines.slice(1));
+            return value === null ? null : { value, style: block[1] === '|' ? 'literal' : 'folded' };
+        }
+        if (lines.length > 1 || RAW_START_RE.test(raw)) return null;
         let match = DOUBLE_QUOTED_RE.exec(raw);
         if (match) {
             if (UNSUPPORTED_ESCAPE_RE.test(match[1])) return null;
-            return { value: match[1].replace(/\\(.)/g, (_, c) => DECODE[c]), quoted: true };
+            return { value: match[1].replace(/\\(.)/g, (_, c) => DECODE[c]), style: 'double' };
         }
         match = SINGLE_QUOTED_RE.exec(raw);
-        if (match) return { value: match[1].replace(/''/g, "'"), quoted: true };
+        if (match) return { value: match[1].replace(/''/g, "'"), style: 'single' };
         if (raw.startsWith('"') || raw.startsWith("'")) return null;
-        return { value: raw, quoted: false };
+        return { value: raw, style: 'plain' };
     }
 
-    function encodeScalar(value, quoted) {
-        if (!quoted && !NEEDS_QUOTES_RE.test(value)) return value;
+    // Multi-line text becomes a `|` block (the documented way to write a
+    // long description) unless the field was double-quoted before; a
+    // single line stays plain when YAML allows it.
+    function encodeScalar(value, style) {
+        if (value.includes('\n') && style !== 'double') {
+            const trailing = value.length - value.replace(/\n+$/, '').length;
+            const lines = value.replace(/\n+$/, '').split('\n');
+            const indicator = lines[0].startsWith(' ') ? '2' : '';
+            const chomp = trailing === 0 ? '-' : trailing === 1 ? '' : '+';
+            const body = lines.map((l) => (l ? '  ' + l : l)).join('\n');
+            return `|${indicator}${chomp}\n${body}` + (trailing > 1 ? '\n'.repeat(trailing - 1) : '');
+        }
+        if (style === 'plain' && !NEEDS_QUOTES_RE.test(value)) return value;
         return '"' + value.replace(/[\n\t\r"\\]/g, (c) => ENCODE[c]) + '"';
     }
 
-    // Returns {preamble, fields: [{key, value, text, quoted}], body, newKey},
-    // or null when the text has no front matter. `text` marks a decoded
-    // scalar (see decodeScalar); the others are edited verbatim.
+    // Returns {preamble, fields, body, newKey}, or null when the text has no
+    // front matter. A field is {key, value, text, style, raw, orig}: `text`
+    // marks a decoded scalar, `raw` / `orig` are what it was read from so
+    // an untouched field is written back unchanged.
     function splitFrontMatter(text) {
         const match = FRONT_MATTER_RE.exec(text || '');
         if (!match) return null;
@@ -223,8 +297,12 @@
         for (const field of fields) {
             const scalar = decodeScalar(field.value);
             field.text = !!scalar;
-            field.quoted = !!scalar && scalar.quoted;
-            if (scalar) field.value = scalar.value;
+            field.raw = field.value;
+            if (scalar) {
+                field.value = scalar.value;
+                field.orig = scalar.value;
+                field.style = scalar.style;
+            }
         }
         return { preamble: preamble.join('\n'), fields, body: text.slice(match[0].length), newKey: '' };
     }
@@ -234,8 +312,9 @@
         if (form.preamble) lines.push(form.preamble);
         for (const field of form.fields) {
             const key = field.key.trim();
-            const value = field.text ? encodeScalar(field.value, field.quoted) : field.value;
             if (!key) continue;
+            let value = field.value;
+            if (field.text) value = value === field.orig ? field.raw : encodeScalar(value, field.style);
             if (value === '') lines.push(`${key}:`);
             else if (value.startsWith('\n')) lines.push(`${key}:${value}`);
             else lines.push(`${key}: ${value}`);
@@ -247,7 +326,7 @@
     function addField(form) {
         const key = (form.newKey || '').trim();
         if (key && !form.fields.some((f) => f.key === key)) {
-            form.fields.push({ key, value: '', text: true, quoted: false });
+            form.fields.push({ key, value: '', text: true, style: 'plain' });
         }
         form.newKey = '';
     }

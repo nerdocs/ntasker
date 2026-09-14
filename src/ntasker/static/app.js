@@ -911,7 +911,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
 
         // Sidebar agent logo on a project row: "I need an agent in this project
         // *now*". The server creates a placeholder task (straight to wip) and
-        // puts it at the head of the queue as a quick run -- the worker starts
+        // appends it to the queue as a quick run -- the worker starts
         // it with a blank prompt. The terminal always opens: the whole point is
         // to type into it right away, so the background-start setting does not
         // apply here.
@@ -2701,10 +2701,10 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             if (!_claudeTerms.has(id)) this._claudeConnect(id);
         },
 
-        // The run button: "run this next". The queue is the only way a session
-        // starts, so this puts the task at the head of the queue (moving it
-        // there if it was queued further down) and lets the worker start it
-        // -- one lane per project, so a busy project makes it wait. A task
+        // The run button: "queue this". The queue is the only way a session
+        // starts, so this appends the task to the queue (an already-queued
+        // task keeps its place) and lets the worker start it -- one lane per
+        // project, so a busy project makes it wait its turn. A task
         // with a live session just gets its tab. With `claude_open_terminal`
         // on, the terminal opens as soon as the session is live.
         async runNext(task) {

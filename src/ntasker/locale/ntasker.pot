@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: ntasker 3.2.2\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-09-14 23:31+0200\n"
+"POT-Creation-Date: 2026-09-14 23:48+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -226,8 +226,8 @@ msgstr ""
 msgid "Empty. Press a task's run button or drop a card here to queue it."
 msgstr ""
 
-#: src/ntasker/app.py:464
-msgid "Run next"
+#: src/ntasker/app.py:464 src/ntasker/app.py:677
+msgid "Run"
 msgstr ""
 
 #: src/ntasker/app.py:465
@@ -898,10 +898,6 @@ msgstr ""
 
 #: src/ntasker/app.py:674
 msgid "Configure a known key above, or set one via CLI:"
-msgstr ""
-
-#: src/ntasker/app.py:677
-msgid "Run"
 msgstr ""
 
 #: src/ntasker/app.py:679

@@ -461,7 +461,7 @@ def build_js_strings() -> dict[str, str]:
             "Stop starting new tasks. A task already running keeps going."
         ),
         "queue_empty": _("Empty. Press a task's run button or drop a card here to queue it."),
-        "queue_run_next": _("Run next"),
+        "queue_run_next": _("Run"),
         "queued_front": _("Task #{id} queued -- it starts as soon as its project is free."),
         "queue_paused_hint": _("Paused -- press Resume to work through these."),
         "queue_running_hint": _("Running one task per project, top down."),
@@ -1369,13 +1369,13 @@ class RunIn(BaseModel):
 
 @app.post("/api/queue/run")
 def api_queue_run(payload: RunIn) -> JSONResponse:
-    """The run button: put the task at the head of the queue.
+    """The run button: append the task to the queue.
 
     Also the way to run an entry again whose session ended before it was done
-    -- it clears that flag (see :func:`ntasker.taskqueue.enqueue_front`), which
+    -- it clears that flag (see :func:`ntasker.taskqueue.enqueue`), which
     a plain ``PUT /api/queue`` reorder deliberately does not.
     """
-    return JSONResponse(_queue_payload(taskqueue.enqueue_front(payload.id)))
+    return JSONResponse(_queue_payload(taskqueue.enqueue(payload.id)))
 
 
 @app.post("/api/queue/resume")
@@ -1400,8 +1400,8 @@ class QuickRunIn(BaseModel):
 def api_quick_run(payload: QuickRunIn) -> JSONResponse:
     """Sidebar quick run: "I need an agent in this project *now*".
 
-    Creates a placeholder task (localised title, straight to ``wip``), puts it
-    at the head of the queue and marks it as a quick run, so the worker starts
+    Creates a placeholder task (localised title, straight to ``wip``), appends
+    it to the queue and marks it as a quick run, so the worker starts
     it with a blank prompt plus the "name this task" briefing (see
     :func:`ntasker.claude_runner.quick_run_system_prompt`). Returns the task.
     """
@@ -1418,7 +1418,7 @@ def api_quick_run(payload: QuickRunIn) -> JSONResponse:
         )
         new_id = cast(int, cur.lastrowid)
     taskqueue.QUICK.add(new_id)
-    taskqueue.enqueue_front(new_id)
+    taskqueue.enqueue(new_id)
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM tasks WHERE id = ?", (new_id,)).fetchone()
         task = row_to_task(row, [], [])

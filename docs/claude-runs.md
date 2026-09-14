@@ -67,7 +67,7 @@ Sometimes there is no task yet, just the urge to work in a project. Every projec
 **default agent's logo** next to its `+`. One click:
 
 1. creates a task in that project (placeholder title, straight to `phase=wip`) so the session has something to hang on
-   (`POST /api/projects/quick-run`), and puts it at the head of the queue,
+   (`POST /api/projects/quick-run`), and appends it to the queue,
 2. the worker starts the agent in the project directory **with a completely empty prompt** -- no seed, nothing typed --
    and the terminal opens with the caret in it,
 3. briefs the agent -- via the *system* prompt, so the input line stays empty -- to give that placeholder task a real

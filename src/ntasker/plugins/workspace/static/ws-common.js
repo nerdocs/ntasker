@@ -163,8 +163,45 @@
     const FRONT_MATTER_RE = /^---[ \t]*\r?\n([\s\S]*?)^---[ \t]*(?:\r?\n|$)/m;
     const FIELD_KEY_RE = /^([A-Za-z0-9_.-]+):(.*)$/;
 
-    // Returns {preamble, fields: [{key, value}], body, newKey}, or null when
-    // the text has no front matter.
+    // A single-line scalar is edited as text: a quoted one is unescaped so
+    // the field shows the words, not the YAML around them, and gets quoted
+    // again on save. Escapes we do not handle (\x41, \u00e9) keep the raw
+    // form so a save cannot change their meaning. Block scalars, nested
+    // mappings, lists and flow collections stay raw as well.
+    const DOUBLE_QUOTED_RE = /^"((?:[^"\\]|\\.)*)"$/;
+    const SINGLE_QUOTED_RE = /^'((?:[^']|'')*)'$/;
+    const UNSUPPORTED_ESCAPE_RE = /\\[^\\"ntr/]/;
+    const RAW_START_RE = /^[>|[{&*!]/;
+    // Plain scalars YAML would misread: a leading indicator, a newline, a
+    // ` #` comment start, a trailing colon. A mid-string `: ` is left alone
+    // on purpose -- skill descriptions are full of them and Claude Code
+    // reads those files fine, so quoting would only churn the file.
+    const NEEDS_QUOTES_RE = /^(?:[\s"'#&*!|>%@`[\]{},?]|- |: |\? )|\n|\s#|:$|\s$/;
+    const DECODE = { n: '\n', t: '\t', r: '\r', '"': '"', '\\': '\\', '/': '/' };
+    const ENCODE = { '\n': '\\n', '\t': '\\t', '\r': '\\r', '"': '\\"', '\\': '\\\\' };
+
+    // {value, quoted} for a scalar the editor may decode, else null (raw).
+    function decodeScalar(raw) {
+        if (raw.includes('\n') || RAW_START_RE.test(raw)) return null;
+        let match = DOUBLE_QUOTED_RE.exec(raw);
+        if (match) {
+            if (UNSUPPORTED_ESCAPE_RE.test(match[1])) return null;
+            return { value: match[1].replace(/\\(.)/g, (_, c) => DECODE[c]), quoted: true };
+        }
+        match = SINGLE_QUOTED_RE.exec(raw);
+        if (match) return { value: match[1].replace(/''/g, "'"), quoted: true };
+        if (raw.startsWith('"') || raw.startsWith("'")) return null;
+        return { value: raw, quoted: false };
+    }
+
+    function encodeScalar(value, quoted) {
+        if (!quoted && !NEEDS_QUOTES_RE.test(value)) return value;
+        return '"' + value.replace(/[\n\t\r"\\]/g, (c) => ENCODE[c]) + '"';
+    }
+
+    // Returns {preamble, fields: [{key, value, text, quoted}], body, newKey},
+    // or null when the text has no front matter. `text` marks a decoded
+    // scalar (see decodeScalar); the others are edited verbatim.
     function splitFrontMatter(text) {
         const match = FRONT_MATTER_RE.exec(text || '');
         if (!match) return null;
@@ -183,6 +220,12 @@
                 preamble.push(line);
             }
         }
+        for (const field of fields) {
+            const scalar = decodeScalar(field.value);
+            field.text = !!scalar;
+            field.quoted = !!scalar && scalar.quoted;
+            if (scalar) field.value = scalar.value;
+        }
         return { preamble: preamble.join('\n'), fields, body: text.slice(match[0].length), newKey: '' };
     }
 
@@ -191,7 +234,7 @@
         if (form.preamble) lines.push(form.preamble);
         for (const field of form.fields) {
             const key = field.key.trim();
-            const value = field.value;
+            const value = field.text ? encodeScalar(field.value, field.quoted) : field.value;
             if (!key) continue;
             if (value === '') lines.push(`${key}:`);
             else if (value.startsWith('\n')) lines.push(`${key}:${value}`);
@@ -204,7 +247,7 @@
     function addField(form) {
         const key = (form.newKey || '').trim();
         if (key && !form.fields.some((f) => f.key === key)) {
-            form.fields.push({ key, value: '' });
+            form.fields.push({ key, value: '', text: true, quoted: false });
         }
         form.newKey = '';
     }

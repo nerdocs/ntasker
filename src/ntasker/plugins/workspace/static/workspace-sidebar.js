@@ -17,6 +17,17 @@
     // file manager: 481 knowledge-base notes must never render in it.
     const WS_SIDEBAR_MAX = 12;
 
+    // Remembered collapse state, over the closed defaults. Corrupt or
+    // unavailable storage keeps the defaults.
+    function savedWsOpen() {
+        const open = { team: false, skills: false, wiki: false, docs: false };
+        try {
+            const saved = JSON.parse(localStorage.getItem(LS_KEY_WS_SECTIONS) || '{}');
+            for (const k of Object.keys(open)) if (k in saved) open[k] = !!saved[k];
+        } catch (e) { /* keep defaults */ }
+        return open;
+    }
+
     const freshViewer = () => ({
         open: true, loading: true, error: '', file: null, dir: null,
         mode: 'none', html: '', rows: [], editing: false, draft: '', form: null,
@@ -32,8 +43,10 @@
             wsLoading: false,
             wsQuery: { team: '', skills: '', wiki: '', docs: '' },
             // Sections start closed so the page looks the way it always did
-            // until the user goes looking; the choice is remembered.
-            wsOpen: { team: false, skills: false, wiki: false, docs: false },
+            // until the user goes looking; the choice is remembered. Restored
+            // here, before Alpine renders, so a remembered section is open on
+            // first paint instead of popping open after the initial loads.
+            wsOpen: savedWsOpen(),
             wsViewer: {
                 open: false, loading: false, error: '',
                 file: null, mode: 'none', html: '', rows: [],
@@ -44,12 +57,6 @@
 
             async pluginInit() {
                 if (prevInit) await prevInit.call(this);
-                try {
-                    const saved = JSON.parse(localStorage.getItem(LS_KEY_WS_SECTIONS) || '{}');
-                    for (const k of Object.keys(this.wsOpen)) if (k in saved) this.wsOpen[k] = !!saved[k];
-                } catch (e) {
-                    // Corrupt or unavailable storage -- keep the defaults.
-                }
                 // Not awaited: whether the block appears depends on the scan,
                 // but the scan must never delay the task list.
                 this.loadWorkspace();

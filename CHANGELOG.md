@@ -4,7 +4,7 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
-## [Unreleased]
+## [3.1.0] — 2026-09-14
 Task report: `tasks.report`/`report_at`, `ntasker report <id>`, `patch --report`; card icon opens a Markdown modal.
 Queue: only the agent's own hand-off or `done` end a run; an ended session stays queued, flagged, blocking its lane.
 Context picker rows toggle attach/detach; an image pasted into a description is stored and attached as a file.

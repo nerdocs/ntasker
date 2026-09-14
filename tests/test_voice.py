@@ -144,3 +144,41 @@ def test_ws_reports_missing_vosk(client, monkeypatch):
     with client.websocket_connect("/api/voice/ws", headers=WS_HEADERS) as ws:
         msg = ws.receive_json()
     assert msg["type"] == "error" and "ntasker[voice]" in msg["text"]
+
+
+def test_language_of_model_spec():
+    from ntasker.plugins.voice.punct import language_of
+
+    assert language_of("de") == "de"
+    assert language_of("en-us") == "en"
+    assert language_of("/models/vosk-model-de-0.21") == "de"
+    assert language_of("/home/de/vosk-model-small-en-us-0.15/") == "en"
+    assert language_of("fr") is None
+
+
+def test_punctuate_de_and_en():
+    from ntasker.plugins.voice.punct import punctuate
+
+    assert punctuate("hallo welt punkt wie geht es fragezeichen gut komma danke", "de") == (
+        "hallo welt. Wie geht es? Gut, danke"
+    )
+    assert punctuate("erstens doppelpunkt neue zeile zweitens strichpunkt absatz drittens", "de") == (
+        "erstens:\nZweitens;\n\nDrittens"
+    )
+    assert punctuate("hello period new paragraph what question mark", "en") == "hello.\n\nWhat?"
+    assert punctuate("full stop exclamation point", "en") == ".!"
+    assert punctuate("punkt", "en") == "punkt"
+    assert punctuate("punkt", None) == "punkt"
+
+
+def test_ws_applies_punctuation(client, monkeypatch):
+    client.put("/api/settings/plugins_enabled", json={"value": '["voice"]'})
+    client.put("/api/settings/voice_model", json={"value": "de"})
+    _fake_vosk(monkeypatch, {"partial": "hallo punkt", "final": "", "flush": "ende fragezeichen"})
+    with client.websocket_connect("/api/voice/ws", headers=WS_HEADERS) as ws:
+        ws.receive_json()
+        ws.receive_json()
+        ws.send_bytes(b"\x00" * 3200)
+        assert ws.receive_json() == {"type": "partial", "text": "hallo."}
+        ws.send_text("final")
+        assert ws.receive_json() == {"type": "final", "text": "ende?"}

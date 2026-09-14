@@ -48,8 +48,28 @@ The tray under the description field has one microphone button that works both w
 - **Click** it to toggle; click again or press **Esc** to stop.
 
 While live, the tray shows a level meter driven by the microphone and the current hypothesis in grey italics.
-Recognised text is appended at the end of the description, separated by a space. Vosk gives lowercase text
-without punctuation -- edit as needed.
+Recognised text is appended at the end of the description.
+
+### Spoken punctuation
+
+Vosk itself returns lowercase words without punctuation, so marks are dictated the way classic dictation software
+expects, per model language (`src/ntasker/plugins/voice/punct.py`; the language comes from the `voice_model` value
+or the model directory's name, e.g. `vosk-model-de-0.21`, else from the `language` setting):
+
+| German | English | Result |
+|---|---|---|
+| Punkt | period, full stop | `.` |
+| Komma | comma | `,` |
+| Doppelpunkt | colon | `:` |
+| Strichpunkt, Semikolon | semicolon | `;` |
+| Fragezeichen | question mark | `?` |
+| Rufzeichen, Ausrufezeichen | exclamation mark, exclamation point | `!` |
+| neue Zeile | new line | line break |
+| Absatz, neuer Absatz | new paragraph | empty line |
+
+The mark is glued to the preceding word, the word after `.`, `?`, `!` or a line break is capitalised, and so is
+the first word of a segment that starts a sentence. A genuine "Punkt" or "period" in a sentence is replaced too --
+type it instead.
 
 The browser asks for microphone permission once per origin. Since ntasker binds to `127.0.0.1`, the page counts as a
 secure context and `getUserMedia` is available without HTTPS.

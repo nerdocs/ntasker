@@ -95,13 +95,16 @@
                 }
             },
 
-            // Append confirmed text to the target's description, one space
-            // after whatever is already there.
+            // Append confirmed text to the target's description: a space after
+            // a word, nothing after a line break or before a punctuation mark,
+            // and a capital letter when it starts a sentence.
             voiceAppend(text) {
                 const obj = this.voice.target === 'edit' ? this.editing : this.form;
                 if (!obj) return;
-                const cur = (obj.description || '').replace(/\s+$/, '');
-                obj.description = cur ? `${cur} ${text}` : text;
+                const cur = (obj.description || '').replace(/ +$/, '');
+                if (!cur || /[.?!\n]$/.test(cur)) text = text.charAt(0).toUpperCase() + text.slice(1);
+                const glue = !cur || /\n$/.test(cur) || /^[.,:;?!]/.test(text) ? '' : ' ';
+                obj.description = cur + glue + text;
             },
 
             voiceStop() {

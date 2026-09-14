@@ -9,7 +9,8 @@ Protocol on ``/api/voice/ws``:
   loads, ``{"type": "partial", "text"}`` after each chunk (a revisable
   hypothesis), ``{"type": "final", "text"}`` at each pause and on
   ``"final"``, ``{"type": "error", "text"}`` followed by a close when
-  Vosk is missing or the model cannot be loaded.
+  Vosk is missing or the model cannot be loaded. Spoken punctuation is
+  already applied to both texts (:mod:`~ntasker.plugins.voice.punct`).
 
 Vosk's calls are blocking C++ -- model loading can take seconds (and
 the first use of a language code downloads the model), so both run in a
@@ -28,6 +29,7 @@ from typing import Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from ntasker.i18n import _
+from ntasker.plugins.voice.punct import language_of, punctuate
 from ntasker.settings import get_setting
 
 SAMPLE_RATE = 16000
@@ -72,13 +74,20 @@ async def voice_ws(websocket: WebSocket) -> None:
         await websocket.close()
         return
     await websocket.send_json({"type": "status", "text": _("Loading the speech model...")})
+    spec = model_spec()
     try:
-        model = await asyncio.to_thread(load_model, model_spec())
+        model = await asyncio.to_thread(load_model, spec)
     except Exception as exc:  # noqa: BLE001 -- surface any load failure to the user
         await websocket.send_json({"type": "error", "text": str(exc)})
         await websocket.close()
         return
     rec = vosk.KaldiRecognizer(model, SAMPLE_RATE)
+    lang = language_of(spec) or get_setting("language", env_var="NTASKER_LANGUAGE")
+
+    async def send(kind: str, raw: str, key: str) -> None:
+        text = punctuate(json.loads(raw).get(key, ""), lang)
+        await websocket.send_json({"type": kind, "text": text})
+
     await websocket.send_json({"type": "status", "text": ""})
     try:
         while True:
@@ -86,17 +95,14 @@ async def voice_ws(websocket: WebSocket) -> None:
             if msg.get("type") == "websocket.disconnect":
                 return
             if msg.get("text") == "final":
-                res = json.loads(rec.FinalResult())
-                await websocket.send_json({"type": "final", "text": res.get("text", "")})
+                await send("final", rec.FinalResult(), "text")
                 continue
             chunk = msg.get("bytes")
             if not chunk:
                 continue
             if await asyncio.to_thread(rec.AcceptWaveform, chunk):
-                res = json.loads(rec.Result())
-                await websocket.send_json({"type": "final", "text": res.get("text", "")})
+                await send("final", rec.Result(), "text")
             else:
-                res = json.loads(rec.PartialResult())
-                await websocket.send_json({"type": "partial", "text": res.get("partial", "")})
+                await send("partial", rec.PartialResult(), "partial")
     except WebSocketDisconnect:
         return

@@ -134,6 +134,14 @@ const VIEW_MODES = ['list', 'kanban'];
 // server-side PTY sessions persist in the background.
 const _claudeTerms = new Map();
 
+// Board card / list row currently carrying the drop indicator (insertion line
+// or dependency hint). Kept out of Alpine state on purpose: the indicator is
+// painted straight onto the element, so a dragover -- which fires on every
+// mouse move -- touches one node instead of re-running a binding on every
+// card. See _markDrop / _clearDrop.
+let _dropEl = null;
+const DROP_CLASSES = ['drop-before', 'drop-after', 'drop-link'];
+
 // Decode a base64 string (PTY bytes from the server) into a Uint8Array that
 // xterm's write() accepts -- avoids UTF-8 corruption when multibyte sequences
 // are split across PTY reads.
@@ -218,12 +226,9 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         draggedProject: null,
         dragOverFamily: null,
         dragOverColumn: null,
-        // Intra-group reordering indicator: the card/row the cursor hovers and
-        // whether the drop would land above (true) or below (false) it. Drives
-        // the insertion-line CSS (.drop-before / .drop-after).
-        dragOverTaskId: null,
         // Which band of the hovered target the cursor sits in:
         // 'before' / 'after' insert, 'link' sets a dependency. See _dropZone.
+        // The hovered target itself is the DOM node in _dropEl, not state.
         dragZone: 'before',
 
         // ---- Auto-run task queue ----
@@ -232,8 +237,8 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // it). ``queueEnabled`` mirrors the server-side ``queue_enabled``
         // setting, so the play/pause state survives a reload and every open tab
         // agrees on it. Reordering inside the panel has its own drag state -- a
-        // queued task also sits on the board, so sharing dragOverTaskId would
-        // light up both at once.
+        // queued task also sits on the board, so sharing the board's drop
+        // marker would light up both at once.
         queue: [],
         queueEnabled: true,
         // Lock / dirty reasons per queued task id, from /api/queue ``skipped``
@@ -838,14 +843,19 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         },
 
         // ---- View mode (list / kanban) ----
-        setViewMode(mode) {
+        async setViewMode(mode) {
             if (!VIEW_MODES.includes(mode)) return;
             if (this.viewMode === mode) return;
-            this.viewMode = mode;
             localStorage.setItem(LS_KEY_VIEW_MODE, mode);
             // Switching views changes what we need to load: list-view honors
-            // the status tab, kanban shows open + done together.
-            this.loadTasks();
+            // the status tab, kanban shows open + done together. Fetch first
+            // and flip the view in the same tick as the task swap -- flipping
+            // early would build the new view from the old task set and then
+            // rebuild it once the fetch lands (two full renders instead of one).
+            const rows = await this._fetchTasks(mode);
+            this.viewMode = mode;
+            this.tasks = this._mergeTasks(rows);
+            await this.loadCounts();
         },
 
         toggleDoneCollapsed() {
@@ -990,7 +1000,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             this.draggedTaskId = null;
             this.dragSource = null;
             this.dragOverColumn = null;
-            this.dragOverTaskId = null;
+            this._clearDrop();
             this.queueOverId = null;
             this.queuePanelOver = false;
             // A change detected mid-drag was deferred (re-rendering would abort
@@ -1043,6 +1053,23 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             return 'link';
         },
 
+        // Paint the drop indicator onto ``el`` (a card or list row) and drop
+        // it from whichever element carried it before.
+        _markDrop(el, zone, target) {
+            if (_dropEl !== el) this._clearDrop();
+            for (const c of DROP_CLASSES) el.classList.toggle(c, c === 'drop-' + zone);
+            if (zone === 'link') el.dataset.dropLink = this.linkHint(target);
+            else delete el.dataset.dropLink;
+            _dropEl = el;
+        },
+
+        _clearDrop() {
+            if (!_dropEl) return;
+            _dropEl.classList.remove(...DROP_CLASSES);
+            delete _dropEl.dataset.dropLink;
+            _dropEl = null;
+        },
+
         // Whether "dragged depends on target" is a move we can offer. Self and
         // an already-recorded dependency are answerable from local state; a
         // cycle is not (the board holds only the filtered task set), so that
@@ -1070,7 +1097,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             // Hovering the dragged card itself: no insertion line, but keep the
             // column highlighted and the drop allowed (a no-op drop is fine).
             if (this.draggedTaskId === task.id) {
-                this.dragOverTaskId = null;
+                this._clearDrop();
                 if (colKey != null) this.dragOverColumn = colKey;
                 if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
                 return;
@@ -1081,7 +1108,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 // does not apply -- and the column highlight would be a lie.
                 if (!this._canLink(this.draggedTaskId, task)) {
                     if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
-                    this.dragOverTaskId = null;
+                    this._clearDrop();
                     return;
                 }
                 this.dragOverColumn = null;
@@ -1090,14 +1117,14 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 const dragged = this.tasks.find(t => t.id === this.draggedTaskId);
                 if (dragged && !this.canDropOn(dragged, colKey)) {
                     if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
-                    this.dragOverTaskId = null;
+                    this._clearDrop();
                     this.dragOverColumn = null;
                     return;
                 }
                 this.dragOverColumn = colKey;
             }
             this.dragZone = zone;
-            this.dragOverTaskId = task.id;
+            this._markDrop(event.currentTarget, zone, task);
             // 'link' makes the browser swap in its own link cursor, which is
             // half the reason the gesture reads as different at all.
             if (event.dataTransfer) event.dataTransfer.dropEffect = zone === 'link' ? 'link' : 'move';
@@ -1107,7 +1134,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             const id = this.draggedTaskId;
             const zone = this.dragZone;
             const fromQueue = this.dragSource === 'queue';
-            this.dragOverTaskId = null;
+            this._clearDrop();
             this.dragOverColumn = null;
             this.draggedTaskId = null;
             if (id == null || id === task.id || fromQueue) return; // itself / queue entry
@@ -1245,7 +1272,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             this.dragOverColumn = colKey;
             // Over the column's empty area (between/below cards) -- no specific
             // insertion line. Card-level dragover sets this again when hovered.
-            this.dragOverTaskId = null;
+            this._clearDrop();
         },
 
         onColumnDragLeave(event, colKey) {
@@ -1261,7 +1288,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             const id = this.draggedTaskId;
             const fromQueue = this.dragSource === 'queue';
             this.dragOverColumn = null;
-            this.dragOverTaskId = null;
+            this._clearDrop();
             this.draggedTaskId = null;
             if (id == null || fromQueue) return;
             const task = this.tasks.find(t => t.id === id);
@@ -1602,12 +1629,18 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         },
 
         async loadTasks() {
+            this.tasks = this._mergeTasks(await this._fetchTasks(this.viewMode));
+            await this.loadCounts();
+        },
+
+        // Rows for ``view`` ('list' | 'kanban') under the current filters.
+        async _fetchTasks(view) {
             const params = this._buildFilterParams();
             // In-group ordering: priority rank (default) or manual sort_order.
             params.set('sort', this.sortMode);
             // Kanban view always shows non-archived tasks (open + done) so
             // the Done column has content; status tabs are irrelevant here.
-            if (this.viewMode === 'kanban') {
+            if (view === 'kanban') {
                 params.set('archived', 'false');
             } else if (this.tab === 'open') {
                 params.set('status', 'open');
@@ -1620,9 +1653,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             }
 
             const r = await fetch('/api/tasks?' + params.toString());
-            this.tasks = this._mergeTasks(await r.json());
-
-            await this.loadCounts();
+            return await r.json();
         },
 
         // Reconcile freshly fetched rows into the existing task objects instead

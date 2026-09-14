@@ -920,11 +920,7 @@
                             <div class="list-group-item"
                                  :class="{'task-session-running': taskRunPhase(task.id) === 'running',
                                           'task-session-waiting': taskRunPhase(task.id) === 'waiting',
-                                          'task-project-busy': taskProjectBusy(task),
-                                          'drop-before': dragOverTaskId === task.id && dragZone === 'before',
-                                          'drop-after': dragOverTaskId === task.id && dragZone === 'after',
-                                          'drop-link': dragOverTaskId === task.id && dragZone === 'link'}"
-                                 :data-drop-link="dragOverTaskId === task.id && dragZone === 'link' ? linkHint(task) : null"
+                                          'task-project-busy': taskProjectBusy(task)}"
                                  :title="taskProjectBusy(task) ? $i18n('project_busy_hint') : ''"
                                  @dragover.prevent="onCardDragOver($event, task, null)"
                                  @drop.prevent="onCardDrop($event, task, null)">
@@ -1218,14 +1214,10 @@
                                     <template x-for="task in kanbanColumnTasks(col.key)" :key="task.id">
                                         <div class="kanban-card"
                                              :class="{'kanban-card-dragging': draggedTaskId === task.id,
-                                                      'drop-before': dragOverTaskId === task.id && dragZone === 'before',
-                                                      'drop-after': dragOverTaskId === task.id && dragZone === 'after',
-                                                      'drop-link': dragOverTaskId === task.id && dragZone === 'link',
                                                       'task-session-running': taskRunPhase(task.id) === 'running',
                                                       'task-session-waiting': taskRunPhase(task.id) === 'waiting',
                                                       'task-project-busy': taskProjectBusy(task)}"
                                              :title="taskProjectBusy(task) ? $i18n('project_busy_hint') : ''"
-                                             :data-drop-link="dragOverTaskId === task.id && dragZone === 'link' ? linkHint(task) : null"
                                              draggable="true"
                                              @dragstart="onCardDragStart($event, task)"
                                              @dragend="onCardDragEnd($event)"

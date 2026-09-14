@@ -60,6 +60,7 @@ from ntasker.db import (
     merge_tags,
     normalize_dep_ids,
     normalize_tags,
+    report_fields,
     row_to_task,
     set_db_path,
     set_task_deps,
@@ -231,6 +232,8 @@ class TaskUpdate(BaseModel):
     # plain column by the generic UPDATE path -- no extra validation needed.
     sort_order: float | None = None
     locks: list[str] | None = None  # None = unchanged; [] = clear all
+    # The agent's final report (Markdown). None = unchanged; "" clears it.
+    report: str | None = None
 
 
 class SettingUpdate(BaseModel):
@@ -454,6 +457,10 @@ def build_js_strings() -> dict[str, str]:
         "queue_badge": _("Queued at position {n}"),
         "queue_blocked": _("Skipped while a dependency is still open."),
         "queue_agent_missing": _("Skipped -- this task's agent is not installed."),
+        "queue_ended": _(
+            "Session ended without hand-off -- check the task, then remove it or run it again."
+        ),
+        "queue_ended_badge": _("ended"),
         "queue_locked": _("Waiting -- another task's session holds one of its directories."),
         "queue_dirty": _("Waiting -- a directory it holds has uncommitted changes."),
         # Directory locks (form + edit chips, board badge)
@@ -461,6 +468,12 @@ def build_js_strings() -> dict[str, str]:
         "locks_placeholder": _("project name, Enter"),
         "remove_lock": _("Remove lock"),
         "task_locks_badge": _("Also locks the directories of:"),
+        # Report modal (the agent's final report)
+        "report_open": _("Show report"),
+        "report_title": _("Report"),
+        "report_none": _("No report yet."),
+        "report_written_at": _("Written {when}"),
+        "report_resume": _("Resume session"),
         "dep_other_project": _("in {name}"),
         "dep_drop_hint": _("#{a} waits for #{b}"),
         "dep_added": _("#{a} now depends on #{b}."),
@@ -1332,6 +1345,21 @@ def api_set_queue(payload: QueueIn) -> JSONResponse:
     return JSONResponse(_queue_payload(taskqueue.set_queue(payload.ids)))
 
 
+class RunIn(BaseModel):
+    id: int
+
+
+@app.post("/api/queue/run")
+def api_queue_run(payload: RunIn) -> JSONResponse:
+    """The run button: put the task at the head of the queue.
+
+    Also the way to run an entry again whose session ended without a hand-off
+    -- it clears that flag (see :func:`ntasker.taskqueue.enqueue_front`), which
+    a plain ``PUT /api/queue`` reorder deliberately does not.
+    """
+    return JSONResponse(_queue_payload(taskqueue.enqueue_front(payload.id)))
+
+
 class QuickRunIn(BaseModel):
     project: str
 
@@ -2095,6 +2123,9 @@ def api_update_task(task_id: int, payload: TaskUpdate) -> JSONResponse:
 
     if "archived" in fields:
         fields["archived"] = 1 if fields["archived"] else 0
+
+    if "report" in fields:
+        fields.update(report_fields(fields["report"]))
 
     with get_conn() as conn:
         if "locks" in fields:

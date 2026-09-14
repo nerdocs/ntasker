@@ -86,7 +86,17 @@ CREATE TABLE IF NOT EXISTS tasks (
     -- directories this task's run holds besides its own project's. The queue
     -- worker refuses to start a task while another live session holds one of
     -- its directories. See ntasker.locks.
-    locks TEXT NOT NULL DEFAULT '[]'
+    locks TEXT NOT NULL DEFAULT '[]',
+    -- The agent's final report (Markdown), written before it hands the task
+    -- off. One per task -- a new run overwrites it. NULL until the first run.
+    report TEXT,
+    report_at TEXT,
+    -- Queue-run state, see ntasker.taskqueue. ``handed_off_at``: the agent
+    -- handed the task off from inside its own session (the only hand-off the
+    -- worker acts on). ``session_ended_at``: its session ended without one --
+    -- the entry stays queued, flagged, until the user acts. Never user-facing.
+    handed_off_at TEXT,
+    session_ended_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_archived ON tasks(archived);
 CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project);
@@ -196,6 +206,12 @@ def init_db(path: Path | None = None) -> None:
             conn.execute("ALTER TABLE tasks ADD COLUMN locks TEXT NOT NULL DEFAULT '[]'")
         except sqlite3.OperationalError:
             pass
+        # v3.1 report + queue-run state columns (see the schema comments).
+        for column in ("report", "report_at", "handed_off_at", "session_ended_at"):
+            try:
+                conn.execute(f"ALTER TABLE tasks ADD COLUMN {column} TEXT")
+            except sqlite3.OperationalError:
+                pass
         # v2.0 phase migration: legacy values `later` and NULL collapse into
         # `planned`. The new vocabulary is {planned, wip, review}; the column
         # also becomes NOT NULL. We update existing rows in-place; SQLite
@@ -332,6 +348,20 @@ def cleanup_database() -> dict[str, int]:
     }
 
 
+def report_fields(text: str | None) -> dict:
+    """Column values for writing a report: the text, or a clear when empty.
+
+    Shared by the API (``PATCH report``) and the CLI (``ntasker report`` /
+    ``patch --report``) so both spell "empty clears the report" the same way.
+    """
+    from datetime import datetime  # noqa: PLC0415
+
+    text = (text or "").strip()
+    if not text:
+        return {"report": None, "report_at": None}
+    return {"report": text, "report_at": datetime.now().isoformat(timespec="seconds")}
+
+
 def row_to_task(
     row: sqlite3.Row,
     tags: list[str] | None = None,
@@ -360,6 +390,8 @@ def row_to_task(
         "sort_order": row["sort_order"],
         "queue_order": row["queue_order"],
         "locks": locks.parse(row["locks"]),
+        "report": row["report"],
+        "report_at": row["report_at"],
         "tags": tags or [],
         "depends": depends or [],
     }

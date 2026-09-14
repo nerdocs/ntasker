@@ -4,19 +4,23 @@ A task is *queued* when its ``queue_order`` is not NULL; queued tasks are worked
 top-down (``queue_order ASC``). :func:`worker` ticks a few times a second and
 does exactly two things:
 
-* **retire** entries that are finished -- handed off to ``phase=review`` by
-  their own run, ``status=done``, archived, deleted, or whose agent session has
-  ended (whoever moved the task, from the UI, the CLI or the agent itself, is
-  irrelevant: the DB is the single source of truth);
+* **retire** entries that are finished: the agent handed the task off **from
+  inside its own session** (``ntasker patch <id> --phase review`` there sets
+  ``handed_off_at``), or the task is ``status=done`` -- both end the session --
+  or it was archived / deleted (no kill);
 * **start** the head-most startable task of every project that has no live
   session yet -- one concurrent run per project, so several projects progress in
   parallel while a single project stays strictly sequential. With ``dir_locks``
   on, a task also waits while another live session holds one of its directories
   (see :mod:`ntasker.locks`), and with ``require_clean`` while one is git-dirty.
 
-Session ended but the task is still open (agent stopped, crashed, hit a blocker)?
-The entry is retired anyway and the queue moves on. A task that cannot finish
-must not wedge the queue behind it -- it keeps its phase and stays on the board.
+Session ended without a hand-off (agent stopped, crashed, hit a blocker)? The
+entry **stays** queued, flagged ``session_ended_at``, and blocks its lane until
+the user looks at it: remove it, set the task done, or run it again (the run
+button / ``queue add --top`` clear the flag). nTasker never kills a session on
+its own except on the agent's own hand-off and on ``done``; a task moved to
+review from the board or a CLI outside the session is simply not the worker's
+business.
 
 A queued run gets its own seed (:func:`~ntasker.claude_runner.queue_seed_for_task`)
 which tells the agent to hand the finished task to ``phase=review`` unprompted.
@@ -99,6 +103,13 @@ def set_queue(ids: list[int]) -> list[sqlite3.Row]:
             )
             if cur.rowcount:
                 position += 1
+        # Queue-run state belongs to a queued row only; a removed entry must
+        # not carry a stale flag into its next run.
+        conn.execute(
+            "UPDATE tasks SET handed_off_at = NULL, session_ended_at = NULL "
+            "WHERE queue_order IS NULL "
+            "AND (handed_off_at IS NOT NULL OR session_ended_at IS NOT NULL)"
+        )
         return conn.execute(
             "SELECT * FROM tasks WHERE queue_order IS NOT NULL ORDER BY queue_order ASC"
         ).fetchall()
@@ -110,14 +121,26 @@ def enqueue_front(task_id: int) -> list[sqlite3.Row]:
     What every run button does: an already-queued id moves to the front, a new
     one is inserted there. Same filtering as :func:`set_queue`.
     """
+    clear_ended([task_id])   # "run it again" for an entry whose session ended
     rest = [int(r["id"]) for r in load_queue() if int(r["id"]) != task_id]
     return set_queue([task_id, *rest])
+
+
+def clear_ended(ids: list[int]) -> None:
+    """Forget that these entries' sessions ended -- "run it again"."""
+    placeholders = ",".join("?" * len(ids))
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE tasks SET session_ended_at = NULL WHERE id IN ({placeholders})", ids
+        )
 
 
 def _dequeue(conn: sqlite3.Connection, ids: list[int]) -> None:
     placeholders = ",".join("?" * len(ids))
     conn.execute(
-        f"UPDATE tasks SET queue_order = NULL WHERE id IN ({placeholders})", ids
+        f"UPDATE tasks SET queue_order = NULL, handed_off_at = NULL, session_ended_at = NULL "
+        f"WHERE id IN ({placeholders})",
+        ids,
     )
 
 
@@ -206,14 +229,18 @@ def skipped(rows: list[sqlite3.Row], live: set[int]) -> dict[int, dict]:
     """
     from ntasker.settings import get_dir_locks, get_require_clean  # noqa: PLC0415
 
+    out: dict[int, dict] = {
+        int(row["id"]): {"reason": "ended", "project": row["project"], "holder": None}
+        for row in rows
+        if row["session_ended_at"] and int(row["id"]) not in live
+    }
     if not rows or not get_dir_locks():
-        return {}
+        return out
     require_clean = get_require_clean()
     with get_conn() as conn:
         held = locks.held_dirs(conn, live)
-    out: dict[int, dict] = {}
     for row in rows:
-        if int(row["id"]) in live:
+        if int(row["id"]) in live or int(row["id"]) in out:
             continue
         reason = _lock_reason(row, held, require_clean)
         if reason is not None:
@@ -243,32 +270,36 @@ def tick() -> None:
         _running.update(queued_ids & live)
     _running.intersection_update(queued_ids)
 
-    # Handed off: the run we started moved its task to review -- that is a
-    # queued run's "finished" signal. Only for tasks we are running, so queueing
-    # a task that already sits in review still gets it worked on.
-    handed_off = {
-        int(r["id"]) for r in rows if int(r["id"]) in _running and r["phase"] == "review"
+    # Finished: the agent's own in-session hand-off (``handed_off_at``, set by
+    # the CLI patch that ran inside the session) or ``status=done``. Both end
+    # the session -- a hand-off leaves the task open, so nothing else tears
+    # its session down, and a live session would keep its lane busy. Archived
+    # entries just leave the queue; nothing else is ever killed by nTasker.
+    finished = {
+        int(r["id"]) for r in rows if r["handed_off_at"] or r["status"] == "done"
     }
-
-    # Retire: handed off, closed, archived, or the run is over -- finished or not.
-    retired = [
-        int(r["id"])
-        for r in rows
-        if int(r["id"]) in handed_off
-        or r["status"] == "done"
-        or r["archived"]
-        or (int(r["id"]) in _running and int(r["id"]) not in live)
-    ]
+    retired = [int(r["id"]) for r in rows if int(r["id"]) in finished or r["archived"]]
     if retired:
         with get_conn() as conn:
             _dequeue(conn, retired)
-        # A hand-off leaves the task open, so nothing else tears its session
-        # down -- and a live session keeps its project bucket busy. Stop it here
-        # or the next task of that project would never start.
-        for task_id in handed_off:
+        for task_id in finished:
             stop_session(task_id)
         _running.difference_update(retired)
         rows = [r for r in rows if int(r["id"]) not in retired]
+
+    # Ended without a hand-off (stopped, crashed, blocker): flag the entry and
+    # keep it -- it blocks its lane until the user has looked at it. A column,
+    # not memory, so a server restart does not silently start it again.
+    ended = [int(r["id"]) for r in rows if int(r["id"]) in _running and int(r["id"]) not in live]
+    if ended:
+        with get_conn() as conn:
+            conn.execute(
+                f"UPDATE tasks SET session_ended_at = ? "
+                f"WHERE id IN ({','.join('?' * len(ended))}) AND session_ended_at IS NULL",
+                [_now(), *ended],
+            )
+        _running.difference_update(ended)
+        rows = load_queue()
 
     if not rows or not enabled:
         return
@@ -283,6 +314,7 @@ def tick() -> None:
     starts: list[int] = []
     with get_conn() as conn:
         busy = _busy_buckets(live, conn)
+        busy |= {_bucket(r["project"]) for r in rows if r["session_ended_at"]}
         held = locks.held_dirs(conn, live) if dir_locks else {}
         for row in rows:
             bucket = _bucket(row["project"])
@@ -308,10 +340,15 @@ def tick() -> None:
         )
         if started:
             QUICK.discard(task_id)
-            # Retiring keys on ``phase=review``, so a task queued while it sits
-            # in review has to leave that phase the moment it starts.
+            # The loader's "starting work marks it in progress" move.
             mark_wip(task_id)
             _running.add(task_id)
+
+
+def _now() -> str:
+    from datetime import datetime  # noqa: PLC0415
+
+    return datetime.now().isoformat(timespec="seconds")
 
 
 def _task_dict(task_id: int) -> dict | None:

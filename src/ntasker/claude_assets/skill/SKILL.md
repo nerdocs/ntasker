@@ -218,16 +218,35 @@ autonomous closing and archival stay forbidden.
 
 ## 6. Review-Handoff on Agent-Side Completion (since v1.5.0)
 
-When the user assigned `#<id>` and the agent considers its work done:
+When the user assigned `#<id>` and the agent considers its work done,
+**first write the final report**, then hand off:
+
+```bash
+ntasker report 43 <<'EOF'
+## What I did
+...
+## Verified
+...
+## Open / for the user
+...
+EOF
+ntasker patch 43 --phase review
+```
+
+The report (Markdown; `--file <path>` instead of stdin also works) is stored
+on the task (`report`, `report_at`; one per task, a new run overwrites) and
+shown in the UI via the report icon on the card -- the user reads it there,
+without opening the session. Write it *before* the hand-off: inside an
+nTasker-spawned queue session the hand-off ends the session at once.
+
+Inside such a session use the **CLI** form `ntasker patch <id> --phase
+review` -- that is what the queue recognises as the agent's own hand-off.
+The equivalent HTTP call moves the phase but is not a queue hand-off:
 
 ```bash
 curl -s -X PATCH http://127.0.0.1:8766/api/tasks/43 \
   -H 'Content-Type: application/json' \
   -d '{"phase": "review"}'
-```
-Or:
-```bash
-ntasker patch 43 --phase review
 ```
 
 The card then shows up in the kanban "Review" column (UI: "Zu prüfen")
@@ -245,7 +264,8 @@ user's behalf.
 
 **When NOT to move to review:** if the agent could not finish (blocker,
 missing info, failed verification), leave the phase as-is and report the
-blocker. Review is a *handoff*, not a *give-up* signal.
+blocker -- in the report field (`ntasker report`) as well as in the chat.
+Review is a *handoff*, not a *give-up* signal.
 
 ### 6.1 Directory locks (since v3.1)
 
@@ -322,6 +342,8 @@ either `""` or `null` for "no project" both work.
 | tags | n:m | via `tags` + `task_tags` tables |
 | depends | n:m | via `task_deps(task_id, depends_on_id)`, FK CASCADE; kept acyclic |
 | `locks` | TEXT JSON | extra project names whose directories the run holds (own project implicit) |
+| `report` | TEXT NULL | the agent's final report, Markdown; one per task, overwritten by each run |
+| `report_at` | TEXT NULL | when the report was written |
 | settings | KV | `key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT` |
 
 Workflow phases read left-to-right in the kanban view:

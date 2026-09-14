@@ -922,3 +922,9 @@ body {
 @media (prefers-reduced-motion: reduce) {
     .project-fold .ti { transition: none; }
 }
+
+/* Report modal body: long reports scroll inside the dialog. */
+.report-body {
+    max-height: 70vh;
+    overflow-y: auto;
+}

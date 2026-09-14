@@ -15,9 +15,11 @@ takes an entry out.
 ## Rules in one paragraph
 
 One task runs **per project** at a time, so several projects progress in parallel while a single project stays strictly
-sequential. A task leaves the queue when its run hands it to `review`, or when its agent session ends -- whether the
-task got that far or not. Who moved it is irrelevant: the agent itself, you from the UI, `ntasker patch --phase review`
-on the command line, or a direct DB write all count the same, because the queue only ever reads the DB.
+sequential. Exactly two things end a queued run: the agent's **own hand-off from inside its session**
+(`ntasker patch <id> --phase review` run there) and `status=done` (set by anyone). Both stop the session and free the
+lane. Everything else keeps the entry and never kills: a session that ends without a hand-off leaves its entry queued,
+flagged **ended**, blocking its lane until you have looked at it; a task you move to review from the board or a
+terminal outside the session is simply not the worker's business.
 
 ## The panel
 
@@ -59,16 +61,19 @@ panel's **Running** link opens the terminal later.
 A run does **not** use the `/task <id>` slash command. It gets a self-contained seed
 (`claude_runner.queue_seed_for_task`) which inlines the task and tells the agent to hand it off when the work is done.
 
-> When the work is done, hand it off to review -- do not ask first, and do not close the task:
-> `ntasker patch "<id>" --phase review`
+> When the work is done, do two things in this order, without asking:
+> 1. write your final report: `ntasker report <id>` (Markdown on stdin -- what you did, verified, left open)
+> 2. as the very last command: `ntasker patch <id> --phase review`
 
-That hand-off is what advances the queue: the entry is retired and its session torn down (a live session would keep the
-project busy), so the next task of that project starts. **A queue run never closes a task** -- the results wait for you
-in the review column, exactly like a run you started by hand.
+The report lands on the task (`report`, `report_at`) and is read from the report icon on its card -- you never have to
+open the session for it. The hand-off is what advances the queue: the CLI patch run inside the session marks the task
+`handed_off_at`, the worker retires the entry and tears the session down (a live session would keep the lane busy), so
+the next task of that project starts. That is why the report has to come first. **A queue run never closes a task** --
+the results wait for you in the review column, exactly like a run you started by hand. The seed allows `done` only
+when you or the task description explicitly ask for it.
 
-The seed also tells the agent what to do when it *cannot* finish: leave the phase as-is and report the blocker. The
-session ending is enough to advance the queue either way, so a task that cannot be finished never wedges the queue
-behind it -- it simply drops out and stays on the board with its phase intact.
+The seed also tells the agent what to do when it *cannot* finish: still write the report (the blocker), leave the phase
+as-is and stop. The session then ends without a hand-off -- see **ended** below.
 
 ## Skipped entries
 
@@ -81,6 +86,12 @@ An entry stays queued but is passed over when
 
 The last two are [directory locks](directory-locks.md). The queue then looks at the next entry **in the same project**
 instead of stalling behind it. Every case is labelled on the entry, so a queue that looks idle always says why.
+
+**Ended** is different: an entry whose session ended without the agent's hand-off (stopped, crashed, blocker) stays at
+the head of its lane with the badge `ended` and **blocks that lane** -- nothing else in the project starts until you
+act. Read its report, then either `✕` it out (lane free), set the task done, or run it again (the run button /
+`ntasker queue add --top` clear the flag and start a fresh session). Dragging it inside the column does not restart
+it. The flag lives in the DB (`session_ended_at`), so a server restart does not silently start the task again.
 
 A session you start by hand also occupies its project: two agents in one working directory is exactly what the
 one-per-project rule exists to prevent. On a *running* queue, a hand-started session on a queued task is adopted -- it
@@ -134,6 +145,8 @@ ntasker queue rm <id...>           # take entries out
 ntasker queue clear                # empty it
 ntasker queue start [--host --port]  # resume
 ntasker queue pause
+ntasker report <id> [--file f.md]  # store the agent's final report (Markdown from stdin)
+ntasker patch <id> --report "..."  # same; '' clears
 ```
 
 `ntasker queue add <id> --top` is the CLI's run button: it puts the task at the head of the queue, exactly like the
@@ -150,8 +163,9 @@ id deserves to be told.
 
 | Route | What it does |
 |---|---|
-| `GET /api/queue` | `{enabled, items: [task, ...], skipped: {id: {reason, project, holder}}}` -- full task rows in run order (a queued task may be filtered off the board and the panel still has to render it); `skipped` holds the lock / dirty reasons. |
-| `PUT /api/queue` | Body `{ids: [...]}` replaces the whole queue, head first. Ids that are closed, archived or gone are dropped. An empty list clears the queue. |
+| `GET /api/queue` | `{enabled, items: [task, ...], skipped: {id: {reason, project, holder}}}` -- full task rows in run order (a queued task may be filtered off the board and the panel still has to render it); `skipped` holds the reasons `lock` / `dirty` / `ended`. |
+| `PUT /api/queue` | Body `{ids: [...]}` replaces the whole queue, head first. Ids that are closed, archived or gone are dropped. An empty list clears the queue. Never restarts an `ended` entry. |
+| `POST /api/queue/run` | Body `{id}` -- the run button: puts the task at the head of the queue and clears its `ended` flag. Returns the queue. |
 | `POST /api/projects/quick-run` | Body `{project}` -- the sidebar quick run: creates a placeholder `wip` task, queues it at the head, marks it as a blank-prompt run. Returns the task. |
 | `PUT /api/settings/queue_enabled` | `{"value": "true" \| "false"}` -- the pause switch (default `true`). |
 

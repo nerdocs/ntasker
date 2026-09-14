@@ -96,6 +96,12 @@ it keeps running when you press **Back** or even reload the page. Re-opening the
 the recent output buffer to reconstruct the screen, then streams live again. Several tasks can run at once, each with
 its own indicator.
 
+ntasker ends a session on its own in exactly two cases: the agent's own hand-off from inside the session
+(`ntasker patch <id> --phase review` there) and the task being set to `done`. Moving a task to review from the board
+or a terminal outside the session leaves it running. Before it hands off, the agent writes its **final report**
+(`ntasker report <id>`) -- read it via the report icon on the card, no need to reopen the session. See
+[task-queue.md](task-queue.md).
+
 A page reload drops the *client* terminal but not the *server* session -- reopening reattaches. Stopping the session,
 or the `claude` process exiting on its own, ends it; the next run click queues a fresh one.
 

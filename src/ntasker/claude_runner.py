@@ -233,20 +233,29 @@ def queue_seed_for_task(task: dict) -> str:
     from ntasker import plugins  # noqa: PLC0415 -- lazy: avoid cycle
 
     lines += plugins.run_briefings(int(task["id"]))
+    tid = task["id"]
     lines += [
         "",
         "## Tracker rules (queued run)",
         "",
         "- The user put this task in nTasker's task queue to have it worked",
         "  through unattended. Carry it to completion if at all possible.",
-        "- When the work is done, hand it off to review -- do not ask first,",
-        "  and do not close the task:",
-        f'  ntasker patch "{task["id"]}" --phase review',
-        "- The next queued task starts on that hand-off, so never hand off on a",
-        "  guess. If you cannot finish (blocker, missing info, a decision only",
-        "  the user can make), leave the phase as-is and report the blocker.",
-        "- Never set status=done or archive on your own; only the user closes",
-        "  tasks, after checking your work in the review column.",
+        "- When the work is done, do two things in this order, without asking:",
+        "  1. Write your final report (Markdown on stdin): what you did, what",
+        "     you verified, what is open or left for the user:",
+        f"       ntasker report {tid} <<'EOF'",
+        "       ...",
+        "       EOF",
+        "  2. As the VERY LAST command of this session -- nothing after it:",
+        f"       ntasker patch {tid} --phase review",
+        "- That hand-off ends this session and starts the next queued task, so",
+        "  never hand off on a guess, and never run it before the report.",
+        "- If you cannot finish (blocker, missing info, a decision only the",
+        "  user can make): still write the report (the blocker, what you",
+        "  tried), leave the phase as-is and stop. Do not hand off.",
+        "- Never set status=done or archive on your own initiative -- only when",
+        "  the user or the task description explicitly tells you to (then:",
+        f"  finish, commit if asked, `ntasker done {tid}`).",
         "- No new tracker tasks, no deletes, no writes to other task IDs.",
     ]
     return "\n".join(lines)

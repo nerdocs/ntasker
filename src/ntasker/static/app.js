@@ -137,6 +137,19 @@ const _claudeTerms = new Map();
 // Decode a base64 string (PTY bytes from the server) into a Uint8Array that
 // xterm's write() accepts -- avoids UTF-8 corruption when multibyte sequences
 // are split across PTY reads.
+// Markdown -> sanitised HTML for the report modal. Same pipeline as the
+// workspace file viewer (marked renders, DOMPurify sanitises); without either
+// library the text is shown escaped rather than trusted.
+function escapeHtml(text) {
+    return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function renderMarkdown(text) {
+    if (!window.marked) return '<pre>' + escapeHtml(text) + '</pre>';
+    const raw = window.marked.parse(text);
+    return window.DOMPurify ? window.DOMPurify.sanitize(raw) : escapeHtml(text);
+}
+
 function _b64ToBytes(b64) {
     const bin = atob(b64);
     const bytes = new Uint8Array(bin.length);
@@ -279,6 +292,11 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // Current title of each active session, keyed by task id (string keys).
         // Keeps the run-view tabs in sync when a task is renamed mid-session.
         claudeSessionTitles: {},
+
+        // ---- Report modal ----
+        // The task whose final report is open, and its rendered HTML.
+        reportTask: null,
+        reportHtml: '',
 
         // Multi-value project filter. Empty list = no filter (all tasks).
         // Special value '__none__' = include cross-project tasks (project IS NULL).
@@ -1282,11 +1300,15 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 const raw = await r.text();
                 if (raw === this._queueRaw) return;   // nothing moved -- don't re-render
                 this._queueRaw = raw;
-                const d = JSON.parse(raw);
-                this.queue = d.items || [];
-                this.queueEnabled = !!d.enabled;
-                this.queueSkipped = d.skipped || {};
+                this._applyQueue(JSON.parse(raw));
             } catch (_e) { /* leave the last known queue */ }
+        },
+
+        // Take a /api/queue payload into state.
+        _applyQueue(d) {
+            this.queue = d.items || [];
+            this.queueEnabled = !!d.enabled;
+            this.queueSkipped = d.skipped || {};
         },
 
         // Persist the queue exactly as it is on screen. Applied optimistically
@@ -1301,11 +1323,8 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                     body: JSON.stringify({ ids: items.map(t => t.id) }),
                 });
                 if (!r.ok) throw new Error('save failed');
-                const d = await r.json();
                 this._queueRaw = null;   // force the next poll to re-read
-                this.queue = d.items || [];
-                this.queueEnabled = !!d.enabled;
-                this.queueSkipped = d.skipped || {};
+                this._applyQueue(await r.json());
             } catch (_e) {
                 this.showToast(_i('update_failed'), 'danger');
                 this._queueRaw = null;
@@ -1381,6 +1400,8 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // the queue moves to the next task in that project, so saying nothing
         // would just look like the queue is stuck.
         queueItemNote(item) {
+            const ended = (this.queueSkipped[item.id] || {}).reason === 'ended';
+            if (ended) return _i('queue_ended');   // the one the user has to act on
             if (this.isBlocked(item)) return _i('queue_blocked');
             if (!this.taskRunnable(item)) return _i('queue_agent_missing');
             const skip = this.queueSkipped[item.id];
@@ -1393,6 +1414,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // spelling out the blockers' projects here would eat the title, and the
         // ids are what you act on.
         blockerLabel(item) {
+            if ((this.queueSkipped[item.id] || {}).reason === 'ended') return _i('queue_ended_badge');
             if (this.isBlocked(item)) return this.blockingDeps(item).map(d => `#${d.id}`).join(', ');
             if (!this.taskRunnable(item)) return '';
             const skip = this.queueSkipped[item.id];
@@ -1405,6 +1427,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // unfindable there, and cross-project blockers are the whole reason
         // dependencies matter to the queue.
         blockerDetail(item) {
+            if ((this.queueSkipped[item.id] || {}).reason === 'ended') return _i('queue_ended');
             if (!this.isBlocked(item)) {
                 if (!this.taskRunnable(item)) return _i('queue_agent_missing');
                 const skip = this.queueSkipped[item.id] || {};
@@ -1787,6 +1810,15 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             };
             if (typeof this.pluginStartEdit === 'function') this.pluginStartEdit(this.editing, task);
             this.depSuggest = [];
+        },
+
+        openReport(task) {
+            this.reportTask = task;
+            this.reportHtml = renderMarkdown(task.report || '');
+        },
+
+        closeReport() {
+            this.reportTask = null;
         },
 
         // Escape / click-outside on the edit modal. A plugin modal opened from
@@ -2670,7 +2702,18 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 this.activateTab(id);
                 return;
             }
-            await this._saveQueue([task, ...this.queue.filter(t => t.id !== id)]);
+            try {
+                const r = await fetch('/api/queue/run', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id }),
+                });
+                if (!r.ok) throw new Error('run failed');
+                this._applyQueue(await r.json());
+            } catch (_e) {
+                this.showToast(_i('update_failed'), 'danger');
+                return;
+            }
             this.showToast(_i('queued_front', { id }), 'success');
             if (this.claudeOpenTerminal) this._openWhenLive(id);
         },

@@ -842,7 +842,7 @@
                                 <template x-if="queueItemNote(item)">
                                     <span class="badge bg-danger-lt task-queue-blocker text-truncate"
                                           :title="blockerDetail(item)">
-                                        <i class="ti ti-lock" :class="blockerLabel(item) && 'me-1'"></i><span x-text="blockerLabel(item)"></span>
+                                        <i class="ti" :class="[(queueSkipped[item.id] || {}).reason === 'ended' ? 'ti-player-stop' : 'ti-lock', blockerLabel(item) && 'me-1']"></i><span x-text="blockerLabel(item)"></span>
                                     </span>
                                 </template>
 
@@ -1116,6 +1116,13 @@
                                                     <i class="ti ti-rotate-clockwise-2 claude-resume-glyph"></i>
                                                 </button>
                                             </template>
+                                            {# The agent's final report, when one was written. #}
+                                            <template x-if="task.report">
+                                                <button class="btn btn-sm btn-ghost-secondary" @click="openReport(task)"
+                                                        :aria-label="$i18n('report_open')" :title="$i18n('report_open')">
+                                                    <i class="ti ti-file-text fs-3"></i>
+                                                </button>
+                                            </template>
                                             <button class="btn btn-sm btn-ghost-secondary" @click="startEdit(task)"
                                                     :aria-label="$i18n('edit')" :title="$i18n('edit')">
                                                 <i class="ti ti-pencil fs-3"></i>
@@ -1256,6 +1263,13 @@
                                                             :aria-label="$i18n('claude_resume')" :title="$i18n('claude_resume')">
                                                         <img :src="agentIconUrl(task)" class="claude-logo-icon" alt="">
                                                         <i class="ti ti-rotate-clockwise-2 claude-resume-glyph"></i>
+                                                    </button>
+                                                </template>
+                                                <template x-if="task.report">
+                                                    <button class="btn btn-sm btn-ghost-secondary px-1 py-0"
+                                                            @click.stop="openReport(task)"
+                                                            :aria-label="$i18n('report_open')" :title="$i18n('report_open')">
+                                                        <i class="ti ti-file-text fs-3"></i>
                                                     </button>
                                                 </template>
                                                 <button class="btn btn-sm btn-ghost-secondary px-1 py-0"
@@ -1648,6 +1662,46 @@
         </div>
     </div>
 
+    {# Report modal -- the agent's final report, rendered Markdown, read-only. #}
+    <div class="modal modal-blur fade" tabindex="-1" x-show="reportTask" x-cloak
+         :class="reportTask ? 'show d-block' : ''"
+         :style="reportTask ? 'background-color: rgba(0,0,0,0.4)' : ''"
+         @keydown.escape.window="closeReport()">
+        <div class="modal-dialog modal-lg" role="document" x-show="reportTask" @click.outside="closeReport()">
+            <div class="modal-content" x-show="reportTask">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="ti ti-file-text me-1"></i>
+                        <template x-if="reportTask">
+                            <span><span x-text="$i18n('report_title')"></span> <span class="font-monospace" x-text="`#${reportTask.id}`"></span> <span x-text="reportTask.title"></span></span>
+                        </template>
+                    </h5>
+                    <button type="button" class="btn-close" @click="closeReport()" :aria-label="$i18n('close')"></button>
+                </div>
+                <template x-if="reportTask">
+                <div class="modal-body">
+                    <div class="text-secondary small mb-2" x-show="reportTask.report_at"
+                         x-text="$i18n('report_written_at', {when: formatAbsolute(reportTask.report_at)})"></div>
+                    <div class="markdown report-body" x-show="reportTask.report" x-html="reportHtml"></div>
+                    <div class="text-secondary" x-show="!reportTask.report" x-text="$i18n('report_none')"></div>
+                </div>
+                </template>
+                <div class="modal-footer">
+                    <template x-if="reportTask && reportTask.session_id && taskAgentKey(reportTask) === 'claude' && taskRunnable(reportTask)">
+                        <button type="button" class="btn btn-sm btn-ghost-secondary me-auto"
+                                @click="const t = reportTask; closeReport(); openClaudeResume(t)">
+                            <i class="ti ti-rotate-clockwise-2 me-1"></i>
+                            <span x-text="$i18n('report_resume')"></span>
+                        </button>
+                    </template>
+                    <button type="button" class="btn btn-sm btn-primary" @click="closeReport()">
+                        {{ t('Close') }}
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
 </div>
 
 
@@ -1665,6 +1719,10 @@
         integrity="{{ asset_sri('xterm-js') }}" crossorigin="anonymous"></script>
 <script src="{{ asset('xterm-addon-fit') }}"
         integrity="{{ asset_sri('xterm-addon-fit') }}" crossorigin="anonymous"></script>
+{# Markdown pipeline for the report modal (and the workspace plugin's file #}
+{# viewer): marked renders, DOMPurify sanitises. Loaded before app.js. #}
+<script src="{{ asset('marked-js') }}" integrity="{{ asset_sri('marked-js') }}" crossorigin="anonymous"></script>
+<script src="{{ asset('dompurify-js') }}" integrity="{{ asset_sri('dompurify-js') }}" crossorigin="anonymous"></script>
 <script src="{{ asset('alpine-js') }}"
         integrity="{{ asset_sri('alpine-js') }}" crossorigin="anonymous" defer></script>
 <script src="/static/topnav.js?v={{ static_bust('topnav.js') }}"></script>

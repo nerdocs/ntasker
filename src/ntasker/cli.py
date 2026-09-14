@@ -25,6 +25,8 @@ from __future__ import annotations
 import argparse
 import contextlib
 import json
+import os
+import pathlib
 import sys
 from datetime import datetime
 from typing import Any, cast
@@ -52,6 +54,7 @@ from ntasker.db import (
     load_tags_for,
     normalize_dep_ids,
     normalize_tags,
+    report_fields,
     row_to_task,
     set_db_path,
     set_task_deps,
@@ -712,6 +715,37 @@ def cmd_add(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_report(args: argparse.Namespace) -> int:
+    """Store the agent's final report for a task (Markdown from --file or stdin).
+
+    An empty text clears the report. Written directly to the DB like ``patch``
+    -- a session spawned by ``ntasker serve`` inherits ``NTASKER_DB``, so the
+    report lands in the server's database.
+    """
+    if args.file:
+        try:
+            text = pathlib.Path(args.file).read_text(encoding="utf-8")
+        except OSError as exc:
+            print(_("ntasker: cannot read {path}: {err}").format(path=args.file, err=exc), file=sys.stderr)
+            return 2
+    else:
+        text = sys.stdin.read()
+    fields = report_fields(text)
+    with get_conn() as conn:
+        cur = conn.execute(
+            "UPDATE tasks SET report = ?, report_at = ? WHERE id = ?",
+            (fields["report"], fields["report_at"], args.task_id),
+        )
+        if cur.rowcount == 0:
+            print(_("ntasker: task #{id} not found").format(id=args.task_id), file=sys.stderr)
+            return 1
+    if fields["report"]:
+        print(_("#{id} report written").format(id=args.task_id))
+    else:
+        print(_("#{id} report cleared").format(id=args.task_id))
+    return 0
+
+
 def cmd_delete(args: argparse.Namespace) -> int:
     """Hard-delete a task. Asks for confirmation unless ``--yes`` is given.
 
@@ -808,8 +842,15 @@ def cmd_patch(args: argparse.Namespace) -> int:
         fields["agent"] = candidate or None
     if args.archived is not None:
         fields["archived"] = 1 if args.archived else 0
+    # A hand-off from inside the task's own agent session (the runner sets
+    # NTASKER_TASK_ID there) is what the queue worker acts on; the same patch
+    # from anywhere else only moves the phase. See ntasker.taskqueue.
+    if fields.get("phase") == "review" and os.environ.get("NTASKER_TASK_ID") == str(args.task_id):
+        fields["handed_off_at"] = datetime.now().isoformat(timespec="seconds")
     if args.locks is not None:
         fields["locks"] = _parse_locks(args.locks)   # normalised below, once the project is known
+    if args.report is not None:
+        fields.update(report_fields(args.report))   # '' clears
     if args.status is not None:
         if args.status not in {"open", "done"}:
             print(
@@ -1053,6 +1094,8 @@ def cmd_queue_add(args: argparse.Namespace) -> int:
     rest = [i for i in (int(r["id"]) for r in taskqueue.load_queue()) if i not in args.task_id]
     ids = [*args.task_id, *rest] if args.top else [*rest, *args.task_id]
     taskqueue.set_queue(ids)
+    if args.top:   # "run it again" for an entry whose session ended
+        taskqueue.clear_ended(args.task_id)
     print(_("queued: {ids}").format(ids=", ".join(f"#{i}" for i in args.task_id)))
     return 0
 
@@ -2069,7 +2112,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--locks",
         help=_("Comma-separated extra projects to lock (replaces the set; '' clears)."),
     )
+    sp_patch.add_argument("--report", help=_("The agent's final report, Markdown ('' clears)."))
     sp_patch.set_defaults(func=cmd_patch)
+
+    # report --------------------------------------------------------------
+    sp_report = sub.add_parser("report", help=_("Store the agent's final report for a task"))
+    sp_report.add_argument("task_id", type=_task_id)
+    sp_report.add_argument("--file", help=_("Read the Markdown from this file instead of stdin."))
+    sp_report.set_defaults(func=cmd_report)
 
     # tag-add / tag-rm ----------------------------------------------------
     sp_ta = sub.add_parser("tag-add", help=_("Add a tag"))

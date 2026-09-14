@@ -24,8 +24,8 @@ client, slow), cloud STT (external, paid). The Claude API has no public speech-t
 | Candidate | Streaming | German | CPU | Licence | Notes |
 |---|---|---|---|---|---|
 | Vosk (Kaldi) | native | yes, WER ~10-14 % | very light | Apache-2.0 | stable, quality behind modern models |
-| WhisperLiveKit | pseudo (LocalAgreement) | yes (Whisper) | yes, 0.5-1 s | Apache-2.0 | pip package, WS server + browser demo |
-| Nemotron-3.5-ASR-Streaming-0.6B | native, 80-1120 ms chunks | yes (40 langs) | yes, ONNX ~3.8x RT | OpenMDW | new 2026; ONNX wiring by hand |
+| WhisperLiveKit | pseudo | yes (Whisper) | yes, 0.5-1 s | Apache-2.0 | pip; WS server + browser demo |
+| Nemotron-3.5-ASR-Streaming-0.6B | native | yes (40 langs) | yes, ONNX ~3.8x RT | OpenMDW | new 2026; ONNX wiring by hand |
 | Qwen3-ASR 0.6B streaming | native | yes | yes | Apache-2.0 | very new, little field experience |
 | Voxtral Mini 4B Realtime | native | yes, explicit | no, >=16 GB GPU | Apache-2.0 | state of the art, GPU only |
 | Kyutai STT | native | no (en/fr only) | -- | -- | -- |

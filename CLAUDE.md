@@ -65,8 +65,8 @@ make i18n-init-de  # one-time bootstrap of de.po (idempotent)
 ```
 
 Extraction keywords: `_`, `_lazy`, `t` (template alias), `N_` (no-op marker).
-The compiled `.mo` MUST exist before `uv build`, otherwise the wheel ships
-without binary catalogs. `make i18n-compile` is the safe pre-build step.
+The compiled `.mo` is gitignored. It MUST exist before `uv build` / `uv tool install`, otherwise the
+wheel ships without binary catalogs: run `make i18n-compile` first (the publish workflow does this itself).
 
 ## Workflow for changes
 

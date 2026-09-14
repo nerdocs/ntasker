@@ -11,3 +11,5 @@ tasks.db-wal
 # One-shot translation seeder; not part of the wheel.
 _fill_de.py
 dist/
+# Compiled gettext catalogs -- built by `make i18n-compile` / the publish workflow.
+*.mo

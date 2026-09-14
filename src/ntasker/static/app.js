@@ -2528,14 +2528,23 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         taskRunnable(task) {
             return this.agentAvailable(this.taskAgentKey(task));
         },
-        // Whether a finished task's session can be reopened: it ran once (a
+        // Whether a task's stored session can be reopened: it ran once (a
         // captured session_id), its agent supports resume (Claude only, for
-        // now), and that agent's CLI is launchable. Shown on done tasks in
-        // place of the run button.
-        canResume(task) {
-            return !!(task && task.status === 'done' && task.session_id
+        // now), and that agent's CLI is launchable.
+        sessionResumable(task) {
+            return !!(task && task.session_id
                 && this.taskAgentKey(task) === 'claude'
                 && this.taskRunnable(task));
+        },
+        // Resume on a done task, shown in place of the run button.
+        canResume(task) {
+            return !!(task && task.status === 'done' && this.sessionResumable(task));
+        },
+        // Resume on an ended queue entry: reopen the conversation via the
+        // worker instead of starting the task over (see resumeQueued).
+        canResumeQueued(item) {
+            return (this.queueSkipped[item.id] || {}).reason === 'ended'
+                && this.sessionResumable(item);
         },
         // Static URL of a task's agent icon (for the run button <img>).
         agentIconUrl(task) {
@@ -2717,6 +2726,27 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 return;
             }
             this.showToast(_i('queued_front', { id }), 'success');
+            if (this.claudeOpenTerminal) this._openWhenLive(id);
+        },
+
+        // The resume button on an ended queue entry: the worker reopens the
+        // stored session (`claude --resume`) in the entry's queue position, so
+        // the run continues where it broke off instead of starting over.
+        async resumeQueued(item) {
+            const id = item.id;
+            try {
+                const r = await fetch('/api/queue/resume', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id }),
+                });
+                if (!r.ok) throw new Error('resume failed');
+                this._queueRaw = null;   // force the next poll to re-read
+                this._applyQueue(await r.json());
+            } catch (_e) {
+                this.showToast(_i('update_failed'), 'danger');
+                return;
+            }
             if (this.claudeOpenTerminal) this._openWhenLive(id);
         },
 

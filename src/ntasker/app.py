@@ -473,7 +473,8 @@ def build_js_strings() -> dict[str, str]:
         "queue_blocked": _("Skipped while a dependency is still open."),
         "queue_agent_missing": _("Skipped -- this task's agent is not installed."),
         "queue_ended": _(
-            "Session ended before the task was done -- check the task, then remove it or run it again."
+            "Session ended before the task was done -- check the task, then remove it, "
+            "run it again or resume its session."
         ),
         "queue_ended_badge": _("ended"),
         "queue_locked": _("Waiting -- another task's session holds one of its directories."),
@@ -856,6 +857,10 @@ async def _start_queue_worker() -> None:
 
 @app.on_event("shutdown")
 async def _stop_queue_worker() -> None:
+    # Going down kills every session: flag the running queue entries so the
+    # next boot resumes them (see ntasker.taskqueue).
+    with contextlib.suppress(Exception):
+        taskqueue.flag_running_ended()
     if _queue_task is not None:
         _queue_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
@@ -1371,6 +1376,20 @@ def api_queue_run(payload: RunIn) -> JSONResponse:
     a plain ``PUT /api/queue`` reorder deliberately does not.
     """
     return JSONResponse(_queue_payload(taskqueue.enqueue_front(payload.id)))
+
+
+@app.post("/api/queue/resume")
+def api_queue_resume(payload: RunIn) -> JSONResponse:
+    """The resume button on an ended entry: reopen its stored session.
+
+    The worker spawns ``claude --resume <id>`` on its next tick, in the entry's
+    queue position and under the usual lane rules; the ended flag clears when
+    the session is live. 409 when the task is not queued or has nothing to
+    resume (never ran, or its agent cannot resume).
+    """
+    if not taskqueue.request_resume(payload.id):
+        raise HTTPException(status_code=409, detail=_("Nothing to resume"))
+    return JSONResponse(_queue_payload(taskqueue.load_queue()))
 
 
 class QuickRunIn(BaseModel):

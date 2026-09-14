@@ -25,8 +25,12 @@ only once it is done.
 
 Session ended without the task being done (agent stopped, crashed, hit a
 blocker)? The entry **stays** queued, flagged ``session_ended_at``, and blocks
-its lane until the user looks at it: remove it, set the task done, or run it
-again (the run button / ``queue add --top`` clear the flag).
+its lane until the user looks at it: remove it, set the task done, run it
+again (the run button / ``queue add --top`` clear the flag and start fresh), or
+**resume** it -- reopen the stored conversation (:data:`RESUME`, Claude only).
+A server restart kills every session; the worker flags the running ones on
+shutdown and resumes every flagged, resumable entry on its first tick, so the
+runs pick up where they were instead of starting over.
 
 A queued run gets its own seed (:func:`~ntasker.claude_runner.queue_seed_for_task`)
 which tells the agent to hand the finished task to ``phase=review`` unprompted
@@ -74,6 +78,16 @@ _running: set[int] = set()
 # API and worker share the process, and a quick task that has not started
 # before a restart simply runs as a normal queued run.
 QUICK: set[int] = set()
+
+# Task ids to start by *resuming* their stored session (``claude --resume``)
+# instead of a fresh seeded run: the user pressed resume on an ended entry, or
+# the worker collected the ended entries on its first tick after a restart.
+# Consumed by :func:`tick` on start, which also clears the entry's ended flag.
+RESUME: set[int] = set()
+
+# Whether :func:`tick` has run once since the process started -- gates the
+# resume-after-restart sweep.
+_booted = False
 
 
 def _bucket(project: str | None) -> str:
@@ -138,6 +152,47 @@ def clear_ended(ids: list[int]) -> None:
     with get_conn() as conn:
         conn.execute(
             f"UPDATE tasks SET session_ended_at = NULL WHERE id IN ({placeholders})", ids
+        )
+
+
+def resumable(row: sqlite3.Row) -> bool:
+    """Whether a queued entry's stored session can be reopened: it ran once
+    (a captured session id) and its agent has a resume flag (Claude only)."""
+    return bool(row["session_id"]) and get_spec(resolve_agent_key(row["agent"])).resume_flag is not None
+
+
+def request_resume(task_id: int) -> bool:
+    """The resume button on an ended entry: reopen its conversation next tick.
+
+    Only for a queued, resumable task; the entry keeps its queue position and
+    its ended flag is cleared when the session is actually spawned. Returns
+    ``False`` when the task is not queued or cannot be resumed.
+    """
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM tasks WHERE id = ? AND queue_order IS NOT NULL", (task_id,)
+        ).fetchone()
+    if row is None or not resumable(row):
+        return False
+    RESUME.add(task_id)
+    return True
+
+
+def flag_running_ended() -> None:
+    """Shutdown: flag every queued run that is live right now as ended.
+
+    The server going down takes its sessions with it, and the worker will not
+    tick again to notice -- so the flag is written here, and the first tick
+    after the restart resumes the flagged entries (see :func:`tick`).
+    """
+    ids = _running | ({int(r["id"]) for r in load_queue()} & set(active_session_ids()))
+    if not ids:
+        return
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE tasks SET session_ended_at = ? "
+            f"WHERE id IN ({','.join('?' * len(ids))}) AND session_ended_at IS NULL",
+            [_now(), *ids],
         )
 
 
@@ -241,7 +296,7 @@ def skipped(rows: list[sqlite3.Row], live: set[int]) -> dict[int, dict]:
     out: dict[int, dict] = {
         int(row["id"]): {"reason": "ended", "project": row["project"], "holder": None}
         for row in rows
-        if row["session_ended_at"] and int(row["id"]) not in live
+        if row["session_ended_at"] and int(row["id"]) not in live and int(row["id"]) not in RESUME
     }
     if not rows or not get_dir_locks():
         return out
@@ -251,7 +306,7 @@ def skipped(rows: list[sqlite3.Row], live: set[int]) -> dict[int, dict]:
     for row in rows:
         if int(row["id"]) in live or int(row["id"]) in out:
             continue
-        reason = _lock_reason(row, held, require_clean)
+        reason = _lock_reason(row, held, require_clean and int(row["id"]) not in RESUME)
         if reason is not None:
             out[int(row["id"])] = reason
     return out
@@ -279,6 +334,7 @@ def _kill_done(live: set[int]) -> None:
 
 def tick() -> None:
     """One pass: kill the done, retire what is finished, start what is next. Never raises."""
+    global _booted
     from ntasker.settings import (  # noqa: PLC0415 -- lazy: avoid cycle
         get_dir_locks,
         get_queue_enabled,
@@ -325,6 +381,15 @@ def tick() -> None:
         _running.difference_update(ended)
         rows = load_queue()
 
+    # After a restart every session is gone: resume the entries flagged ended
+    # (by the previous process on shutdown, or by its last tick) rather than
+    # starting them over. Once, on the first tick -- a session the user stopped
+    # on purpose later must not come back on its own.
+    if not _booted:
+        _booted = True
+        RESUME.update(int(r["id"]) for r in rows if r["session_ended_at"] and resumable(r))
+    RESUME.intersection_update(int(r["id"]) for r in rows)
+
     if not rows or not enabled:
         return
 
@@ -338,14 +403,21 @@ def tick() -> None:
     starts: list[int] = []
     with get_conn() as conn:
         busy = _busy_buckets(live, conn)
-        busy |= {_bucket(r["project"]) for r in rows if r["session_ended_at"]}
+        busy |= {
+            _bucket(r["project"])
+            for r in rows
+            if r["session_ended_at"] and int(r["id"]) not in RESUME
+        }
         held = locks.held_dirs(conn, live) if dir_locks else {}
         for row in rows:
             bucket = _bucket(row["project"])
             if bucket in busy or not _startable(row, conn, runnable, default_agent):
                 continue
             if dir_locks:
-                if _lock_reason(row, held, require_clean) is not None:
+                # A resume skips the git check: the dirt is that run's own
+                # unfinished work, which is exactly what it continues.
+                resume = int(row["id"]) in RESUME
+                if _lock_reason(row, held, require_clean and not resume) is not None:
                     continue
                 for d in locks.task_dirs(row["project"], locks.parse(row["locks"])):
                     held.setdefault(d, int(row["id"]))
@@ -359,13 +431,22 @@ def tick() -> None:
         if task is None:
             continue
         quick = task_id in QUICK
+        resume = task_id in RESUME
         started = start_detached_session(
-            task_id, None if quick else queue_seed_for_task(task), quick=quick
+            task_id,
+            None if (quick or resume) else queue_seed_for_task(task),
+            quick=quick,
+            resume=resume,
         )
         if started:
             QUICK.discard(task_id)
-            # The loader's "starting work marks it in progress" move.
-            mark_wip(task_id)
+            if resume:
+                RESUME.discard(task_id)
+                clear_ended([task_id])
+            else:
+                # The loader's "starting work marks it in progress" move. A
+                # resume keeps the phase -- the conversation continues as is.
+                mark_wip(task_id)
             _running.add(task_id)
 
 

@@ -90,9 +90,18 @@ instead of stalling behind it. Every case is labelled on the entry, so a queue t
 
 **Ended** is different: an entry whose session ended before the task was done (stopped, crashed, blocker) stays at
 the head of its lane with the badge `ended` and **blocks that lane** -- nothing else in the project starts until you
-act. Read its report, then either `✕` it out (lane free), set the task done, or run it again (the run button /
-`ntasker queue add --top` clear the flag and start a fresh session). Dragging it inside the column does not restart
-it. The flag lives in the DB (`session_ended_at`), so a server restart does not silently start the task again.
+act. Read its report, then either `✕` it out (lane free), set the task done, run it again (the run button /
+`ntasker queue add --top` clear the flag and start a fresh session), or **resume** it: the entry carries a resume
+button (Claude logo with a rotate glyph) when the task ran at least once and its agent is Claude. The worker then
+reopens the stored conversation (`claude --resume <uuid>`, see [claude-runs.md](claude-runs.md)) in the entry's queue
+position, under the usual lane rules -- the run continues where it broke off, the phase stays as it was, and the
+`require_clean` git check is skipped (the dirt is that run's own unfinished work). Dragging it inside the column does
+not restart it. The flag lives in the DB (`session_ended_at`), so a server restart does not silently start the task
+again.
+
+**Restart of ntasker.** Going down takes every session with it. The server flags the running queue entries as
+`ended` on shutdown, and the worker's first tick after the restart **resumes** every flagged entry that can be
+resumed (as above) instead of starting it over. Entries whose agent cannot resume stay flagged for you to act on.
 
 A session you start by hand also occupies its project: two agents in one working directory is exactly what the
 one-per-project rule exists to prevent. On a *running* queue, a hand-started session on a queued task is adopted -- it
@@ -167,6 +176,7 @@ id deserves to be told.
 | `GET /api/queue` | `{enabled, items: [task, ...], skipped: {id: {reason, project, holder}}}` -- full task rows in run order (a queued task may be filtered off the board and the panel still has to render it); `skipped` holds the reasons `lock` / `dirty` / `ended`. |
 | `PUT /api/queue` | Body `{ids: [...]}` replaces the whole queue, head first. Ids that are closed, archived or gone are dropped. An empty list clears the queue. Never restarts an `ended` entry. |
 | `POST /api/queue/run` | Body `{id}` -- the run button: puts the task at the head of the queue and clears its `ended` flag. Returns the queue. |
+| `POST /api/queue/resume` | Body `{id}` -- the resume button on an `ended` entry: the worker reopens the task's stored session next tick, in place; the flag clears once it is live. 409 when the task is not queued or has nothing to resume. Returns the queue. |
 | `POST /api/projects/quick-run` | Body `{project}` -- the sidebar quick run: creates a placeholder `wip` task, queues it at the head, marks it as a blank-prompt run. Returns the task. |
 | `PUT /api/settings/queue_enabled` | `{"value": "true" \| "false"}` -- the pause switch (default `true`). |
 

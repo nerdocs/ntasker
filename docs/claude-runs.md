@@ -121,6 +121,9 @@ project directory -- the whole conversation replays and you can keep working whe
 The button appears only when the task ran at least once (a captured session id), its agent is Claude, and the `claude`
 CLI is launchable. OpenCode and Pi have their own session mechanics and do not expose a resume button yet.
 
+An *open* task whose queued run ended early gets the same button on its queue entry, and the queue worker resumes
+such entries on its own after an ntasker restart -- see [task-queue.md](task-queue.md#skipped-entries).
+
 ## Session indicators -- running vs. waiting
 
 A task with a live session is highlighted in both the list and kanban so it stands out, and its button reflects state:

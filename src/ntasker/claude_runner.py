@@ -513,15 +513,18 @@ def _start_session(
     return sess
 
 
-def start_detached_session(task_id: int, seed: str | None, quick: bool = False) -> bool:
+def start_detached_session(
+    task_id: int, seed: str | None, quick: bool = False, resume: bool = False
+) -> bool:
     """Start a session with no browser attached. The task queue's spawn path.
 
     The queue is the only way a fresh session starts, so this is *the* spawn:
     the session lands in the registry, shows up in the busy indicators and the
     run-view tab strip, and the user can open its terminal at any point to
     watch or take over. ``quick`` = a sidebar quick run (blank prompt, see
-    :func:`quick_run_system_prompt`). Returns ``False`` when the task already
-    has a live session.
+    :func:`quick_run_system_prompt`); ``resume`` reopens the task's stored
+    session instead of seeding a fresh one, and leaves the phase untouched.
+    Returns ``False`` when the task already has a live session.
 
     Must be called from the event loop: the PTY reader is registered on the
     running loop (see :func:`_attach_reader`).
@@ -530,8 +533,9 @@ def start_detached_session(task_id: int, seed: str | None, quick: bool = False) 
     if sess is not None and sess.alive:
         return False
     SESSIONS.pop(task_id, None)   # drop a stale dead session before replacing it
-    mark_wip(task_id)
-    _start_session(task_id, seed=seed, quick=quick)
+    if not resume:
+        mark_wip(task_id)
+    _start_session(task_id, seed=seed, quick=quick, resume=resume)
     return True
 
 

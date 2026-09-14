@@ -24,7 +24,7 @@ def env(tmp_path, monkeypatch):
     started: list[int] = []
     monkeypatch.setattr(taskqueue, "active_session_ids", lambda: list(live))
 
-    def fake_start(task_id, seed, quick=False):
+    def fake_start(task_id, seed, quick=False, resume=False):
         started.append(task_id)
         live.add(task_id)
         return True
@@ -32,6 +32,8 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(taskqueue, "start_detached_session", fake_start)
     taskqueue._running.clear()
     taskqueue.QUICK.clear()
+    taskqueue.RESUME.clear()
+    taskqueue._booted = True
 
     def add(title, project, locks_=()):
         with get_conn() as conn:

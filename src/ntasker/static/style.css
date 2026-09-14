@@ -305,9 +305,9 @@ body {
     white-space: nowrap;
     pointer-events: none;
 }
-/* The queue board scrolls horizontally, and an overflow container clips in
- * both axes -- a label hanging below the row would be cut off. Inside the row
- * it is, which is fine: it only shows while the drag is in flight. */
+/* Queue rows are a single line stacked tightly; a label hanging below the row
+ * would cover the next entry. Inside the row it is, which is fine: it only
+ * shows while the drag is in flight. */
 .task-queue-item.drop-link::after {
     top: 50%;
     bottom: auto;
@@ -364,21 +364,28 @@ body {
 
 /* One column per project. The worker runs one task per project at a time, so
  * a column is literally one execution lane -- which is why each gets its own
- * rail and its own 1..n numbering. Scrolls sideways rather than squeezing the
- * columns; a lane that is too narrow to read its titles helps nobody. */
+ * rail and its own 1..n numbering. Lanes share the width and wrap into further
+ * rows once they would drop below a readable width: with many projects every
+ * lane stays visible instead of hiding behind a horizontal scroll. */
 .task-queue-board {
-    display: flex;
-    gap: 0.75rem;
-    overflow-x: auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+    gap: 0.5rem 0.75rem;
     padding-bottom: 0.25rem;
 }
-/* Grow to share the width when there are few columns, never shrink below a
- * readable lane -- so a handful of projects fill the panel, and many of them
- * overflow into the horizontal scroll instead of squeezing each other flat. */
+/* A lane is a container so its rows can drop the state label (icon only)
+ * when the lane is narrow -- the title is what identifies the task. */
 .task-queue-col {
-    flex: 1 0 15rem;
-    max-width: 24rem;
+    container-type: inline-size;
     min-width: 0;
+}
+@container (max-width: 20rem) {
+    .task-queue-state-btn > span:last-child {
+        display: none;
+    }
+    .task-queue-state-btn > .me-1 {
+        margin-right: 0 !important;
+    }
 }
 .task-queue-col-head {
     gap: 0.5rem;
@@ -485,8 +492,13 @@ body {
 }
 
 /* One line per task, however long the titles get: the title is the elastic
- * element, the blocker badge is not. The badge is a handful of characters and
- * useless once truncated ("#1" -> "…"), while a clipped title still reads. */
+ * element, the id and blocker badges are not. A badge is a handful of
+ * characters and useless once truncated ("#1" -> "…") -- and the id badge does
+ * not clip, so squeezed it would spill its digits over the title -- while a
+ * clipped title still reads. */
+.task-queue-item .task-id {
+    flex: 0 0 auto;
+}
 .task-queue-title {
     flex: 1 1 auto;
     min-width: 3rem;

@@ -1407,20 +1407,24 @@
                                     <i class="ti ti-message-forward me-1 fs-3"></i><span x-text="p.label"></span>
                                 </button>
                             </template>
-                            <button type="button" class="btn btn-ghost-success" @click="markDoneFromClaudeRun()">
-                                <i class="ti ti-check me-1 fs-3"></i><span x-text="$i18n('claude_mark_done')"></span>
-                            </button>
-                            <template x-if="activeTab && activeTab.status !== 'exited'">
-                                <button type="button" class="btn btn-ghost-danger" @click="stopClaudeRun()">
-                                    <i class="ti ti-player-stop me-1 fs-3"></i><span x-text="$i18n('claude_stop')"></span>
+                            <div class="btn-group">
+                                <button type="button" class="btn btn-outline-success" @click="markDoneFromClaudeRun()">
+                                    <i class="ti ti-check me-1 fs-3"></i><span x-text="$i18n('claude_mark_done')"></span>
                                 </button>
-                            </template>
+                                <template x-if="activeTab && activeTab.status !== 'exited'">
+                                    <button type="button" class="btn btn-outline-danger" @click="stopClaudeRun()">
+                                        <i class="ti ti-player-stop me-1 fs-3"></i><span x-text="$i18n('claude_stop')"></span>
+                                    </button>
+                                </template>
+                            </div>
                             {# Split the tab: the task's report in a pane next to the terminal. #}
                             <template x-if="runReportAvailable">
-                                <button type="button" class="btn btn-ghost-secondary" :class="runReportOpen && 'active'"
-                                        :title="$i18n('report_open')" @click="toggleRunReport()">
-                                    <i class="ti ti-file-text me-1 fs-3"></i><span x-text="$i18n('report_title')"></span>
-                                </button>
+                                <div class="btn-group">
+                                    <button type="button" class="btn btn-outline-secondary" :class="runReportOpen && 'active'"
+                                            :title="$i18n('report_open')" @click="toggleRunReport()">
+                                        <i class="ti ti-file-text me-1 fs-3"></i><span x-text="$i18n('report_title')"></span>
+                                    </button>
+                                </div>
                             </template>
                         </span>
                         </template>

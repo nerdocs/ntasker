@@ -5,6 +5,7 @@ All notable changes to ntasker.
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
 ## [Unreleased]
+Fix: Stop always ends a session -- even when a detached grandchild keeps the PTY open after the agent exited.
 
 ## [3.3.0] — 2026-09-15
 Quick prompts and run buttons in the run view; resume ended queue runs, auto-resume after restart; changelog on the info page.

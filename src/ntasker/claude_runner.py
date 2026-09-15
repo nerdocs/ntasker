@@ -312,6 +312,10 @@ class TermSession:
     # (``ntasker hook waiting|running``, see :func:`set_hook_state`). ``None``
     # until the first hook fires -- then the silence heuristic decides.
     hook_waiting: bool | None = None
+    # The event loop the PTY reader lives on (set by :func:`_attach_reader`).
+    # :func:`_stop` may run off-loop (a sync route in the threadpool) and needs
+    # it to hand the final teardown back to the loop thread.
+    loop: asyncio.AbstractEventLoop | None = None
 
 
 SESSIONS: dict[int, TermSession] = {}
@@ -542,6 +546,7 @@ def start_detached_session(
 def _attach_reader(sess: TermSession) -> None:
     """Drain the PTY master into the buffer + all subscriber queues."""
     loop = asyncio.get_running_loop()
+    sess.loop = loop
 
     def on_readable() -> None:
         try:
@@ -611,17 +616,28 @@ def _stop(sess: TermSession) -> None:
     Sends SIGTERM first, then -- from a short-lived daemon thread so the caller
     never blocks -- waits for the PTY to close (``sess.alive`` flips False once
     :func:`_reap` runs) and force-kills the group with SIGKILL if anything is
-    still standing after ``STOP_GRACE_SECONDS``. Idempotent; safe to call twice.
+    still standing after ``STOP_GRACE_SECONDS``. Whatever still holds the PTY
+    open after that is not the agent (its process is gone) but a stray
+    grandchild outside its process group -- e.g. a ``setsid`` background job
+    that inherited the terminal. Such a session would otherwise stay "alive"
+    forever, with Stop having no visible effect; so the escalation ends with
+    an unconditional :func:`_reap` on the loop thread. Idempotent; safe to call
+    twice.
     """
     if not sess.alive:
         return
     try:
-        pgid = os.getpgid(sess.proc.pid)
+        pgid: int | None = os.getpgid(sess.proc.pid)
     except OSError:
-        return  # process already gone -- nothing left to signal
+        pgid = None  # agent process already gone -- only the PTY is still open
 
-    with contextlib.suppress(Exception):
-        os.killpg(pgid, signal.SIGTERM)
+    if pgid is not None:
+        with contextlib.suppress(Exception):
+            os.killpg(pgid, signal.SIGTERM)
+
+    def _finish() -> None:
+        if sess.alive:
+            _reap(sess)
 
     def _escalate() -> None:
         deadline = time.monotonic() + STOP_GRACE_SECONDS
@@ -629,8 +645,11 @@ def _stop(sess: TermSession) -> None:
             if not sess.alive:
                 return  # _reap saw the PTY close -> the group is gone
             time.sleep(0.1)
-        with contextlib.suppress(Exception):
-            os.killpg(pgid, signal.SIGKILL)
+        if pgid is not None:
+            with contextlib.suppress(Exception):
+                os.killpg(pgid, signal.SIGKILL)
+        if sess.loop is not None:
+            sess.loop.call_soon_threadsafe(_finish)
 
     threading.Thread(
         target=_escalate, name=f"ntasker-stop-{sess.task_id}", daemon=True

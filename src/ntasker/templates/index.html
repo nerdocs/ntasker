@@ -256,15 +256,26 @@
                     <template x-if="row.project">
                         {{ project_row('row.project', fold_pill()) }}
                     </template>
+                    {# Label-only head: its checkbox drives the whole family -- #}
+                    {# ticks every member, clears them all when all are active,  #}
+                    {# and reads indeterminate while only some are in the filter. #}
                     <template x-if="!row.project">
-                        <button type="button" class="project-family-head d-flex align-items-center w-100 mb-1 min-w-0"
-                                @click="toggleProjectGroup(row.name)"
-                                :title="$i18n('project_family_hint', {name: row.name})">
-                            <i class="ti ti-folder me-2 text-secondary"></i>
-                            <span class="text-truncate flex-fill text-start" x-text="row.name"></span>
-                            <span class="badge bg-secondary-lt ms-2" x-text="row.total"></span>
-                            {{ fold_pill() }}
-                        </button>
+                        <div class="form-check d-flex align-items-center w-100 mb-1 flex-fill min-w-0">
+                            <input type="checkbox" class="form-check-input"
+                                   :checked="familyChecked(row)"
+                                   x-effect="$el.indeterminate = familyIndeterminate(row)"
+                                   @change="toggleFamily(row)"
+                                   :title="$i18n('toggle_project_family')"
+                                   :aria-label="$i18n('toggle_project_family')">
+                            <button type="button" class="project-family-head d-flex align-items-center ms-2 flex-fill min-w-0"
+                                    @click="toggleProjectGroup(row.name)"
+                                    :title="$i18n('project_family_hint', {name: row.name})">
+                                <i class="ti ti-folder me-2 text-secondary"></i>
+                                <span class="text-truncate flex-fill text-start" x-text="row.name"></span>
+                                <span class="badge bg-secondary-lt ms-2" x-text="row.total"></span>
+                                {{ fold_pill() }}
+                            </button>
+                        </div>
                     </template>
                 </div>
                 <template x-if="row.children.length && row.expanded">

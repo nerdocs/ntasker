@@ -579,6 +579,7 @@ def build_js_strings() -> dict[str, str]:
         "unfold_project_family": _("Show related projects"),
         "project_family_hint": _("{name} -- related projects, click to unfold"),
         "project_family_folded": _("{n} related projects folded, {open} open tasks"),
+        "toggle_project_family": _("Select / deselect all projects in this group"),
         "filter_cross_project": _("Filter: cross-project"),
         "filter_phase_wip": _("Filter: phase In Progress"),
         "filter_phase_planned": _("Filter: phase Planned"),

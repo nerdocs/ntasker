@@ -727,6 +727,36 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             this.loadCounts();
         },
 
+        // Every project name in a family row: the head project (if any)
+        // plus its children.
+        familyMembers(row) {
+            return [row.project, ...row.children].filter(Boolean).map(m => m.name);
+        },
+
+        familyChecked(row) {
+            return this.familyMembers(row).every(n => this.projectFilter.includes(n));
+        },
+
+        familyIndeterminate(row) {
+            return !this.familyChecked(row) &&
+                this.familyMembers(row).some(n => this.projectFilter.includes(n));
+        },
+
+        // Whole-family toggle: clear every member when all are active, else
+        // add the missing ones.
+        toggleFamily(row) {
+            const members = this.familyMembers(row);
+            if (this.familyChecked(row)) {
+                this.projectFilter = this.projectFilter.filter(n => !members.includes(n));
+            } else {
+                this.projectFilter.push(...members.filter(n => !this.projectFilter.includes(n)));
+            }
+            this.persistProjectFilter();
+            this.syncFormProjectFromFilter();
+            this.loadTasks();
+            this.loadCounts();
+        },
+
         // True iff every project (incl. '__none__') is currently active.
         get allProjectsActive() {
             return this.projects.length > 0 &&

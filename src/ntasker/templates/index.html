@@ -1415,17 +1415,39 @@
                                     <i class="ti ti-player-stop me-1 fs-3"></i><span x-text="$i18n('claude_stop')"></span>
                                 </button>
                             </template>
+                            {# Split the tab: the task's report in a pane next to the terminal. #}
+                            <template x-if="runReportAvailable">
+                                <button type="button" class="btn btn-ghost-secondary" :class="runReportOpen && 'active'"
+                                        :title="$i18n('report_open')" @click="toggleRunReport()">
+                                    <i class="ti ti-file-text me-1 fs-3"></i><span x-text="$i18n('report_title')"></span>
+                                </button>
+                            </template>
                         </span>
                         </template>
                     </div>
 
-                    {# One xterm host per tab; only the active one is shown. Stable #}
-                    {# :id lets _claudeConnect attach the Terminal to the right node. #}
-                    <template x-for="tab in claudeTabs" :key="tab.taskId">
-                        <div class="claude-terminal flex-fill mb-3"
-                             :id="`claude-term-${tab.taskId}`"
-                             x-show="claudeView === tab.taskId"></div>
-                    </template>
+                    <div class="d-flex flex-fill mb-3" style="min-height: 0">
+                        {# One xterm host per tab; only the active one is shown. Stable #}
+                        {# :id lets _claudeConnect attach the Terminal to the right node. #}
+                        <template x-for="tab in claudeTabs" :key="tab.taskId">
+                            <div class="claude-terminal flex-fill"
+                                 :id="`claude-term-${tab.taskId}`"
+                                 x-show="claudeView === tab.taskId"></div>
+                        </template>
+                        {# Report pane: splitter + the rendered report, width persists in localStorage. #}
+                        <template x-if="runReportShown">
+                            <div class="d-flex flex-shrink-0" style="min-height: 0" :style="`width: ${runReportWidth}px`">
+                                <div class="tracker-splitter claude-report-splitter" @pointerdown="startRunReportResize($event)"></div>
+                                <div class="claude-report-pane card flex-fill">
+                                    <div class="card-body overflow-auto">
+                                        <div class="text-secondary small mb-2" x-show="runReportTask.report_at"
+                                             x-text="$i18n('report_written_at', {when: formatAbsolute(runReportTask.report_at)})"></div>
+                                        <div class="markdown" x-html="runReportHtml"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
                 </div>
             </div>
         </div>

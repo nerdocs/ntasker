@@ -39,6 +39,19 @@ function clampSidebarWidth(raw) {
     return Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, n));
 }
 
+// Report pane in the run view (terminal left, the task's report right): its
+// width in px, set by dragging the splitter between the two.
+const LS_KEY_RUN_REPORT_WIDTH = 'ntasker.runReportWidth';
+const RUN_REPORT_WIDTH_DEFAULT = 480;
+const RUN_REPORT_WIDTH_MIN = 260;
+const RUN_REPORT_WIDTH_MAX = 1400;
+
+function clampRunReportWidth(raw) {
+    const n = Number.parseInt(raw, 10);
+    if (Number.isNaN(n)) return RUN_REPORT_WIDTH_DEFAULT;
+    return Math.min(RUN_REPORT_WIDTH_MAX, Math.max(RUN_REPORT_WIDTH_MIN, n));
+}
+
 // Legacy keys used pre-1.0. Migrated to the ntasker.* namespace once.
 const LEGACY_KEYS = {
     'nerdocs.tracker.projectFilter': LS_KEY_PROJECT_FILTER,
@@ -304,6 +317,16 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // The task whose final report is open, and its rendered HTML.
         reportTask: null,
         reportHtml: '',
+
+        // ---- Report pane in the run view ----
+        // The active run's task (id, report, report_at), fetched on tab switch
+        // and refreshed by the change poll so a report written mid-session
+        // shows up. ``runReportOpen`` is the user's toggle; the pane is shown
+        // only while the active task actually has a report.
+        runReportTask: null,
+        runReportHtml: '',
+        runReportOpen: false,
+        runReportWidth: clampRunReportWidth(localStorage.getItem(LS_KEY_RUN_REPORT_WIDTH)),
 
         // Multi-value project filter. Empty list = no filter (all tasks).
         // Special value '__none__' = include cross-project tasks (project IS NULL).
@@ -1993,6 +2016,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 return;
             }
             this.refreshAll();
+            this.loadRunReport();
         },
 
         // ---- Tag input helpers (shared by new-task form & edit-modal) ----
@@ -2719,6 +2743,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // then fit + focus once the host is on screen.
         _showTab(id) {
             this.claudeView = id;
+            this.loadRunReport();
             this.$nextTick(() => {
                 this._ensureTabConnected(id);
                 this._fitAndSync(id);
@@ -3054,6 +3079,65 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         stopClaudeRun() {
             const s = _claudeTerms.get(this.claudeView);
             if (s && s.ws.readyState === WebSocket.OPEN) s.ws.send(JSON.stringify({ type: 'stop' }));
+        },
+
+        // Whether the active run has a report to show in the side pane.
+        get runReportAvailable() {
+            return !!(this.runReportTask && this.runReportTask.id === this.claudeView && this.runReportTask.report);
+        },
+
+        get runReportShown() {
+            return this.runReportOpen && this.runReportAvailable;
+        },
+
+        // Fetch the active run's task for the report pane. The task may be
+        // filtered out of ``tasks`` (project filter, status tab), so it is read
+        // directly. The rendered HTML is cached per report text: Alpine
+        // re-evaluates bindings often, and marked + DOMPurify are not free.
+        async loadRunReport() {
+            const id = this.claudeView;
+            if (id === null) return;
+            let task;
+            try {
+                const r = await fetch(`/api/tasks/${id}`);
+                if (!r.ok) return;
+                task = await r.json();
+            } catch (_e) { return; }
+            if (this.claudeView !== id) return;   // switched tabs meanwhile
+            const changed = !this.runReportTask || this.runReportTask.id !== task.id
+                || this.runReportTask.report !== task.report;
+            this.runReportTask = { id: task.id, report: task.report, report_at: task.report_at };
+            if (changed) this.runReportHtml = renderMarkdown(task.report || '');
+        },
+
+        // The report button: split the tab (terminal left, report right).
+        // The terminal refits once the pane has been laid out.
+        toggleRunReport() {
+            this.runReportOpen = !this.runReportOpen;
+            this.$nextTick(() => this._fitAndSync(this.claudeView));
+        },
+
+        // Splitter between terminal and report pane -- same pointer-capture
+        // scheme as the sidebar splitter; the terminal refits on release.
+        startRunReportResize(ev) {
+            const handle = ev.currentTarget;
+            const startX = ev.clientX;
+            const startWidth = this.runReportWidth;
+            const onMove = (e) => {
+                this.runReportWidth = clampRunReportWidth(startWidth - (e.clientX - startX));
+            };
+            const onUp = () => {
+                handle.removeEventListener('pointermove', onMove);
+                handle.removeEventListener('pointerup', onUp);
+                document.body.classList.remove('tracker-resizing');
+                localStorage.setItem(LS_KEY_RUN_REPORT_WIDTH, String(this.runReportWidth));
+                this._fitAndSync(this.claudeView);
+            };
+            handle.setPointerCapture(ev.pointerId);
+            handle.addEventListener('pointermove', onMove);
+            handle.addEventListener('pointerup', onUp);
+            document.body.classList.add('tracker-resizing');
+            ev.preventDefault();
         },
 
         // Mark the active task done straight from the run header. The PATCH tears

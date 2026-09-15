@@ -559,6 +559,7 @@ body {
 }
 .claude-terminal {
     min-height: 0;
+    min-width: 0;
     background-color: #161616;
     border-radius: var(--tblr-border-radius);
     padding: 0.5rem 0.25rem 0.5rem 0.5rem;
@@ -568,6 +569,17 @@ body {
 .claude-terminal .xterm-viewport {
     height: 100% !important;
 }
+/* Report pane next to the terminal (run view). The splitter reuses the
+ * sidebar handle; it sits on the pane's left edge instead of the right. */
+.claude-report-splitter {
+    margin-left: 0;
+    margin-right: -3px;
+}
+.claude-report-pane {
+    min-width: 0;
+    margin-left: 0.5rem;
+}
+
 /* Drag-drop affordance: dropping a file onto the terminal ships it to the
  * agent (see _wireTerminalDnd). Highlight the host while a file hovers. */
 .claude-terminal.term-drag-over {

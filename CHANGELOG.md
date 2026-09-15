@@ -5,6 +5,7 @@ All notable changes to ntasker.
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
 ## [Unreleased]
+Run view: "Report" button splits the tab -- terminal left, the task's report right, draggable divider.
 Fix: Stop always ends a session -- even when a detached grandchild keeps the PTY open after the agent exited.
 
 ## [3.3.0] — 2026-09-15

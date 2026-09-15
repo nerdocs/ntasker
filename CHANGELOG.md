@@ -5,6 +5,9 @@ All notable changes to ntasker.
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
 ## [Unreleased]
+
+## [3.3.0] — 2026-09-15
+Quick prompts and run buttons in the run view; resume ended queue runs, auto-resume after restart; changelog on the info page.
 Perf: drop indicator painted straight onto the hovered card (no per-card re-render on dragover); view switch renders once.
 Queue: run buttons and quick run append to the queue -- the running task stays on top, new ones line up below.
 Feature: bash/zsh completion for the CLI -- `ntasker completion <shell> --install` or via Settings → Maintenance.

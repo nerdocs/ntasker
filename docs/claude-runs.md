@@ -35,9 +35,10 @@ in the task's project directory with the same seed), differing only in the per-a
 **The seed.** A spawned run does not use the `/task <id>` slash command -- that would make the agent run the loader
 script first, a full extra inference pass plus a couple thousand prompt tokens. ntasker instead inlines the task data
 -- id, title, description, project, tags, plugin briefings, and the queue's hand-off rules -- directly into the
-initial prompt (`claude_runner.queue_seed_for_task`), and performs the loader's `phase=wip` move itself at spawn (same
-guards: archived / `status=done` tasks are never resurrected). The `/task` command stays installed and keeps working
-in manual terminal sessions.
+initial prompt (`claude_runner.queue_seed_for_task`), and performs the loader's `phase=wip` move itself -- already
+when the run button queues the task, so a task waiting behind a running one shows as in progress, and again at spawn
+(same guards: archived / `status=done` tasks are never resurrected). The `/task` command stays installed and keeps
+working in manual terminal sessions.
 
 ## The flow
 

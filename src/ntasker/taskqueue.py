@@ -142,8 +142,13 @@ def enqueue(task_id: int) -> list[sqlite3.Row]:
     stays at the top of its project and the rest follow in the order they
     were queued; an already-queued id keeps its position. Same filtering as
     :func:`set_queue`.
+
+    The task moves to ``phase=wip`` right away, not only once its session
+    spawns: a task waiting behind a running one is in progress from the
+    user's point of view, and leaving it in ``planned`` misleads the board.
     """
     clear_ended([task_id])   # "run it again" for an entry whose session ended
+    mark_wip(task_id)
     ids = [int(r["id"]) for r in load_queue()]
     if task_id in ids:
         return load_queue()

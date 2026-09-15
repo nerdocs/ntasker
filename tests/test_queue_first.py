@@ -79,3 +79,10 @@ def test_enqueue_appends_and_keeps_existing_position(client):
     taskqueue.set_queue([a, b])
     assert [int(r["id"]) for r in taskqueue.enqueue(c)] == [a, b, c]
     assert [int(r["id"]) for r in taskqueue.enqueue(a)] == [a, b, c]
+
+
+def test_run_marks_task_wip_while_still_waiting(client):
+    a = client.post("/api/tasks", json={"title": "a"}).json()["id"]
+    assert client.get(f"/api/tasks/{a}").json()["phase"] == "planned"
+    client.post("/api/queue/run", json={"id": a})
+    assert client.get(f"/api/tasks/{a}").json()["phase"] == "wip"

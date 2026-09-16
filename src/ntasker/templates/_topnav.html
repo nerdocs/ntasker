@@ -41,7 +41,10 @@
             :aria-label="theme === 'dark' ? $i18n('light_mode') : $i18n('dark_mode')">
         <i class="ti fs-2" :class="theme === 'dark' ? 'ti-sun' : 'ti-moon'"></i>
     </button>
-    <a href="/settings" class="btn btn-icon btn-sm btn-ghost-secondary" :title="$i18n('settings')">
+    <a href="/settings" class="btn btn-icon btn-sm btn-ghost-secondary position-relative"
+       :title="settingsAttention ? $i18n('settings_attention') : $i18n('settings')">
         <i class="ti ti-settings fs-2"></i>
+        <span class="badge badge-notification bg-red" aria-hidden="true"
+              x-show="settingsAttention" x-cloak></span>
     </a>
 </div>

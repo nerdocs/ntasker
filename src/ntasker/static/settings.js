@@ -111,6 +111,12 @@ function settingsPage() {
             return this.agents.some(a => !a.available);
         },
 
+        // Any agent whose /task integration is missing or outdated -- red rail
+        // dot on Plugins, where the install hint lives (agentAssetsTodo: topnav.js).
+        assetsTodo() {
+            return this.agents.some(agentAssetsTodo);
+        },
+
         // ---- value helpers ------------------------------------------------
 
         isOn(key) {

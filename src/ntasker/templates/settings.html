@@ -143,7 +143,10 @@
                                     <a href="#plugins" class="list-group-item list-group-item-action d-flex align-items-center"
                                        :class="tab === 'plugins' && 'active'" @click.prevent="go('plugins')">
                                         <i class="ti ti-puzzle me-2 fs-3"></i>{{ t('Plugins') }}
-                                        <span class="badge bg-secondary-lt ms-auto font-monospace"
+                                        <span class="badge bg-red ms-auto" x-show="assetsTodo()" x-cloak
+                                              :title="$i18n('settings_attention')"></span>
+                                        <span class="badge bg-secondary-lt font-monospace"
+                                              :class="assetsTodo() ? 'ms-2' : 'ms-auto'"
                                               x-text="pluginsOn() + '/' + plugins.length"></span>
                                     </a>
                                     <a href="#maintenance" class="list-group-item list-group-item-action d-flex align-items-center"
@@ -270,6 +273,11 @@
                                                     <span class="badge ms-2"
                                                           :class="agentFor('{{ p.name }}').available ? 'bg-success-lt' : 'bg-warning-lt'"
                                                           x-text="agentFor('{{ p.name }}').available ? $i18n('agent_available_badge') : $i18n('agent_unavailable_badge')"></span>
+                                                </template>
+                                                {# Red when `ntasker agent install` is due -- the hint sits further down in the card. #}
+                                                <template x-if="agentAssetsTodo(agentFor('{{ p.name }}'))">
+                                                    <span class="badge bg-danger-lt ms-2"
+                                                          x-text="agentFor('{{ p.name }}').assets.installed ? $i18n('agent_assets_drift_badge') : $i18n('agent_assets_missing_badge')"></span>
                                                 </template>
                                                 {% endif %}
                                             </h3>

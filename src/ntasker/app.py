@@ -435,6 +435,7 @@ def build_js_strings() -> dict[str, str]:
         "dark_mode": _("Dark mode"),
         "info": _("Info"),
         "update_available_short": _("Update available"),
+        "settings_attention": _("Settings need your attention"),
         "github": _("Source on GitHub"),
         "buy_me_a_coffee": _("Buy me a coffee"),
         "stale_version_notice": _(
@@ -660,6 +661,8 @@ def build_js_strings() -> dict[str, str]:
             "CLI not found on PATH -- runs are disabled for this agent until it is installed."
         ),
         "agent_available_badge": _("CLI available"),
+        "agent_assets_missing_badge": _("Integration missing"),
+        "agent_assets_drift_badge": _("Integration outdated"),
         "agent_unavailable_badge": _("CLI missing"),
         "yes": _("yes"),
         "no": _("no"),

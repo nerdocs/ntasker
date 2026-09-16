@@ -92,6 +92,11 @@ ntasker agent install claude --home /tmp/test-home  # redirect to a non-default 
 `ntasker agent list` prints a per-agent table with the CLI state (`ok` / `-`), the integration state
 (`installed` / `drift` / `-`) and the resolved config home; pair it with `--json` for machine-readable output.
 
+The web UI surfaces the same state so an outdated integration is not missed after an upgrade: a **red dot on the
+settings cog** (every page), a red dot on the *Plugins* rail entry, and an *Integration outdated* / *Integration
+missing* badge on the agent's plugin card next to the install hint. Only agents whose CLI is available count -- a
+missing CLI is flagged separately (yellow, *Agents & runs*).
+
 ## Settings
 
 | Setting                  | ENV                       | Meaning                                                  |

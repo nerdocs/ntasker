@@ -7,6 +7,13 @@
 // The theme localStorage key matches app.js' LS_KEY_THEME ('ntasker.theme');
 // the literal is inlined here to avoid a duplicate top-level `const` when both
 // scripts share the global scope on the index page.
+// An agent whose /task integration needs a CLI step (`ntasker agent install`):
+// its CLI works but the skill / slash command is missing or differs from the
+// package. Shared with settings.js for the rail badge and the plugin cards.
+function agentAssetsTodo(agent) {
+    return !!agent && agent.available && (!agent.assets.installed || agent.assets.drift);
+}
+
 function topnav(pageVersion = '') {
     return {
         theme: localStorage.getItem('ntasker.theme') || 'light',
@@ -19,10 +26,15 @@ function topnav(pageVersion = '') {
         // Never reloads automatically -- a reload could lose form input.
         staleVersion: false,
         serverVersion: '',
+        // True while some enabled agent with a working CLI has its /task
+        // integration missing or outdated (GET /api/agents) -- drives the red
+        // dot on the settings cog so the fix is found without going looking.
+        settingsAttention: false,
 
         init() {
             this.applyTheme();
             this.loadUpdateInfo();
+            this.loadSettingsAttention();
             if (pageVersion) {
                 this._versionTimer = setInterval(() => this._checkServerVersion(pageVersion), 30000);
             }
@@ -54,6 +66,16 @@ function topnav(pageVersion = '') {
             this.theme = this.theme === 'dark' ? 'light' : 'dark';
             localStorage.setItem('ntasker.theme', this.theme);
             this.applyTheme();
+        },
+
+        async loadSettingsAttention() {
+            try {
+                const r = await fetch('/api/agents');
+                const data = await r.json();
+                this.settingsAttention = (data.agents || []).some(agentAssetsTodo);
+            } catch (e) {
+                this.settingsAttention = false;
+            }
         },
 
         // Poll the server-side (cached) PyPI check. Failures stay silent --

@@ -430,6 +430,32 @@ def _store_session_id(task_id: int, session_id: str) -> None:
             )
 
 
+def _store_run_baselines(task_id: int, cwd: str) -> None:
+    """Persist the Diff view's baselines for a fresh run.
+
+    One HEAD sha per directory the run holds -- ``cwd`` plus the task's
+    directory locks (see :mod:`ntasker.locks`) -- so the agent's own commits
+    still show and the diff outlives the session. A resume keeps the previous
+    baselines. Best-effort, like :func:`_store_session_id`.
+    """
+    from ntasker import locks  # noqa: PLC0415 -- lazy: avoid cycle
+    from ntasker.db import get_conn  # noqa: PLC0415 -- lazy: avoid cycle
+    from ntasker.rundiff import baselines_for  # noqa: PLC0415 -- lazy: avoid cycle
+
+    with contextlib.suppress(Exception):
+        with get_conn() as conn:
+            row = conn.execute("SELECT locks FROM tasks WHERE id = ?", (task_id,)).fetchone()
+            dirs = [os.path.realpath(cwd)]
+            for name in locks.parse(row["locks"] if row else None):
+                d = locks.resolve_dir(name)
+                if d not in dirs and os.path.isdir(d):
+                    dirs.append(d)
+            conn.execute(
+                "UPDATE tasks SET run_baselines = ? WHERE id = ?",
+                (baselines_for(dirs), task_id),
+            )
+
+
 def _stored_session_id(task_id: int) -> str | None:
     """The task's persisted Claude session id, or ``None`` if it never ran."""
     from ntasker.db import get_conn  # noqa: PLC0415 -- lazy: avoid cycle
@@ -511,6 +537,8 @@ def _start_session(
     )
     os.close(slave)
     os.set_blocking(master, False)
+    if not resume_id:
+        _store_run_baselines(task_id, run_cwd)
     sess = TermSession(task_id=task_id, proc=proc, master_fd=master)
     SESSIONS[task_id] = sess
     _attach_reader(sess)

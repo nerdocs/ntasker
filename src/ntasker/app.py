@@ -45,6 +45,7 @@ from ntasker.claude_runner import (
 )
 from ntasker.claude_runner import serve as claude_serve
 from ntasker.projects import discover_claude_projects
+from ntasker.rundiff import parse_baselines, run_diff
 from ntasker import completion, locks, plugins, taskqueue
 from ntasker import db as _db_module
 from ntasker.db import (
@@ -490,6 +491,13 @@ def build_js_strings() -> dict[str, str]:
         "report_none": _("No report yet."),
         "report_written_at": _("Written {when}"),
         "report_resume": _("Resume session"),
+        # Diff page in the run view (what the session changed)
+        "diff_title": _("Diff"),
+        "diff_open": _("Show what this run changed"),
+        "diff_files": _("{n} files"),
+        "diff_none": _("No changes yet."),
+        "diff_no_git": _("Not a git repository."),
+        "diff_reload": _("Reload"),
         "dep_other_project": _("in {name}"),
         "dep_drop_hint": _("#{a} waits for #{b}"),
         "dep_added": _("#{a} now depends on #{b}."),
@@ -2038,6 +2046,23 @@ def api_get_task(task_id: int) -> JSONResponse:
         task = row_to_task(row, tags, depends)
         plugins.apply_task_hooks(conn, [task])
     return JSONResponse(task)
+
+
+@app.get("/api/tasks/{task_id}/diff")
+def api_task_diff(task_id: int) -> JSONResponse:
+    """What the task's run changed: the Diff view (run page + task card).
+
+    ``{"git": bool, "files": [{dir, path, status, additions, deletions, diff}]}``
+    -- each held directory's working tree vs. the commit the run started on,
+    untracked files included (see :mod:`ntasker.rundiff`). Outlives the
+    session: the baselines are stored on the task. 404 before the first run.
+    """
+    with get_conn() as conn:
+        row = conn.execute("SELECT run_baselines FROM tasks WHERE id = ?", (task_id,)).fetchone()
+    baselines = parse_baselines(row["run_baselines"]) if row else {}
+    if not baselines:
+        raise HTTPException(status_code=404, detail=_("This task has not run yet"))
+    return JSONResponse(run_diff(baselines))
 
 
 def _dep_error_detail(e: DepError) -> str:

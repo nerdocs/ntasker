@@ -1142,6 +1142,13 @@
                                                     <i class="ti ti-file-text fs-3"></i>
                                                 </button>
                                             </template>
+                                            {# What the task's run changed (once it has run). #}
+                                            <template x-if="task.has_diff">
+                                                <button class="btn btn-sm btn-ghost-secondary" @click="openDiff(task)"
+                                                        :aria-label="$i18n('diff_open')" :title="$i18n('diff_open')">
+                                                    <i class="ti ti-file-diff fs-3"></i>
+                                                </button>
+                                            </template>
                                             <button class="btn btn-sm btn-ghost-secondary" @click="startEdit(task)"
                                                     :aria-label="$i18n('edit')" :title="$i18n('edit')">
                                                 <i class="ti ti-pencil fs-3"></i>
@@ -1287,6 +1294,13 @@
                                                         <i class="ti ti-file-text fs-3"></i>
                                                     </button>
                                                 </template>
+                                                <template x-if="task.has_diff">
+                                                    <button class="btn btn-sm btn-ghost-secondary px-1 py-0"
+                                                            @click.stop="openDiff(task)"
+                                                            :aria-label="$i18n('diff_open')" :title="$i18n('diff_open')">
+                                                        <i class="ti ti-file-diff fs-3"></i>
+                                                    </button>
+                                                </template>
                                                 <button class="btn btn-sm btn-ghost-secondary px-1 py-0"
                                                         @click.stop="startEdit(task)"
                                                         :aria-label="$i18n('edit')" :title="$i18n('edit')">
@@ -1429,14 +1443,19 @@
                                 </template>
                             </div>
                             {# Split the tab: the task's report in a pane next to the terminal. #}
-                            <template x-if="runReportAvailable">
-                                <div class="btn-group">
+                            {# Diff: the run's changes in place of the terminal. #}
+                            <div class="btn-group">
+                                <template x-if="runReportAvailable">
                                     <button type="button" class="btn btn-outline-secondary" :class="runReportOpen && 'active'"
                                             :title="$i18n('report_open')" @click="toggleRunReport()">
                                         <i class="ti ti-file-text me-1 fs-3"></i><span x-text="$i18n('report_title')"></span>
                                     </button>
-                                </div>
-                            </template>
+                                </template>
+                                <button type="button" class="btn btn-outline-secondary" :class="runDiffOpen && 'active'"
+                                        :title="$i18n('diff_open')" @click="toggleRunDiff()">
+                                    <i class="ti ti-file-diff me-1 fs-3"></i><span x-text="$i18n('diff_title')"></span>
+                                </button>
+                            </div>
                         </span>
                         </template>
                     </div>
@@ -1447,10 +1466,14 @@
                         <template x-for="tab in claudeTabs" :key="tab.taskId">
                             <div class="claude-terminal flex-fill"
                                  :id="`claude-term-${tab.taskId}`"
-                                 x-show="claudeView === tab.taskId"></div>
+                                 x-show="claudeView === tab.taskId && !runDiffOpen"></div>
+                        </template>
+                        {# Diff page in place of the terminal (see _diff.html). #}
+                        <template x-if="runDiffOpen">
+                            {% include '_diff.html' %}
                         </template>
                         {# Report pane: splitter + the rendered report, width persists in localStorage. #}
-                        <template x-if="runReportShown">
+                        <template x-if="runReportShown && !runDiffOpen">
                             <div class="d-flex flex-shrink-0" style="min-height: 0" :style="`width: ${runReportWidth}px`">
                                 <div class="tracker-splitter claude-report-splitter" @pointerdown="startRunReportResize($event)"></div>
                                 <div class="claude-report-pane card flex-fill">
@@ -1706,6 +1729,28 @@
                         {{ t('Save') }}
                     </button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    {# Diff modal -- what the task's run changed, opened from the task card. #}
+    <div class="modal modal-blur fade" tabindex="-1" x-show="diffTask" x-cloak
+         :class="diffTask ? 'show d-block' : ''"
+         :style="diffTask ? 'background-color: rgba(0,0,0,0.4)' : ''"
+         @keydown.escape.window="closeDiff()">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable" role="document" x-show="diffTask" @click.outside="closeDiff()">
+            <div class="modal-content claude-diff-modal" x-show="diffTask">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <template x-if="diffTask">
+                            <span><span x-text="$i18n('diff_title')"></span> <span class="font-monospace" x-text="`#${diffTask.id}`"></span> <span x-text="diffTask.title"></span></span>
+                        </template>
+                    </h5>
+                    <button type="button" class="btn-close" @click="closeDiff()" :aria-label="$i18n('close')"></button>
+                </div>
+                <template x-if="diffTask">
+                    {% include '_diff.html' %}
+                </template>
             </div>
         </div>
     </div>

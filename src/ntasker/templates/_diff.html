@@ -1,0 +1,40 @@
+{# The Diff view body: changed files on the left, the selected file's patch on the right. #}
+{# Bound to the shared diff state (diff, diffGroups, diffSelected, diffLoading, diffHtml), #}
+{# grouped by held directory -- used by #}
+{# the run page (in place of the terminal) and the task card's diff modal. #}
+<div class="claude-diff-page card flex-fill d-flex flex-row">
+    <div class="claude-diff-files d-flex flex-column border-end">
+        <div class="d-flex align-items-center px-3 py-2 border-bottom">
+            <span class="text-secondary small flex-fill"
+                  x-text="diff ? $i18n('diff_files', {n: diff.files.length}) : ''"></span>
+            <button type="button" class="btn btn-sm btn-ghost-secondary btn-icon"
+                    :title="$i18n('diff_reload')" :disabled="diffLoading" @click="loadDiff(_diffTaskId)">
+                <i class="ti ti-refresh"></i>
+            </button>
+        </div>
+        <div class="list-group list-group-flush overflow-auto flex-fill">
+            {# One group per held directory; the heading only when there are several. #}
+            <template x-for="g in diffGroups" :key="g.dir">
+                <div>
+                    <div class="list-group-header" x-show="diffGroups.length > 1" x-text="g.dir"></div>
+                    <template x-for="f in g.files" :key="f.path">
+                        <a href="#" class="list-group-item list-group-item-action d-flex align-items-center gap-2 py-2"
+                           :class="diffKey(f) === diffSelected && 'active'"
+                           @click.prevent="diffSelected = diffKey(f)">
+                            <span class="claude-diff-status" :class="`claude-diff-status-${f.status}`"
+                                  x-text="f.status[0].toUpperCase()"></span>
+                            <span class="text-truncate flex-fill font-monospace small" :title="f.path" x-text="f.path"></span>
+                            <span class="small text-nowrap">
+                                <span class="text-success" x-text="`+${f.additions}`"></span>
+                                <span class="text-danger" x-text="`-${f.deletions}`"></span>
+                            </span>
+                        </a>
+                    </template>
+                </div>
+            </template>
+            <div class="text-secondary p-3" x-show="diff && !diff.git" x-text="$i18n('diff_no_git')"></div>
+            <div class="text-secondary p-3" x-show="diff && diff.git && !diff.files.length" x-text="$i18n('diff_none')"></div>
+        </div>
+    </div>
+    <pre class="claude-diff-patch flex-fill overflow-auto m-0 p-3" x-html="diffHtml"></pre>
+</div>

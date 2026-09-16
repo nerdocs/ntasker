@@ -94,7 +94,12 @@ CREATE TABLE IF NOT EXISTS tasks (
     -- Queue-run state, see ntasker.taskqueue. ``session_ended_at``: the
     -- queued task's session ended before the task was done -- the entry stays
     -- queued, flagged, until the user acts. Never user-facing.
-    session_ended_at TEXT
+    session_ended_at TEXT,
+    -- The Diff view's baselines (see ntasker.rundiff): JSON {directory: sha}
+    -- for every directory the task's last fresh run holds (its own plus its
+    -- locks), recorded at spawn. A resume keeps them, so the diff spans the
+    -- whole run. NULL until the first run.
+    run_baselines TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_archived ON tasks(archived);
 CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project);
@@ -210,6 +215,11 @@ def init_db(path: Path | None = None) -> None:
                 conn.execute(f"ALTER TABLE tasks ADD COLUMN {column} TEXT")
             except sqlite3.OperationalError:
                 pass
+        # v3.4 run diff baselines (see the schema comment).
+        try:
+            conn.execute("ALTER TABLE tasks ADD COLUMN run_baselines TEXT")
+        except sqlite3.OperationalError:
+            pass
         # v3.2: the queue no longer acts on the agent's hand-off, so the
         # handed_off_at column (v3.1) goes. No-op once dropped.
         try:
@@ -396,6 +406,8 @@ def row_to_task(
         "locks": locks.parse(row["locks"]),
         "report": row["report"],
         "report_at": row["report_at"],
+        # A run has started -> the Diff view has a baseline to show.
+        "has_diff": bool(row["run_baselines"]),
         "tags": tags or [],
         "depends": depends or [],
     }

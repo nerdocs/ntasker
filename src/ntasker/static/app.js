@@ -171,6 +171,20 @@ function renderMarkdown(text) {
     return window.DOMPurify ? window.DOMPurify.sanitize(raw) : escapeHtml(text);
 }
 
+// Unified diff -> HTML for the run view's Diff page: one span per line,
+// classed by its first character so CSS can colour additions / deletions /
+// hunk headers. Escaped, never trusted.
+function renderDiff(text) {
+    const cls = (line) => {
+        if (/^(diff --git|index |--- |\+\+\+ |new file|deleted file|rename |similarity |old mode|new mode|Binary files)/.test(line)) return 'diff-meta';
+        if (line.startsWith('@@')) return 'diff-hunk';
+        if (line.startsWith('+')) return 'diff-add';
+        if (line.startsWith('-')) return 'diff-del';
+        return '';
+    };
+    return String(text).split('\n').map(l => `<span class="${cls(l)}">${escapeHtml(l)}\n</span>`).join('');
+}
+
 function _b64ToBytes(b64) {
     const bin = atob(b64);
     const bytes = new Uint8Array(bin.length);
@@ -327,6 +341,18 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         runReportHtml: '',
         runReportOpen: false,
         runReportWidth: clampRunReportWidth(localStorage.getItem(LS_KEY_RUN_REPORT_WIDTH)),
+
+        // ---- Diff view (run page + task card modal) ----
+        // ``diff`` is a task's change set from /api/tasks/<id>/diff
+        // ({git, files}), ``diffSelected`` the diffKey() of the file whose
+        // patch is shown on the right (see _diff.html). Only one host shows it at a time:
+        // ``runDiffOpen`` swaps it in for the active run's terminal,
+        // ``diffTask`` opens it in a modal from the task card.
+        diff: null,
+        diffSelected: null,
+        diffLoading: false,
+        runDiffOpen: false,
+        diffTask: null,
 
         // Multi-value project filter. Empty list = no filter (all tasks).
         // Special value '__none__' = include cross-project tasks (project IS NULL).
@@ -2780,6 +2806,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // mirrored from a background session is connected lazily on first view),
         // then fit + focus once the host is on screen.
         _showTab(id) {
+            if (id !== this.claudeView) this.closeRunDiff();
             this.claudeView = id;
             this.loadRunReport();
             this.$nextTick(() => {
@@ -3154,6 +3181,84 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         toggleRunReport() {
             this.runReportOpen = !this.runReportOpen;
             this.$nextTick(() => this._fitAndSync(this.claudeView));
+        },
+
+        // The diff button: swap the terminal for the run's change set (and
+        // back). Opening always refetches -- the agent keeps editing.
+        toggleRunDiff() {
+            if (this.runDiffOpen) {
+                this.closeRunDiff();
+                this.$nextTick(() => this._fitAndSync(this.claudeView));
+                return;
+            }
+            this.runDiffOpen = true;
+            this.loadDiff(this.claudeView);
+        },
+
+        closeRunDiff() {
+            this.runDiffOpen = false;
+            this._resetDiff();
+        },
+
+        // The task card's diff icon: the same view in a modal.
+        openDiff(task) {
+            this.diffTask = task;
+            this.loadDiff(task.id);
+        },
+
+        closeDiff() {
+            this.diffTask = null;
+            this._resetDiff();
+        },
+
+        _resetDiff() {
+            this.diff = null;
+            this.diffSelected = null;
+        },
+
+        // The task id the diff view currently shows, or null when closed.
+        get _diffTaskId() {
+            if (this.diffTask) return this.diffTask.id;
+            return this.runDiffOpen ? this.claudeView : null;
+        },
+
+        async loadDiff(id) {
+            if (id == null) return;
+            this.diffLoading = true;
+            let data = { git: false, files: [] };
+            try {
+                const r = await fetch(`/api/tasks/${id}/diff`);
+                if (r.ok) data = await r.json();
+            } catch (_e) { /* shown as "no changes" */ }
+            this.diffLoading = false;
+            if (this._diffTaskId !== id) return;   // switched / closed meanwhile
+            this.diff = data;
+            // Keep the selection across a reload when the file is still there.
+            if (!data.files.some(f => this.diffKey(f) === this.diffSelected)) {
+                this.diffSelected = data.files.length ? this.diffKey(data.files[0]) : null;
+            }
+        },
+
+        // A file's identity across the run's directories (the same relative
+        // path may exist in two repos).
+        diffKey(f) {
+            return `${f.dir}/${f.path}`;
+        },
+
+        // The change set grouped by held directory, in the API's order.
+        get diffGroups() {
+            const groups = [];
+            for (const f of (this.diff ? this.diff.files : [])) {
+                let g = groups[groups.length - 1];
+                if (!g || g.dir !== f.dir) groups.push(g = { dir: f.dir, files: [] });
+                g.files.push(f);
+            }
+            return groups;
+        },
+
+        get diffHtml() {
+            const f = this.diff && this.diff.files.find(x => this.diffKey(x) === this.diffSelected);
+            return f ? renderDiff(f.diff) : '';
         },
 
         // Splitter between terminal and report pane -- same pointer-capture

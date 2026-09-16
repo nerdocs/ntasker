@@ -37,7 +37,9 @@ from ntasker.agents import agent_keys, enabled_agents, resolve_home
 from ntasker.claude_assets import scan_status
 from ntasker.claude_runner import (
     active_session_ids,
+    external_session_ids,
     projects_base_dir,
+    register_external,
     session_states,
     set_hook_state,
     stop_session,
@@ -687,6 +689,11 @@ def build_js_strings() -> dict[str, str]:
         "claude_resume": _("Resume session"),
         "claude_switch_session": _("Switch to session"),
         "claude_waiting": _("The agent is waiting for your input"),
+        "claude_external": _(
+            "This task is being worked on in an external process (e.g. a terminal) -- "
+            "it cannot be started here until that session ends."
+        ),
+        "claude_external_badge": _("Running in an external terminal"),
         "claude_back": _("Back"),
         "claude_stop": _("Stop"),
         "claude_mark_done": _("Mark done"),
@@ -1273,29 +1280,53 @@ def api_claude_sessions() -> JSONResponse:
     same-project busy damping on the frontend. ``titles``: the current title of
     each active task (id -> title) -- lets the run-view tab strip follow a
     title that changes mid-session (e.g. a placeholder task getting its real
-    name).
+    name). ``external``: tasks worked on by a session ntasker did not start
+    (``/task`` in a terminal, see :func:`ntasker.claude_runner.external_session_ids`)
+    -- no tab for those, but they count as busy and their projects are listed.
     """
     states = session_states()
     active = list(states.keys())
+    external = [tid for tid in external_session_ids() if tid not in states]
     projects: dict[int, str | None] = {}
     titles: dict[int, str] = {}
-    if active:
-        placeholders = ",".join("?" * len(active))
+    if active or external:
+        ids = active + external
+        placeholders = ",".join("?" * len(ids))
         with get_conn() as conn:
             rows = conn.execute(
                 f"SELECT id, title, project FROM tasks WHERE id IN ({placeholders})",
-                active,
+                ids,
             ).fetchall()
         projects = {row["id"]: row["project"] for row in rows}
-        titles = {row["id"]: row["title"] for row in rows}
+        titles = {row["id"]: row["title"] for row in rows if row["id"] in states}
     return JSONResponse(
         {
             "active": active,
             "waiting": [tid for tid, st in states.items() if st == "waiting"],
+            "external": external,
             "projects": projects,
             "titles": titles,
         }
     )
+
+
+class ExternalSessionIn(BaseModel):
+    pid: int = Field(gt=0)
+
+
+@app.post("/api/claude/sessions/{task_id}/external")
+def api_claude_session_external(task_id: int, payload: ExternalSessionIn) -> JSONResponse:
+    """Register a session started outside ntasker as working on ``task_id``.
+
+    Called by the ``/task`` loader when it runs in a terminal Claude Code
+    (``CLAUDE_PID`` set, ``NTASKER_TASK_ID`` not). The task then shows as busy
+    and its run button locks until that process exits. 404 for an unknown task.
+    """
+    with get_conn() as conn:
+        if conn.execute("SELECT 1 FROM tasks WHERE id = ?", (task_id,)).fetchone() is None:
+            raise HTTPException(status_code=404, detail=_("Task not found"))
+    register_external(task_id, payload.pid)
+    return JSONResponse({"ok": True})
 
 
 class SessionStateIn(BaseModel):
@@ -1444,6 +1475,11 @@ class LocksIn(BaseModel):
     projects: list[str] = Field(..., min_length=1)
 
 
+def _occupied_ids() -> set[int]:
+    """Tasks whose directories are in use: ntasker's own sessions plus external ones."""
+    return set(active_session_ids()) | set(external_session_ids())
+
+
 def _refuse_held(
     conn: sqlite3.Connection, task_id: int, own: str | None, wanted: list[str]
 ) -> None:
@@ -1452,7 +1488,7 @@ def _refuse_held(
     at start time."""
     if task_id not in active_session_ids():
         return
-    held = locks.held_dirs(conn, set(active_session_ids()))
+    held = locks.held_dirs(conn, _occupied_ids())
     by_dir = {locks.resolve_dir(n): n for n in wanted}
     hit = locks.conflict(set(by_dir), held, exclude=task_id)
     if hit is not None:
@@ -1521,7 +1557,7 @@ def api_locks_check(task: int, path: str) -> JSONResponse:
             return JSONResponse({"allowed": True, "project": None, "holder": None})
         target = locks.resolve_dir(project)
         allowed = target in locks.task_dirs(row["project"], locks.parse(row["locks"]))
-        held = locks.held_dirs(conn, set(active_session_ids()))
+        held = locks.held_dirs(conn, _occupied_ids())
     holder = held.get(target)
     return JSONResponse(
         {"allowed": allowed, "project": project, "holder": holder if holder != task else None}

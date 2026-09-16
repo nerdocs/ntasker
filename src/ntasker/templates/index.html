@@ -931,10 +931,18 @@
                             <div class="list-group-item"
                                  :class="{'task-session-running': taskRunPhase(task.id) === 'running',
                                           'task-session-waiting': taskRunPhase(task.id) === 'waiting',
+                                          'task-session-external': taskRunPhase(task.id) === 'external',
                                           'task-project-busy': taskProjectBusy(task)}"
-                                 :title="taskProjectBusy(task) ? $i18n('project_busy_hint') : ''"
+                                 :title="taskRunPhase(task.id) === 'external' ? $i18n('claude_external')
+                                         : (taskProjectBusy(task) ? $i18n('project_busy_hint') : '')"
                                  @dragover.prevent="onCardDragOver($event, task, null)"
                                  @drop.prevent="onCardDrop($event, task, null)">
+                                {# Worked on by a terminal session ntasker cannot attach to: stamp it. #}
+                                <template x-if="taskRunPhase(task.id) === 'external'">
+                                    <div class="task-external-overlay">
+                                        <span><i class="ti ti-terminal-2"></i> <span x-text="$i18n('claude_external_badge')"></span></span>
+                                    </div>
+                                </template>
                                 <div class="row align-items-start">
                                     {# Drag handle -- only this grip starts a reorder drag, so the #}
                                     {# row's many click affordances keep working. #}
@@ -1109,9 +1117,10 @@
                                             {# button so the agent logo stays visible while it runs. #}
                                             <template x-if="taskRunnable(task) && task.status !== 'done'">
                                                 <span class="d-inline-flex align-items-center">
-                                                    <template x-if="taskRunPhase(task.id) === 'running'"><span class="spinner-border spinner-border-sm text-secondary me-1"></span></template>
+                                                    <template x-if="['running', 'external'].includes(taskRunPhase(task.id))"><span class="spinner-border spinner-border-sm text-secondary me-1"></span></template>
                                                     <template x-if="taskRunPhase(task.id) === 'waiting'"><i class="ti ti-help fs-3 text-orange me-1"></i></template>
                                                     <button class="btn btn-sm btn-claude" @click="runNext(task)"
+                                                            :disabled="taskRunPhase(task.id) === 'external'"
                                                             :class="{'btn-claude-waiting': taskRunPhase(task.id) === 'waiting'}"
                                                             :aria-label="runButtonTitle(task)"
                                                             :title="runButtonTitle(task)">
@@ -1234,13 +1243,21 @@
                                              :class="{'kanban-card-dragging': draggedTaskId === task.id,
                                                       'task-session-running': taskRunPhase(task.id) === 'running',
                                                       'task-session-waiting': taskRunPhase(task.id) === 'waiting',
+                                                      'task-session-external': taskRunPhase(task.id) === 'external',
                                                       'task-project-busy': taskProjectBusy(task)}"
-                                             :title="taskProjectBusy(task) ? $i18n('project_busy_hint') : ''"
+                                             :title="taskRunPhase(task.id) === 'external' ? $i18n('claude_external')
+                                                     : (taskProjectBusy(task) ? $i18n('project_busy_hint') : '')"
                                              draggable="true"
                                              @dragstart="onCardDragStart($event, task)"
                                              @dragend="onCardDragEnd($event)"
                                              @dragover.prevent.stop="onCardDragOver($event, task, col.key)"
                                              @drop.prevent.stop="onCardDrop($event, task, col.key)">
+                                            {# Worked on by a terminal session ntasker cannot attach to: stamp it. #}
+                                            <template x-if="taskRunPhase(task.id) === 'external'">
+                                                <div class="task-external-overlay">
+                                                    <span><i class="ti ti-terminal-2"></i> <span x-text="$i18n('claude_external_badge')"></span></span>
+                                                </div>
+                                            </template>
 
                                             <div class="d-flex align-items-start gap-1 mb-1">
                                                 <span class="task-id badge bg-secondary-lt text-secondary font-monospace"
@@ -1260,10 +1277,11 @@
                                                 {# so the agent logo stays visible while it runs. #}
                                                 <template x-if="taskRunnable(task) && task.status !== 'done'">
                                                     <span class="d-inline-flex align-items-center">
-                                                        <template x-if="taskRunPhase(task.id) === 'running'"><span class="spinner-border spinner-border-sm text-secondary me-1"></span></template>
+                                                        <template x-if="['running', 'external'].includes(taskRunPhase(task.id))"><span class="spinner-border spinner-border-sm text-secondary me-1"></span></template>
                                                         <template x-if="taskRunPhase(task.id) === 'waiting'"><i class="ti ti-help fs-3 text-orange me-1"></i></template>
                                                         <button class="btn btn-sm btn-claude px-1 py-0"
                                                                 @click.stop="runNext(task)"
+                                                                :disabled="taskRunPhase(task.id) === 'external'"
                                                                 :class="{'btn-claude-waiting': taskRunPhase(task.id) === 'waiting'}"
                                                                 :aria-label="runButtonTitle(task)"
                                                                 :title="runButtonTitle(task)">

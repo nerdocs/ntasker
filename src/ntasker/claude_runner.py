@@ -326,6 +326,42 @@ def active_session_ids() -> list[int]:
     return [tid for tid, s in SESSIONS.items() if s.alive]
 
 
+# Sessions started OUTSIDE ntasker (``/task <id>`` typed into a terminal
+# Claude Code), keyed by task id -> the ``claude`` process id the loader
+# reported. No PTY, no hooks: the only thing known about such a run is that
+# its process is alive, so liveness is a ``kill(pid, 0)`` probe on every read
+# and a dead entry drops out on its own -- no end-of-session hook needed.
+EXTERNAL: dict[int, int] = {}
+
+
+def register_external(task_id: int, pid: int) -> None:
+    """Record that task ``task_id`` is being worked on by external process ``pid``.
+
+    One process works on one task: a second ``/task`` in the same session
+    replaces the earlier entry for that pid.
+    """
+    for tid in [t for t, p in EXTERNAL.items() if p == pid]:
+        del EXTERNAL[tid]
+    EXTERNAL[task_id] = pid
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True  # EPERM: exists, not ours
+    return True
+
+
+def external_session_ids() -> list[int]:
+    """Task ids with a live external session -- dead processes are forgotten."""
+    for tid in [t for t, p in EXTERNAL.items() if not _pid_alive(p)]:
+        del EXTERNAL[tid]
+    return list(EXTERNAL)
+
+
 def set_hook_state(task_id: int, waiting: bool) -> bool:
     """Record the explicit state a session's hook reported. ``False`` = no live session."""
     sess = SESSIONS.get(task_id)

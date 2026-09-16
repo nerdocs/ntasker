@@ -830,6 +830,43 @@ body {
     border-left: 3px solid var(--tblr-warning);
 }
 
+/* The task is being worked on by a session ntasker did not start (`/task` in
+ * a terminal): grey out the card's own content and stamp a centred pill on top
+ * saying so. The pill ignores the pointer, so the card stays readable and
+ * editable -- only the run button is disabled (a second agent in the same
+ * working directory is exactly what this prevents). */
+.task-session-external {
+    position: relative;
+    border-left: 3px solid var(--tblr-secondary);
+}
+.task-session-external > :not(.task-external-overlay) {
+    filter: saturate(0.2);
+    opacity: 0.45;
+}
+.task-external-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 2;
+}
+.task-external-overlay > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.25rem 0.75rem;
+    border-radius: 999px;
+    background-color: var(--tblr-bg-surface);
+    border: 1px solid var(--tblr-border-color);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--tblr-body-color);
+    text-align: center;
+}
+
 /* Another agent is already live in this task's project (taskProjectBusy):
  * desaturate + fade so "don't start a second one here" reads at a glance.
  * Advisory only -- nothing is disabled, and hover/focus restores full colour

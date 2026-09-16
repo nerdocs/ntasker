@@ -152,6 +152,23 @@ curl -X PUT 127.0.0.1:8766/api/settings/claude_idle_seconds -H 'Content-Type: ap
 The indicators self-heal: a poll refreshes them every ~1.5 s, so a stale "busy" state (e.g. after a server restart)
 clears on its own rather than spinning forever.
 
+### External sessions -- `/task` in a terminal
+
+A task can also be started **outside** ntasker: `/task <id>` typed into a Claude Code session in a terminal. That
+run moves the task to `wip` like any other, but ntasker has no PTY to attach to -- so the loader reports the
+session instead. Claude Code exports `CLAUDE_PID` to its subprocesses; the loader posts it to
+`POST /api/claude/sessions/<id>/external`, and the server keeps the task marked as long as that process is alive
+(a `kill(pid, 0)` probe on every poll -- no end-of-session hook needed; a second `/task` in the same session
+replaces the first). The loader skips this inside an ntasker-spawned session (`NTASKER_TASK_ID` set).
+
+An external task is **locked in the UI**: the card is greyed out with a *"Running in an external terminal"* stamp,
+the run button shows a spinner and is disabled -- starting a second agent on the same task is exactly what this
+prevents. The card stays editable. The queue treats the session like one of its own for the one-per-project rule
+and the directory locks (the lane and the held dirs are occupied), but it is no queue run: it never advances or
+ends a queue entry. There is no waiting/running distinction for external sessions -- they carry no hooks.
+
+Requires the loader from v3.4+ (`ntasker agent install claude` after upgrading).
+
 ## Quick prompts
 
 The run view's toolbar can carry buttons that type a canned prompt into the live session and send it -- the same
@@ -180,8 +197,9 @@ included** -- gated solely by that loopback bind. Keep the bind local (never `0.
   exception is `attach {resume: true}`, which reopens a finished task's stored session.
 * Frontend: xterm.js + the fit addon, vendored through the CDN/SRI asset manifest in `src/ntasker/assets.py` (no
   build step), driving the terminal in `static/app.js` (`runNext` queues, `_openWhenLive` waits for the session).
-* Endpoints: `GET /api/claude/status` (CLI + PTY available?), `GET /api/claude/sessions` (`{active, waiting, projects,
-  titles}`, for the busy / waiting indicators and the run tabs), `POST /api/projects/quick-run`.
+* Endpoints: `GET /api/claude/status` (CLI + PTY available?), `GET /api/claude/sessions` (`{active, waiting, external,
+  projects, titles}`, for the busy / waiting indicators and the run tabs), `POST /api/projects/quick-run`,
+  `POST /api/claude/sessions/<id>/external` (the `/task` loader's registration, see above).
 
 ## Requirements
 

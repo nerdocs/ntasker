@@ -53,6 +53,7 @@ from ntasker import locks
 from ntasker.agents import agent_keys, get_spec, resolve_agent_key
 from ntasker.claude_runner import (
     active_session_ids,
+    external_session_ids,
     mark_wip,
     queue_seed_for_task,
     start_detached_session,
@@ -215,12 +216,13 @@ def _dequeue(conn: sqlite3.Connection, ids: list[int]) -> None:
 
 
 def _busy_buckets(live: set[int], conn: sqlite3.Connection) -> set[str]:
-    """Buckets occupied by a live session of an open task -- queued or started
-    by hand.
+    """Buckets occupied by a live session of an open task -- queued, started
+    by hand, or external.
 
     A manually opened session in a project blocks the queue there too: two
     agents in one working directory is exactly what the one-per-project rule
-    exists to prevent. A done task's session is being killed (see
+    exists to prevent -- so ``live`` includes the external sessions (``/task``
+    in a terminal). A done task's session is being killed (see
     :func:`_kill_done`) and does not count in the meantime.
     """
     if not live:
@@ -311,7 +313,7 @@ def skipped(rows: list[sqlite3.Row], live: set[int]) -> dict[int, dict]:
         return out
     require_clean = get_require_clean()
     with get_conn() as conn:
-        held = locks.held_dirs(conn, live)
+        held = locks.held_dirs(conn, live | set(external_session_ids()))
     for row in rows:
         if int(row["id"]) in live or int(row["id"]) in out:
             continue
@@ -409,15 +411,18 @@ def tick() -> None:
     default_agent = resolve_agent_key(None)
     dir_locks = get_dir_locks()
     require_clean = dir_locks and get_require_clean()
+    # External sessions occupy their lane and directories like any other, but
+    # are no queue runs: they never advance or end an entry.
+    occupied = live | set(external_session_ids())
     starts: list[int] = []
     with get_conn() as conn:
-        busy = _busy_buckets(live, conn)
+        busy = _busy_buckets(occupied, conn)
         busy |= {
             _bucket(r["project"])
             for r in rows
             if r["session_ended_at"] and int(r["id"]) not in RESUME
         }
-        held = locks.held_dirs(conn, live) if dir_locks else {}
+        held = locks.held_dirs(conn, occupied) if dir_locks else {}
         for row in rows:
             bucket = _bucket(row["project"])
             if bucket in busy or not _startable(row, conn, runnable, default_agent):

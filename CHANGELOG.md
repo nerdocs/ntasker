@@ -5,6 +5,7 @@ All notable changes to ntasker.
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
 ## [Unreleased]
+Feature: a task started via `/task` in a terminal is locked in the UI (greyed card, stamp, no run button) while it runs.
 
 ## [3.3.1] — 2026-09-15
 Run view: "Report" button splits the tab -- terminal left, the task's report right, draggable divider.

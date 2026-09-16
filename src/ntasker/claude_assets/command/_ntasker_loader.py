@@ -18,7 +18,8 @@ import subprocess
 import sys
 import urllib.request
 
-SERVER_URL = "http://127.0.0.1:8766/api/tasks/{tid}"
+BASE_URL = "http://127.0.0.1:8766"
+SERVER_URL = BASE_URL + "/api/tasks/{tid}"
 
 
 def load_via_server(tid: str) -> dict | None:
@@ -36,6 +37,35 @@ def set_wip_via_server(tid: str) -> bool:
             SERVER_URL.format(tid=tid),
             data=json.dumps({"phase": "wip"}).encode("utf-8"),
             method="PATCH",
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=2):
+            return True
+    except Exception:
+        return False
+
+
+def register_external_via_server(tid: str) -> bool:
+    """Tell the server this terminal session works on the task.
+
+    Claude Code exports ``CLAUDE_PID`` to its subprocesses; the server keeps
+    the task marked busy (run button locked, lane occupied) for as long as
+    that process lives. Skipped inside an ntasker-spawned session
+    (``NTASKER_TASK_ID`` set) -- the server already tracks that one.
+    """
+    if os.environ.get("NTASKER_TASK_ID"):
+        return False
+    try:
+        pid = int(os.environ.get("CLAUDE_PID") or 0)
+    except ValueError:
+        return False
+    if pid <= 0:
+        return False
+    try:
+        req = urllib.request.Request(
+            f"{BASE_URL}/api/claude/sessions/{tid}/external",
+            data=json.dumps({"pid": pid}).encode("utf-8"),
+            method="POST",
             headers={"Content-Type": "application/json"},
         )
         with urllib.request.urlopen(req, timeout=2):
@@ -322,6 +352,16 @@ def main(argv: list[str]) -> int:
         ok = set_wip_via_cli(tid) if via == "cli" else set_wip_via_server(tid)
         if ok:
             data["phase"] = "wip"
+    # Same guards, minus the "already wip" one: mark the task as held by this
+    # terminal session so the web UI locks its run button (see the server's
+    # ``/api/claude/sessions/{id}/external``).
+    if (
+        via == "server"
+        and mismatch is None
+        and not data.get("archived")
+        and data.get("status") != "done"
+    ):
+        register_external_via_server(tid)
 
     out = render(data)
     if mismatch is not None:

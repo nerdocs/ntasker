@@ -319,6 +319,9 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // Subset of claudeSessions that has gone silent long enough to look
         // blocked on a prompt -- drives the "waiting for input" highlight.
         claudeWaiting: [],
+        // Task ids worked on by a session ntasker did not start (`/task` in a
+        // terminal). No tab, no PTY -- the card is locked until it ends.
+        claudeExternal: [],
         // Project of each active session, keyed by task id (string keys, as
         // they arrive from JSON). Feeds the run-view tabs and the same-project
         // busy damping.
@@ -2688,6 +2691,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                     const d = JSON.parse(raw);
                     this.claudeSessions = d.active || [];
                     this.claudeWaiting = d.waiting || [];
+                    this.claudeExternal = d.external || [];
                     this.claudeSessionProjects = d.projects || {};
                     this.claudeSessionTitles = d.titles || {};
                     this._syncTabsFromSessions();
@@ -2729,10 +2733,12 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             });
         },
 
-        // 'waiting' (blocked on a prompt) > 'running' (live session) > null.
+        // 'waiting' (blocked on a prompt) > 'running' (live session) >
+        // 'external' (a terminal session ntasker cannot attach to) > null.
         taskRunPhase(taskId) {
             if (this.claudeWaiting.includes(taskId)) return 'waiting';
-            return this.claudeSessions.includes(taskId) ? 'running' : null;
+            if (this.claudeSessions.includes(taskId)) return 'running';
+            return this.claudeExternal.includes(taskId) ? 'external' : null;
         },
 
         // Tooltip/aria for the per-task run button. A live session means "switch
@@ -2741,6 +2747,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         runButtonTitle(task) {
             const phase = this.taskRunPhase(task.id);
             if (phase === 'waiting') return _i('claude_waiting');
+            if (phase === 'external') return _i('claude_external');
             const agent = ' (' + this.agentLabel(this.taskAgentKey(task)) + ')';
             if (phase === 'running') return _i('claude_switch_session') + agent;
             // Damped task: lead with why it looks faded before the plain "run".
@@ -2755,7 +2762,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // never count: they share no working dir to clobber.
         _projectHasOtherSession(project, exceptTaskId) {
             if (!project) return false;
-            return this.claudeSessions.some(id =>
+            return [...this.claudeSessions, ...this.claudeExternal].some(id =>
                 id !== exceptTaskId &&
                 (this.claudeSessionProjects[String(id)] || null) === project
             );
@@ -2830,7 +2837,9 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // on, the terminal opens as soon as the session is live.
         async runNext(task) {
             const id = task.id;
-            if (this.taskRunPhase(id)) {
+            const phase = this.taskRunPhase(id);
+            if (phase === 'external') return;   // nothing to attach to; button is disabled anyway
+            if (phase) {
                 this.activateTab(id);
                 return;
             }

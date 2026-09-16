@@ -23,6 +23,8 @@ def env(tmp_path, monkeypatch):
     live: set[int] = set()
     started: list[int] = []
     monkeypatch.setattr(taskqueue, "active_session_ids", lambda: list(live))
+    external: set[int] = set()
+    monkeypatch.setattr(taskqueue, "external_session_ids", lambda: list(external))
 
     def fake_start(task_id, seed, quick=False, resume=False):
         started.append(task_id)
@@ -43,7 +45,25 @@ def env(tmp_path, monkeypatch):
             )
             return cur.lastrowid
 
-    return {"add": add, "live": live, "started": started, "tmp": tmp_path}
+    return {"add": add, "live": live, "external": external, "started": started, "tmp": tmp_path}
+
+
+def test_external_session_occupies_lane_and_dirs(env):
+    """A terminal `/task` run blocks its project lane and the dirs it holds,
+    but is no queue run: it never gets flagged as ended."""
+    ext = env["add"]("E", "x", ["y"])
+    a = env["add"]("A", "x")
+    b = env["add"]("B", "y")
+    c = env["add"]("C", "z")
+    env["external"].add(ext)
+    taskqueue.set_queue([a, b, c])
+    taskqueue.tick()
+    assert env["started"] == [c]
+    skipped = taskqueue.skipped(taskqueue.load_queue(), env["live"])
+    assert skipped[b] == {"reason": "lock", "project": "y", "holder": ext}
+    env["external"].discard(ext)
+    taskqueue.tick()
+    assert env["started"] == [c, a, b]
 
 
 def test_locks_block_across_lanes(env):

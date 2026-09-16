@@ -5,9 +5,14 @@ All notable changes to ntasker.
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
 ## [Unreleased]
+
+## [3.4.0] — 2026-09-17
 Settings: install or update an agent's `/task` integration with one click on its plugin card.
 Settings: red dot on the cog, the Plugins rail and the agent card when a `/task` integration is missing or outdated.
 Feature: a task started via `/task` in a terminal is locked in the UI (greyed card, stamp, no run button) while it runs.
+Run view: diff view for a task's run.
+Run button marks the task wip immediately; group checkbox toggles the whole project family.
+Fix: an exited run tab is dropped when leaving it.
 
 ## [3.3.1] — 2026-09-15
 Run view: "Report" button splits the tab -- terminal left, the task's report right, draggable divider.

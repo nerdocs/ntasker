@@ -2673,7 +2673,10 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // session we don't track yet, refresh each tab's title/project/status
         // and drop tabs whose session has ended -- except the one you're viewing
         // (kept as 'exited' so you can read the final output) and a just-opened
-        // tab that hasn't registered as a session yet ('connecting').
+        // tab that hasn't registered as a session yet ('connecting'). The poll
+        // only calls this when the session set changed, so _applyRoute calls it
+        // on every view switch too: the exited tab is dropped the moment you
+        // leave it, not never.
         _syncTabsFromSessions() {
             const waiting = new Set(this.claudeWaiting);
             const active = new Set(this.claudeSessions);
@@ -2756,10 +2759,15 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // boot) reconciles the on-screen view to it.
         _applyRoute() {
             const m = location.hash.match(/^#\/run\/(\d+)$/);
-            if (!m) { this.claudeView = null; return; }
+            if (!m) {
+                this.claudeView = null;
+                this._syncTabsFromSessions();   // drop the exited tab we just left
+                return;
+            }
             const id = parseInt(m[1], 10);
             if (this.claudeTabs.some(t => t.taskId === id)) {
                 this._showTab(id);   // existing tab -> connect on demand + reveal
+                this._syncTabsFromSessions();
                 return;
             }
             // Deep-link / forward to a session we have no tab for yet: open it
@@ -2882,6 +2890,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             } catch (_e) { /* best-effort */ }
             this._addTab(id, title, project);
             this.claudeView = id;
+            this._syncTabsFromSessions();    // drop the exited tab we just left
             location.hash = '#/run/' + id;   // record in history (idempotent _applyRoute)
             this.$nextTick(() => this._claudeConnect(id));
         },

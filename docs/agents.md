@@ -95,7 +95,9 @@ ntasker agent install claude --home /tmp/test-home  # redirect to a non-default 
 The web UI surfaces the same state so an outdated integration is not missed after an upgrade: a **red dot on the
 settings cog** (every page), a red dot on the *Plugins* rail entry, and an *Integration outdated* / *Integration
 missing* badge on the agent's plugin card next to the install hint. Only agents whose CLI is available count -- a
-missing CLI is flagged separately (yellow, *Agents & runs*).
+missing CLI is flagged separately (yellow, *Agents & runs*). The card's **Install now** / **Update now** button
+runs the install right there (`POST /api/agents/<key>/assets/install`, `{"force": true}` for the drift case --
+same backup rules as the CLI); the CLI line stays for a non-default home or command name.
 
 ## Settings
 

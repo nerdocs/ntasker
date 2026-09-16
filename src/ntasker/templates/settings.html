@@ -389,20 +389,35 @@
                                                             </div>
                                                         </div>
                                                     </div>
+                                                    {# Install / update straight from here; the CLI line stays for non-default homes. #}
                                                     <div class="alert alert-info mt-3 mb-0" x-show="agentFor('{{ p.name }}').assets.installed === false">
-                                                        <div class="mb-1">
+                                                        <div class="mb-2">
                                                             <i class="ti ti-info-circle me-1"></i>
                                                             <span x-text="$i18n('agent_not_installed')"></span>
                                                         </div>
-                                                        <pre class="mb-0"><code>ntasker agent install {{ p.name }}</code></pre>
+                                                        <button type="button" class="btn btn-sm btn-primary"
+                                                                @click="installAgentAssets('{{ p.name }}', false)"
+                                                                :disabled="assetsBusy === '{{ p.name }}'"
+                                                                x-text="$i18n('agent_install_now')"></button>
+                                                        <div class="text-secondary small mt-2">
+                                                            <span x-text="$i18n('agent_install_cli_hint')"></span>
+                                                            <code>ntasker agent install {{ p.name }}</code>
+                                                        </div>
                                                     </div>
                                                     <div class="alert alert-warning mt-3 mb-0"
                                                          x-show="agentFor('{{ p.name }}').assets.installed === true && agentFor('{{ p.name }}').assets.drift === true">
-                                                        <div class="mb-1">
+                                                        <div class="mb-2">
                                                             <i class="ti ti-alert-triangle me-1"></i>
                                                             <span x-text="$i18n('agent_drift')"></span>
                                                         </div>
-                                                        <pre class="mb-0"><code>ntasker agent install {{ p.name }} --force</code></pre>
+                                                        <button type="button" class="btn btn-sm btn-warning"
+                                                                @click="installAgentAssets('{{ p.name }}', true)"
+                                                                :disabled="assetsBusy === '{{ p.name }}'"
+                                                                x-text="$i18n('agent_update_now')"></button>
+                                                        <div class="text-secondary small mt-2">
+                                                            <span x-text="$i18n('agent_install_cli_hint')"></span>
+                                                            <code>ntasker agent install {{ p.name }} --force</code>
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>

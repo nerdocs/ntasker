@@ -5,6 +5,7 @@ All notable changes to ntasker.
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
 ## [Unreleased]
+Settings: install or update an agent's `/task` integration with one click on its plugin card.
 Settings: red dot on the cog, the Plugins rail and the agent card when a `/task` integration is missing or outdated.
 Feature: a task started via `/task` in a terminal is locked in the UI (greyed card, stamp, no run button) while it runs.
 

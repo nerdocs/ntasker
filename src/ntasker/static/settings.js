@@ -58,6 +58,8 @@ function settingsPage() {
         completion: {},
         // Shell whose install/remove request is in flight -- disables its button.
         completionBusy: null,
+        // Agent whose integration install is in flight -- disables its button.
+        assetsBusy: null,
         // Agent registry (GET /api/agents): enabled agents only, each with
         // {key,label,icon,available,assets}. Drives the agent cards.
         agents: [],
@@ -385,6 +387,29 @@ function settingsPage() {
                 const r = await fetch('/api/completion');
                 if (r.ok) this.completion = await r.json();
             } catch (e) { /* leave the table empty */ }
+        },
+
+        // Install (or force-update) one agent's /task integration -- the
+        // card's button; POST /api/agents/<key>/assets/install. `force` is
+        // what the drift case needs: drifted files are backed up, then replaced.
+        async installAgentAssets(key, force) {
+            if (this.assetsBusy) return;
+            this.assetsBusy = key;
+            try {
+                const r = await fetch(`/api/agents/${key}/assets/install`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({force: !!force}),
+                });
+                const data = r.ok ? await r.json() : null;
+                if (!data || !data.success) { this.toast(this.i18n('agent_install_failed')); return; }
+                this.toast(this.i18n('agent_install_done'));
+                await this.refreshAgents();
+            } catch (e) {
+                this.toast(this.i18n('agent_install_failed'));
+            } finally {
+                this.assetsBusy = null;
+            }
         },
 
         // Install or remove the completion script for one shell.

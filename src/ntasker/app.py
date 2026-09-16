@@ -33,8 +33,8 @@ from ntasker.assets import (
     get_asset_url,
     get_sri,
 )
-from ntasker.agents import agent_keys, enabled_agents, resolve_home
-from ntasker.claude_assets import scan_status
+from ntasker.agents import agent_keys, enabled_agents, get_spec, resolve_home
+from ntasker.claude_assets import install_assets, scan_status
 from ntasker.claude_runner import (
     active_session_ids,
     external_session_ids,
@@ -666,10 +666,15 @@ def build_js_strings() -> dict[str, str]:
         "agent_unavailable_badge": _("CLI missing"),
         "yes": _("yes"),
         "no": _("no"),
-        "agent_not_installed": _("Skill + slash command are not installed yet. Install with:"),
+        "agent_not_installed": _("Skill + slash command are not installed yet."),
         "agent_drift": _(
-            "Installed files differ from the package version. Update with backup:"
+            "Installed files differ from the package version. Updating keeps a .bak of each changed file."
         ),
+        "agent_install_now": _("Install now"),
+        "agent_update_now": _("Update now"),
+        "agent_install_done": _("Integration installed."),
+        "agent_install_failed": _("Installing the integration failed."),
+        "agent_install_cli_hint": _("Or via CLI:"),
         "opencode_auto_label": _("Auto-approve actions (--auto)"),
         "opencode_auto_hint": _(
             "Run OpenCode sessions with --auto, so it accepts its own actions."
@@ -1224,8 +1229,8 @@ def api_agents() -> JSONResponse:
     command are installed (and match the package). Drives the per-task run
     button, the new-task agent picker, and the /settings integration cards.
 
-    Read-only -- installs go through the ``ntasker agent install`` CLI to avoid
-    CSRF / DNS-rebind write surface. Reports ``default`` so the UI knows which
+    Read-only; installs go through :func:`api_agent_assets_install` (or the
+    ``ntasker agent install`` CLI). Reports ``default`` so the UI knows which
     agent a task without an explicit ``agent`` will run on. Lists only agents
     whose plugin is enabled; ``icon`` is a ready URL path.
     """
@@ -1255,6 +1260,28 @@ def api_agents() -> JSONResponse:
             }
         )
     return JSONResponse({"default": default, "package_version": VERSION, "agents": out})
+
+
+class AssetsInstallIn(BaseModel):
+    force: bool = False
+
+
+@app.post("/api/agents/{key}/assets/install")
+def api_agent_assets_install(key: str, payload: AssetsInstallIn) -> JSONResponse:
+    """Install one agent's ``/task`` integration into its config home -- the
+    settings card's button, same as ``ntasker agent install <key> [--force]``.
+
+    Drifted files are only overwritten with ``force`` (a timestamped ``.bak``
+    is kept, see :func:`ntasker.claude_assets.install_assets`); without it
+    they stay and the result reports them as ``blocked``. Cross-origin writes
+    are rejected by the origin guard like every other POST. 404 for a
+    disabled / unknown agent.
+    """
+    if key not in agent_keys():
+        raise HTTPException(status_code=404, detail=_("Unknown agent"))
+    spec = get_spec(key)
+    result = install_assets(spec, resolve_home(spec), command_name="task", force=payload.force)
+    return JSONResponse(result.to_dict())
 
 
 @app.get("/api/plugins")

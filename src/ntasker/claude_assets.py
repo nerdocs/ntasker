@@ -22,9 +22,9 @@ Design notes:
   the helper file name is fixed (``_ntasker_loader.py``) and only the
   helper path inside ``task.md`` references it. So renaming the slash
   command does not touch the helper.
-* No HTTP write endpoint -- installs are user-initiated via the CLI.
-  The ``/api/claude-assets/status`` API and the Settings UI card are
-  read-only on purpose.
+* Installs are user-initiated: the CLI, or the settings card's button
+  (``POST /api/agents/{key}/assets/install`` -- covered by the origin guard
+  like every other write).
 """
 
 from __future__ import annotations

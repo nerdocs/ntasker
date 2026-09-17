@@ -140,7 +140,7 @@ const PRIORITY_VALUES = ['critical', 'high', 'normal', 'low'];
 // `default_view` validator.
 const VIEW_MODES = ['list', 'kanban'];
 
-// Open Claude terminals, keyed by task id: taskId -> {ws, term, fit}.
+// Open Claude terminals, keyed by task id: taskId -> {ws, term, fit, ro}.
 // Kept at module scope (not in Alpine state) so the xterm Terminal instances
 // never land inside Alpine's reactive proxy. The run view shows one tab per
 // live session; each tab owns its own Terminal + WebSocket here, while the
@@ -435,11 +435,6 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             // Hash routing: the run view lives at #/run/<id> so the browser
             // history / Back button work and a run is shareable / reloadable.
             window.addEventListener('hashchange', () => this._applyRoute());
-            // A single window-resize listener refits whichever terminal is on
-            // screen (per-terminal listeners would also fit hidden tabs to 0).
-            window.addEventListener('resize', () => {
-                if (this.claudeView !== null) this._fitAndSync(this.claudeView);
-            });
             // Honor a deep-linked / reloaded #/run/<id> once everything is up.
             this._applyRoute();
         },
@@ -2988,7 +2983,16 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
 
             const proto = location.protocol === 'https:' ? 'wss' : 'ws';
             const ws = new WebSocket(`${proto}://${location.host}/ws/claude/${taskId}`);
-            _claudeTerms.set(taskId, { ws, term, fit });
+            // Refit whenever the host's box changes -- window resize, report
+            // pane, wrapped navbar/tab strip, ... A stale fit leaves the bottom
+            // rows (and the cursor) clipped below the host with no way to
+            // scroll to them. A hidden tab's host has no size: skip it, the tab
+            // switch refits it.
+            const ro = new ResizeObserver(() => {
+                if (el.offsetHeight > 0) this._fitAndSync(taskId);
+            });
+            ro.observe(el);
+            _claudeTerms.set(taskId, { ws, term, fit, ro });
 
             // Track the socket's lifecycle so onclose can tell a normal end
             // (exit/error already reported, or torn down by us) from a failure
@@ -3112,6 +3116,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         _teardownTerm(id) {
             const s = _claudeTerms.get(id);
             if (!s) return;
+            s.ro.disconnect();
             try { s.ws.close(); } catch (_e) { /* already closing */ }
             try { s.term.dispose(); } catch (_e) { /* already disposed */ }
             _claudeTerms.delete(id);

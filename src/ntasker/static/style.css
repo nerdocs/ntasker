@@ -569,6 +569,13 @@ body {
 .claude-terminal .xterm-viewport {
     height: 100% !important;
 }
+/* Always-visible scrollbar: the browsers' overlay scrollbars vanish on the
+ * dark panel, so scrollback looks unreachable. Setting scrollbar-color makes
+ * Chrome and Firefox draw a classic, non-overlay bar. */
+.claude-terminal .xterm-viewport {
+    scrollbar-width: thin;
+    scrollbar-color: #6c6c6c #161616;
+}
 /* Report pane next to the terminal (run view). The splitter reuses the
  * sidebar handle; it sits on the pane's left edge instead of the right. */
 .claude-report-splitter {

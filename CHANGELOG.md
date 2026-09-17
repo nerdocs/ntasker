@@ -6,6 +6,10 @@ Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
 ## [Unreleased]
 
+## [3.5.0] — 2026-09-17
+Settings: `auto_archive_days` archives done tasks older than N days automatically (default 30, 0 = off).
+Run view: the terminal refits whenever its host resizes; the scrollbar is always visible.
+
 ## [3.4.1] — 2026-09-17
 Workspace: Markdown viewer gets "Export to Word" (`.docx` via pandoc) and "Copy text" buttons.
 

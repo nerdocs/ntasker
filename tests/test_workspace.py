@@ -94,6 +94,16 @@ def test_api_confined_to_roots(client, tmp_path):
     assert client.get("/api/workspace/browse", params={"path": str(vault)}).json()["is_root"] is True
 
 
+def test_docx_export(client, monkeypatch):
+    r = client.post("/api/workspace/docx", json={"text": "# Title\n\nBody\n"})
+    if r.status_code == 501:
+        pytest.skip("pandoc not installed")
+    assert r.status_code == 200
+    assert r.content[:2] == b"PK"  # a .docx is a zip container
+    monkeypatch.setattr("shutil.which", lambda name: None)
+    assert client.post("/api/workspace/docx", json={"text": "x"}).status_code == 501
+
+
 def test_page_and_enablement(client, monkeypatch):
     assert client.get("/workspace").status_code == 200
     assert 'href="/workspace"' in client.get("/").text

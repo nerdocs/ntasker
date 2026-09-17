@@ -357,6 +357,24 @@
         return fallback;
     }
 
+    // Markdown -> .docx through the server's pandoc, handed to the browser
+    // as a download named after the file. Throws with the server's reason
+    // (no pandoc, conversion error) so the caller can show it.
+    async function downloadDocx(file) {
+        const res = await fetch('/api/workspace/docx', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: file.text || '' }),
+        });
+        if (!res.ok) throw new Error(await errorDetail(res, t('ws_export_failed')));
+        const url = URL.createObjectURL(await res.blob());
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = String(file.name || 'document').replace(/\.(md|markdown)$/i, '') + '.docx';
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
     // Translate with {placeholder} substitution against window.__i18n.
     function t(key, params) {
         let s = (global.__i18n && global.__i18n[key]) || key;
@@ -373,6 +391,6 @@
         emptyInventory, iconFor, contextIcon, escapeHtml, fmtSize, fmtDate,
         filterItems, renderMarkdown, parseDelimited, renderFile, isEditable,
         splitFrontMatter, joinFrontMatter, addField, fieldRows,
-        errorDetail, t,
+        errorDetail, downloadDocx, t,
     };
 })(window);

@@ -6,6 +6,9 @@ Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
 ## [Unreleased]
 
+## [3.4.1] — 2026-09-17
+Workspace: Markdown viewer gets "Export to Word" (`.docx` via pandoc) and "Copy text" buttons.
+
 ## [3.4.0] — 2026-09-17
 Settings: install or update an agent's `/task` integration with one click on its plugin card.
 Settings: red dot on the cog, the Plugins rail and the agent card when a `/task` integration is missing or outdated.

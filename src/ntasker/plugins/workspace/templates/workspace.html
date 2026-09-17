@@ -445,6 +445,15 @@
                             <i class="ti me-1" :class="viewer.editing ? 'ti-eye' : 'ti-pencil'"></i>
                             <span x-text="viewer.editing ? $i18n('ws_view') : $i18n('ws_edit')"></span>
                         </button>
+                        {# Word export + raw-text copy: Markdown only. #}
+                        <button class="btn btn-sm btn-ghost-secondary" x-show="viewer.mode === 'markdown'"
+                                @click="exportDocx()" :title="$i18n('ws_export_docx')">
+                            <i class="ti ti-file-type-docx"></i>
+                        </button>
+                        <button class="btn btn-sm btn-ghost-secondary" x-show="viewer.mode === 'markdown'"
+                                @click="copyText()" :title="$i18n('ws_copy_text')">
+                            <i class="ti ti-clipboard-text"></i>
+                        </button>
                         <button class="btn btn-sm btn-ghost-secondary" @click="openExternally()"
                                 :title="$i18n('ws_open_external')">
                             <i class="ti ti-external-link"></i>

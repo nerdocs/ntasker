@@ -118,6 +118,26 @@
                 }
             },
 
+            async wsExportDocx() {
+                if (!this.wsViewer.file) return;
+                try {
+                    await WS.downloadDocx(this.wsViewer.file);
+                } catch (e) {
+                    this.wsViewer.error = e.message;
+                }
+            },
+
+            async wsCopyText() {
+                const text = this.wsViewer.file?.text;
+                if (text == null) return;
+                try {
+                    await navigator.clipboard.writeText(text);
+                    this.showToast(WS.t('ws_text_copied'), 'info');
+                } catch (e) {
+                    // Clipboard blocked (non-secure context) -- nothing to do.
+                }
+            },
+
             async wsBrowse(path) {
                 Object.assign(this.wsViewer, freshViewer());
                 try {

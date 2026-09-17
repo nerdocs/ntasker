@@ -29,6 +29,8 @@ folder may be temporarily absent, and the scanners report `exists: false` instea
 - Viewer modal (sidebar and task chips): Markdown rendered through marked + DOMPurify, CSV as a table, text as-is;
   edit (Cmd/Ctrl+S), rename, create a note, move to trash, open in the desktop's default app. Editing is limited
   to `.md .markdown .txt .csv .tsv .json .log`.
+- Markdown files additionally offer **Export to Word** (`.docx` via `pandoc`, which must be on PATH -- otherwise
+  the button reports why) and **Copy text** (the raw Markdown to the clipboard).
 
 ## Security boundary
 
@@ -49,5 +51,6 @@ root itself can never be renamed or deleted. Nothing is destroyed: delete moves 
 | POST | `/api/workspace/rename` | `{path, name}` |
 | POST | `/api/workspace/delete` | `{path}` move to trash; reports `method` (`os` / `folder`) and `trashed_to` |
 | POST | `/api/workspace/reveal` | `{path}` open in the default app |
+| POST | `/api/workspace/docx` | `{text}` Markdown -> `.docx` bytes through `pandoc` (501 when it is not installed) |
 
 Vendor assets `marked-js` and `dompurify-js` join the SRI manifest (`ntasker assets fetch` caches them like the rest).

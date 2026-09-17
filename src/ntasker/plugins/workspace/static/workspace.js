@@ -306,6 +306,26 @@ function workspacePage() {
             this._flashTimer = setTimeout(() => { this.flash = ''; }, 4000);
         },
 
+        async exportDocx() {
+            if (!this.viewer.file) return;
+            try {
+                await WS.downloadDocx(this.viewer.file);
+            } catch (e) {
+                this.viewer.error = e.message;
+            }
+        },
+
+        async copyText() {
+            const text = this.viewer.file?.text;
+            if (text == null) return;
+            try {
+                await navigator.clipboard.writeText(text);
+                this.toast(this.i18n('ws_text_copied'));
+            } catch (e) {
+                // Clipboard blocked (non-secure context) -- nothing to do.
+            }
+        },
+
         async copyPath() {
             const path = this.viewer.file?.path;
             if (!path) return;

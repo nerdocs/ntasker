@@ -8,10 +8,14 @@ match the host); every route 404s while the plugin is disabled.
 
 from __future__ import annotations
 
+import shutil
+import subprocess
+
 from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel
 
+from ntasker.i18n import _
 from ntasker.plugins.workspace import scan
 from ntasker.settings import get_setting
 
@@ -56,6 +60,12 @@ class WorkspacePath(BaseModel):
     """A single target path (delete / reveal)."""
 
     path: str
+
+
+class WorkspaceDocx(BaseModel):
+    """Markdown text to convert to a Word document."""
+
+    text: str
 
 
 @router.get("/workspace", response_class=HTMLResponse)
@@ -175,3 +185,33 @@ def api_workspace_reveal(payload: WorkspacePath) -> JSONResponse:
         raise _write_guard(exc) from exc
 
 
+@router.post("/api/workspace/docx")
+def api_workspace_docx(payload: WorkspaceDocx) -> Response:
+    """Convert Markdown to ``.docx`` through pandoc and return the bytes.
+
+    Takes the text rather than a path so the viewer can export whatever it
+    is showing -- a note inside the roots or a task attachment elsewhere --
+    without a second authorisation scheme. pandoc is the only converter:
+    without it on PATH the endpoint answers 501 and the UI shows why.
+    ``gfm`` matches what marked renders on screen; the metadata extension
+    keeps a front-matter block out of the document body.
+    """
+    if shutil.which("pandoc") is None:
+        raise HTTPException(
+            status_code=501, detail=_("pandoc is not installed -- the Word export needs it.")
+        )
+    proc = subprocess.run(
+        ["pandoc", "-f", "gfm+yaml_metadata_block", "-t", "docx", "-o", "-"],
+        input=payload.text.encode("utf-8"),
+        capture_output=True,
+        timeout=60,
+    )
+    if proc.returncode != 0:
+        raise HTTPException(
+            status_code=500,
+            detail=_("pandoc failed: {error}").format(error=proc.stderr.decode(errors="replace").strip()),
+        )
+    return Response(
+        content=proc.stdout,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )

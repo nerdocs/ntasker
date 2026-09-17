@@ -1122,6 +1122,9 @@ h3 + p + .setting-row {
     min-width: 3.5rem;
     text-align: center;
 }
+.setting-number {
+    max-width: 7rem;
+}
 .setting-raw-value {
     max-width: 24rem;
 }

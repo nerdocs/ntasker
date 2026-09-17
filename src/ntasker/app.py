@@ -16,7 +16,7 @@ import functools
 import sqlite3
 import subprocess
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from importlib.resources import files
 from pathlib import Path
 from typing import Literal, cast
@@ -52,6 +52,7 @@ from ntasker import completion, locks, plugins, taskqueue
 from ntasker import db as _db_module
 from ntasker.db import (
     DepError,
+    archive_done_before,
     cleanup_database,
     delete_tags,
     get_conn,
@@ -91,6 +92,7 @@ from ntasker.settings import (
     delete_setting,
     ensure_settings_table,
     get_assets_mode_resolved,
+    get_auto_archive_days,
     get_claude_open_terminal,
     get_default_agent,
     get_default_view,
@@ -908,6 +910,48 @@ async def _poll_updates() -> None:
         await asyncio.sleep(UPDATE_POLL_INTERVAL)
 
 
+# How often the auto-archive sweep re-checks the Done column.
+AUTO_ARCHIVE_INTERVAL = 60 * 60  # hourly
+
+_auto_archive_task: asyncio.Task | None = None
+
+
+def auto_archive_sweep() -> int:
+    """Archive done tasks older than the ``auto_archive_days`` setting.
+
+    Keeps the Done column (and every open/done query) small without touching
+    the tasks themselves -- archived tasks stay searchable. Returns the number
+    of tasks archived; ``0`` days disables the sweep.
+    """
+    days = get_auto_archive_days()
+    if days <= 0:
+        return 0
+    cutoff = (datetime.now() - timedelta(days=days)).isoformat(timespec="seconds")
+    return archive_done_before(cutoff)
+
+
+async def _auto_archive_loop() -> None:
+    """Run the auto-archive sweep on boot and then hourly."""
+    while True:
+        with contextlib.suppress(Exception):
+            await asyncio.to_thread(auto_archive_sweep)
+        await asyncio.sleep(AUTO_ARCHIVE_INTERVAL)
+
+
+@app.on_event("startup")
+async def _start_auto_archive() -> None:
+    global _auto_archive_task
+    _auto_archive_task = asyncio.create_task(_auto_archive_loop())
+
+
+@app.on_event("shutdown")
+async def _stop_auto_archive() -> None:
+    if _auto_archive_task is not None:
+        _auto_archive_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await _auto_archive_task
+
+
 @app.on_event("startup")
 async def _start_update_poll() -> None:
     global _update_poll_task
@@ -1206,6 +1250,8 @@ def api_set_setting(key: str, payload: SettingUpdate) -> JSONResponse:
         row = set_setting(key, payload.value)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if key == "auto_archive_days":
+        auto_archive_sweep()   # apply the new window right away, not next hour
     return JSONResponse(row)
 
 

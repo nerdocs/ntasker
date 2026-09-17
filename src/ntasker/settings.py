@@ -244,6 +244,26 @@ def validate_claude_idle_seconds(value: str) -> str:
     return norm
 
 
+# Default age (days) after which a done task is archived automatically; ``0``
+# switches the sweep off (see :func:`ntasker.app.auto_archive_sweep`).
+AUTO_ARCHIVE_DAYS_DEFAULT = 30
+
+
+def validate_auto_archive_days(value: str) -> str:
+    """Validator for the ``auto_archive_days`` setting.
+
+    A non-negative integer number of days; ``0`` disables auto-archiving.
+    """
+    norm = (value or "").strip()
+    if not norm.isdigit():
+        raise ValueError(
+            _("auto_archive_days must be a whole number of days (got {value!r}).").format(
+                value=value
+            )
+        )
+    return str(int(norm))
+
+
 # Boolean-setting spellings. Truthy values arm a flag; everything else clears it.
 _TRUE_STRINGS = frozenset({"1", "true", "yes", "on"})
 _FALSE_STRINGS = frozenset({"0", "false", "no", "off", ""})
@@ -396,6 +416,7 @@ VALIDATORS: dict[str, Validator] = {
     "quick_prompts": validate_quick_prompts,
     "no_project_dir": validate_no_project_dir,
     "claude_idle_seconds": validate_claude_idle_seconds,
+    "auto_archive_days": validate_auto_archive_days,
     "claude_open_terminal": validate_claude_open_terminal,
     "queue_enabled": validate_queue_enabled,
     "dir_locks": validate_on_off,
@@ -453,6 +474,11 @@ HINTS: dict[str, object] = {
         "for your input (the CLI sends no explicit signal). Shorter reacts "
         "faster but flags more false alarms. Default 8 seconds."
     ),
+    "auto_archive_days": _lazy(
+        "Done tasks older than this many days are archived automatically -- "
+        "they leave the Done column but stay searchable in the archive. "
+        "0 keeps everything in Done."
+    ),
     "queue_enabled": _lazy(
         "When off, run buttons still queue tasks, but nothing new starts until "
         "you press Resume on the queue panel. One task runs per project at a "
@@ -505,6 +531,7 @@ LABELS: dict[str, object] = {
     "default_agent": _lazy("Default agent"),
     "claude_open_terminal": _lazy("Open the terminal when a run starts"),
     "claude_idle_seconds": _lazy("Silence before a session counts as waiting"),
+    "auto_archive_days": _lazy("Archive done tasks after (days)"),
     "queue_enabled": _lazy("Queue starts tasks automatically"),
     "dir_locks": _lazy("Directory locks"),
     "require_clean": _lazy("Require a clean git state"),
@@ -548,6 +575,7 @@ FIELD_DEFAULTS: dict[str, str] = {
     "language": "auto",
     "default_view": DEFAULT_VIEW_FALLBACK,
     "claude_idle_seconds": f"{CLAUDE_IDLE_SECONDS_DEFAULT:g}",
+    "auto_archive_days": str(AUTO_ARCHIVE_DAYS_DEFAULT),
     "dir_locks": "on",
     "require_clean": "off",
 }
@@ -701,6 +729,19 @@ def get_default_view() -> str:
     if norm not in DEFAULT_VIEW_ALLOWED:
         return DEFAULT_VIEW_FALLBACK
     return norm
+
+
+def get_auto_archive_days() -> int:
+    """Age in days after which done tasks are archived; ``0`` = never.
+
+    A missing or malformed row falls back to the default so a stale value can
+    never stall the sweep.
+    """
+    raw = get_setting("auto_archive_days")
+    try:
+        return int(raw) if raw else AUTO_ARCHIVE_DAYS_DEFAULT
+    except ValueError:
+        return AUTO_ARCHIVE_DAYS_DEFAULT
 
 
 def get_claude_open_terminal() -> bool:

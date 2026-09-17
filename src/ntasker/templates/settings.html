@@ -176,6 +176,16 @@
                                 <p class="text-secondary small mb-2">{{ t('Where projects live on disk. Paths may start with ~.') }}</p>
                                 {% call row('projects_base') %}{{ text('projects_base', '~/Projects', 'font-monospace') }}{% endcall %}
                                 {% call row('no_project_dir') %}{{ text('no_project_dir', '~/Projects', 'font-monospace') }}{% endcall %}
+
+                                <h3 class="mt-4 mb-1">{{ t('Archive') }}</h3>
+                                {% call row('auto_archive_days') %}
+                                <div class="d-flex align-items-center gap-3">
+                                    <input type="number" class="form-control setting-number" min="0" step="1"
+                                           x-model="draft['auto_archive_days']"
+                                           @change="saveDraft('auto_archive_days')">
+                                    <span class="text-secondary">{{ t('days') }}</span>
+                                </div>
+                                {% endcall %}
                             </div>
 
                             {# ================= Agents & runs ================= #}

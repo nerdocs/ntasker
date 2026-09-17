@@ -362,6 +362,21 @@ def cleanup_database() -> dict[str, int]:
     }
 
 
+def archive_done_before(cutoff: str) -> int:
+    """Archive every unarchived done task completed before ``cutoff`` (ISO).
+
+    Returns the number of rows archived. ``completed_at`` is stored as a
+    local-time ISO string, so a plain string comparison orders correctly.
+    """
+    with get_conn() as conn:
+        cur = conn.execute(
+            "UPDATE tasks SET archived = 1 "
+            "WHERE status = 'done' AND archived = 0 AND completed_at < ?",
+            (cutoff,),
+        )
+        return cur.rowcount
+
+
 def report_fields(text: str | None) -> dict:
     """Column values for writing a report: the text, or a clear when empty.
 

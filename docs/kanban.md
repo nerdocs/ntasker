@@ -89,6 +89,10 @@ header to expand/collapse; the choice is persisted to localStorage
 Archived tasks are **not** shown in kanban -- archive is a list-view
 concept. Switch to the Task list view + Archive tab to see them.
 
+Done tasks age out on their own: the **`auto_archive_days`** setting (Settings -> General -> Archive, default
+`30`) archives every done task completed more than that many days ago. The sweep runs on boot, hourly, and
+right after the setting changes; `0` switches it off. Archived tasks stay searchable in the Archive tab.
+
 ## Filtering
 
 All sidebar filters (project, tag, phase, priority) and the search box

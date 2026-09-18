@@ -55,6 +55,7 @@ Board rows and kanban cards show a small lock badge with the count of extra lock
 |---|---|---|
 | `dir_locks` | `on` | Honour directory locks in the worker, the lock API and the Claude Code hook. `off` = lanes only. |
 | `require_clean` | `off` | Additionally require every held directory to be git-clean before a start. |
+| `quicktasks_bypass_lanes` | `on` | Quicktasks skip lanes, locks and the git check, and hold nothing while they run (see [task-queue.md](task-queue.md)). |
 
 Both are switches on the `/settings` *Agents & runs* tab; ENV `NTASKER_DIR_LOCKS` / `NTASKER_REQUIRE_CLEAN`.
 

@@ -250,6 +250,7 @@
                                 {% call row('queue_enabled') %}{{ switch('queue_enabled') }}{% endcall %}
                                 {% call row('dir_locks') %}{{ switch('dir_locks', 'on', 'off') }}{% endcall %}
                                 {% call row('require_clean') %}{{ switch('require_clean', 'on', 'off') }}{% endcall %}
+                                {% call row('quicktasks_bypass_lanes') %}{{ switch('quicktasks_bypass_lanes', 'on', 'off') }}{% endcall %}
                             </div>
 
                             {# ================= Plugins ================= #}

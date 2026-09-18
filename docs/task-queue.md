@@ -22,6 +22,11 @@ hand-off is a phase change like any other -- the task waits in the review column
 next task of that project starts once you close it. A session that ends before the task is done leaves its entry
 queued, flagged **ended**, blocking its lane until you have looked at it.
 
+**Quicktasks** -- the sidebar's quick run, with or without a prompt -- are the one exception: with
+`quicktasks_bypass_lanes` on (the default) a Quicktask starts on the next tick no matter what runs in its project, and
+while it runs it neither occupies the lane nor holds its directories for the queue. Everything else (ended, resume,
+done) applies as usual. Switch it off and a Quicktask queues like any other run.
+
 ## Drafts
 
 A task flagged **Draft** (checkbox in the new-task form and the edit dialog, `--draft` on the CLI, `draft` in the
@@ -186,8 +191,9 @@ id deserves to be told.
 | `PUT /api/queue` | Body `{ids: [...]}` replaces the whole queue, head first. Ids that are closed, archived or gone are dropped. An empty list clears the queue. Never restarts an `ended` entry. |
 | `POST /api/queue/run` | Body `{id}` -- the run button: appends the task to the queue (an already-queued id keeps its place), moves it to `phase=wip` right away and clears its `ended` flag. Returns the queue. |
 | `POST /api/queue/resume` | Body `{id}` -- the resume button on an `ended` entry: the worker reopens the task's stored session next tick, in place; the flag clears once it is live. 409 when the task is not queued or has nothing to resume. Returns the queue. |
-| `POST /api/projects/quick-run` | Body `{project}` -- the sidebar quick run: creates a placeholder `wip` task, appends it to the queue, marks it as a blank-prompt run. Returns the task. |
+| `POST /api/projects/quick-run` | Body `{project, prompt?}` -- a Quicktask: creates a `wip` task (placeholder title and blank-prompt run without `prompt`, otherwise the prompt is the task), appends it to the queue. Returns the task. |
 | `PUT /api/settings/queue_enabled` | `{"value": "true" \| "false"}` -- the pause switch (default `true`). |
+| `PUT /api/settings/quicktasks_bypass_lanes` | `{"value": "on" \| "off"}` -- whether Quicktasks start outside the lanes (default `on`). |
 
 Add, reorder and remove are all the same `PUT`: the frontend owns the ordered list and sends it after every edit, so
 there is no partial state to reconcile.

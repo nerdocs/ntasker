@@ -16,7 +16,12 @@ def env(tmp_path, monkeypatch):
     path = tmp_path / "t.db"
     set_db_path(path)
     init_db(path)
-    for var in ("NTASKER_DIR_LOCKS", "NTASKER_REQUIRE_CLEAN", "NTASKER_QUEUE_ENABLED"):
+    for var in (
+        "NTASKER_DIR_LOCKS",
+        "NTASKER_REQUIRE_CLEAN",
+        "NTASKER_QUEUE_ENABLED",
+        "NTASKER_QUICKTASKS_BYPASS_LANES",
+    ):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setattr(locks, "resolve_dir", lambda name: str(tmp_path / name))
     monkeypatch.setattr(taskqueue, "_runnable_agents", lambda: {"claude"})
@@ -35,6 +40,7 @@ def env(tmp_path, monkeypatch):
     taskqueue._running.clear()
     taskqueue.QUICK.clear()
     taskqueue.RESUME.clear()
+    taskqueue.LANELESS.clear()
     taskqueue._booted = True
 
     def add(title, project, locks_=()):
@@ -120,3 +126,40 @@ def test_dirty_dir_ignores_non_repos(env):
     d = env["tmp"] / "plain"
     d.mkdir()
     assert locks.dirty_dir({str(d), str(env["tmp"] / "missing")}) is None
+
+
+def test_laneless_quicktask_neither_waits_for_nor_occupies_the_lane(env):
+    """A Quicktask outside the lanes starts next to a live session in its
+    project and lets the lane's next task start next to it; ended, it neither
+    restarts nor blocks the lane."""
+    running = env["add"]("R", "x")
+    quick = env["add"]("Q", "x")
+    nxt = env["add"]("N", "x")
+    env["live"].add(running)
+    taskqueue.set_queue([running, quick, nxt])
+    taskqueue.LANELESS.add(quick)
+    taskqueue.tick()
+    assert env["started"] == [quick]
+    env["live"].discard(running)
+    taskqueue.tick()   # running ended -> lane free although the Quicktask is live
+    taskqueue.tick()   # next tick: running is flagged ended and stays; N is blocked by it
+    assert env["started"] == [quick]
+    taskqueue.set_queue([quick, nxt])
+    taskqueue.tick()
+    assert env["started"] == [quick, nxt]
+    env["live"].discard(quick)
+    taskqueue.tick()   # the Quicktask's session ended: flagged, not restarted
+    taskqueue.tick()
+    assert env["started"] == [quick, nxt]
+    assert taskqueue.skipped(taskqueue.load_queue(), env["live"])[quick]["reason"] == "ended"
+
+
+def test_laneless_quicktask_ignores_dir_locks(env):
+    holder = env["add"]("H", "x", ["y"])
+    quick = env["add"]("Q", "y")
+    env["live"].add(holder)
+    taskqueue.set_queue([holder, quick])
+    taskqueue.LANELESS.add(quick)
+    taskqueue.tick()
+    assert env["started"] == [quick]
+    assert quick not in taskqueue.skipped(taskqueue.load_queue(), env["live"])

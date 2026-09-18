@@ -41,6 +41,13 @@ column, and the next task in that project starts when the user closes it.
 The queue is the **only** way a session starts: every run button appends to
 the queue (:func:`enqueue`), and the worker picks the task up once its project
 lane is free. ``queue_enabled`` (default on) is a pause switch.
+
+A **Quicktask** (the sidebar's quick run, with or without a prompt) is the one
+exception to the lanes: with ``quicktasks_bypass_lanes`` on (the default) it
+starts on the next tick regardless of what runs in its project, and its own
+session neither occupies the lane nor holds its directories for the queue
+(:data:`LANELESS`). Everything else -- retire, ended, resume -- applies as
+usual.
 """
 
 from __future__ import annotations
@@ -79,6 +86,13 @@ _running: set[int] = set()
 # API and worker share the process, and a quick task that has not started
 # before a restart simply runs as a normal queued run.
 QUICK: set[int] = set()
+
+# Task ids that start outside the project lanes -- Quicktasks created while
+# ``quicktasks_bypass_lanes`` is on. Such an entry neither waits for a free
+# lane, held directory or clean git state, nor counts as occupying any of them.
+# In memory like :data:`QUICK`: after a restart the entry is a normal queued
+# run (its session is gone anyway and gets resumed like every other).
+LANELESS: set[int] = set()
 
 # Task ids to start by *resuming* their stored session (``claude --resume``)
 # instead of a fresh seeded run: the user pressed resume on an ended entry, or
@@ -325,7 +339,7 @@ def skipped(rows: list[sqlite3.Row], live: set[int]) -> dict[int, dict]:
     with get_conn() as conn:
         held = locks.held_dirs(conn, live | set(external_session_ids()))
     for row in rows:
-        if int(row["id"]) in live or int(row["id"]) in out:
+        if int(row["id"]) in live or int(row["id"]) in out or int(row["id"]) in LANELESS:
             continue
         reason = _lock_reason(row, held, require_clean and int(row["id"]) not in RESUME)
         if reason is not None:
@@ -376,6 +390,7 @@ def tick() -> None:
     if enabled:
         _running.update(queued_ids & live)
     _running.intersection_update(queued_ids)
+    LANELESS.intersection_update(queued_ids)
 
     # Finished: ``status=done`` (the user closed it, or the agent did because
     # the task told it to) or archived. The entry leaves the queue; a done
@@ -425,31 +440,40 @@ def tick() -> None:
     dir_locks = get_dir_locks()
     require_clean = dir_locks and get_require_clean()
     # External sessions occupy their lane and directories like any other, but
-    # are no queue runs: they never advance or end an entry.
-    occupied = live | set(external_session_ids())
+    # are no queue runs: they never advance or end an entry. Laneless
+    # Quicktasks occupy nothing (see :data:`LANELESS`).
+    occupied = (live | set(external_session_ids())) - LANELESS
     starts: list[int] = []
     with get_conn() as conn:
         busy = _busy_buckets(occupied, conn)
         busy |= {
             _bucket(r["project"])
             for r in rows
-            if r["session_ended_at"] and int(r["id"]) not in RESUME
+            if r["session_ended_at"] and int(r["id"]) not in RESUME and int(r["id"]) not in LANELESS
         }
         held = locks.held_dirs(conn, occupied) if dir_locks else {}
         for row in rows:
-            bucket = _bucket(row["project"])
-            if bucket in busy or not _startable(row, conn, runnable, default_agent):
+            task_id = int(row["id"])
+            # A live entry runs, an ended one waits for the user (or its
+            # resume) -- for a laned task its busy bucket already says so, a
+            # laneless one needs the explicit guard.
+            if task_id in live or (row["session_ended_at"] and task_id not in RESUME):
                 continue
-            if dir_locks:
+            laneless = task_id in LANELESS
+            bucket = _bucket(row["project"])
+            if (bucket in busy and not laneless) or not _startable(row, conn, runnable, default_agent):
+                continue
+            if dir_locks and not laneless:
                 # A resume skips the git check: the dirt is that run's own
                 # unfinished work, which is exactly what it continues.
-                resume = int(row["id"]) in RESUME
+                resume = task_id in RESUME
                 if _lock_reason(row, held, require_clean and not resume) is not None:
                     continue
                 for d in locks.task_dirs(row["project"], locks.parse(row["locks"])):
-                    held.setdefault(d, int(row["id"]))
-            starts.append(int(row["id"]))
-            busy.add(bucket)
+                    held.setdefault(d, task_id)
+            starts.append(task_id)
+            if not laneless:
+                busy.add(bucket)
 
     # Spawning happens after the DB context is closed: it forks a process and
     # registers a PTY reader, neither of which should hold a connection open.

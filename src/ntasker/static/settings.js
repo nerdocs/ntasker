@@ -24,6 +24,7 @@ const BOOL_DEFAULTS = {
     queue_enabled: true,
     dir_locks: true,
     require_clean: false,
+    quicktasks_bypass_lanes: true,
     opencode_auto: false,
 };
 const TRUE_STRINGS = ['1', 'true', 'yes', 'on'];

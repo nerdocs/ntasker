@@ -5,6 +5,7 @@ All notable changes to ntasker.
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
 ## [Unreleased]
+Settings: `quicktasks_bypass_lanes` (default on) -- Quicktasks start at once, outside the project lanes and locks.
 Sidebar: quick task -- one-line prompt + go button in the project row menu starts the agent with it directly.
 
 ## [3.5.0] — 2026-09-17

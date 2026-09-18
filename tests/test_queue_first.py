@@ -19,7 +19,9 @@ def client(tmp_path, monkeypatch):
     set_db_path(path)
     init_db(path)
     monkeypatch.delenv("NTASKER_QUEUE_ENABLED", raising=False)
+    monkeypatch.delenv("NTASKER_QUICKTASKS_BYPASS_LANES", raising=False)
     taskqueue.QUICK.clear()
+    taskqueue.LANELESS.clear()
     return TestClient(app, base_url=BASE)
 
 
@@ -52,6 +54,13 @@ def test_quick_run_creates_wip_task_at_queue_end(client):
     items = client.get("/api/queue").json()["items"]
     assert [t["id"] for t in items] == [other["id"], task["id"]]
     assert task["id"] in taskqueue.QUICK
+    assert task["id"] in taskqueue.LANELESS   # quicktasks_bypass_lanes defaults on
+
+
+def test_quick_run_with_bypass_off_is_a_laned_run(client):
+    client.put("/api/settings/quicktasks_bypass_lanes", json={"value": "off"})
+    task = client.post("/api/projects/quick-run", json={"project": "x", "prompt": "hi"}).json()
+    assert task["id"] not in taskqueue.LANELESS
 
 
 def test_quick_run_with_prompt_makes_prompt_the_task(client):
@@ -63,6 +72,7 @@ def test_quick_run_with_prompt_makes_prompt_the_task(client):
     assert task["title"].startswith("Fix the flaky login test") and task["title"].endswith("…")
     assert task["phase"] == "wip"
     assert task["id"] not in taskqueue.QUICK   # seeded run, not a blank quick run
+    assert task["id"] in taskqueue.LANELESS
     assert task["id"] in [t["id"] for t in client.get("/api/queue").json()["items"]]
 
 

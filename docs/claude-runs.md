@@ -74,8 +74,9 @@ Sometimes there is no task yet, just the urge to work in a project. Every projec
 3. briefs the agent -- via the *system* prompt, so the input line stays empty -- to give that placeholder task a real
    title itself as soon as your request is clear (`ntasker patch <id> --title "..."`).
 
-The button only shows when the default agent's CLI is launchable; a project with a live session makes the quick run
-wait like any other run. Agents without a system-prompt flag (`AgentSpec.system_prompt_flag`, today Claude's
+The button only shows when the default agent's CLI is launchable. A quick run is a **Quicktask**: with
+`quicktasks_bypass_lanes` on (the default) it starts even while another session runs in the project -- see
+[task-queue.md](task-queue.md); off, it waits for its lane like any other run. Agents without a system-prompt flag (`AgentSpec.system_prompt_flag`, today Claude's
 `--append-system-prompt`) start the same way, they just never get the naming hint -- the task then keeps its
 placeholder title until you rename it.
 

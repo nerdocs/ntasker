@@ -97,6 +97,7 @@ from ntasker.settings import (
     get_default_agent,
     get_default_view,
     get_dir_locks,
+    get_quicktasks_bypass_lanes,
     get_queue_enabled,
     get_quick_prompts,
     get_sidebar_sections,
@@ -1532,7 +1533,9 @@ def api_quick_run(payload: QuickRunIn) -> JSONResponse:
     (see :func:`ntasker.claude_runner.quick_run_system_prompt`). With a
     ``prompt`` (the row menu's quick-task input) the prompt *is* the task --
     stored as description, title derived from it -- and the worker seeds the
-    session with it like any other queued run. Returns the task.
+    session with it like any other queued run. Either way it is a Quicktask:
+    with ``quicktasks_bypass_lanes`` on it starts outside the project lanes
+    (:data:`ntasker.taskqueue.LANELESS`). Returns the task.
     """
     project = _normalize_project(payload.project)
     if project is None:
@@ -1553,6 +1556,8 @@ def api_quick_run(payload: QuickRunIn) -> JSONResponse:
         new_id = cast(int, cur.lastrowid)
     if not prompt:
         taskqueue.QUICK.add(new_id)
+    if get_quicktasks_bypass_lanes():
+        taskqueue.LANELESS.add(new_id)
     taskqueue.enqueue(new_id)
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM tasks WHERE id = ?", (new_id,)).fetchone()

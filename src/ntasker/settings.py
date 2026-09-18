@@ -421,6 +421,7 @@ VALIDATORS: dict[str, Validator] = {
     "queue_enabled": validate_queue_enabled,
     "dir_locks": validate_on_off,
     "require_clean": validate_on_off,
+    "quicktasks_bypass_lanes": validate_on_off,
     "plugins_disabled": validate_plugins_disabled,
     "plugins_enabled": validate_plugins_enabled,
     "update_command": validate_update_command,
@@ -493,6 +494,12 @@ HINTS: dict[str, object] = {
         "Only start a queued task when every directory it holds has no "
         "uncommitted changes. Needs directory locks."
     ),
+    "quicktasks_bypass_lanes": _lazy(
+        "A Quicktask (the prompt in a project's menu, or the agent logo next "
+        "to it) starts right away: it does not wait for its project lane, "
+        "directory locks or a clean git state, and does not block them for "
+        "other tasks while it runs. Off: a Quicktask queues like any other run."
+    ),
     "sidebar_sections": _lazy(
         "Which sidebar sections are folded -- written by the fold buttons in the "
         "sidebar. JSON object {section: true|false}; a missing section is open."
@@ -535,6 +542,7 @@ LABELS: dict[str, object] = {
     "queue_enabled": _lazy("Queue starts tasks automatically"),
     "dir_locks": _lazy("Directory locks"),
     "require_clean": _lazy("Require a clean git state"),
+    "quicktasks_bypass_lanes": _lazy("Quicktasks bypass the lanes"),
     "update_command": _lazy("Update command"),
     "quick_prompts": _lazy("Quick prompts"),
 }
@@ -568,6 +576,10 @@ FIELD_CHOICES: dict[str, list[tuple[str, object, object]]] = {
         ("on", _lazy("On"), None),
         ("off", _lazy("Off"), None),
     ],
+    "quicktasks_bypass_lanes": [
+        ("on", _lazy("On"), None),
+        ("off", _lazy("Off"), None),
+    ],
 }
 
 FIELD_DEFAULTS: dict[str, str] = {
@@ -578,6 +590,7 @@ FIELD_DEFAULTS: dict[str, str] = {
     "auto_archive_days": str(AUTO_ARCHIVE_DAYS_DEFAULT),
     "dir_locks": "on",
     "require_clean": "off",
+    "quicktasks_bypass_lanes": "on",
 }
 
 
@@ -803,6 +816,14 @@ def get_require_clean() -> bool:
     ENV ``NTASKER_REQUIRE_CLEAN``. Only consulted while :func:`get_dir_locks`.
     """
     return _get_on_off("require_clean", False)
+
+
+def get_quicktasks_bypass_lanes() -> bool:
+    """Whether a Quicktask starts outside the project lanes (default on).
+
+    ENV ``NTASKER_QUICKTASKS_BYPASS_LANES``. See :data:`ntasker.taskqueue.LANELESS`.
+    """
+    return _get_on_off("quicktasks_bypass_lanes", True)
 
 
 def get_sidebar_sections() -> dict[str, bool]:

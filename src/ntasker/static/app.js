@@ -399,6 +399,10 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // Highlighted suggestion index per tag-input ('form' | 'edit'); -1 = none.
         tagHighlight: { form: -1, edit: -1 },
         projectHighlight: { form: -1, edit: -1 },
+        lockHighlight: { form: -1, edit: -1 },
+        // Chip input of the new-task form a drag currently hovers ('lock' |
+        // 'dep' | null); drives the drop-target highlight.
+        chipDropOver: null,
         // Caret position among the tag chips per input. -1 = the text input
         // (caret after the last chip); 0..len-1 = a chip has focus and the
         // caret sits to its LEFT. Backspace removes the chip left of the
@@ -2201,7 +2205,9 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // directory-locks.md). Same chip pattern as tags, minus the caret
         // dance: enter / comma commit, backspace on an empty input pops. The
         // own project is dropped here too, so the chips mirror what the
-        // server will store. Suggestions come from the project datalist.
+        // server will store. Suggestions are the known project names in a
+        // combobox like the project input's; picking one (click / Tab /
+        // Enter) turns straight into a chip.
         _lockBucket(which) {
             return which === 'edit' ? this.editing : this.form;
         },
@@ -2218,15 +2224,52 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             }
             bucket[key] = '';
         },
+        // Known project names matching the typed query, minus the own project
+        // and the locks already chipped.
+        lockSuggestions(which) {
+            const bucket = this._lockBucket(which);
+            if (!bucket) return [];
+            const q = (bucket[this._lockInputProp(which)] || '').trim().toLowerCase();
+            if (!q) return [];
+            const own = bucket.project || '';
+            const names = this.projectNames.filter(n => n !== own && !bucket.locks.includes(n));
+            return this._rankProjectNames(q, names);
+        },
+        selectLock(which, name) {
+            const bucket = this._lockBucket(which);
+            if (!bucket) return;
+            if (name !== (bucket.project || '') && !bucket.locks.includes(name)) bucket.locks.push(name);
+            bucket[this._lockInputProp(which)] = '';
+            this.lockHighlight[which] = -1;
+        },
+        // Arrows move the highlight; Tab / Enter accept a suggestion (Tab
+        // falls back to the top match); Enter / comma on free text commit it
+        // verbatim; Backspace on an empty input pops the last chip.
         onLockKeydown(event, which) {
             const bucket = this._lockBucket(which);
             if (!bucket) return;
             const key = this._lockInputProp(which);
-            if (event.key === 'Enter' || event.key === ',') {
+            const sugg = this.lockSuggestions(which);
+            const hi = this.lockHighlight[which];
+            const k = event.key;
+            if (k === 'ArrowDown' || k === 'ArrowUp') {
+                event.preventDefault();
+                if (!sugg.length) { this.lockHighlight[which] = -1; return; }
+                let i = hi + (k === 'ArrowDown' ? 1 : -1);
+                if (i < 0) i = sugg.length - 1;
+                else if (i >= sugg.length) i = 0;
+                this.lockHighlight[which] = i;
+            } else if (k === 'Tab' && sugg.length) {
+                event.preventDefault();
+                this.selectLock(which, hi >= 0 && hi < sugg.length ? sugg[hi] : sugg[0]);
+            } else if (k === 'Enter' && hi >= 0 && hi < sugg.length) {
+                event.preventDefault();
+                this.selectLock(which, sugg[hi]);
+            } else if (k === 'Enter' || k === ',') {
                 if (!(bucket[key] || '').trim()) return;   // plain Enter submits the form
                 event.preventDefault();
                 this.commitLockInput(which);
-            } else if (event.key === 'Backspace' && !bucket[key] && bucket.locks.length) {
+            } else if (k === 'Backspace' && !bucket[key] && bucket.locks.length) {
                 bucket.locks.pop();
             }
         },
@@ -2317,7 +2360,13 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             if (!bucket) return [];
             const q = (bucket.project || '').trim().toLowerCase();
             if (!q) return [];
-            return this.projectNames
+            return this._rankProjectNames(q, this.projectNames);
+        },
+
+        // `names` ranked against the lowercase query `q` (exact, startswith,
+        // contains); non-matches dropped, at most 8.
+        _rankProjectNames(q, names) {
+            return names
                 .map(name => {
                     const n = name.toLowerCase();
                     let rank = -1;
@@ -2431,6 +2480,41 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 event.preventDefault();
                 this.selectProject(which, sugg[hi]);
             }
+        },
+
+        // ---- Drop targets on the new-task form's chip inputs ----
+        // A sidebar project dropped on "Also locks" becomes a lock chip, a
+        // board / queue card dropped on "Depends on" a dependency chip.
+        // `kind` = 'lock' | 'dep'. Both events are always cancelled: the text
+        // input inside is a native drop target, and left alone the browser
+        // would paste the drag's text/plain payload (the id / name) into it.
+        // The payload doubles as the fallback when the drag state is gone.
+        _chipDropPayload(event, kind) {
+            const raw = event.dataTransfer ? event.dataTransfer.getData('text/plain') : '';
+            if (kind === 'lock') {
+                const name = this.draggedProject ?? raw;
+                return this.projectNames.includes(name) ? name : null;
+            }
+            const id = this.draggedTaskId ?? (/^\d+$/.test(raw) ? Number(raw) : null);
+            return this.tasks.find(t => t.id === id) || this.queue.find(t => t.id === id) || null;
+        },
+        onChipDragOver(event, kind) {
+            event.preventDefault();
+            const ok = kind === 'lock' ? this.draggedProject !== null : this.draggedTaskId != null;
+            if (event.dataTransfer) event.dataTransfer.dropEffect = ok ? 'move' : 'none';
+            this.chipDropOver = ok ? kind : null;
+        },
+        onChipDragLeave(event) {
+            const related = event.relatedTarget;
+            if (!related || !event.currentTarget.contains(related)) this.chipDropOver = null;
+        },
+        onChipDrop(event, kind, which) {
+            event.preventDefault();
+            this.chipDropOver = null;
+            const payload = this._chipDropPayload(event, kind);
+            if (payload === null) return;
+            if (kind === 'lock') this.selectLock(which, payload);
+            else this.addDep(which, payload);
         },
 
         // ---- Dependency input helpers (shared by new-task form & edit-modal) ----

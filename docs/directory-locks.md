@@ -34,7 +34,7 @@ With `dir_locks` off only the lane rule applies -- exactly the pre-3.1 behaviour
 
 | Where | How |
 |---|---|
-| New-task form / edit dialog | **Also locks** chip input -- type a project name, Enter. |
+| New-task form / edit dialog | **Also locks** chip input -- pick from the dropdown (click / Tab / Enter) or type a name + Enter; the new-task form also takes a dropped sidebar project. |
 | CLI | `ntasker add --locks a,b`, `ntasker patch <id> --locks a,b` (`''` clears). |
 | CLI, against the running server | `ntasker lock add <id> <project...>`, `ntasker lock rm <id> <project...>`, `ntasker lock list <id>`. |
 | API | `POST /api/tasks/<id>/locks {"projects": [...]}`, `DELETE /api/tasks/<id>/locks/<project>`, or the `locks` field on `POST`/`PATCH /api/tasks`. |
@@ -107,4 +107,4 @@ have no settings flag and keep the heuristic.
 | `src/ntasker/claude_assets/hooks/*.json`, `claude_assets.hooks_settings_path` | The two `--settings` files and which one a spawn gets. |
 | `src/ntasker/agents.py`, `plugins/claude` | `AgentSpec.settings_flag`, `build_spawn(settings_path=)`. |
 | `src/ntasker/claude_runner.py` | `TermSession.hook_waiting`, `set_hook_state`, `NTASKER_TASK_ID`/`NTASKER_URL` in the child env. |
-| `src/ntasker/static/app.js` | Lock chips (`commitLockInput`, `removeLockFrom`), badge, `queueSkipped` in the panel. |
+| `src/ntasker/static/app.js` | Lock chips (`lockSuggestions`, `selectLock`, `commitLockInput`, `onChipDrop`), badge, `queueSkipped`. |

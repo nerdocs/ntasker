@@ -350,6 +350,11 @@ body {
     border-color: var(--tblr-indigo);
     box-shadow: 0 0 0 2px rgba(var(--tblr-indigo-rgb), 0.25);
 }
+/* A sidebar project / board card hovering a chip input of the new-task form. */
+.form-control.chip-drop-target {
+    border-color: var(--tblr-primary);
+    box-shadow: 0 0 0 2px rgba(var(--tblr-primary-rgb), 0.25);
+}
 /* Empty state = the drop target. It is the only thing that explains what the
  * queue does, so it stays put instead of appearing only mid-drag. */
 .task-queue-empty {

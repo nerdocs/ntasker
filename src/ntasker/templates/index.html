@@ -294,13 +294,6 @@
                 <option :value="name"></option>
             </template>
         </datalist>
-        {# Project names for the directory-lock chip inputs. #}
-        <datalist id="project-names">
-            <template x-for="name in projectNames" :key="name">
-                <option :value="name"></option>
-            </template>
-        </datalist>
-
         <div class="text-muted small mt-3" x-show="projects.length <= 1">
             {{ t('No project symlinks found.') }}
         </div>
@@ -680,7 +673,11 @@
                                     <div class="position-relative" x-data="{ focused: false }">
                                         <div class="form-control d-flex flex-wrap align-items-center gap-1"
                                              style="cursor: text; min-height: calc(1.5em + 0.75rem + 2px);"
-                                             @click="$refs.formDepInput.focus()">
+                                             :class="{ 'chip-drop-target': chipDropOver === 'dep' }"
+                                             @click="$refs.formDepInput.focus()"
+                                             @dragover="onChipDragOver($event, 'dep')"
+                                             @dragleave="onChipDragLeave($event)"
+                                             @drop="onChipDrop($event, 'dep', 'form')">
                                             <template x-for="(dep, idx) in form.depends" :key="dep.id">
                                                 <span class="badge bg-cyan-lt d-inline-flex align-items-center"
                                                       :title="dep.title">
@@ -719,25 +716,49 @@
                                 <div class="col-md-6">
                                     <label class="form-label">{{ t('Also locks') }}</label>
                                     {# Directory-lock chips: extra projects whose directories this run holds. #}
-                                    <div class="form-control d-flex flex-wrap align-items-center gap-1"
-                                         style="cursor: text; min-height: calc(1.5em + 0.75rem + 2px);"
-                                         @click="$refs.formLockInput.focus()">
-                                        <template x-for="(lk, idx) in form.locks" :key="lk">
-                                            <span class="badge bg-yellow-lt d-inline-flex align-items-center">
-                                                <i class="ti ti-lock me-1"></i><span x-text="lk"></span>
-                                                <button type="button" class="btn-close btn-close-sm ms-1"
-                                                        style="font-size: 0.6rem;"
-                                                        :aria-label="$i18n('remove_lock')"
-                                                        @click.stop="removeLockFrom('form', idx)"></button>
-                                            </span>
-                                        </template>
-                                        <input type="text" class="border-0 flex-fill p-0" list="project-names"
-                                               style="outline: none; background: transparent; min-width: 8rem;"
-                                               x-model="form.lockInput"
-                                               x-ref="formLockInput"
-                                               @keydown="onLockKeydown($event, 'form')"
-                                               @blur="commitLockInput('form')"
-                                               :placeholder="$i18n('locks_placeholder')">
+                                    {# Project-name combobox (pick = chip) + drop target for sidebar projects. #}
+                                    <div class="position-relative" x-data="{ focused: false }">
+                                        <div class="form-control d-flex flex-wrap align-items-center gap-1"
+                                             style="cursor: text; min-height: calc(1.5em + 0.75rem + 2px);"
+                                             :class="{ 'chip-drop-target': chipDropOver === 'lock' }"
+                                             @click="$refs.formLockInput.focus()"
+                                             @dragover="onChipDragOver($event, 'lock')"
+                                             @dragleave="onChipDragLeave($event)"
+                                             @drop="onChipDrop($event, 'lock', 'form')">
+                                            <template x-for="(lk, idx) in form.locks" :key="lk">
+                                                <span class="badge bg-yellow-lt d-inline-flex align-items-center">
+                                                    <i class="ti ti-lock me-1"></i><span x-text="lk"></span>
+                                                    <button type="button" class="btn-close btn-close-sm ms-1"
+                                                            style="font-size: 0.6rem;"
+                                                            :aria-label="$i18n('remove_lock')"
+                                                            @click.stop="removeLockFrom('form', idx)"></button>
+                                                </span>
+                                            </template>
+                                            <input type="text" class="border-0 flex-fill p-0"
+                                                   style="outline: none; background: transparent; min-width: 8rem;"
+                                                   x-model="form.lockInput"
+                                                   x-ref="formLockInput"
+                                                   autocomplete="off"
+                                                   @focus="focused = true"
+                                                   @blur="setTimeout(() => focused = false, 150); commitLockInput('form')"
+                                                   @input="lockHighlight.form = -1"
+                                                   @keydown.escape="focused = false; lockHighlight.form = -1"
+                                                   @keydown="onLockKeydown($event, 'form')"
+                                                   :placeholder="$i18n('locks_placeholder')">
+                                        </div>
+                                        <div class="dropdown-menu show w-100 mt-1"
+                                             x-show="focused && lockSuggestions('form').length > 0"
+                                             style="max-height: 200px; overflow-y: auto;"
+                                             x-cloak>
+                                            <template x-for="(s, idx) in lockSuggestions('form')" :key="s">
+                                                <button type="button" class="dropdown-item"
+                                                        :class="{ active: lockHighlight.form === idx }"
+                                                        @mouseenter="lockHighlight.form = idx"
+                                                        @mousedown.prevent="selectLock('form', s)">
+                                                    <i class="ti ti-lock me-1"></i><span x-text="s"></span>
+                                                </button>
+                                            </template>
+                                        </div>
                                     </div>
                                 </div>
                                 <div class="col-12 text-end">
@@ -1706,25 +1727,44 @@
                     <div class="mb-2">
                         <label class="form-label">{{ t('Also locks') }}</label>
                         {# Directory-lock chips: extra projects whose directories this run holds. #}
-                        <div class="form-control d-flex flex-wrap align-items-center gap-1"
-                             style="cursor: text; min-height: calc(1.5em + 0.75rem + 2px);"
-                             @click="$refs.editLockInput.focus()">
-                            <template x-for="(lk, idx) in editing.locks" :key="lk">
-                                <span class="badge bg-yellow-lt d-inline-flex align-items-center">
-                                    <i class="ti ti-lock me-1"></i><span x-text="lk"></span>
-                                    <button type="button" class="btn-close btn-close-sm ms-1"
-                                            style="font-size: 0.6rem;"
-                                            :aria-label="$i18n('remove_lock')"
-                                            @click.stop="removeLockFrom('edit', idx)"></button>
-                                </span>
-                            </template>
-                            <input type="text" class="border-0 flex-fill p-0" list="project-names"
-                                   style="outline: none; background: transparent; min-width: 8rem;"
-                                   x-model="editing._lockInput"
-                                   x-ref="editLockInput"
-                                   @keydown="onLockKeydown($event, 'edit')"
-                                   @blur="commitLockInput('edit')"
-                                   :placeholder="$i18n('locks_placeholder')">
+                        <div class="position-relative" x-data="{ focused: false }">
+                            <div class="form-control d-flex flex-wrap align-items-center gap-1"
+                                 style="cursor: text; min-height: calc(1.5em + 0.75rem + 2px);"
+                                 @click="$refs.editLockInput.focus()">
+                                <template x-for="(lk, idx) in editing.locks" :key="lk">
+                                    <span class="badge bg-yellow-lt d-inline-flex align-items-center">
+                                        <i class="ti ti-lock me-1"></i><span x-text="lk"></span>
+                                        <button type="button" class="btn-close btn-close-sm ms-1"
+                                                style="font-size: 0.6rem;"
+                                                :aria-label="$i18n('remove_lock')"
+                                                @click.stop="removeLockFrom('edit', idx)"></button>
+                                    </span>
+                                </template>
+                                <input type="text" class="border-0 flex-fill p-0"
+                                       style="outline: none; background: transparent; min-width: 8rem;"
+                                       x-model="editing._lockInput"
+                                       x-ref="editLockInput"
+                                       autocomplete="off"
+                                       @focus="focused = true"
+                                       @blur="setTimeout(() => focused = false, 150); commitLockInput('edit')"
+                                       @input="lockHighlight.edit = -1"
+                                       @keydown.escape="focused = false; lockHighlight.edit = -1"
+                                       @keydown="onLockKeydown($event, 'edit')"
+                                       :placeholder="$i18n('locks_placeholder')">
+                            </div>
+                            <div class="dropdown-menu show w-100 mt-1"
+                                 x-show="focused && lockSuggestions('edit').length > 0"
+                                 style="max-height: 200px; overflow-y: auto;"
+                                 x-cloak>
+                                <template x-for="(s, idx) in lockSuggestions('edit')" :key="s">
+                                    <button type="button" class="dropdown-item"
+                                            :class="{ active: lockHighlight.edit === idx }"
+                                            @mouseenter="lockHighlight.edit = idx"
+                                            @mousedown.prevent="selectLock('edit', s)">
+                                        <i class="ti ti-lock me-1"></i><span x-text="s"></span>
+                                    </button>
+                                </template>
+                            </div>
                         </div>
                     </div>
                 </div>

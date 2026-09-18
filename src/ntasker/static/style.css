@@ -388,7 +388,7 @@ body {
     .task-queue-state-btn > span:last-child {
         display: none;
     }
-    .task-queue-state-btn > .me-1 {
+    .task-queue-state-btn > img.me-1 {
         margin-right: 0 !important;
     }
 }
@@ -747,17 +747,18 @@ body {
     background-color: transparent;
     border-color: transparent;
     color: #d97757;
-    /* Constant footprint so the icon column never shifts when the state
-     * switches between logo / spinner / question mark (each a different
-     * intrinsic width). flex: 0 0 auto stops the card-header flex row from
-     * shrinking the button below its width. Center whichever icon shows. */
+    /* Logo alone is a 2rem square; a live session adds its indicator
+     * (spinner / question mark) left of the logo inside the same pill.
+     * flex: 0 0 auto stops the card-header flex row from shrinking the
+     * button below its width. */
     flex: 0 0 auto;
-    width: 2rem;
-    padding-left: 0;
-    padding-right: 0;
+    min-width: 2rem;
+    padding-left: 0.25rem;
+    padding-right: 0.25rem;
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    gap: 0.25rem;
 }
 .btn-claude:hover,
 .btn-claude:active {

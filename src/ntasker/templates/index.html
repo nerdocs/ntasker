@@ -923,6 +923,7 @@
                                         <a :href="'#/run/' + item.id" class="btn btn-sm btn-ghost-secondary task-queue-state-btn d-flex align-items-center"
                                            :title="$i18n('claude_switch_session')">
                                             <span class="spinner-border spinner-border-sm me-1"></span>
+                                            <img :src="agentIconUrl(item)" class="claude-logo-icon me-1" alt="">
                                             <span x-text="$i18n('queue_item_running')"></span>
                                         </a>
                                     </template>
@@ -930,6 +931,7 @@
                                         <a :href="'#/run/' + item.id" class="btn btn-sm btn-ghost-orange task-queue-state-btn d-flex align-items-center"
                                            :title="$i18n('claude_waiting')">
                                             <i class="ti ti-help fs-3 me-1"></i>
+                                            <img :src="agentIconUrl(item)" class="claude-logo-icon me-1" alt="">
                                             <span x-text="$i18n('queue_item_waiting')"></span>
                                         </a>
                                     </template>
@@ -1168,20 +1170,19 @@
                                     <div class="col-auto">
                                         <div class="btn-list">
                                             {# Run with Claude -- only when the `claude` CLI + a PTY are available. #}
-                                            {# Runnable: session indicator (spinner / waiting) sits LEFT of the #}
-                                            {# button so the agent logo stays visible while it runs. #}
+                                            {# Runnable: the session indicator (spinner / waiting) sits INSIDE the #}
+                                            {# button, left of the logo -- one pill, and clicking anywhere on it #}
+                                            {# opens the session, like the state links in the queue panel. #}
                                             <template x-if="taskRunnable(task) && task.status !== 'done'">
-                                                <span class="d-inline-flex align-items-center">
-                                                    <template x-if="['running', 'external'].includes(taskRunPhase(task.id))"><span class="spinner-border spinner-border-sm text-secondary me-1"></span></template>
-                                                    <template x-if="taskRunPhase(task.id) === 'waiting'"><i class="ti ti-help fs-3 text-orange me-1"></i></template>
-                                                    <button class="btn btn-sm btn-claude" @click="runNext(task)"
-                                                            :disabled="taskRunPhase(task.id) === 'external' || (task.draft && !taskRunPhase(task.id))"
-                                                            :class="{'btn-claude-waiting': taskRunPhase(task.id) === 'waiting'}"
-                                                            :aria-label="runButtonTitle(task)"
-                                                            :title="runButtonTitle(task)">
-                                                        <img :src="agentIconUrl(task)" class="claude-logo-icon" alt="">
-                                                    </button>
-                                                </span>
+                                                <button class="btn btn-sm btn-claude" @click="runNext(task)"
+                                                        :disabled="taskRunPhase(task.id) === 'external' || (task.draft && !taskRunPhase(task.id))"
+                                                        :class="{'btn-claude-waiting': taskRunPhase(task.id) === 'waiting'}"
+                                                        :aria-label="runButtonTitle(task)"
+                                                        :title="runButtonTitle(task)">
+                                                    <template x-if="['running', 'external'].includes(taskRunPhase(task.id))"><span class="spinner-border spinner-border-sm text-secondary"></span></template>
+                                                    <template x-if="taskRunPhase(task.id) === 'waiting'"><i class="ti ti-help fs-3"></i></template>
+                                                    <img :src="agentIconUrl(task)" class="claude-logo-icon" alt="">
+                                                </button>
                                             </template>
                                             {# Agent CLI not installed: no button (it would go nowhere) -- just a #}
                                             {# greyed-out agent logo so you still see which agent the task uses. #}
@@ -1328,21 +1329,19 @@
                                                         style="cursor: pointer"
                                                         @click.stop="task._expanded = !task._expanded"
                                                         x-text="task.title"></strong>
-                                                {# Runnable: session indicator (spinner / waiting) LEFT of the button #}
-                                                {# so the agent logo stays visible while it runs. #}
+                                                {# Runnable: session indicator (spinner / waiting) INSIDE the button, #}
+                                                {# left of the logo -- see the list row. #}
                                                 <template x-if="taskRunnable(task) && task.status !== 'done'">
-                                                    <span class="d-inline-flex align-items-center">
-                                                        <template x-if="['running', 'external'].includes(taskRunPhase(task.id))"><span class="spinner-border spinner-border-sm text-secondary me-1"></span></template>
-                                                        <template x-if="taskRunPhase(task.id) === 'waiting'"><i class="ti ti-help fs-3 text-orange me-1"></i></template>
-                                                        <button class="btn btn-sm btn-claude px-1 py-0"
-                                                                @click.stop="runNext(task)"
-                                                                :disabled="taskRunPhase(task.id) === 'external' || (task.draft && !taskRunPhase(task.id))"
-                                                                :class="{'btn-claude-waiting': taskRunPhase(task.id) === 'waiting'}"
-                                                                :aria-label="runButtonTitle(task)"
-                                                                :title="runButtonTitle(task)">
-                                                            <img :src="agentIconUrl(task)" class="claude-logo-icon" alt="">
-                                                        </button>
-                                                    </span>
+                                                    <button class="btn btn-sm btn-claude px-1 py-0"
+                                                            @click.stop="runNext(task)"
+                                                            :disabled="taskRunPhase(task.id) === 'external' || (task.draft && !taskRunPhase(task.id))"
+                                                            :class="{'btn-claude-waiting': taskRunPhase(task.id) === 'waiting'}"
+                                                            :aria-label="runButtonTitle(task)"
+                                                            :title="runButtonTitle(task)">
+                                                        <template x-if="['running', 'external'].includes(taskRunPhase(task.id))"><span class="spinner-border spinner-border-sm text-secondary"></span></template>
+                                                        <template x-if="taskRunPhase(task.id) === 'waiting'"><i class="ti ti-help fs-3"></i></template>
+                                                        <img :src="agentIconUrl(task)" class="claude-logo-icon" alt="">
+                                                    </button>
                                                 </template>
                                                 {# Agent CLI not installed: greyed-out logo in a non-clickable button #}
                                                 {# box so it lines up exactly with the run buttons on other cards. #}

@@ -4,11 +4,15 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
-## [Unreleased]
+## [3.6.0] — 2026-09-18
 Plugins: *Install now* button installs a plugin's missing `ntasker[<extra>]` packages from the settings card.
 Extras in a `uv tool` home are installed via `uv tool install 'ntasker[<extra>]'`, so `uv tool upgrade` keeps them.
 Settings: `quicktasks_bypass_lanes` (default on) -- Quicktasks start at once, outside the project lanes and locks.
-Sidebar: quick task -- one-line prompt + go button in the project row menu starts the agent with it directly.
+Sidebar: Quicktask -- one-line prompt + go button in the project row menu starts the agent with it directly.
+Workspace: per-tab URLs; skills open in a view/edit modal.
+Tasks: draft flag -- a parked idea that is never queued or started (`/task` loader refuses it).
+Task form: *Also locks* is a combobox; sidebar projects drop onto it, task cards onto *Depends on*.
+UI: back button always left of the page title; wider diff modal; readable diff text and stronger add/del tint.
 
 ## [3.5.0] — 2026-09-17
 Settings: `auto_archive_days` archives done tasks older than N days automatically (default 30, 0 = off).

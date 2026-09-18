@@ -103,7 +103,7 @@
                 {# width. Skipped for the cross-project sentinel (nothing to seed). #}
                 <template x-if="{{ p }}.name !== '__none__'">
                     <span class="project-actions" :class="{ 'is-open': menuOpen }"
-                          x-data="{ menuOpen: false, grouping: false, groupName: '' }">
+                          x-data="{ menuOpen: false, grouping: false, groupName: '', quickPrompt: '' }">
                         {# Quick "+": open the new-task form pre-filled with this project. #}
                         <button type="button" class="btn btn-sm btn-ghost-secondary px-1 py-0"
                                 @click.stop.prevent="newTaskForProject({{ p }}.name)"
@@ -134,6 +134,27 @@
                             <div class="dropdown-menu dropdown-menu-end" :class="{ show: menuOpen }" x-cloak>
                                 <template x-if="!grouping">
                                     <div>
+                                        {# Quick task: one-line prompt + go -- creates a task from the #}
+                                        {# prompt and starts the agent with it. Hidden when the default #}
+                                        {# agent's CLI isn't launchable.                                #}
+                                        <template x-if="agentAvailable(defaultAgent)">
+                                            <div class="px-2 py-1 d-flex gap-1 quick-task-row">
+                                                <input type="text" class="form-control form-control-sm quick-task-input"
+                                                       x-model="quickPrompt"
+                                                       :placeholder="$i18n('quick_task_placeholder')"
+                                                       @click.stop
+                                                       @keydown.enter.prevent="if (quickPrompt.trim()) { menuOpen = false; quickRunForProject({{ p }}.name, quickPrompt); quickPrompt = '' }"
+                                                       @keydown.escape.stop="menuOpen = false">
+                                                <button type="button" class="btn btn-sm btn-primary px-2"
+                                                        :disabled="!quickPrompt.trim()"
+                                                        :title="$i18n('quick_task_go') + ' (' + agentLabel(defaultAgent) + ')'"
+                                                        :aria-label="$i18n('quick_task_go')"
+                                                        @click.stop.prevent="menuOpen = false; quickRunForProject({{ p }}.name, quickPrompt); quickPrompt = ''">
+                                                    <i class="ti ti-chevron-right"></i>
+                                                </button>
+                                            </div>
+                                            <div class="dropdown-divider"></div>
+                                        </template>
                                         {# "Only this project": kanban narrowed to this project, all phases. #}
                                         <button type="button" class="dropdown-item"
                                                 :title="$i18n('project_board_hint')"

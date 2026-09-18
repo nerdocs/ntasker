@@ -54,6 +54,23 @@ def test_quick_run_creates_wip_task_at_queue_end(client):
     assert task["id"] in taskqueue.QUICK
 
 
+def test_quick_run_with_prompt_makes_prompt_the_task(client):
+    prompt = "Fix the flaky login test " * 4   # longer than the derived-title cap
+    r = client.post("/api/projects/quick-run", json={"project": "x", "prompt": prompt})
+    assert r.status_code == 201, r.text
+    task = r.json()
+    assert task["description"] == prompt.strip()
+    assert task["title"].startswith("Fix the flaky login test") and task["title"].endswith("…")
+    assert task["phase"] == "wip"
+    assert task["id"] not in taskqueue.QUICK   # seeded run, not a blank quick run
+    assert task["id"] in [t["id"] for t in client.get("/api/queue").json()["items"]]
+
+
+def test_quick_run_blank_prompt_is_plain_quick_run(client):
+    task = client.post("/api/projects/quick-run", json={"project": "x", "prompt": "  "}).json()
+    assert task["description"] is None and task["id"] in taskqueue.QUICK
+
+
 def test_quick_run_rejects_empty_project(client):
     assert client.post("/api/projects/quick-run", json={"project": " "}).status_code == 400
 

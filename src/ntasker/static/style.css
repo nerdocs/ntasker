@@ -723,6 +723,11 @@ body {
 .project-group-input {
     width: 11rem;
 }
+/* Quick task: single-line prompt input, as wide as the sidebar allows (the
+ * aside scrolls, so the menu cannot spill past its edge). */
+.quick-task-input {
+    width: 12rem;
+}
 /* A hidden project shown via the "Hidden" switch: present but dimmed. */
 .project-hidden .form-check-label {
     opacity: 0.5;

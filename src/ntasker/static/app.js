@@ -1007,11 +1007,16 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // it with a blank prompt. The terminal always opens: the whole point is
         // to type into it right away, so the background-start setting does not
         // apply here.
-        async quickRunForProject(name) {
+        //
+        // With a ``prompt`` (the row menu's quick-task input) the server makes
+        // the prompt the task and seeds the session with it, so there is nothing
+        // to type -- the terminal then opens per the background-start setting,
+        // like any other run button.
+        async quickRunForProject(name, prompt = '') {
             const r = await fetch('/api/projects/quick-run', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ project: name }),
+                body: JSON.stringify({ project: name, prompt: prompt.trim() || null }),
             });
             if (!r.ok) {
                 this.showToast(await this._errorDetail(r, 'create_failed'), 'danger');
@@ -1019,7 +1024,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             }
             const created = await r.json();
             await this.refreshAll();
-            this._openWhenLive(created.id);
+            if (!prompt.trim() || this.claudeOpenTerminal) this._openWhenLive(created.id);
         },
 
         // Static column definitions for the kanban board. ``key`` is either

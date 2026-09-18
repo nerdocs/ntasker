@@ -5,6 +5,7 @@ All notable changes to ntasker.
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
 ## [Unreleased]
+Sidebar: quick task -- one-line prompt + go button in the project row menu starts the agent with it directly.
 
 ## [3.5.0] — 2026-09-17
 Settings: `auto_archive_days` archives done tasks older than N days automatically (default 30, 0 = off).

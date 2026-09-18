@@ -730,6 +730,8 @@ def build_js_strings() -> dict[str, str]:
             "Start an agent in this project right away -- creates a task "
             "and opens a session with an empty prompt"
         ),
+        "quick_task_placeholder": _("Quick task: prompt for the agent\u2026"),
+        "quick_task_go": _("Start the agent with this prompt"),
         # New-task / edit -- agent picker
         "agent_label": _("Agent"),
         "agent_not_installed_hint": _("not installed"),
@@ -1517,30 +1519,40 @@ def api_queue_resume(payload: RunIn) -> JSONResponse:
 
 class QuickRunIn(BaseModel):
     project: str
+    prompt: str | None = Field(None, max_length=2000)
 
 
 @app.post("/api/projects/quick-run", status_code=201)
 def api_quick_run(payload: QuickRunIn) -> JSONResponse:
     """Sidebar quick run: "I need an agent in this project *now*".
 
-    Creates a placeholder task (localised title, straight to ``wip``), appends
-    it to the queue and marks it as a quick run, so the worker starts
-    it with a blank prompt plus the "name this task" briefing (see
-    :func:`ntasker.claude_runner.quick_run_system_prompt`). Returns the task.
+    Creates a task straight to ``wip`` and appends it to the queue. Without a
+    ``prompt`` it is a placeholder (localised title) marked as a quick run, so
+    the worker starts it with a blank prompt plus the "name this task" briefing
+    (see :func:`ntasker.claude_runner.quick_run_system_prompt`). With a
+    ``prompt`` (the row menu's quick-task input) the prompt *is* the task --
+    stored as description, title derived from it -- and the worker seeds the
+    session with it like any other queued run. Returns the task.
     """
     project = _normalize_project(payload.project)
     if project is None:
         raise HTTPException(status_code=400, detail=_("Invalid project"))
+    prompt = (payload.prompt or "").strip()
+    if prompt:
+        title, description = title_from_description(prompt), prompt
+    else:
+        title, description = _("New task"), None
     with get_conn() as conn:
         cur = conn.execute(
             """
-            INSERT INTO tasks (project, title, phase, priority, sort_order)
-            VALUES (?, ?, 'wip', 'normal', (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM tasks))
+            INSERT INTO tasks (project, title, description, phase, priority, sort_order)
+            VALUES (?, ?, ?, 'wip', 'normal', (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM tasks))
             """,
-            (project, _("New task")),
+            (project, title, description),
         )
         new_id = cast(int, cur.lastrowid)
-    taskqueue.QUICK.add(new_id)
+    if not prompt:
+        taskqueue.QUICK.add(new_id)
     taskqueue.enqueue(new_id)
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM tasks WHERE id = ?", (new_id,)).fetchone()

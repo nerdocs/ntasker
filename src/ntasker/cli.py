@@ -1057,7 +1057,7 @@ def _set_plugin_enabled(name: str, enabled: bool) -> int:
 
             from ntasker import service  # noqa: PLC0415
 
-            cmd = service.resolve_install_command(missing)
+            cmd = service.resolve_install_command(ctx.spec.extra, missing)
             print(_("ntasker: installing {pkgs} -- `{cmd}`").format(
                 pkgs=", ".join(missing), cmd=" ".join(cmd)
             ))
@@ -1065,6 +1065,8 @@ def _set_plugin_enabled(name: str, enabled: bool) -> int:
             if rc != 0:
                 print(_("ntasker: install failed (exit {rc})").format(rc=rc), file=sys.stderr)
                 return rc
+            if service.install_needs_restart():
+                print(_("ntasker: restart the service so the new packages take effect."))
     key = plugins.SETTING_DISABLED if ctx.spec.default_on else plugins.SETTING_ENABLED
     listed = enabled != ctx.spec.default_on
     row = get_setting_raw(key)

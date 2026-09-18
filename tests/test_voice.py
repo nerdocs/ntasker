@@ -333,3 +333,46 @@ def test_cli_enable_installs_missing_extra(client, tmp_path, monkeypatch, capsys
     monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: types.SimpleNamespace(returncode=1))
     assert main(["--db", str(tmp_path / "t.db"), "enable", "voice"]) == 1
     assert not plugins.is_enabled("voice")
+
+
+def test_install_command_is_durable_in_uv_tool_homes(monkeypatch):
+    from ntasker import service
+
+    monkeypatch.setattr(service.sys, "executable", "/home/u/.local/share/uv/tools/ntasker/bin/python")
+    assert service.resolve_install_command("voice", ["vosk>=0.3.45"]) == ["uv", "tool", "install", "ntasker[voice]"]
+    assert service.install_needs_restart()
+    monkeypatch.setattr(service.sys, "executable", "/opt/venv/bin/python")
+    assert service.resolve_install_command("voice", ["vosk>=0.3.45"])[-1] == "vosk>=0.3.45"
+    assert not service.install_needs_restart()
+
+
+def test_api_installs_missing_extra_in_background(client, monkeypatch):
+    import subprocess
+    import time
+
+    ran = []
+    monkeypatch.setattr(plugins, "missing_requirements", lambda extra: ["vosk>=0.3.45"])
+    monkeypatch.setattr(
+        subprocess, "run",
+        lambda cmd, **kw: (ran.append(cmd), types.SimpleNamespace(returncode=0, stdout="ok", stderr=""))[1],
+    )
+    assert client.post("/api/plugins/claude/install").status_code == 400   # no extra
+    assert client.post("/api/plugins/nope/install").status_code == 404
+    r = client.post("/api/plugins/voice/install")
+    assert r.status_code == 202, r.text
+    for _ in range(50):
+        job = client.get("/api/plugins/install").json()["job"]
+        if job["state"] != "running":
+            break
+        time.sleep(0.05)
+    assert job["state"] == "done" and job["plugin"] == "voice" and ran[0][-1] == "vosk>=0.3.45"
+    assert [p for p in client.get("/api/plugins").json() if p["name"] == "voice"][0]["missing"] == ["vosk>=0.3.45"]
+
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: types.SimpleNamespace(returncode=1, stdout="", stderr="boom"))
+    client.post("/api/plugins/voice/install")
+    for _ in range(50):
+        job = client.get("/api/plugins/install").json()["job"]
+        if job["state"] != "running":
+            break
+        time.sleep(0.05)
+    assert job["state"] == "failed" and job["output"] == "boom"

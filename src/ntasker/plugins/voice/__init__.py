@@ -27,8 +27,8 @@ SPEC = PluginSpec(
     label=_lazy("Voice input"),
     description=_lazy(
         "Dictate task descriptions with local speech recognition (Vosk), "
-        "fully offline. Needs the ntasker[voice] extra -- `ntasker enable "
-        "voice` installs it."
+        "fully offline. Needs the ntasker[voice] extra -- install it on this "
+        "card or via `ntasker enable voice`."
     ),
     default_on=False,
     extra="voice",
@@ -61,8 +61,7 @@ def _js_strings() -> dict[str, str]:
         "voice_open_settings": _("Open settings"),
         # settings card
         "voice_vosk_missing": _(
-            "The speech recognition package is not installed. Run `ntasker enable voice` "
-            "in a terminal -- it installs the ntasker[voice] extra."
+            "The speech recognition package is not installed -- use the install button above."
         ),
         "voice_installed": _("Installed models"),
         "voice_none_installed": _("No model installed yet -- download one below."),

@@ -683,6 +683,14 @@ def build_js_strings() -> dict[str, str]:
         "agent_install_done": _("Integration installed."),
         "agent_install_failed": _("Installing the integration failed."),
         "agent_install_cli_hint": _("Or via CLI:"),
+        "plugin_extra_missing": _("Needs the ntasker[{extra}] extra, not installed yet: {pkgs}"),
+        "plugin_extra_install": _("Install now"),
+        "plugin_extra_installing": _("Installing..."),
+        "plugin_extra_done": _("ntasker[{extra}] installed."),
+        "plugin_extra_failed": _("Installing ntasker[{extra}] failed:"),
+        "plugin_extra_restart": _(
+            "ntasker[{extra}] is installed -- restart the server (Maintenance tab) so it takes effect."
+        ),
         "opencode_auto_label": _("Auto-approve actions (--auto)"),
         "opencode_auto_hint": _(
             "Run OpenCode sessions with --auto, so it accepts its own actions."
@@ -1336,6 +1344,30 @@ def api_agent_assets_install(key: str, payload: AssetsInstallIn) -> JSONResponse
     spec = get_spec(key)
     result = install_assets(spec, resolve_home(spec), command_name="task", force=payload.force)
     return JSONResponse(result.to_dict())
+
+
+@app.get("/api/plugins/install")
+def api_plugins_install_job() -> JSONResponse:
+    """The running or last extra install (see :func:`ntasker.plugins.install_job`)."""
+    return JSONResponse({"job": plugins.install_job()})
+
+
+@app.post("/api/plugins/{name}/install", status_code=202)
+def api_plugins_install(name: str) -> JSONResponse:
+    """Install the missing packages of a plugin's ``ntasker[<extra>]`` in the
+    background -- the Plugins tab's button, same command as ``ntasker enable``.
+    Returns the job; poll ``GET /api/plugins/install``. 404 unknown plugin,
+    400 nothing to install, 409 while another install runs.
+    """
+    try:
+        job = plugins.start_install(name)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=_("Unknown plugin")) from None
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return JSONResponse({"job": job}, status_code=202)
 
 
 @app.get("/api/plugins")

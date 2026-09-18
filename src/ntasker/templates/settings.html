@@ -302,8 +302,39 @@
                                         </label>
                                     </div>
                                     {# A plugin without settings is header-only. #}
-                                    {% if p.kind == 'agent' or p.fields or p.slot_templates %}
+                                    {% if p.kind == 'agent' or p.fields or p.slot_templates or p.extra %}
                                     <div class="card-body" x-show="pluginOn('{{ p.name }}')" x-cloak>
+                                        {% if p.extra %}
+                                        {# The plugin's ntasker[<extra>] packages: install from here (POST #}
+                                        {# /api/plugins/<name>/install), or restart once they are in.     #}
+                                        <template x-if="pluginMissing('{{ p.name }}').length">
+                                            <div class="alert alert-warning mb-3">
+                                                <div class="d-flex align-items-center flex-wrap gap-2">
+                                                    <span>
+                                                        <i class="ti ti-alert-triangle me-1"></i>
+                                                        <span x-text="$i18n('plugin_extra_missing', {extra: '{{ p.extra }}', pkgs: pluginMissing('{{ p.name }}').join(', ')})"></span>
+                                                    </span>
+                                                    <button type="button" class="btn btn-sm btn-primary ms-auto"
+                                                            :disabled="installRunning()" @click="installExtra('{{ p.name }}')">
+                                                        <span class="spinner-border spinner-border-sm me-1" x-show="installRunning('{{ p.name }}')"></span>
+                                                        <span x-text="installRunning('{{ p.name }}') ? $i18n('plugin_extra_installing') : $i18n('plugin_extra_install')"></span>
+                                                    </button>
+                                                </div>
+                                                <template x-if="installFailed('{{ p.name }}')">
+                                                    <div class="mt-2">
+                                                        <div x-text="$i18n('plugin_extra_failed', {extra: '{{ p.extra }}'})"></div>
+                                                        <pre class="mb-0 mt-1 small"><code x-text="installJob.cmd + '\n' + installJob.output"></code></pre>
+                                                    </div>
+                                                </template>
+                                            </div>
+                                        </template>
+                                        <template x-if="installRestartDue('{{ p.name }}')">
+                                            <div class="alert alert-info mb-3">
+                                                <i class="ti ti-refresh me-1"></i>
+                                                <span x-text="$i18n('plugin_extra_restart', {extra: '{{ p.extra }}'})"></span>
+                                            </div>
+                                        </template>
+                                        {% endif %}
                                         {% if p.kind == 'agent' %}
                                         <template x-if="agentFor('{{ p.name }}') && !agentFor('{{ p.name }}').available">
                                             <div class="alert alert-warning mb-3">

@@ -92,8 +92,7 @@ def resolve_update_command(setting: str | None) -> list[str]:
     """
     if setting and setting.strip():
         return shlex.split(setting)
-    exe = sys.executable.replace("\\", "/").lower()
-    if "/uv/tools/" in exe:
+    if install_needs_restart():
         return ["uv", "tool", "upgrade", "ntasker"]
     if _has_pip():
         return [sys.executable, "-m", "pip", "install", "-U", "ntasker"]
@@ -102,20 +101,30 @@ def resolve_update_command(setting: str | None) -> list[str]:
     return [sys.executable, "-m", "pip", "install", "-U", "ntasker"]
 
 
-def resolve_install_command(packages: list[str]) -> list[str]:
-    """Command that installs ``packages`` into the running interpreter's
-    environment -- the same detection as :func:`resolve_update_command`.
+def resolve_install_command(extra: str, packages: list[str]) -> list[str]:
+    """Command that installs the ``ntasker[extra]`` packages ``packages``
+    into the running interpreter's environment -- the same detection as
+    :func:`resolve_update_command`.
 
-    Inside a ``uv tool`` environment the packages are added with ``uv pip``;
-    note that ``uv tool upgrade`` re-resolves from the tool's receipt and
-    drops them again -- ``uv tool install 'ntasker[voice]'`` is the durable
-    form for such installs.
+    Inside a ``uv tool`` environment the extra is added to the tool's receipt
+    (``uv tool install 'ntasker[extra]'``) so ``uv tool upgrade`` keeps it;
+    ``uv pip install`` would be dropped by the next upgrade. That command
+    re-resolves ntasker itself too, so the caller should restart afterwards
+    (:func:`install_needs_restart`).
     """
+    if install_needs_restart():
+        return ["uv", "tool", "install", f"ntasker[{extra}]"]
     if _has_pip():
         return [sys.executable, "-m", "pip", "install", *packages]
     if shutil.which("uv"):
         return ["uv", "pip", "install", "--python", sys.executable, *packages]
     return [sys.executable, "-m", "pip", "install", *packages]
+
+
+def install_needs_restart() -> bool:
+    """Whether :func:`resolve_install_command` may replace ntasker's own
+    files (a ``uv tool`` environment), so the server should restart after."""
+    return "/uv/tools/" in sys.executable.replace("\\", "/").lower()
 
 
 def _has_pip() -> bool:

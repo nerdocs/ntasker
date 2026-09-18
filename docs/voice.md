@@ -12,14 +12,14 @@ Nothing leaves the machine; there is no cloud service involved. Background and a
 ntasker enable voice
 ```
 
-That is all: `enable` installs the missing packages of the `ntasker[voice]` extra --
-[Vosk](https://alphacephei.com/vosk/) (Apache-2.0, CPU only) -- into ntasker's own environment, the way
-`ntasker self-update` upgrades the package (pip if the interpreter has it, else `uv pip`), and switches the plugin
-on. `/settings` -> *Plugins* toggles it too, but
-cannot install packages; the card then says to run the command. `ntasker disable voice` switches it off.
+or `/settings` -> *Plugins* -> switch *Voice input* on and press *Install now* on its card. Either installs the missing
+packages of the `ntasker[voice]` extra -- [Vosk](https://alphacephei.com/vosk/) (Apache-2.0, CPU only) -- into
+ntasker's own environment, the way `ntasker self-update` upgrades the package (pip if the interpreter has it, else
+`uv pip`). `ntasker disable voice` or the switch turns it off again.
 
-Note for `uv tool` installs: `uv tool upgrade ntasker` re-resolves from the tool's receipt and drops packages added
-this way -- `uv tool install 'ntasker[voice]'` records the extra durably.
+In a `uv tool` home the install runs `uv tool install 'ntasker[voice]'` instead, which records the extra in the tool's
+receipt so `uv tool upgrade ntasker` keeps it -- and which replaces ntasker's own files, so restart the server
+afterwards (the card says so; *Maintenance* -> *Restart server*).
 
 ## Models
 

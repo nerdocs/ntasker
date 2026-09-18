@@ -5,6 +5,8 @@ All notable changes to ntasker.
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
 ## [Unreleased]
+Plugins: *Install now* button installs a plugin's missing `ntasker[<extra>]` packages from the settings card.
+Extras in a `uv tool` home are installed via `uv tool install 'ntasker[<extra>]'`, so `uv tool upgrade` keeps them.
 Settings: `quicktasks_bypass_lanes` (default on) -- Quicktasks start at once, outside the project lanes and locks.
 Sidebar: quick task -- one-line prompt + go button in the project row menu starts the agent with it directly.
 

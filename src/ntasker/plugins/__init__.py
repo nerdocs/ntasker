@@ -39,6 +39,8 @@ from __future__ import annotations
 import importlib
 import json
 import os
+import subprocess
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from importlib.resources import files
@@ -374,7 +376,8 @@ def missing_requirements(extra: str) -> list[str]:
 
     missing: list[str] = []
     for req in md.requires("ntasker") or []:
-        if f'extra == "{extra}"' not in req:
+        # The marker's quoting depends on the build backend / install mode.
+        if f'extra == "{extra}"' not in req and f"extra == '{extra}'" not in req:
             continue
         spec = req.split(";", 1)[0].strip()
         name = re.match(r"[A-Za-z0-9][A-Za-z0-9._-]*", spec)
@@ -383,6 +386,62 @@ def missing_requirements(extra: str) -> list[str]:
         except md.PackageNotFoundError:
             missing.append(spec)
     return missing
+
+
+# The one background install of a plugin's extra (the Plugins tab's button;
+# ``ntasker enable`` runs the same command in the foreground). One at a time;
+# the last result stays until the next start or a server restart, so the
+# page can still show "restart now" after a reload.
+_install_lock = threading.Lock()
+_install: dict[str, Any] | None = None
+
+
+def install_job() -> dict[str, Any] | None:
+    """The running or last extra install: ``{plugin, state, cmd, output, restart}``
+    with ``state`` in ``running`` / ``done`` / ``failed``."""
+    with _install_lock:
+        return dict(_install) if _install else None
+
+
+def start_install(name: str) -> dict[str, Any]:
+    """Install the missing packages of plugin ``name``'s extra in the
+    background. Raises ``KeyError`` for an unknown plugin, ``ValueError``
+    when it has no extra or nothing is missing, ``RuntimeError`` while
+    another install runs."""
+    global _install
+    from ntasker import service  # noqa: PLC0415
+
+    ctx = REGISTRY[name]
+    if not ctx.spec.extra:
+        raise ValueError(f"plugin {name!r} needs no extra")
+    missing = missing_requirements(ctx.spec.extra)
+    if not missing:
+        raise ValueError(f"ntasker[{ctx.spec.extra}] is already installed")
+    cmd = service.resolve_install_command(ctx.spec.extra, missing)
+    with _install_lock:
+        if _install and _install["state"] == "running":
+            raise RuntimeError("an install is already running")
+        _install = {
+            "plugin": name,
+            "state": "running",
+            "cmd": " ".join(cmd),
+            "output": "",
+            "restart": service.install_needs_restart(),
+        }
+        job = dict(_install)
+    threading.Thread(target=_run_install, args=(cmd,), daemon=True).start()
+    return job
+
+
+def _run_install(cmd: list[str]) -> None:
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True)  # noqa: S603 -- auto-detected installer
+        state, output = ("done" if proc.returncode == 0 else "failed"), proc.stderr or proc.stdout
+    except OSError as exc:
+        state, output = "failed", str(exc)
+    with _install_lock:
+        if _install:
+            _install.update(state=state, output=output.strip()[-2000:])
 
 
 def init_schema(conn: sqlite3.Connection) -> None:
@@ -411,6 +470,8 @@ def describe() -> list[dict[str, Any]]:
             "default_on": ctx.spec.default_on,
             "enabled": ctx.name not in off,
             "settings": "settings" in ctx.slots,
+            "extra": ctx.spec.extra,
+            "missing": missing_requirements(ctx.spec.extra) if ctx.spec.extra else [],
             "fields": [key for key, _v, _h, label in ctx.settings if label is not None],
             "icon": ctx.spec.icon,
             "image": ctx.agents[0].icon if ctx.agents else None,

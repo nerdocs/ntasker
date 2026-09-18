@@ -68,6 +68,8 @@ function settingsPage() {
         // Plugin list (GET /api/plugins), seeded server-side so the switches
         // and the rail badge render without a flash.
         plugins: cfg.plugins,
+        // Running / last install of a plugin's extra (GET /api/plugins/install).
+        installJob: null,
 
         async init() {
             this.readHash();
@@ -202,8 +204,61 @@ function settingsPage() {
             try {
                 const r = await fetch('/api/plugins');
                 if (r.ok) this.plugins = await r.json();
+                const j = await fetch('/api/plugins/install');
+                if (j.ok) this.installJob = (await j.json()).job;
             } catch (e) {
                 // Best-effort -- the seeded list stays.
+            }
+        },
+
+        // ---- plugin extras (ntasker[<extra>] packages) --------------------
+
+        pluginMissing(name) {
+            const p = this.plugins.find(p => p.name === name);
+            return (p && p.missing) || [];
+        },
+
+        installRunning(name) {
+            const j = this.installJob;
+            return !!j && j.state === 'running' && (!name || j.plugin === name);
+        },
+
+        installFailed(name) {
+            const j = this.installJob;
+            return !!j && j.state === 'failed' && j.plugin === name;
+        },
+
+        // A finished install in a `uv tool` home replaced ntasker's own files
+        // too: the running server must restart before the plugin can use them.
+        installRestartDue(name) {
+            const j = this.installJob;
+            return !!j && j.state === 'done' && j.restart && j.plugin === name && !this.pluginMissing(name).length;
+        },
+
+        // The card's "Install now": POST starts the install, then poll the job
+        // until it ends. Success reloads the page so the plugin's own settings
+        // slot (rendered server-side) sees the packages.
+        async installExtra(name) {
+            if (this.installRunning()) return;
+            try {
+                const r = await fetch(`/api/plugins/${name}/install`, {method: 'POST'});
+                if (!r.ok) { this.toast((await r.json()).detail || this.i18n('plugin_extra_failed', {extra: name})); return; }
+                this.installJob = (await r.json()).job;
+            } catch (e) {
+                return;
+            }
+            while (this.installRunning()) {
+                await new Promise(res => setTimeout(res, 1500));
+                try {
+                    const j = await fetch('/api/plugins/install');
+                    if (j.ok) this.installJob = (await j.json()).job;
+                } catch (e) { /* keep polling */ }
+            }
+            await this.refreshPlugins();
+            if (this.installJob && this.installJob.state === 'done') {
+                const p = this.plugins.find(p => p.name === name);
+                this.toast(this.i18n('plugin_extra_done', {extra: p ? p.extra : name}));
+                if (!this.installJob.restart) location.reload();
             }
         },
 

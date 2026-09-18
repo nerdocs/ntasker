@@ -104,9 +104,17 @@ usual.
 ## API
 
 `GET /api/plugins` lists every built-in with `name`, `label`, `description`, `kind`, `default_on`, `enabled`,
-`fields` (its labelled settings keys), `icon`/`image` and `settings` (whether it fills the `settings` slot; toggling
-such a plugin reloads the page).
+`fields` (its labelled settings keys), `icon`/`image`, `settings` (whether it fills the `settings` slot; toggling
+such a plugin reloads the page), `extra` and `missing` (the packages of its `ntasker[<extra>]` extra that are not
+installed).
 Toggling goes through `PUT /api/settings/plugins_disabled` (default-on plugins) or `plugins_enabled` (opt-in).
+
+`POST /api/plugins/<name>/install` installs a plugin's missing extra packages in the background (202 + the job; 400
+nothing to install, 409 while one runs) -- the card's *Install now* button, the same command `ntasker enable` runs.
+`GET /api/plugins/install` returns the running or last job: `{plugin, state: running|done|failed, cmd, output,
+restart}`. `restart` is true in a `uv tool` home, where the install goes through `uv tool install 'ntasker[<extra>]'`
+(recorded in the receipt, so `uv tool upgrade` keeps it) and thereby replaces ntasker's own files -- restart the server
+afterwards.
 
 ## Not included
 

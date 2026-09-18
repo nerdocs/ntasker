@@ -1841,7 +1841,7 @@
          :class="diffTask ? 'show d-block' : ''"
          :style="diffTask ? 'background-color: rgba(0,0,0,0.4)' : ''"
          @keydown.escape.window="closeDiff()">
-        <div class="modal-dialog modal-xl modal-dialog-scrollable" role="document" x-show="diffTask" @click.outside="closeDiff()">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable claude-diff-dialog" role="document" x-show="diffTask" @click.outside="closeDiff()">
             <div class="modal-content claude-diff-modal" x-show="diffTask">
                 <div class="modal-header">
                     <h5 class="modal-title">

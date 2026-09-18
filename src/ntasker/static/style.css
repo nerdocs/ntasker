@@ -621,6 +621,12 @@ body {
 .claude-diff-modal {
     height: 85vh;
 }
+/* Diff lines are wide: use nearly the whole viewport, not just `modal-xl`. */
+@media (min-width: 1200px) {
+    .claude-diff-dialog {
+        max-width: calc(100vw - 4rem);
+    }
+}
 .claude-diff-modal .claude-diff-page {
     border: 0;
     margin: 0;

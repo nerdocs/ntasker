@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: ntasker 3.5.0\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-09-18 12:31+0200\n"
+"POT-Creation-Date: 2026-09-18 12:38+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -1329,7 +1329,6 @@ msgstr ""
 
 #: src/ntasker/cli.py:129 src/ntasker/templates/index.html:605
 #: src/ntasker/templates/index.html:1124 src/ntasker/templates/index.html:1422
-#: src/ntasker/templates/index.html:1643
 msgid "Draft"
 msgstr ""
 
@@ -3494,6 +3493,10 @@ msgstr ""
 
 #: src/ntasker/templates/index.html:783
 msgid "Create + Run"
+msgstr ""
+
+#: src/ntasker/templates/index.html:1643
+msgid "This task is a draft"
 msgstr ""
 
 #: src/ntasker/templates/info.html:133

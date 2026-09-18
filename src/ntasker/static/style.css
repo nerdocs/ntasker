@@ -631,9 +631,12 @@ body {
     line-height: 1.4;
     background: transparent;
     border: 0;
+    /* Tabler's pre colour assumes its dark pre background; on the transparent
+     * page ground it is near-white, so fall back to the body text colour. */
+    color: var(--tblr-body-color);
 }
-.claude-diff-patch .diff-add { background-color: rgba(var(--tblr-success-rgb), 0.15); }
-.claude-diff-patch .diff-del { background-color: rgba(var(--tblr-danger-rgb), 0.15); }
+.claude-diff-patch .diff-add { background-color: rgba(var(--tblr-success-rgb), 0.3); }
+.claude-diff-patch .diff-del { background-color: rgba(var(--tblr-danger-rgb), 0.3); }
 .claude-diff-patch .diff-hunk { color: var(--tblr-info); }
 .claude-diff-patch .diff-meta { color: var(--tblr-secondary); }
 

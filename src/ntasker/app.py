@@ -218,6 +218,8 @@ class TaskCreate(BaseModel):
     # Extra project names whose directories this task's run holds besides its
     # own project's (see ntasker.locks). The own project is dropped on insert.
     locks: list[str] = Field(default_factory=list)
+    # Draft: parked idea, never started by anyone (see the schema comment).
+    draft: bool = False
 
 
 class TaskUpdate(BaseModel):
@@ -233,6 +235,7 @@ class TaskUpdate(BaseModel):
     # agent). Validated against the registry on update.
     agent: str | None = None
     archived: bool | None = None
+    draft: bool | None = None  # True also drops the task from the queue
     tags: list[str] | None = None  # None = unchanged; [] = clear all
     depends: list[int] | None = None  # None = unchanged; [] = clear all
     # Manual drag&drop position (fractional). None = unchanged. Written as a
@@ -490,6 +493,8 @@ def build_js_strings() -> dict[str, str]:
         "locks_placeholder": _("project name, Enter"),
         "remove_lock": _("Remove lock"),
         "task_locks_badge": _("Also locks the directories of:"),
+        "draft_no_run": _("Draft -- never started. Untick Draft to run it."),
+        "draft_badge": _("Draft: never started by anyone"),
         # Report modal (the agent's final report)
         "report_open": _("Show report"),
         "report_title": _("Report"),
@@ -1489,8 +1494,10 @@ def api_queue_run(payload: RunIn) -> JSONResponse:
 
     Also the way to run an entry again whose session ended before it was done
     -- it clears that flag (see :func:`ntasker.taskqueue.enqueue`), which
-    a plain ``PUT /api/queue`` reorder deliberately does not.
+    a plain ``PUT /api/queue`` reorder deliberately does not. 409 for a draft.
     """
+    if taskqueue.is_draft(payload.id):
+        raise HTTPException(status_code=409, detail=_("Draft tasks are never started"))
     return JSONResponse(_queue_payload(taskqueue.enqueue(payload.id)))
 
 
@@ -2219,8 +2226,8 @@ def api_create_task(payload: TaskCreate) -> JSONResponse:
         cur = conn.execute(
             """
             INSERT INTO tasks (project, title, description, phase, priority, agent,
-                               locks, sort_order)
-            VALUES (?, ?, ?, ?, ?, ?, ?,
+                               locks, draft, sort_order)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?,
                     (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM tasks))
             """,
             (
@@ -2231,6 +2238,7 @@ def api_create_task(payload: TaskCreate) -> JSONResponse:
                 payload.priority,
                 payload.agent,
                 locks.dump(locks.normalize(payload.locks, project_value)),
+                1 if payload.draft else 0,
             ),
         )
         # sqlite3 types lastrowid as ``int | None``; after a successful INSERT
@@ -2294,6 +2302,9 @@ def api_update_task(task_id: int, payload: TaskUpdate) -> JSONResponse:
     if "archived" in fields:
         fields["archived"] = 1 if fields["archived"] else 0
 
+    if "draft" in fields:
+        fields["draft"] = 1 if fields["draft"] else 0
+
     if "report" in fields:
         fields.update(report_fields(fields["report"]))
 
@@ -2322,6 +2333,12 @@ def api_update_task(task_id: int, payload: TaskUpdate) -> JSONResponse:
                 stored = cur.fetchone()
                 desc = stored["description"] if stored else None
             fields["title"] = title_from_description(desc)
+
+        # A draft cannot be queued -- flagging a queued task throws it out at
+        # once (the worker would retire it on its next tick anyway).
+        if fields.get("draft"):
+            fields["queue_order"] = None
+            fields["session_ended_at"] = None
 
         if fields:
             set_clause = ", ".join(f"{k} = ?" for k in fields)

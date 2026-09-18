@@ -210,7 +210,9 @@ agent's own initiative -- the trigger must come from the user.
 does this on load (skipped for archived / `status=done` tasks, and on a
 **project mismatch**: if the cwd is not inside the task's project dir the
 loader emits a `WARNUNG -- Projekt-Mismatch` banner, defers `phase=wip`,
-and the agent must ask the user before starting). Second,
+and the agent must ask the user before starting; a **draft** task makes
+the loader stop with an `ENTWURF` message -- nothing is loaded or
+started). Second,
 the review-handoff (see section 6): when the user assigned `#<id>` and the
 agent has finished its part, it moves the task to `phase=review` so the
 user can validate and close it. Neither is "marking the task done" --
@@ -338,6 +340,7 @@ either `""` or `null` for "no project" both work.
 | `created_at` | TEXT | UTC ISO |
 | `completed_at` | TEXT NULL | UTC ISO, auto-set on done |
 | `archived` | INT | 0/1 -- task remains searchable |
+| `draft` | INT | 0/1 -- a parked idea: never started (not queueable, run/resume/`/task` refuse it) |
 | tags | n:m | via `tags` + `task_tags` tables |
 | depends | n:m | via `task_deps(task_id, depends_on_id)`, FK CASCADE; kept acyclic |
 | `locks` | TEXT JSON | extra project names whose directories the run holds (own project implicit) |

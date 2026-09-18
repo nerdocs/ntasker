@@ -598,6 +598,13 @@
                                         </template>
                                     </select>
                                 </div>
+                                {# Draft: a parked idea -- never started by the queue, the run button or /task. #}
+                                <div class="col-md-2 d-flex align-items-end">
+                                    <label class="form-check mb-2" :title="$i18n('draft_badge')">
+                                        <input type="checkbox" class="form-check-input" x-model="form.draft">
+                                        <span class="form-check-label">{{ t('Draft') }}</span>
+                                    </label>
+                                </div>
                                 <div class="col-md-3">
                                     <label class="form-label">{{ t('Title') }}</label>
                                     <input type="text" class="form-control" x-model="form.title" maxlength="500"
@@ -769,7 +776,7 @@
                                     {# Create + immediately hand the task to its agent -- only when that agent's CLI + a PTY are available. #}
                                     <button type="button" class="btn btn-sm btn-claude-cta ms-2"
                                             x-show="agentAvailable(form.agent || defaultAgent)"
-                                            :disabled="!form.title.trim()"
+                                            :disabled="!form.title.trim() || form.draft"
                                             @click="createTask(true)"
                                             :title="$i18n('claude_run') + ' (' + agentLabel(form.agent || defaultAgent) + ')'">
                                         <img :src="agentIconUrl({agent: form.agent})" class="claude-logo-icon me-1" alt="">
@@ -1111,6 +1118,12 @@
                                                     <i class="ti ti-lock me-1"></i><span x-text="task.locks.length"></span>
                                                 </span>
                                             </template>
+                                            {# Draft badge -- parked idea, never started. #}
+                                            <template x-if="task.draft">
+                                                <span class="badge bg-secondary-lt" :title="$i18n('draft_badge')">
+                                                    <i class="ti ti-pencil me-1"></i>{{ t('Draft') }}
+                                                </span>
+                                            </template>
                                         </div>
 
                                         <div x-show="task._expanded && task.description"
@@ -1141,7 +1154,7 @@
                                                     <template x-if="['running', 'external'].includes(taskRunPhase(task.id))"><span class="spinner-border spinner-border-sm text-secondary me-1"></span></template>
                                                     <template x-if="taskRunPhase(task.id) === 'waiting'"><i class="ti ti-help fs-3 text-orange me-1"></i></template>
                                                     <button class="btn btn-sm btn-claude" @click="runNext(task)"
-                                                            :disabled="taskRunPhase(task.id) === 'external'"
+                                                            :disabled="taskRunPhase(task.id) === 'external' || (task.draft && !taskRunPhase(task.id))"
                                                             :class="{'btn-claude-waiting': taskRunPhase(task.id) === 'waiting'}"
                                                             :aria-label="runButtonTitle(task)"
                                                             :title="runButtonTitle(task)">
@@ -1302,7 +1315,7 @@
                                                         <template x-if="taskRunPhase(task.id) === 'waiting'"><i class="ti ti-help fs-3 text-orange me-1"></i></template>
                                                         <button class="btn btn-sm btn-claude px-1 py-0"
                                                                 @click.stop="runNext(task)"
-                                                                :disabled="taskRunPhase(task.id) === 'external'"
+                                                                :disabled="taskRunPhase(task.id) === 'external' || (task.draft && !taskRunPhase(task.id))"
                                                                 :class="{'btn-claude-waiting': taskRunPhase(task.id) === 'waiting'}"
                                                                 :aria-label="runButtonTitle(task)"
                                                                 :title="runButtonTitle(task)">
@@ -1402,6 +1415,11 @@
                                                 <template x-if="task.locks && task.locks.length">
                                                     <span class="badge bg-yellow-lt" :title="lockBadgeTitle(task)">
                                                         <i class="ti ti-lock me-1"></i><span x-text="task.locks.length"></span>
+                                                    </span>
+                                                </template>
+                                                <template x-if="task.draft">
+                                                    <span class="badge bg-secondary-lt" :title="$i18n('draft_badge')">
+                                                        <i class="ti ti-pencil me-1"></i>{{ t('Draft') }}
                                                     </span>
                                                 </template>
 
@@ -1618,6 +1636,12 @@
                                         x-text="a.label + (a.available ? '' : ' — ' + $i18n('agent_not_installed_hint'))"></option>
                             </template>
                         </select>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-check" :title="$i18n('draft_badge')">
+                            <input type="checkbox" class="form-check-input" x-model="editing.draft">
+                            <span class="form-check-label">{{ t('Draft') }}</span>
+                        </label>
                     </div>
                     <div class="mb-2">
                         <label class="form-label">{{ t('Title') }}</label>

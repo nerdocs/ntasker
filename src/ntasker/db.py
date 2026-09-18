@@ -99,7 +99,11 @@ CREATE TABLE IF NOT EXISTS tasks (
     -- for every directory the task's last fresh run holds (its own plus its
     -- locks), recorded at spawn. A resume keeps them, so the diff spans the
     -- whole run. NULL until the first run.
-    run_baselines TEXT
+    run_baselines TEXT,
+    -- Draft: an idea parked as a task. A draft is never started -- not by the
+    -- queue (it cannot be queued), not by hand (run/resume refuse it), not
+    -- via ``/task`` (the loader aborts). Setting it dequeues the task.
+    draft INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_archived ON tasks(archived);
 CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project);
@@ -218,6 +222,11 @@ def init_db(path: Path | None = None) -> None:
         # v3.4 run diff baselines (see the schema comment).
         try:
             conn.execute("ALTER TABLE tasks ADD COLUMN run_baselines TEXT")
+        except sqlite3.OperationalError:
+            pass
+        # v3.6 draft flag (see the schema comment).
+        try:
+            conn.execute("ALTER TABLE tasks ADD COLUMN draft INTEGER NOT NULL DEFAULT 0")
         except sqlite3.OperationalError:
             pass
         # v3.2: the queue no longer acts on the agent's hand-off, so the
@@ -414,6 +423,7 @@ def row_to_task(
         "created_at": row["created_at"],
         "completed_at": row["completed_at"],
         "archived": bool(row["archived"]),
+        "draft": bool(row["draft"]),
         "agent": row["agent"],
         "session_id": row["session_id"],
         "sort_order": row["sort_order"],

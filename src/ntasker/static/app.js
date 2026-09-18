@@ -392,6 +392,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             depInput: '',      // current text in the dependency-input
             locks: [],         // extra projects whose dirs the run holds
             lockInput: '',     // current text in the lock-input
+            draft: false,      // parked idea: never started by anyone
         },
         // Dependency autocomplete suggestions for the currently focused
         // input (form or edit -- only one is open at a time).
@@ -1573,7 +1574,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         _queueableDrag() {
             if (this.dragSource !== 'board' || this.draggedTaskId == null) return null;
             const task = this.tasks.find(t => t.id === this.draggedTaskId);
-            if (!task || task.status !== 'open' || task.archived) return null;
+            if (!task || task.status !== 'open' || task.archived || task.draft) return null;
             if (!this.taskRunnable(task) || this.queuePosition(task.id)) return null;
             return task;
         },
@@ -1815,6 +1816,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 tags: this.form.tags,
                 depends: this.form.depends.map(d => d.id),
                 locks: this.form.locks,
+                draft: this.form.draft,
             };
             if (typeof this.pluginCreatePayload === 'function') this.pluginCreatePayload(body);
             const r = await fetch('/api/tasks', {
@@ -1838,6 +1840,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             this.form.depInput = '';
             this.form.locks = [];
             this.form.lockInput = '';
+            this.form.draft = false;
             if (typeof this.pluginResetForm === 'function') this.pluginResetForm();
             // Keep project selection for rapid same-project entry.
             await this.refreshAll();
@@ -1962,6 +1965,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 tags: t.tags,
                 depends: (t.depends || []).map(d => d.id),
                 locks: t.locks || [],
+                draft: !!t.draft,
             };
             const r = await fetch(`/api/tasks/${t.id}`, {
                 method: 'PATCH',
@@ -2731,7 +2735,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         },
         // Resume on a done task, shown in place of the run button.
         canResume(task) {
-            return !!(task && task.status === 'done' && this.sessionResumable(task));
+            return !!(task && task.status === 'done' && !task.draft && this.sessionResumable(task));
         },
         // Resume on an ended queue entry: reopen the conversation via the
         // worker instead of starting the task over (see resumeQueued).
@@ -2827,6 +2831,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             const phase = this.taskRunPhase(task.id);
             if (phase === 'waiting') return _i('claude_waiting');
             if (phase === 'external') return _i('claude_external');
+            if (task.draft && !phase) return _i('draft_no_run');
             const agent = ' (' + this.agentLabel(this.taskAgentKey(task)) + ')';
             if (phase === 'running') return _i('claude_switch_session') + agent;
             // Damped task: lead with why it looks faded before the plain "run".
@@ -2918,6 +2923,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             const id = task.id;
             const phase = this.taskRunPhase(id);
             if (phase === 'external') return;   // nothing to attach to; button is disabled anyway
+            if (task.draft && !phase) return;   // drafts are never started; button is disabled anyway
             if (phase) {
                 this.activateTab(id);
                 return;

@@ -89,14 +89,18 @@ def terminal_available(spec: AgentSpec) -> tuple[bool, str | None]:
     return True, None
 
 
+class DraftTaskError(RuntimeError):
+    """Raised by :func:`_start_session` for a draft task -- drafts never start."""
+
+
 def _task_row(task_id: int):
-    """The task's ``agent`` + ``project`` columns, or ``None`` (missing / DB hiccup)."""
+    """The task's ``agent`` + ``project`` + ``draft`` columns, or ``None`` (missing / DB hiccup)."""
     from ntasker.db import get_conn  # noqa: PLC0415
 
     try:
         with get_conn() as conn:
             return conn.execute(
-                "SELECT agent, project FROM tasks WHERE id = ?", (task_id,)
+                "SELECT agent, project, draft FROM tasks WHERE id = ?", (task_id,)
             ).fetchone()
     except Exception:  # noqa: BLE001 -- a DB hiccup must not crash the spawn path
         return None
@@ -530,6 +534,10 @@ def _start_session(
     from ntasker.settings import get_dir_locks  # noqa: PLC0415 -- lazy: avoid cycle
 
     row = _task_row(task_id)
+    # The one choke point every spawn passes (queue, resume): a draft is an
+    # idea on file, never a job -- refuse here so no caller can slip past.
+    if row is not None and row["draft"]:
+        raise DraftTaskError(f"task #{task_id} is a draft")
     spec = get_spec(resolve_agent_key(row["agent"] if row else None))
     cwd = default_cwd_for_project(row["project"] if row else None)
     # ntasker's Claude Code hooks (explicit waiting/running state, and the
@@ -592,7 +600,7 @@ def start_detached_session(
     watch or take over. ``quick`` = a sidebar quick run (blank prompt, see
     :func:`quick_run_system_prompt`); ``resume`` reopens the task's stored
     session instead of seeding a fresh one, and leaves the phase untouched.
-    Returns ``False`` when the task already has a live session.
+    Returns ``False`` when the task already has a live session, or is a draft.
 
     Must be called from the event loop: the PTY reader is registered on the
     running loop (see :func:`_attach_reader`).
@@ -601,9 +609,12 @@ def start_detached_session(
     if sess is not None and sess.alive:
         return False
     SESSIONS.pop(task_id, None)   # drop a stale dead session before replacing it
+    try:
+        _start_session(task_id, seed=seed, quick=quick, resume=resume)
+    except DraftTaskError:
+        return False
     if not resume:
         mark_wip(task_id)
-    _start_session(task_id, seed=seed, quick=quick, resume=resume)
     return True
 
 
@@ -811,7 +822,11 @@ async def serve(websocket: WebSocket, task_id: int) -> None:
             return
         if sess is not None:  # stale dead session -> replace
             SESSIONS.pop(task_id, None)
-        sess = _start_session(task_id, resume=True)
+        try:
+            sess = _start_session(task_id, resume=True)
+        except DraftTaskError:
+            await websocket.send_json({"type": "error", "error": "draft tasks are never started"})
+            return
 
     queue: asyncio.Queue = asyncio.Queue(maxsize=2000)
     sess.subscribers.add(queue)

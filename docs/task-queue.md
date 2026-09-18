@@ -22,6 +22,15 @@ hand-off is a phase change like any other -- the task waits in the review column
 next task of that project starts once you close it. A session that ends before the task is done leaves its entry
 queued, flagged **ended**, blocking its lane until you have looked at it.
 
+## Drafts
+
+A task flagged **Draft** (checkbox in the new-task form and the edit dialog, `--draft` on the CLI, `draft` in the
+API) is an idea on file, not a job: it is never started -- not by the queue, not by hand, not via `/task`. It cannot
+be queued (drop refused, `queue add` and the run button refuse it, `PUT /api/queue` drops it silently), flagging a
+queued task throws it out of the queue at once, resume is refused, and the `/task` loader stops with an `ENTWURF`
+message before the agent sees any task text. The spawn itself refuses a draft as the last line of defence. Untick
+Draft to release the task.
+
 ## The panel
 
 **One column per project.** The worker runs one task per project at a time, so a column is literally one execution lane:

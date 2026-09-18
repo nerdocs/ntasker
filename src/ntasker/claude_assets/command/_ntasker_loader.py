@@ -332,6 +332,14 @@ def main(argv: list[str]) -> int:
             file=sys.stderr,
         )
         return 1
+    # A draft is an idea on file, not a job: stop here -- no task text, no
+    # phase change, no session registration -- so nothing downstream can act.
+    if data.get("draft"):
+        print(
+            f"ENTWURF -- Task #{tid} ist als Entwurf (draft) markiert und wird nicht\n"
+            "gestartet. Nichts tun; dem User nur diese Meldung zeigen."
+        )
+        return 1
     # Detect a project mismatch BEFORE marking the task in progress: if the
     # current directory is not inside the task's project, the agent must ask
     # the user first -- so defer phase=wip until they confirm.

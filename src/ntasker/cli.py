@@ -126,6 +126,7 @@ def _print_task_detail(t: dict) -> None:
     dep_str = ", ".join(f"#{d['id']}{'' if d['done'] else ' (open)'}" for d in deps) or "-"
     print(f"  {_('Depends on'):<14}{dep_str}")
     print(f"  {_('Archived'):<14}{bool(t.get('archived'))}")
+    print(f"  {_('Draft'):<14}{bool(t.get('draft'))}")
     print(f"  {_('Created'):<14}{t.get('created_at') or '-'}")
     if t.get("completed_at"):
         print(f"  {_('Completed'):<14}{t['completed_at']}")
@@ -693,8 +694,8 @@ def cmd_add(args: argparse.Namespace) -> int:
                 )
                 return 2
         cur = conn.execute(
-            "INSERT INTO tasks (project, title, description, phase, priority, agent, locks) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO tasks (project, title, description, phase, priority, agent, locks, draft) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 args.project,
                 title_value,
@@ -703,6 +704,7 @@ def cmd_add(args: argparse.Namespace) -> int:
                 args.priority,
                 args.agent,
                 locks.dump(locks.normalize(_parse_locks(args.locks), args.project)),
+                1 if args.draft else 0,
             ),
         )
         # sqlite3 types lastrowid as ``int | None``; after a successful INSERT
@@ -843,6 +845,11 @@ def cmd_patch(args: argparse.Namespace) -> int:
         fields["agent"] = candidate or None
     if args.archived is not None:
         fields["archived"] = 1 if args.archived else 0
+    if args.draft is not None:
+        fields["draft"] = 1 if args.draft else 0
+        if args.draft:   # a draft cannot stay queued (mirrors the API)
+            fields["queue_order"] = None
+            fields["session_ended_at"] = None
     if args.locks is not None:
         fields["locks"] = _parse_locks(args.locks)   # normalised below, once the project is known
     if args.report is not None:
@@ -1108,11 +1115,17 @@ def _reject_unqueueable(task_ids: list[int]) -> int | None:
     with get_conn() as conn:
         for tid in task_ids:
             row = conn.execute(
-                "SELECT status, archived FROM tasks WHERE id = ?", (tid,)
+                "SELECT status, archived, draft FROM tasks WHERE id = ?", (tid,)
             ).fetchone()
             if row is None:
                 print(_("ntasker: task #{id} not found").format(id=tid), file=sys.stderr)
                 return 1
+            if row["draft"]:
+                print(
+                    _("ntasker: #{id} is a draft -- drafts are never started").format(id=tid),
+                    file=sys.stderr,
+                )
+                return 2
             if row["archived"] or row["status"] != "open":
                 print(
                     _("ntasker: #{id} is not open -- only open tasks can be queued").format(
@@ -2134,6 +2147,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--locks",
         help=_("Comma-separated extra projects whose directories the run holds."),
     )
+    sp_add.add_argument(
+        "--draft", action="store_true", help=_("Park as a draft: never started by anyone.")
+    )
     sp_add.set_defaults(func=cmd_add)
 
     # done ----------------------------------------------------------------
@@ -2174,6 +2190,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--archived",
         type=lambda v: v.lower() in {"1", "true", "yes", "y"},
         default=None,
+    )
+    sp_patch.add_argument(
+        "--draft",
+        type=lambda v: v.lower() in {"1", "true", "yes", "y"},
+        default=None,
+        help=_("true parks the task as a draft (and drops it from the queue); false releases it."),
     )
     sp_patch.add_argument(
         "--depends",

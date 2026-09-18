@@ -12,6 +12,8 @@ phase "wip" (In Progress):
 
 Then work the task:
 
+0. If the loader printed `ENTWURF` (the task is a draft), stop right here:
+   tell the user the task is a draft and is not started. Nothing else.
 1. Read the loaded task data.
 2. Make sure you are in the right project directory. If the loader printed a
    project-mismatch warning, stop and ask the user whether to proceed here or

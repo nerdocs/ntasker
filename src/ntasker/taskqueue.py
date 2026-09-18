@@ -6,7 +6,7 @@ does exactly two things:
 
 * **retire** entries that are finished: the task is ``status=done`` (closed by
   the user, or by the agent itself when the task told it to), or it was
-  archived / deleted;
+  archived / deleted -- or flagged ``draft``, which can never be queued;
 * **start** the head-most startable task of every project that has no live
   session of an *open* task yet -- one concurrent run per project, so several
   projects progress in parallel while a single project stays strictly
@@ -111,8 +111,9 @@ def set_queue(ids: list[int]) -> list[sqlite3.Row]:
     The whole column is rewritten as a dense 1..n sequence: the frontend owns
     the ordered list and PUTs it after every drop, which keeps add / reorder /
     remove a single operation instead of three. Ids that are not open, are
-    archived, or do not exist are dropped silently -- the worker retires exactly
-    those anyway, and a stale browser list must not resurrect them.
+    archived, are drafts, or do not exist are dropped silently -- the worker
+    retires exactly those anyway, and a stale browser list must not resurrect
+    them.
     """
     with get_conn() as conn:
         conn.execute("UPDATE tasks SET queue_order = NULL WHERE queue_order IS NOT NULL")
@@ -120,7 +121,7 @@ def set_queue(ids: list[int]) -> list[sqlite3.Row]:
         for tid in ids:
             cur = conn.execute(
                 "UPDATE tasks SET queue_order = ? "
-                "WHERE id = ? AND archived = 0 AND status = 'open'",
+                "WHERE id = ? AND archived = 0 AND status = 'open' AND draft = 0",
                 (float(position + 1), int(tid)),
             )
             if cur.rowcount:
@@ -148,12 +149,21 @@ def enqueue(task_id: int) -> list[sqlite3.Row]:
     spawns: a task waiting behind a running one is in progress from the
     user's point of view, and leaving it in ``planned`` misleads the board.
     """
+    if is_draft(task_id):
+        return load_queue()
     clear_ended([task_id])   # "run it again" for an entry whose session ended
     mark_wip(task_id)
     ids = [int(r["id"]) for r in load_queue()]
     if task_id in ids:
         return load_queue()
     return set_queue([*ids, task_id])
+
+
+def is_draft(task_id: int) -> bool:
+    """True when the task is a draft (never to be started); False when missing."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT draft FROM tasks WHERE id = ?", (task_id,)).fetchone()
+    return bool(row and row["draft"])
 
 
 def clear_ended(ids: list[int]) -> None:
@@ -370,8 +380,11 @@ def tick() -> None:
     # Finished: ``status=done`` (the user closed it, or the agent did because
     # the task told it to) or archived. The entry leaves the queue; a done
     # task's session is already being killed by ``_kill_done``. A review
-    # hand-off is not a finish.
-    retired = [int(r["id"]) for r in rows if r["status"] == "done" or r["archived"]]
+    # hand-off is not a finish. A draft leaves too (a direct DB write can
+    # flag a queued row) -- it must never reach the start step.
+    retired = [
+        int(r["id"]) for r in rows if r["status"] == "done" or r["archived"] or r["draft"]
+    ]
     if retired:
         with get_conn() as conn:
             _dequeue(conn, retired)

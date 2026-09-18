@@ -20,6 +20,8 @@ You have been handed task #$ARGUMENTS from nTasker.
 > a project-mismatch warning** (see step 2) -- in that case set `phase=wip`
 > yourself only once the user confirms.
 
+0. **If the loader printed `ENTWURF`** (the task is a draft), STOP right here:
+   tell the user the task is a draft and is not started. Nothing else.
 1. **Read the task data above** (title, description, project, tags, phase, priority).
 2. **Make sure you are in the right project.** If the loader printed a
    **`WARNUNG -- Projekt-Mismatch`** banner (your current directory is not

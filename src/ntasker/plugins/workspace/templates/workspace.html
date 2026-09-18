@@ -35,24 +35,8 @@
     </header>
 
     <div class="page-wrapper">
-        <div class="page-header d-print-none">
-            <div class="container-fluid">
-                <div class="row g-2 align-items-center">
-                    <div class="col">
-                        <h2 class="page-title">
-                            <i class="ti ti-layout-grid me-2 fs-2"></i>
-                            {{ t('Workspace') }}
-                        </h2>
-                    </div>
-                    <div class="col-auto">
-                        <a href="/" class="btn btn-sm btn-ghost-secondary">
-                            <i class="ti ti-arrow-left me-1 fs-3"></i>
-                            {{ t('back to tasks') }}
-                        </a>
-                    </div>
-                </div>
-            </div>
-        </div>
+        {% set page_icon = 'ti-layout-grid' %}{% set page_title = t('Workspace') %}
+        {% include "_page_header.html" %}
 
         <div class="page-body">
             <div class="container-fluid">

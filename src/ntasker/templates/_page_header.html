@@ -1,0 +1,19 @@
+{# Page header of the secondary pages: back button, then icon + title. The #}
+{# back button always sits LEFT of the title, never on the right -- house #}
+{# rule. Callers `{% set page_icon %}` / `{% set page_title %}` before including. #}
+<div class="page-header d-print-none">
+    <div class="container-fluid">
+        <div class="row g-2 align-items-center">
+            <div class="col d-flex align-items-center">
+                <a href="/" class="btn btn-icon btn-ghost-secondary me-2"
+                   title="{{ t('back to tasks') }}" aria-label="{{ t('back to tasks') }}">
+                    <i class="ti ti-arrow-left fs-2"></i>
+                </a>
+                <h2 class="page-title">
+                    <i class="ti {{ page_icon }} me-2 fs-2"></i>
+                    {{ page_title }}
+                </h2>
+            </div>
+        </div>
+    </div>
+</div>

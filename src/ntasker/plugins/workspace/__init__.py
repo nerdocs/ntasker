@@ -107,6 +107,8 @@ def _js_strings() -> dict[str, str]:
         "ws_secret_empty": _("Empty value"),
         "ws_config_missing": _("No Claude Code config found at"),
         "ws_plugin": _("Plugin"),
+        "ws_readonly": _("read-only"),
+        "ws_readonly_hint": _("Linked in from outside the skills directory -- viewable there, not here."),
         "ws_bundles": _("Bundles:"),
         # Editing, browsing
         "ws_edit": _("Edit"),

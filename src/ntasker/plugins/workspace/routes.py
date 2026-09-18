@@ -12,7 +12,7 @@ import shutil
 import subprocess
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel
 
 from ntasker.i18n import _
@@ -68,9 +68,26 @@ class WorkspaceDocx(BaseModel):
     text: str
 
 
-@router.get("/workspace", response_class=HTMLResponse)
-def workspace_page(request: Request) -> HTMLResponse:
-    """Workspace page: skills, knowledge base, team, documents, tooling."""
+#: The page's tabs, each addressable as ``/workspace/<tab>``.
+TABS = ("skills", "wiki", "team", "docs", "tooling")
+
+
+@router.get("/workspace")
+def workspace_root() -> RedirectResponse:
+    """``/workspace`` is the first tab -- redirect so every tab has one URL."""
+    return RedirectResponse(f"/workspace/{TABS[0]}", status_code=307)
+
+
+@router.get("/workspace/{tab}", response_class=HTMLResponse)
+def workspace_page(request: Request, tab: str) -> HTMLResponse:
+    """Workspace page: skills, knowledge base, team, documents, tooling.
+
+    The tab is part of the path so each one can be linked directly; the
+    page itself is the same for all of them (Alpine reads the tab from
+    ``location.pathname``).
+    """
+    if tab not in TABS:
+        raise HTTPException(status_code=404)
     # Lazy: the page renderer lives in ntasker.app, which imports this
     # plugin at load -- importing it at module level would be a cycle.
     from ntasker import __version__ as VERSION  # noqa: PLC0415

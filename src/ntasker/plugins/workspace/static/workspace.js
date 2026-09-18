@@ -53,11 +53,11 @@ function workspacePage() {
         _flashTimer: null,
 
         async init() {
+            // Each tab has its own URL: /workspace/<tab>. The server only
+            // serves known tabs, so the path segment is always valid here.
+            this.active = location.pathname.split('/')[2] || 'skills';
+            this.$watch('active', (v) => history.replaceState(null, '', '/workspace/' + v));
             await this.load();
-            // Deep link: /workspace#team opens that tab directly.
-            const hash = (location.hash || '').replace('#', '');
-            if (this.tabs.some((t) => t.id === hash)) this.active = hash;
-            this.$watch('active', (v) => history.replaceState(null, '', '#' + v));
         },
 
         async load() {
@@ -146,6 +146,12 @@ function workspacePage() {
             this.viewer.mode = out.mode;
             this.viewer.html = out.html;
             this.viewer.rows = out.rows;
+        },
+
+        // Open a file straight in the editor (the skill cards' pencil).
+        async edit(path) {
+            await this.preview(path);
+            if (this.viewer.file && !this.viewer.editing) this.toggleEdit();
         },
 
         // ---- mutations -----------------------------------------------

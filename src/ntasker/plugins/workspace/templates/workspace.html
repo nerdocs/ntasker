@@ -147,7 +147,11 @@
                                                         {# long path sets this column's width and squeezes the   #}
                                                         {# badge beside it down to a few letters.                #}
                                                         <div class="min-w-0 flex-fill">
-                                                            <div class="fw-bold text-truncate" x-text="s.name"></div>
+                                                            {# Title opens the SKILL.md read-only; the modal's own #}
+                                                            {# pencil switches to the editor from there.          #}
+                                                            <div class="fw-bold text-truncate" x-text="s.name"
+                                                                 :class="s.file && 'cursor-pointer text-primary'"
+                                                                 @click="s.file && preview(s.file)"></div>
                                                             <div class="text-secondary small font-monospace text-truncate"
                                                                  x-text="s.path" :title="s.path"></div>
                                                         </div>
@@ -157,6 +161,19 @@
                                                         <span class="badge bg-azure-lt ms-auto flex-shrink-0"
                                                               x-show="s.kind === 'plugin'"
                                                               x-text="$i18n('ws_plugin')"></span>
+                                                        {# A skill symlinked in from elsewhere resolves outside #}
+                                                        {# the skills root, which the file endpoints refuse.    #}
+                                                        <span class="badge bg-secondary-lt ms-auto flex-shrink-0"
+                                                              x-show="s.kind === 'skill' && !s.file && !s.problem"
+                                                              :title="$i18n('ws_readonly_hint')"
+                                                              x-text="$i18n('ws_readonly')"></span>
+                                                        {# Only when a SKILL.md exists -- a plugin or an #}
+                                                        {# empty directory has nothing to edit.           #}
+                                                        <button class="btn btn-sm btn-icon btn-ghost-primary ms-1 flex-shrink-0"
+                                                                x-show="s.file" @click="edit(s.file)"
+                                                                :title="$i18n('ws_edit')">
+                                                            <i class="ti ti-pencil"></i>
+                                                        </button>
                                                     </div>
                                                     <p class="text-secondary small mb-2" x-show="s.description"
                                                        x-text="s.description"></p>

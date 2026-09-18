@@ -104,8 +104,24 @@ def test_docx_export(client, monkeypatch):
     assert client.post("/api/workspace/docx", json={"text": "x"}).status_code == 501
 
 
+def test_scan_skills_symlinked_skill_is_read_only(tmp_path):
+    root = tmp_path / "skills"
+    (root / "local").mkdir(parents=True)
+    (root / "local" / "SKILL.md").write_text("---\nname: local\ndescription: d\n---\n")
+    outside = tmp_path / "elsewhere" / "linked"
+    outside.mkdir(parents=True)
+    (outside / "SKILL.md").write_text("---\nname: linked\ndescription: d\n---\n")
+    (root / "linked").symlink_to(outside)
+    by = {s["name"]: s for s in scan.scan_skills(str(root))["skills"]}
+    assert by["local"]["loads"] and by["local"]["file"].endswith("local/SKILL.md")
+    assert by["linked"]["loads"] and by["linked"]["file"] == ""
+
+
 def test_page_and_enablement(client, monkeypatch):
-    assert client.get("/workspace").status_code == 200
+    assert client.get("/workspace", follow_redirects=False).headers["location"] == "/workspace/skills"
+    assert client.get("/workspace/skills").status_code == 200
+    assert client.get("/workspace/team").status_code == 200
+    assert client.get("/workspace/nope").status_code == 404
     assert 'href="/workspace"' in client.get("/").text
     monkeypatch.setenv(plugins.ENV_DISABLED, "workspace")
     assert client.get("/workspace").status_code == 404

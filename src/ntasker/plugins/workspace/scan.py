@@ -253,7 +253,11 @@ class SkillEntry:
 
     ``bundled`` lists what a plugin brings along (``"skill:foo"`` /
     ``"command:bar"``), so the UI can say what is inside without a
-    second scan.
+    second scan. ``file`` is the ``SKILL.md`` path when there is one *and*
+    it lies inside the skills directory -- the thing the UI opens for
+    editing. A skill symlinked in from elsewhere resolves outside the
+    directory and is out of reach of the file endpoints, so ``file`` stays
+    empty and the card shows it read-only.
     """
 
     name: str
@@ -263,6 +267,7 @@ class SkillEntry:
     problem: str = ""
     kind: str = "skill"
     bundled: list[str] = field(default_factory=list)
+    file: str = ""
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -273,6 +278,7 @@ class SkillEntry:
             "problem": self.problem,
             "kind": self.kind,
             "bundled": self.bundled,
+            "file": self.file,
         }
 
 
@@ -303,7 +309,7 @@ def scan_skills(skills_dir: str | None = None) -> dict[str, Any]:
 
     entries: list[SkillEntry] = []
     for directory in _iter_dirs(root):
-        entries.append(_inspect_skill(directory))
+        entries.append(_inspect_skill(directory, root))
 
     entries.sort(key=lambda s: (not s.loads, s.name.lower()))
     result["skills"] = [s.as_dict() for s in entries]
@@ -313,7 +319,7 @@ def scan_skills(skills_dir: str | None = None) -> dict[str, Any]:
     return result
 
 
-def _inspect_skill(directory: Path) -> SkillEntry:
+def _inspect_skill(directory: Path, root: Path) -> SkillEntry:
     """Classify a single entry, naming the defect only when truly broken."""
     # A plugin is checked first: it legitimately has no SKILL.md of its own,
     # so running the skill rules over it would report something that works
@@ -351,6 +357,7 @@ def _inspect_skill(directory: Path) -> SkillEntry:
             name=directory.name, path=str(directory), loads=False, problem=problem
         )
 
+    file = str(skill_md) if within_roots(skill_md.resolve(), [root]) else ""
     head = _read_head(skill_md)
     front = _parse_front_matter(head)
     description = front.get("description", "")
@@ -360,6 +367,7 @@ def _inspect_skill(directory: Path) -> SkillEntry:
             path=str(directory),
             loads=False,
             problem=_("SKILL.md has no front matter (needs a leading --- block)."),
+            file=file,
         )
     if not front.get("name") or not description:
         missing = [k for k in ("name", "description") if not front.get(k)]
@@ -371,6 +379,7 @@ def _inspect_skill(directory: Path) -> SkillEntry:
             problem=_("SKILL.md front matter is missing: {fields}.").format(
                 fields=", ".join(missing)
             ),
+            file=file,
         )
 
     return SkillEntry(
@@ -378,6 +387,7 @@ def _inspect_skill(directory: Path) -> SkillEntry:
         path=str(directory),
         loads=True,
         description=_truncate(description),
+        file=file,
     )
 
 

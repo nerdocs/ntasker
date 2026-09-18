@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: ntasker 1.3.0\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-09-18 12:38+0200\n"
+"POT-Creation-Date: 2026-09-18 12:40+0200\n"
 "PO-Revision-Date: 2026-05-02 09:19+0200\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: de\n"
@@ -646,14 +646,12 @@ msgid "Group name -- same name = same group, empty = none"
 msgstr "Gruppenname -- gleicher Name = gleiche Gruppe, leer = keine"
 
 #: src/ntasker/app.py:596
-#, fuzzy
 msgid "Fold related projects"
-msgstr "Aktive Projekte"
+msgstr "Verwandte Projekte einklappen"
 
 #: src/ntasker/app.py:597
-#, fuzzy
 msgid "Show related projects"
-msgstr "Leere Projekte anzeigen"
+msgstr "Verwandte Projekte anzeigen"
 
 #: src/ntasker/app.py:598
 #, python-brace-format
@@ -1293,12 +1291,11 @@ msgstr "Ungültiges Projekt"
 #: src/ntasker/app.py:1580
 #, python-brace-format
 msgid "{project} is held by task #{holder}"
-msgstr ""
+msgstr "{project} wird von Task #{holder} gehalten"
 
 #: src/ntasker/app.py:1732
-#, fuzzy
 msgid "Invalid project name"
-msgstr "Filter: Projekt {name}"
+msgstr "Ungültiger Projektname"
 
 #: src/ntasker/app.py:1819
 msgid "Target tag is empty."
@@ -1507,9 +1504,9 @@ msgid "ntasker: invalid phase: {value!r}"
 msgstr "ntasker: ungültige Phase: {value!r}"
 
 #: src/ntasker/cli.py:664 src/ntasker/cli.py:841
-#, fuzzy, python-brace-format
+#, python-brace-format
 msgid "ntasker: invalid agent: {value!r}"
-msgstr "ntasker: ungültige Phase: {value!r}"
+msgstr "ntasker: ungültiger Agent: {value!r}"
 
 #: src/ntasker/cli.py:671
 msgid "ntasker: need a --title or a --description"
@@ -1749,23 +1746,23 @@ msgid "Migrated {n} project name(s)."
 msgstr "{n} Projektname(n) migriert."
 
 #: src/ntasker/cli.py:1532
-#, fuzzy, python-brace-format
+#, python-brace-format
 msgid "ntasker: {agent} assets not installed."
-msgstr "ntasker: Claude-Assets nicht installiert."
+msgstr "ntasker: {agent}-Assets nicht installiert."
 
 #: src/ntasker/cli.py:1537
-#, fuzzy, python-brace-format
+#, python-brace-format
 msgid ""
 "ntasker: {agent} assets installed but out of date. Run `ntasker agent "
 "install {key} --force` to update."
 msgstr ""
-"ntasker: Claude-Assets installiert, aber veraltet. Update mit `ntasker "
-"install-claude-assets --force`."
+"ntasker: {agent}-Assets installiert, aber veraltet. Update mit `ntasker "
+"agent install {key} --force`."
 
 #: src/ntasker/cli.py:1542
-#, fuzzy, python-brace-format
+#, python-brace-format
 msgid "ntasker: {agent} assets up to date."
-msgstr "ntasker: Claude-Assets sind aktuell."
+msgstr "ntasker: {agent}-Assets sind aktuell."
 
 #: src/ntasker/cli.py:1567
 msgid ""
@@ -1786,9 +1783,9 @@ msgid "ntasker: installed to {path}"
 msgstr "ntasker: nach {path} installiert"
 
 #: src/ntasker/cli.py:1590
-#, fuzzy, python-brace-format
+#, python-brace-format
 msgid "ntasker: unknown agent {key!r}. Known: {keys}"
-msgstr "ntasker: jetzt {ver} (vorher {old})"
+msgstr "ntasker: unbekannter Agent {key!r}. Bekannt: {keys}"
 
 #: src/ntasker/cli.py:1597
 #, python-brace-format
@@ -1945,7 +1942,7 @@ msgstr "Optional; Standard ist der Anfang von --description"
 
 #: src/ntasker/cli.py:2139
 msgid "AI coding agent for this task (default: the default_agent setting)."
-msgstr ""
+msgstr "KI-Coding-Agent für diesen Task (Standard: die Einstellung default_agent)."
 
 #: src/ntasker/cli.py:2144
 msgid "Comma-separated task ids this task depends on, e.g. 12,15."
@@ -1978,6 +1975,8 @@ msgstr "Task-Felder ändern"
 #: src/ntasker/cli.py:2186
 msgid "Set the task's agent (claude/opencode/pi; '' clears to default)."
 msgstr ""
+"Agent des Tasks setzen (claude/opencode/pi; '' setzt auf den Standard "
+"zurück)."
 
 #: src/ntasker/cli.py:2198
 msgid ""
@@ -2121,16 +2120,15 @@ msgstr "Geplante Umbenennungen anzeigen ohne zu schreiben."
 
 #: src/ntasker/cli.py:2348
 msgid "Manage AI coding agents (list, install /task integration)."
-msgstr ""
+msgstr "KI-Coding-Agenten verwalten (auflisten, /task-Integration installieren)."
 
 #: src/ntasker/cli.py:2353
 msgid "List agents with CLI availability + integration status."
-msgstr ""
+msgstr "Agenten mit CLI-Verfügbarkeit und Integrationsstatus auflisten."
 
 #: src/ntasker/cli.py:2360
-#, fuzzy
 msgid "Install / check an agent's skill + /task slash command."
-msgstr "Claude-Code-Skill + Slash-Command installieren / prüfen"
+msgstr "Skill + /task-Slash-Command eines Agenten installieren / prüfen."
 
 #: src/ntasker/cli.py:2366 src/ntasker/cli.py:2396
 msgid "Slash command file name (default: task -> /task <id>)."
@@ -2149,13 +2147,14 @@ msgid "Read-only status check. Exit 0=identical, 1=drift, 2=not installed."
 msgstr "Read-only-Status-Check. Exit 0=identisch, 1=Drift, 2=nicht installiert."
 
 #: src/ntasker/cli.py:2384
-#, fuzzy
 msgid "Override the agent's config home (also via its *_DIR/*_HOME env var)."
-msgstr "~/.claude überschreiben (auch via NTASKER_CLAUDE_HOME)."
+msgstr ""
+"Config-Verzeichnis des Agenten überschreiben (auch via seiner *_DIR"
+"/*_HOME-Umgebungsvariable)."
 
 #: src/ntasker/cli.py:2391
 msgid "Deprecated: use `ntasker agent install claude`."
-msgstr ""
+msgstr "Veraltet: `ntasker agent install claude` verwenden."
 
 #: src/ntasker/cli.py:2416
 msgid "Override ~/.claude (also via NTASKER_CLAUDE_HOME env var)."
@@ -2326,12 +2325,10 @@ msgid "Invalid default_view: {value!r}. Allowed: {allowed}"
 msgstr "Ungültige Standard-Ansicht: {value!r}. Erlaubt: {allowed}"
 
 #: src/ntasker/settings.py:97 src/ntasker/settings.py:105
-#, fuzzy
 msgid "update_command must not be empty -- unset it to auto-detect."
 msgstr ""
 "update_command darf nicht leer sein -- zum Auto-Erkennen die Einstellung "
-"löschen.projects_base darf nicht leer sein -- zum Löschen die Einstellung"
-" entfernen."
+"löschen."
 
 #: src/ntasker/settings.py:102
 #, python-brace-format
@@ -2397,9 +2394,9 @@ msgid "claude_open_terminal must be a yes/no value (got {value!r})."
 msgstr "claude_open_terminal muss ein Ja/Nein-Wert sein (war {value!r})."
 
 #: src/ntasker/settings.py:304
-#, fuzzy, python-brace-format
+#, python-brace-format
 msgid "default_agent must be one of {keys} (got {value!r})."
-msgstr "claude_permission_mode muss einer von {modes} sein (war {value!r})."
+msgstr "default_agent muss einer von {keys} sein (war {value!r})."
 
 #: src/ntasker/settings.py:321
 #, python-brace-format
@@ -2573,26 +2570,24 @@ msgstr ""
 "automatisch zu erkennen."
 
 #: src/ntasker/settings.py:510
-#, fuzzy
 msgid ""
 "JSON array of plugins switched off, e.g. [\"pi\", \"workspace\"]. Toggle "
 "them on the Plugins tab; at least one agent plugin stays enabled. ENV: "
 "NTASKER_PLUGINS_DISABLED (comma-separated)."
 msgstr ""
 "JSON-Array der abgeschalteten Plugins, z. B. [\"pi\", \"workspace\"]. "
-"Umschalten über die Plugins-Karte oben; mindestens ein Agent-Plugin "
-"bleibt aktiv. ENV: NTASKER_PLUGINS_DISABLED (kommagetrennt)."
+"Umschalten über den Plugins-Tab; mindestens ein Agent-Plugin bleibt "
+"aktiv. ENV: NTASKER_PLUGINS_DISABLED (kommagetrennt)."
 
 #: src/ntasker/settings.py:515
-#, fuzzy
 msgid ""
 "JSON array of opt-in plugins switched on, e.g. [\"voice\"]. Toggle them "
 "on the Plugins tab or with `ntasker enable <plugin>`. ENV: "
 "NTASKER_PLUGINS_ENABLED (comma-separated)."
 msgstr ""
 "JSON-Array der eingeschalteten Opt-in-Plugins, z. B. [\"voice\"]. "
-"Umschalten über die Plugins-Karte oben oder mit `ntasker enable "
-"<plugin>`. ENV: NTASKER_PLUGINS_ENABLED (kommagetrennt)."
+"Umschalten über den Plugins-Tab oder mit `ntasker enable <plugin>`. ENV: "
+"NTASKER_PLUGINS_ENABLED (kommagetrennt)."
 
 #: src/ntasker/settings.py:526
 msgid "UI libraries"
@@ -2663,9 +2658,8 @@ msgid "Load Tabler/Alpine from jsDelivr (with SRI). Needs internet."
 msgstr "Tabler/Alpine von jsDelivr laden (mit SRI). Braucht Internet."
 
 #: src/ntasker/settings.py:552
-#, fuzzy
 msgid "Local"
-msgstr "Gesamt"
+msgstr "Lokal"
 
 #: src/ntasker/settings.py:552
 msgid "Serve from the user-data cache (fill it via `ntasker assets fetch`)."
@@ -2681,48 +2675,44 @@ msgstr "Folgt der Browsersprache, sonst Englisch."
 
 #: src/ntasker/settings.py:556
 msgid "English"
-msgstr ""
+msgstr "Englisch"
 
 #: src/ntasker/settings.py:557
 msgid "Deutsch"
-msgstr ""
+msgstr "Deutsch"
 
 #: src/ntasker/settings.py:560
-#, fuzzy
 msgid "List"
-msgstr "Aufgabenliste"
+msgstr "Liste"
 
 #: src/ntasker/settings.py:560
-#, fuzzy
 msgid "Classic task list."
-msgstr "Aufgabenliste"
+msgstr "Klassische Aufgabenliste."
 
 #: src/ntasker/settings.py:561
-#, fuzzy
 msgid "Kanban board"
-msgstr "Kanban"
+msgstr "Kanban-Board"
 
 #: src/ntasker/settings.py:561
 msgid "Four-column board."
 msgstr "Vier-Spalten-Board."
 
 #: src/ntasker/settings.py:599
-#, fuzzy, python-brace-format
+#, python-brace-format
 msgid "{key} must not be empty -- unset it to auto-detect on PATH."
 msgstr ""
-"update_command darf nicht leer sein -- zum Auto-Erkennen die Einstellung "
-"löschen.projects_base darf nicht leer sein -- zum Löschen die Einstellung"
-" entfernen."
+"{key} darf nicht leer sein -- zum Auto-Erkennen im PATH die Einstellung "
+"löschen."
 
 #: src/ntasker/settings.py:607
 #, python-brace-format
 msgid "{value!r} is not an executable file."
-msgstr ""
+msgstr "{value!r} ist keine ausführbare Datei."
 
 #: src/ntasker/settings.py:611
 #, python-brace-format
 msgid "{value!r} was not found on PATH."
-msgstr ""
+msgstr "{value!r} wurde im PATH nicht gefunden."
 
 #: src/ntasker/settings.py:622
 msgid ""
@@ -2777,9 +2767,9 @@ msgstr ""
 "Skill)."
 
 #: src/ntasker/plugins/opencode/__init__.py:40
-#, fuzzy, python-brace-format
+#, python-brace-format
 msgid "opencode_auto must be a yes/no value (got {value!r})."
-msgstr "claude_auto_mode muss ein Ja/Nein-Wert sein (war {value!r})."
+msgstr "opencode_auto muss ein Ja/Nein-Wert sein (war {value!r})."
 
 #: src/ntasker/plugins/opencode/__init__.py:78
 msgid ""

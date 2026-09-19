@@ -210,8 +210,8 @@
                                     <div class="input-group mb-2">
                                         <input type="text" class="form-control quick-prompt-label" x-model="p.label"
                                                placeholder="{{ t('Label') }}">
-                                        <input type="text" class="form-control" x-model="p.prompt"
-                                               placeholder="{{ t('Prompt') }}">
+                                        <textarea class="form-control" rows="5" x-model="p.prompt"
+                                                  placeholder="{{ t('Prompt') }}"></textarea>
                                         <button type="button" class="btn btn-ghost-danger" @click="prompts.splice(i, 1)"
                                                 :aria-label="$i18n('delete')" :title="$i18n('delete')">
                                             <i class="ti ti-trash"></i>

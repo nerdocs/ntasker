@@ -4,6 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [3.6.1] — 2026-09-19
+UI: agent session indicator lives inside the agent button.
+
 ## [3.6.0] — 2026-09-18
 Plugins: *Install now* button installs a plugin's missing `ntasker[<extra>]` packages from the settings card.
 Extras in a `uv tool` home are installed via `uv tool install 'ntasker[<extra>]'`, so `uv tool upgrade` keeps them.

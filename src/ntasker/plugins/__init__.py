@@ -249,6 +249,14 @@ def _apply_to_core() -> None:
     for ctx in REGISTRY.values():
         for spec in ctx.agents:
             agents.AGENTS[spec.key] = spec
+            # Every agent gets an editable copy of the queued-run rules. Not
+            # via ``ctx.settings`` so it stays out of the card's plain text
+            # fields -- the Plugins tab renders it as its own textarea.
+            rules_key = settings.run_rules_key(spec.key)
+            settings.VALIDATORS[rules_key] = settings.validate_run_rules
+            settings.HINTS[rules_key] = settings.RUN_RULES_HINT
+            settings.LABELS[rules_key] = settings.RUN_RULES_LABEL
+            settings.FIELD_DEFAULTS[rules_key] = settings.RUN_RULES_DEFAULT
         for key, validator, hint, label in ctx.settings:
             settings.VALIDATORS[key] = validator
             if hint is not None:

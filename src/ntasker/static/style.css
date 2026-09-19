@@ -1151,6 +1151,9 @@ h3 + p + .setting-row {
 .quick-prompt-label {
     flex: 0 0 9rem;
 }
+.setting-run-rules {
+    font-size: 0.8125rem;
+}
 .agent-icon {
     width: 1.25rem;
     height: 1.25rem;

@@ -383,6 +383,23 @@
                                         {% endif %}
 
                                         {% if p.kind == 'agent' %}
+                                        {% set rules_key = p.name ~ '_run_rules' %}
+                                        {% call row(rules_key) %}
+                                        <textarea class="form-control font-monospace setting-run-rules" rows="12"
+                                                  x-model="draft['{{ rules_key }}']"
+                                                  @keydown.escape.prevent="revert('{{ rules_key }}')"></textarea>
+                                        <div class="d-flex gap-2 mt-2">
+                                            <button type="button" class="btn"
+                                                    :class="isDirty('{{ rules_key }}') ? 'btn-primary' : 'btn-ghost-secondary'"
+                                                    :disabled="!isDirty('{{ rules_key }}')" @click="saveDraft('{{ rules_key }}')">
+                                                <i class="ti ti-check me-1"></i><span x-text="$i18n('save')"></span>
+                                            </button>
+                                            <button type="button" class="btn btn-ghost-secondary"
+                                                    :disabled="!isStored('{{ rules_key }}')" @click="unsetKnown('{{ rules_key }}')">
+                                                <i class="ti ti-rotate me-1"></i><span x-text="$i18n('reset_default')"></span>
+                                            </button>
+                                        </div>
+                                        {% endcall %}
                                         {# /task integration status -- read-only, installs go through the CLI. #}
                                         <template x-if="agentFor('{{ p.name }}')">
                                             <div class="setting-row row gx-2 gx-md-4">

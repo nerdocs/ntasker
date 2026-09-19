@@ -156,6 +156,64 @@ def validate_quick_prompts(value: str) -> str:
     return json.dumps(items)
 
 
+# The hand-off rules appended to every queued run's seed (see
+# :func:`ntasker.claude_runner.queue_seed_for_task`). One ``<agent>_run_rules``
+# setting per agent overrides this text; ``{id}`` is replaced by the task id.
+RUN_RULES_DEFAULT = """\
+## Tracker rules (queued run)
+
+- The user put this task in nTasker's task queue to have it worked
+  through unattended. Carry it to completion if at all possible.
+- When the work is done, do two things in this order, without asking:
+  1. Write your final report (Markdown on stdin): what you did, what
+     you verified, what is open or left for the user:
+       ntasker report {id} <<'EOF'
+       ...
+       EOF
+  2. Hand the task over for review, then stop and wait:
+       ntasker patch {id} --phase review
+- This session stays open after the hand-off; the user reviews the
+  task here and closes it. The next queued task in this project only
+  starts once this task is done -- so never hand off on a guess.
+- If you cannot finish (blocker, missing info, a decision only the
+  user can make): still write the report (the blocker, what you
+  tried), leave the phase as-is and stop. Do not hand off.
+- Never set status=done or archive on your own initiative -- only when
+  the user or the task description explicitly tells you to (then:
+  finish, commit if asked, then `ntasker done {id}` as the very last
+  command -- it ends this session and releases the next queued task).
+- No new tracker tasks, no deletes, no writes to other task IDs.\
+"""
+
+RUN_RULES_HINT = _lazy(
+    "The tracker rules appended to every queued run's prompt for this agent. "
+    "{id} is replaced by the task id. Reset restores the built-in text."
+)
+RUN_RULES_LABEL = _lazy("Run rules")
+
+
+def validate_run_rules(value: str) -> str:
+    """Validator for the ``<agent>_run_rules`` settings.
+
+    Free text; surrounding whitespace is trimmed. Empty is rejected -- to go
+    back to the built-in text, unset the key (the UI's Reset button).
+    """
+    norm = (value or "").strip()
+    if not norm:
+        raise ValueError(_("run rules must not be empty; unset the key to restore the default."))
+    return norm
+
+
+def run_rules_key(agent_key: str) -> str:
+    """Settings key holding an agent's run rules (``<agent>_run_rules``)."""
+    return f"{agent_key}_run_rules"
+
+
+def get_run_rules(agent_key: str) -> str:
+    """The run-rules template for ``agent_key`` (the built-in text when unset)."""
+    return get_setting(run_rules_key(agent_key)) or RUN_RULES_DEFAULT
+
+
 SIDEBAR_SECTIONS = ("projects", "priority", "phases", "tags", "workspace")
 
 

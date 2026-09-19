@@ -651,6 +651,7 @@ def build_js_strings() -> dict[str, str]:
         "on": _("On"),
         "off": _("Off"),
         "reset": _("Reset"),
+        "reset_default": _("Reset to default"),
         "agent_integration": _("AI agent integration"),
         "agent_integration_intro": _(
             "ntasker ships a skill (SKILL.md) and a /task <id> slash command for "

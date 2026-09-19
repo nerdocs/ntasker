@@ -205,7 +205,8 @@ def queue_seed_for_task(task: dict) -> str:
     The queue is the only path that starts a session, so every run gets this
     seed: the task data inlined into the prompt (no ``/task`` loader roundtrip
     -- one full inference pass and several thousand tokens saved, which matters
-    on slow local models) plus the queue's hand-off rules. The user put the
+    on slow local models) plus the queue's hand-off rules (the agent's
+    ``<agent>_run_rules`` setting, built-in text when unset). The user put the
     task in the queue to have it worked through unattended, so the seed grants
     the review hand-off without asking and tells the agent that the hand-off is
     what releases the next queued task. Closing stays the user's call. The
@@ -237,33 +238,10 @@ def queue_seed_for_task(task: dict) -> str:
     from ntasker import plugins  # noqa: PLC0415 -- lazy: avoid cycle
 
     lines += plugins.run_briefings(int(task["id"]))
-    tid = task["id"]
-    lines += [
-        "",
-        "## Tracker rules (queued run)",
-        "",
-        "- The user put this task in nTasker's task queue to have it worked",
-        "  through unattended. Carry it to completion if at all possible.",
-        "- When the work is done, do two things in this order, without asking:",
-        "  1. Write your final report (Markdown on stdin): what you did, what",
-        "     you verified, what is open or left for the user:",
-        f"       ntasker report {tid} <<'EOF'",
-        "       ...",
-        "       EOF",
-        "  2. Hand the task over for review, then stop and wait:",
-        f"       ntasker patch {tid} --phase review",
-        "- This session stays open after the hand-off; the user reviews the",
-        "  task here and closes it. The next queued task in this project only",
-        "  starts once this task is done -- so never hand off on a guess.",
-        "- If you cannot finish (blocker, missing info, a decision only the",
-        "  user can make): still write the report (the blocker, what you",
-        "  tried), leave the phase as-is and stop. Do not hand off.",
-        "- Never set status=done or archive on your own initiative -- only when",
-        "  the user or the task description explicitly tells you to (then:",
-        f"  finish, commit if asked, then `ntasker done {tid}` as the very last",
-        "  command -- it ends this session and releases the next queued task).",
-        "- No new tracker tasks, no deletes, no writes to other task IDs.",
-    ]
+    from ntasker.settings import get_run_rules  # noqa: PLC0415 -- lazy: avoid cycle
+
+    rules = get_run_rules(resolve_agent_key(task.get("agent")))
+    lines += ["", rules.replace("{id}", str(task["id"]))]
     return "\n".join(lines)
 
 

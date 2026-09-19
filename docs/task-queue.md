@@ -90,6 +90,10 @@ moves on unattended.
 The seed also tells the agent what to do when it *cannot* finish: still write the report (the blocker), leave the phase
 as-is and stop. If its session then ends -- see **ended** below.
 
+The rules block is editable per agent: *Settings -> Plugins -> <agent> -> Run rules* (setting `<agent>_run_rules`,
+e.g. `claude_run_rules`). `{id}` in the text is replaced by the task id. Unset the key (the *Reset to default*
+button, or `ntasker config unset claude_run_rules`) to go back to the built-in text.
+
 ## Skipped entries
 
 An entry stays queued but is passed over when

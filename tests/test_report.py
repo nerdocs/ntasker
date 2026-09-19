@@ -62,3 +62,25 @@ def test_cli_report_unknown_task(db, monkeypatch):
 def test_seed_orders_report_before_handoff(db):
     seed = queue_seed_for_task({"id": 5, "title": "t", "status": "open", "priority": "normal"})
     assert seed.index("ntasker report 5") < seed.index("ntasker patch 5 --phase review")
+
+
+def test_seed_uses_agent_run_rules(db):
+    from ntasker.settings import RUN_RULES_DEFAULT, delete_setting, set_setting
+
+    task = {"id": 7, "title": "t", "status": "open", "priority": "normal", "agent": "claude"}
+    assert RUN_RULES_DEFAULT.replace("{id}", "7") in queue_seed_for_task(task)
+    set_setting("claude_run_rules", "Custom rules for #{id}.")
+    seed = queue_seed_for_task(task)
+    assert seed.endswith("Custom rules for #7.")
+    assert "Tracker rules" not in seed
+    # Another agent's rules stay untouched.
+    assert "Tracker rules" in queue_seed_for_task({**task, "agent": "pi"})
+    delete_setting("claude_run_rules")
+    assert "Tracker rules" in queue_seed_for_task(task)
+
+
+def test_run_rules_rejects_empty(db):
+    from ntasker.settings import set_setting
+
+    with pytest.raises(ValueError):
+        set_setting("claude_run_rules", "   ")

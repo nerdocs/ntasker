@@ -138,6 +138,12 @@ function settingsPage() {
             this.draft[key] = this.known[key] || '';
         },
 
+        // True when a value is stored for key (as opposed to its effective
+        // default being shown).
+        isStored(key) {
+            return this.rows.some(r => r.key === key);
+        },
+
         // Description of the active option of an enum setting.
         choiceDesc(key) {
             const opt = (cfg.fieldChoices[key] || []).find(o => o.value === this.known[key]);

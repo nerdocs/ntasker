@@ -3138,15 +3138,40 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             // saved file's path into the PTY for the agent to pick up.
             this._wireTerminalDnd(el, ws);
             // Auto-copy on selection: mimics the Linux terminal habit of
-            // "select = copied". Lets the user paste back via middle-click
-            // without ever pressing Ctrl+C (which stays the Claude interrupt).
-            // Writes to the CLIPBOARD (the X11 PRIMARY selection is not
-            // reachable from browser JS), best-effort and silent on failure.
+            // "select = copied". Writes to the CLIPBOARD (the X11 PRIMARY
+            // selection is not reachable from browser JS), best-effort and
+            // silent on failure.
             term.onSelectionChange(() => {
                 const sel = term.getSelection();
                 if (sel && navigator.clipboard) {
                     navigator.clipboard.writeText(sel).catch(() => { /* ignore */ });
                 }
+            });
+            // Paste from the CLIPBOARD (needs a user gesture in Firefox, so
+            // only ever called from a key/mouse handler). Bracketed paste is
+            // handled by term.paste().
+            const pasteClipboard = () => {
+                if (!navigator.clipboard?.readText) return;
+                navigator.clipboard.readText()
+                    .then((text) => { if (text) term.paste(text); })
+                    .catch(() => { /* permission denied / empty */ });
+            };
+            // Ctrl+V: a bare ^V would reach the PTY, where Claude Code treats
+            // it as image paste -- take it over and paste text ourselves.
+            // Ctrl+C with a selection: the selection is already copied (see
+            // above), swallow it so it does not interrupt the session.
+            term.attachCustomKeyEventHandler((ev) => {
+                if (ev.type !== 'keydown' || !ev.ctrlKey || ev.shiftKey || ev.altKey || ev.metaKey) return true;
+                if (ev.key === 'v') { ev.preventDefault(); pasteClipboard(); return false; }
+                if (ev.key === 'c' && term.hasSelection()) { ev.preventDefault(); return false; }
+                return true;
+            });
+            // Middle-click pastes the CLIPBOARD, so "select + middle-click"
+            // works inside ntasker although PRIMARY is out of reach.
+            el.addEventListener('auxclick', (e) => {
+                if (e.button !== 1) return;
+                e.preventDefault();
+                pasteClipboard();
             });
             // Focus once the browser has painted the just-shown terminal, so
             // keystrokes land in the PTY immediately -- but only if this tab is

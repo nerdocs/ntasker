@@ -4,6 +4,10 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [3.6.2] — 2026-09-20
+Terminal: `Ctrl+V` and middle-click paste the clipboard; `Ctrl+C` with a selection copies instead of interrupting.
+Settings: per-agent run rules are editable (textarea + reset to default); quick prompts use a textarea.
+
 ## [3.6.1] — 2026-09-19
 UI: agent session indicator lives inside the agent button.
 

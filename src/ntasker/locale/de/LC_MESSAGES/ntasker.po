@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: ntasker 1.3.0\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-09-19 21:21+0200\n"
+"POT-Creation-Date: 2026-09-20 00:58+0200\n"
 "PO-Revision-Date: 2026-05-02 09:19+0200\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: de\n"
@@ -2399,8 +2399,9 @@ msgid ""
 "The tracker rules appended to every queued run's prompt for this agent. "
 "{id} is replaced by the task id. Reset restores the built-in text."
 msgstr ""
-"Die Tracker-Regeln, die bei diesem Agenten an den Prompt jedes Queue-Runs angehängt werden. "
-"{id} wird durch die Task-ID ersetzt. Zurücksetzen stellt den eingebauten Text wieder her."
+"Die Tracker-Regeln, die bei diesem Agenten an den Prompt jedes Queue-Runs"
+" angehängt werden. {id} wird durch die Task-ID ersetzt. Zurücksetzen "
+"stellt den eingebauten Text wieder her."
 
 #: src/ntasker/settings.py:192
 msgid "Run rules"
@@ -2408,7 +2409,9 @@ msgstr "Run-Regeln"
 
 #: src/ntasker/settings.py:203
 msgid "run rules must not be empty; unset the key to restore the default."
-msgstr "Run-Regeln dürfen nicht leer sein; Key entfernen, um den Standard wiederherzustellen."
+msgstr ""
+"Run-Regeln dürfen nicht leer sein; Key entfernen, um den Standard "
+"wiederherzustellen."
 
 #: src/ntasker/settings.py:232 src/ntasker/settings.py:234
 msgid "sidebar_sections must be a JSON object of section -> true/false."

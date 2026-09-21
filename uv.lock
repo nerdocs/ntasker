@@ -617,7 +617,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.0" },
     { name = "python-multipart", specifier = ">=0.0.20" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
-    { name = "vosk", marker = "extra == 'voice'", specifier = ">=0.3.45" },
+    { name = "vosk", marker = "extra == 'voice'", specifier = ">=0.3.44" },
 ]
 provides-extras = ["voice"]
 

@@ -54,7 +54,8 @@ dependencies = [
 
 [project.optional-dependencies]
 # ``ntasker[voice]``: local speech recognition for the voice plugin.
-voice = ["vosk>=0.3.45"]
+# 0.3.44 is the last vosk release with a macOS wheel; 0.3.45 ships Linux/Windows only.
+voice = ["vosk>=0.3.44"]
 
 [project.scripts]
 ntasker = "ntasker.cli:main"

@@ -319,6 +319,30 @@ def test_download_rejects_bad_checksum_and_unsafe_zip(client, store, monkeypatch
     assert not (store.dir.parent / "escape").exists()
 
 
+def test_missing_requirements_parses_markers(monkeypatch):
+    import importlib.metadata as md
+
+    reqs = [
+        "vosk>=0.3.45; extra == 'voice'",  # hatchling wheel style
+        'vosk>=0.3.45; extra == "voice"',  # double-quoted style
+        "foo>=1; extra == 'other'",  # different extra: ignored
+        "bar>=1",  # no marker: ignored
+        "pytest>=1; extra == 'voice'",  # already installed: not missing
+    ]
+    monkeypatch.setattr(md, "requires", lambda dist: reqs)
+
+    # Simulate vosk being absent regardless of what's actually installed in this venv.
+    orig_distribution = md.distribution
+
+    def fake_distribution(name):
+        if name == "vosk":
+            raise md.PackageNotFoundError(name)
+        return orig_distribution(name)
+
+    monkeypatch.setattr(md, "distribution", fake_distribution)
+    assert plugins.missing_requirements("voice") == ["vosk>=0.3.45", "vosk>=0.3.45"]
+
+
 def test_cli_enable_installs_missing_extra(client, tmp_path, monkeypatch, capsys):
     import subprocess
 

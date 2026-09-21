@@ -1,5 +1,5 @@
-{# Top-right icon bar shown on every page: buy-me-a-coffee, info (+ update #}
-{# badge), GitHub, theme toggle, settings. Self-contained Alpine component #}
+{# Top-right icon bar shown on every page: buy-me-a-coffee, update check (+ #}
+{# badge), info, GitHub, theme toggle, settings. Self-contained Alpine component #}
 {# (topnav() in topnav.js) so it works identically regardless of the page's #}
 {# own main component. Needs the `links` context var + the top-bar i18n keys. #}
 <div class="navbar-nav flex-row order-md-last ms-auto align-items-center" x-data="topnav('{{ version }}')">
@@ -7,7 +7,7 @@
     {# page was rendered with. Fixed overlay; never auto-reloads (data loss). #}
     {# No d-flex utility here: its !important display would defeat x-show's #}
     {# inline display:none -- the flex layout lives in .stale-version-banner. #}
-    <div class="alert alert-info stale-version-banner mb-0" role="alert"
+    <div class="alert alert-info topnav-banner mb-0" role="alert"
          x-show="staleVersion" x-cloak>
         <i class="ti ti-refresh-alert me-2"></i>
         <span x-text="$i18n('stale_version_notice', { version: serverVersion })"></span>
@@ -26,12 +26,29 @@
         <i class="ti ti-layout-grid fs-2"></i>
     </a>
     {% endif %}
-    <a href="/info" class="btn btn-icon btn-sm btn-ghost-secondary position-relative me-1"
-       :title="updateAvailable ? $i18n('update_available_short') : $i18n('info')">
-        <i class="ti ti-info-circle fs-2"></i>
+    {# Update panel: result of the check button, then the install progress. #}
+    {# Same fixed overlay as the stale banner; hidden once that one takes over. #}
+    <div class="alert topnav-banner mb-0" role="alert" :class="updateAlertClass()"
+         x-show="updateState && !staleVersion" x-cloak>
+        <span class="spinner-border spinner-border-sm me-2 flex-shrink-0" role="status"
+              x-show="updateBusy()"></span>
+        <span x-text="updateMessage()"></span>
+        <button type="button" class="btn btn-sm btn-warning ms-3 flex-shrink-0"
+                x-show="updateState === 'available'" @click="installUpdate()"
+                x-text="$i18n('install_update')"></button>
+        <button type="button" class="btn-close ms-2 flex-shrink-0" :aria-label="$i18n('close')"
+                x-show="updateState !== 'installing'" @click="updateState = ''"></button>
+    </div>
+    <button type="button" class="btn btn-icon btn-sm btn-ghost-secondary position-relative me-1"
+            :title="updateAvailable ? $i18n('update_available_short') : $i18n('check_updates')"
+            :disabled="updateBusy()" @click="checkUpdates()">
+        <i class="ti ti-cloud-download fs-2"></i>
         {# Empty badge -> Tabler renders a round dot (.badge:empty); badge-notification corners it. #}
         <span class="badge badge-notification bg-red" aria-hidden="true"
               x-show="updateAvailable" x-cloak></span>
+    </button>
+    <a href="/info" class="btn btn-icon btn-sm btn-ghost-secondary me-1" :title="$i18n('info')">
+        <i class="ti ti-info-circle fs-2"></i>
     </a>
     <a href="{{ links.github }}" target="_blank" rel="noopener"
        class="btn btn-icon btn-sm btn-ghost-secondary me-1" :title="$i18n('github')">

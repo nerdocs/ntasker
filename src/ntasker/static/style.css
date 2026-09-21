@@ -930,7 +930,7 @@ body {
  * server version than the one this page was rendered with (after a
  * `self-update` restart). Fixed top-center overlay above the navbar; the
  * user reloads explicitly -- never automatically. */
-.stale-version-banner {
+.topnav-banner {
     display: flex;
     align-items: center;
     position: fixed;

@@ -448,6 +448,16 @@ def build_js_strings() -> dict[str, str]:
         "dark_mode": _("Dark mode"),
         "info": _("Info"),
         "update_available_short": _("Update available"),
+        "check_updates": _("Check for updates"),
+        "install_update": _("Install update"),
+        "update_install_prompt": _("Version {latest} is available (you are running {current})."),
+        "update_installing": _("Installing update..."),
+        "update_done_restart": _("Update installed -- restarting the server..."),
+        "update_done_manual": _("Update installed -- restart ntasker to use the new version."),
+        "update_blocked_tasks": _(
+            "Update blocked -- {n} task session(s) still running. "
+            "The restart would interrupt them; finish them first."
+        ),
         "settings_attention": _("Settings need your attention"),
         "github": _("Source on GitHub"),
         "buy_me_a_coffee": _("Buy me a coffee"),
@@ -1243,14 +1253,43 @@ def info_page(request: Request) -> HTMLResponse:
 
 
 @app.get("/api/update-check")
-def api_update_check() -> JSONResponse:
+def api_update_check(force: bool = False) -> JSONResponse:
     """Report whether a newer ntasker release is on PyPI.
 
     Returns ``{current, latest, update_available, error}``. Cached for 24h
-    (see :mod:`ntasker.updates`); offline simply yields ``latest=null`` with
-    an ``error`` string -- never an HTTP error.
+    (see :mod:`ntasker.updates`) unless ``?force=true`` (the top bar's check
+    button); offline simply yields ``latest=null`` with an ``error`` string
+    -- never an HTTP error.
     """
-    return JSONResponse(updates.check())
+    return JSONResponse(updates.check(force=force))
+
+
+@app.get("/api/self-update")
+def api_self_update_job() -> JSONResponse:
+    """The running or last self-update (see :func:`ntasker.updates.update_job`)."""
+    return JSONResponse({"job": updates.update_job()})
+
+
+@app.post("/api/self-update", status_code=202)
+def api_self_update() -> JSONResponse:
+    """Upgrade ntasker from PyPI in the background -- the top bar's "Install
+    update" button, same command as ``ntasker self-update``. A supervised
+    server restarts itself once the upgrade succeeded. Returns the job; poll
+    ``GET /api/self-update``. 409 ``tasks_running`` while a Claude task
+    session is live (the restart would kill it; re-checked before the restart
+    itself), 409 while another update runs.
+    """
+    active = active_session_ids()
+    if active:
+        return JSONResponse(
+            {"ok": False, "reason": "tasks_running", "tasks": sorted(active)},
+            status_code=409,
+        )
+    try:
+        job = updates.start_update(restart_ok=lambda: not active_session_ids())
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return JSONResponse({"job": job}, status_code=202)
 
 
 # ---------------------------------------------------------------------------

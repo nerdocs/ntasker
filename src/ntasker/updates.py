@@ -13,8 +13,10 @@ Network failures are non-fatal: offline simply means "no update info"
 
 from __future__ import annotations
 
+import subprocess
 import threading
 import time
+from collections.abc import Callable
 
 import httpx
 
@@ -91,3 +93,59 @@ def check(force: bool = False) -> dict:
         _cache = _fetch()
         _checked_at = time.time()
         return dict(_cache)
+
+
+# The one background self-update (the top bar's "Install update" button;
+# ``ntasker self-update`` runs the same command in the foreground). Mirrors
+# ``plugins.start_install``: one at a time, the last result stays until the
+# next start or a server restart.
+_job_lock = threading.Lock()
+_job: dict | None = None
+
+
+def update_job() -> dict | None:
+    """The running or last self-update: ``{state, cmd, output, restart}``
+    with ``state`` in ``running`` / ``done`` / ``failed``."""
+    with _job_lock:
+        return dict(_job) if _job else None
+
+
+def start_update(restart_ok: Callable[[], bool]) -> dict:
+    """Upgrade the package in the background, then restart the supervised
+    service (``restart`` in the job says whether one is installed -- without
+    it the user has to restart ntasker by hand). ``restart_ok`` is asked
+    again right before the restart: a task session started during the
+    upgrade must not be killed by it -- then ``restart`` flips to ``False``
+    and the user restarts by hand. Raises ``RuntimeError`` while another
+    update runs."""
+    global _job
+    from ntasker import service  # noqa: PLC0415
+    from ntasker.settings import get_setting  # noqa: PLC0415
+
+    cmd = service.resolve_update_command(get_setting("update_command"))
+    restart = service.service_installed()
+    with _job_lock:
+        if _job and _job["state"] == "running":
+            raise RuntimeError("an update is already running")
+        _job = {"state": "running", "cmd": " ".join(cmd), "output": "", "restart": restart}
+        job = dict(_job)
+    threading.Thread(target=_run_update, args=(cmd, restart, restart_ok), daemon=True).start()
+    return job
+
+
+def _run_update(cmd: list[str], restart: bool, restart_ok: Callable[[], bool]) -> None:
+    from ntasker import service  # noqa: PLC0415
+
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True)  # noqa: S603 -- user-configured / auto-detected
+        state, output = ("done" if proc.returncode == 0 else "failed"), proc.stderr or proc.stdout
+    except OSError as exc:
+        state, output = "failed", str(exc)
+    restart = restart and state == "done" and restart_ok()
+    with _job_lock:
+        if _job:
+            _job.update(state=state, output=output.strip()[-2000:], restart=restart)
+    # The package is upgraded on disk; the supervisor re-spawns us on the new
+    # code. Being torn down here is expected (KillMode=control-group).
+    if restart:
+        service.restart_service()

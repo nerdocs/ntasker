@@ -3156,13 +3156,16 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                     .then((text) => { if (text) term.paste(text); })
                     .catch(() => { /* permission denied / empty */ });
             };
-            // Ctrl+V: a bare ^V would reach the PTY, where Claude Code treats
-            // it as image paste -- take it over and paste text ourselves.
+            // Ctrl+V: xterm would send a bare ^V to the PTY (Claude Code treats
+            // it as image paste). Return false WITHOUT preventDefault so the
+            // browser's native paste fires a `paste` event on xterm's textarea,
+            // which xterm handles via clipboardData -- no Clipboard-API
+            // permission prompt (Firefox shows a "Paste" popup for readText()).
             // Ctrl+C with a selection: the selection is already copied (see
             // above), swallow it so it does not interrupt the session.
             term.attachCustomKeyEventHandler((ev) => {
                 if (ev.type !== 'keydown' || !ev.ctrlKey || ev.shiftKey || ev.altKey || ev.metaKey) return true;
-                if (ev.key === 'v') { ev.preventDefault(); pasteClipboard(); return false; }
+                if (ev.key === 'v') return false;
                 if (ev.key === 'c' && term.hasSelection()) { ev.preventDefault(); return false; }
                 return true;
             });

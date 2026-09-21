@@ -12,8 +12,10 @@ from ntasker.settings import (
     _TRUE_STRINGS,
     BIN_OVERRIDE_HINT,
     BIN_OVERRIDE_LABEL,
+    MODEL_LABEL,
     get_setting,
     make_bin_validator,
+    make_model_validator,
 )
 
 SPEC = PluginSpec(
@@ -69,6 +71,7 @@ def register(ctx: PluginContext) -> None:
             seed_mode="prompt-flag",
             extra_strip_env=("OPENCODE", "OPENCODE_BIN_PATH"),
             permission_args_fn=_permission_args,
+            model_flag="--model",
         )
     )
     ctx.add_setting(
@@ -80,3 +83,12 @@ def register(ctx: PluginContext) -> None:
         ),
     )
     ctx.add_setting("opencode_bin", make_bin_validator("opencode"), BIN_OVERRIDE_HINT, BIN_OVERRIDE_LABEL)
+    ctx.add_setting(
+        "opencode_model",
+        make_model_validator("opencode"),
+        _lazy(
+            "Model for spawned OpenCode sessions in the form provider/model "
+            "(see `opencode models`). Passed to the CLI as --model. Unset for the CLI default."
+        ),
+        MODEL_LABEL,
+    )

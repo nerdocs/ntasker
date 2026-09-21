@@ -107,6 +107,9 @@ same backup rules as the CLI); the CLI line stays for a non-default home or comm
 | `claude_bin`             | `NTASKER_CLAUDE_BIN`      | Path to the Claude CLI when not on the server PATH       |
 | `opencode_bin`           | `NTASKER_OPENCODE_BIN`    | Path to the OpenCode CLI when not on the server PATH     |
 | `pi_bin`                 | `NTASKER_PI_BIN`          | Path to the Pi CLI when not on the server PATH           |
+| `claude_model`           | `NTASKER_CLAUDE_MODEL`    | Model for Claude sessions (alias or id), passed as `--model` |
+| `opencode_model`         | `NTASKER_OPENCODE_MODEL`  | Model for OpenCode sessions (`provider/model`), `--model` |
+| `pi_model`               | `NTASKER_PI_MODEL`        | Model pattern/id for Pi sessions, passed as `--model`    |
 | `claude_permission_mode` | --                        | `default`/`auto`/`plan`/`bypassPermissions`              |
 | `opencode_auto`          | `NTASKER_OPENCODE_AUTO`   | Run OpenCode sessions with `--auto` (auto-approve)       |
 | `claude_open_terminal`   | `NTASKER_CLAUDE_OPEN_TERMINAL` | Open the terminal now vs. start in the background   |

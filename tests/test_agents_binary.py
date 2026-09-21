@@ -33,3 +33,24 @@ def test_resolve_binary_falls_back_to_well_known_dir(tmp_path, monkeypatch):
     monkeypatch.setattr("ntasker.settings.get_setting", lambda *a, **k: None)
 
     assert agents.resolve_binary(agents.AGENTS["claude"]) == str(exe)
+
+
+def test_build_spawn_passes_configured_model(tmp_path, monkeypatch):
+    """A ``<key>_model`` setting becomes ``--model <value>``; unset adds nothing."""
+    from ntasker.db import init_db, set_db_path  # noqa: PLC0415
+    from ntasker.settings import set_setting  # noqa: PLC0415
+
+    monkeypatch.delenv("NTASKER_CLAUDE_MODEL", raising=False)
+    path = tmp_path / "t.db"
+    set_db_path(path)
+    init_db(path)
+    spec = agents.get_spec("claude")
+    assert "--model" not in spec.build_spawn("/task 1")
+    set_setting("claude_model", "opus")
+    argv = spec.build_spawn("/task 1")
+    assert argv[argv.index("--model") + 1] == "opus"
+
+
+def test_model_env_overrides_setting(monkeypatch):
+    monkeypatch.setenv("NTASKER_PI_MODEL", "sonnet:high")
+    assert agents.get_spec("pi").model_args() == ["--model", "sonnet:high"]

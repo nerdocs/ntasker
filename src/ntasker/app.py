@@ -86,6 +86,7 @@ from ntasker import updates
 from ntasker.settings import (
     FIELD_CHOICES,
     FIELD_DEFAULTS,
+    FIELD_SUGGESTIONS,
     HINTS,
     LABELS,
     VALIDATORS,
@@ -1180,6 +1181,7 @@ def settings_page(request: Request) -> HTMLResponse:
             "labels": {key: str(val) for key, val in LABELS.items()},
             "field_choices": field_choices,
             "field_defaults": FIELD_DEFAULTS,
+            "field_suggestions": FIELD_SUGGESTIONS,
             "known_keys": sorted(VALIDATORS.keys()),
             "plugin_cards": plugin_cards,
             "language": get_active_language(),

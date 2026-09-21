@@ -652,6 +652,35 @@ FIELD_DEFAULTS: dict[str, str] = {
 }
 
 
+# Datalist suggestions for free-text keys the /settings page renders: the
+# input stays free text, the list only offers the common values. Plugins
+# contribute theirs through ``PluginContext.add_setting(suggestions=...)``.
+FIELD_SUGGESTIONS: dict[str, tuple[str, ...]] = {}
+
+
+def make_model_validator(agent_key: str) -> Validator:
+    """Build a validator for an agent's ``<key>_model`` setting.
+
+    Any non-empty string passes -- the CLI validates the alias / id itself
+    at spawn. To clear it, DELETE the key (the CLI's own default applies).
+    """
+
+    def _validate(value: str) -> str:
+        norm = (value or "").strip()
+        if not norm:
+            raise ValueError(
+                _("{key} must not be empty -- unset it to use the CLI default.").format(
+                    key=f"{agent_key}_model"
+                )
+            )
+        return norm
+
+    return _validate
+
+
+MODEL_LABEL = _lazy("Model")
+
+
 def make_bin_validator(agent_key: str) -> Validator:
     """Build a validator for an agent's ``<key>_bin`` binary-path override.
 

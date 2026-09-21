@@ -22,8 +22,10 @@ from ntasker.settings import (
     _TRUE_STRINGS,
     BIN_OVERRIDE_HINT,
     BIN_OVERRIDE_LABEL,
+    MODEL_LABEL,
     get_setting,
     make_bin_validator,
+    make_model_validator,
 )
 
 SPEC = PluginSpec(
@@ -127,6 +129,7 @@ def register(ctx: PluginContext) -> None:
             system_prompt_flag="--append-system-prompt",
             settings_flag="--settings",
             permission_args_fn=_permission_args,
+            model_flag="--model",
         )
     )
     ctx.add_setting(
@@ -141,3 +144,13 @@ def register(ctx: PluginContext) -> None:
     )
     ctx.add_setting("claude_auto_mode", validate_claude_auto_mode)
     ctx.add_setting("claude_bin", make_bin_validator("claude"), BIN_OVERRIDE_HINT, BIN_OVERRIDE_LABEL)
+    ctx.add_setting(
+        "claude_model",
+        make_model_validator("claude"),
+        _lazy(
+            "Model for spawned Claude sessions: an alias (haiku, sonnet, opus, fable) or a "
+            "full model id. Passed to the CLI as --model. Unset for the CLI default."
+        ),
+        MODEL_LABEL,
+        suggestions=("haiku", "sonnet", "opus", "fable"),
+    )

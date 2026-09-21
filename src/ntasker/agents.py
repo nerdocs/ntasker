@@ -121,6 +121,11 @@ class AgentSpec:
     """Settings-driven permission / auto-approve flags, supplied by the agent's
     plugin (``None`` = the agent has no such flags)."""
 
+    model_flag: str | None = None
+    """CLI flag that picks the model for the session (``--model``), or
+    ``None``. Its value comes from the ``<key>_model`` setting (ENV
+    ``NTASKER_<KEY>_MODEL`` first); unset = the CLI's own default."""
+
     @property
     def strip_env(self) -> tuple[str, ...]:
         """Full set of env vars to strip before spawning this agent."""
@@ -129,6 +134,25 @@ class AgentSpec:
     def permission_args(self) -> list[str]:
         """Agent-specific permission/auto-approve CLI flags (settings-driven)."""
         return self.permission_args_fn() if self.permission_args_fn else []
+
+    def model_args(self) -> list[str]:
+        """``[model_flag, <model>]`` when a model is configured, else ``[]``."""
+        if not self.model_flag:
+            return []
+        from ntasker.settings import get_setting  # noqa: PLC0415 -- lazy: avoid cycle
+
+        model = (get_setting(self.model_setting_key, env_var=self.model_env_var) or "").strip()
+        return [self.model_flag, model] if model else []
+
+    @property
+    def model_setting_key(self) -> str:
+        """Settings key holding this agent's model (``<key>_model``)."""
+        return f"{self.key}_model"
+
+    @property
+    def model_env_var(self) -> str:
+        """ENV var overriding this agent's model (``NTASKER_<KEY>_MODEL``)."""
+        return f"NTASKER_{self.key.upper()}_MODEL"
 
     @property
     def bin_setting_key(self) -> str:
@@ -149,7 +173,7 @@ class AgentSpec:
         system_prompt: str | None = None,
         settings_path: str | None = None,
     ) -> list[str]:
-        """Full argv for an interactive session, incl. permission flags + seed.
+        """Full argv for an interactive session, incl. permission/model flags + seed.
 
         The working directory is set by the caller via the subprocess ``cwd``
         (uniform across all three agents -- pi has no ``--dir`` flag), so the
@@ -165,7 +189,7 @@ class AgentSpec:
         an extra settings file (:attr:`settings_flag`) -- ntasker's hooks. All
         four are no-ops on an agent that lacks the corresponding flag.
         """
-        args = [resolve_binary(self) or self.binary, *self.permission_args()]
+        args = [resolve_binary(self) or self.binary, *self.permission_args(), *self.model_args()]
         if settings_path and self.settings_flag:
             args.extend([self.settings_flag, settings_path])
         if resume_id and self.resume_flag:

@@ -122,7 +122,9 @@ class PluginContext:
 
     spec: PluginSpec
     routers: list[APIRouter] = field(default_factory=list)
-    settings: list[tuple[str, Callable[[str], str], Any, Any]] = field(default_factory=list)
+    settings: list[tuple[str, Callable[[str], str], Any, Any, tuple[str, ...]]] = field(
+        default_factory=list
+    )
     schema: list[str] = field(default_factory=list)
     migrations: list[Callable[[sqlite3.Connection], None]] = field(default_factory=list)
     agents: list[AgentSpec] = field(default_factory=list)
@@ -151,13 +153,15 @@ class PluginContext:
         validator: Callable[[str], str],
         hint: Any = None,
         label: Any = None,
+        suggestions: tuple[str, ...] = (),
     ) -> None:
         """Register a settings key (validator + optional /settings hint and label).
 
         A key with a ``label`` is rendered as a text field on the plugin's
         card on the /settings Plugins tab; one without stays CLI/API-only
-        (or is driven by the plugin's own ``settings`` slot template)."""
-        self.settings.append((key, validator, hint, label))
+        (or is driven by the plugin's own ``settings`` slot template).
+        ``suggestions`` are offered as a datalist on that text field."""
+        self.settings.append((key, validator, hint, label, suggestions))
 
     def add_schema(self, sql: str) -> None:
         """``CREATE TABLE IF NOT EXISTS ...`` script, run on every ``init_db()``."""
@@ -257,12 +261,14 @@ def _apply_to_core() -> None:
             settings.HINTS[rules_key] = settings.RUN_RULES_HINT
             settings.LABELS[rules_key] = settings.RUN_RULES_LABEL
             settings.FIELD_DEFAULTS[rules_key] = settings.RUN_RULES_DEFAULT
-        for key, validator, hint, label in ctx.settings:
+        for key, validator, hint, label, suggestions in ctx.settings:
             settings.VALIDATORS[key] = validator
             if hint is not None:
                 settings.HINTS[key] = hint
             if label is not None:
                 settings.LABELS[key] = label
+            if suggestions:
+                settings.FIELD_SUGGESTIONS[key] = suggestions
 
 
 def _names_from(env_var: str, setting: str) -> set[str]:
@@ -480,7 +486,7 @@ def describe() -> list[dict[str, Any]]:
             "settings": "settings" in ctx.slots,
             "extra": ctx.spec.extra,
             "missing": missing_requirements(ctx.spec.extra) if ctx.spec.extra else [],
-            "fields": [key for key, _v, _h, label in ctx.settings if label is not None],
+            "fields": [key for key, _v, _h, label, _s in ctx.settings if label is not None],
             "icon": ctx.spec.icon,
             "image": ctx.agents[0].icon if ctx.agents else None,
         }

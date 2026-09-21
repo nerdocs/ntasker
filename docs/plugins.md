@@ -69,7 +69,7 @@ def register(ctx: PluginContext) -> None:
 | Method | What it contributes |
 |---|---|
 | `add_router(router)` | FastAPI `APIRouter`; every route carries a `require_enabled` dependency |
-| `add_setting(key, validator, hint=None, label=None)` | settings key: validator, hint, label registries (see below) |
+| `add_setting(key, validator, hint=None, label=None, suggestions=())` | settings key: validator, hint, label; `suggestions` = datalist |
 | `add_schema(sql)` | `CREATE TABLE IF NOT EXISTS ...` script, run on every `init_db()` |
 | `add_migration(fn)` | idempotent `fn(conn)`, run after the schema on `init_db()` |
 | `add_agent(spec)` | an `AgentSpec` (see [agents.md](agents.md)) |

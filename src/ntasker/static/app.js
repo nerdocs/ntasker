@@ -285,6 +285,11 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // Raw body of the last /api/queue response; an unchanged payload skips
         // the state update (same trick as the session poll).
         _queueRaw: null,
+        // Run log: one entry per fasttrack run (/api/outcomes), newest first.
+        // Acknowledging deletes the entry. Same raw-compare trick as the queue.
+        outcomes: [],
+        outcomesOpen: false,
+        _outcomesRaw: null,
 
         // ---- Agent registry (Claude / OpenCode / Pi) ----
         // ntasker is agent-agnostic: each task carries an ``agent`` and the run
@@ -397,6 +402,8 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             locks: [],         // extra projects whose dirs the run holds
             lockInput: '',     // current text in the lock-input
             draft: false,      // parked idea: never started by anyone
+            fasttrack: false,  // the agent commits + finishes the task itself
+            fail_continue: false, // with fasttrack: a failed run leaves the queue
         },
         // Dependency autocomplete suggestions for the currently focused
         // input (form or edit -- only one is open at a time).
@@ -429,6 +436,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 this.loadClaudeStatus(),
                 this.loadClaudeSessions(),
                 this.loadQueue(),
+                this.loadOutcomes(),
             ]);
             // After loading projects/tags, drop stale entries silently.
             this.pruneStaleProjectFilter();
@@ -1467,6 +1475,50 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             } catch (_e) { /* leave the last known queue */ }
         },
 
+        async loadOutcomes() {
+            try {
+                const r = await fetch('/api/outcomes');
+                if (!r.ok) return;
+                const raw = await r.text();
+                if (raw === this._outcomesRaw) return;
+                this._outcomesRaw = raw;
+                this.outcomes = JSON.parse(raw);
+            } catch (_e) { /* leave the last known list */ }
+        },
+
+        // Acknowledge = delete. No confirmation: the entry is a notification,
+        // the report itself stays on the task.
+        async ackOutcome(id) {
+            const r = await fetch(`/api/outcomes/${id}`, { method: 'DELETE' });
+            if (r.ok || r.status === 404) {
+                this.outcomes = this.outcomes.filter(o => o.id !== id);
+                this._outcomesRaw = null;
+            }
+        },
+
+        outcomeIcon(status) {
+            if (status === 'ok') return 'ti-circle-check text-success';
+            if (status === 'failed') return 'ti-circle-x text-danger';
+            return 'ti-alert-triangle text-warning';
+        },
+
+        // "a.py, b.py, +3" -- the full list sits in the element's title.
+        filesLine(files) {
+            const head = files.slice(0, 5).join(', ');
+            return files.length > 5 ? `${head}, +${files.length - 5}` : head;
+        },
+
+        // A suggested follow-up -> the new-task form, prefilled. Nothing is
+        // created until the user presses Create (agents never create tasks).
+        prefillTask(outcome, title) {
+            this.form.title = title;
+            this.form.project = outcome.project || '';
+            this.form.description = _i('outcome_followup_of', { id: outcome.task_id, title: outcome.title });
+            this.formOpen = true;
+            if (this.claudeView !== null) location.hash = '#/';
+            this.$nextTick(() => this.$refs.titleInput?.focus());
+        },
+
         // Take a /api/queue payload into state.
         _applyQueue(d) {
             this.queue = d.items || [];
@@ -1872,6 +1924,8 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 depends: misc ? [] : this.form.depends.map(d => d.id),
                 locks: misc ? [] : this.form.locks,
                 draft: this.form.draft,
+                fasttrack: this.form.fasttrack,
+                fail_continue: this.form.fasttrack && this.form.fail_continue,
             };
             if (typeof this.pluginCreatePayload === 'function') this.pluginCreatePayload(body);
             const r = await fetch('/api/tasks', {
@@ -1897,6 +1951,8 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             this.form.locks = [];
             this.form.lockInput = '';
             this.form.draft = false;
+            this.form.fasttrack = false;
+            this.form.fail_continue = false;
             if (typeof this.pluginResetForm === 'function') this.pluginResetForm();
             // Keep project selection for rapid same-project entry.
             await this.refreshAll();
@@ -2024,6 +2080,8 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 depends: misc ? [] : (t.depends || []).map(d => d.id),
                 locks: misc ? [] : (t.locks || []),
                 draft: !!t.draft,
+                fasttrack: !!t.fasttrack,
+                fail_continue: !!t.fasttrack && !!t.fail_continue,
             };
             const r = await fetch(`/api/tasks/${t.id}`, {
                 method: 'PATCH',
@@ -2085,6 +2143,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 this.loadPhases(),
                 this.loadPriorities(),
                 this.loadQueue(),
+                this.loadOutcomes(),
             ]);
             this.pruneStaleProjectFilter();
             this.pruneStaleTagFilter();

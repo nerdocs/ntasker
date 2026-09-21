@@ -845,9 +845,19 @@
                                 <div class="col-12 d-flex flex-wrap align-items-center gap-2">
                                     {# Draft: a parked idea -- never started by the queue, the run button or /task. #}
                                     {# Sits next to the actions because it decides what "create" means. #}
-                                    <label class="form-check mb-0 me-auto" :title="$i18n('draft_badge')">
+                                    <label class="form-check mb-0" :title="$i18n('draft_badge')">
                                         <input type="checkbox" class="form-check-input" x-model="form.draft">
                                         <span class="form-check-label">{{ t('Park as a draft') }}</span>
+                                    </label>
+                                    {# Fasttrack: the agent commits + finishes the task itself; the second #}
+                                    {# switch lets a failed run leave the queue instead of blocking its lane. #}
+                                    <label class="form-check mb-0" :title="$i18n('fasttrack_badge')">
+                                        <input type="checkbox" class="form-check-input" x-model="form.fasttrack">
+                                        <span class="form-check-label">{{ t('Fasttrack') }}</span>
+                                    </label>
+                                    <label class="form-check mb-0 me-auto" x-show="form.fasttrack" :title="$i18n('fail_continue_hint')">
+                                        <input type="checkbox" class="form-check-input" x-model="form.fail_continue">
+                                        <span class="form-check-label">{{ t('Continue on failure') }}</span>
                                     </label>
                                     <button type="submit" class="btn btn-primary" :disabled="!form.title.trim()">
                                         <i class="ti ti-plus me-1 fs-3"></i>
@@ -892,6 +902,14 @@
                               x-text="queue.length"></span>
                         <span class="text-muted small text-truncate flex-fill"
                               x-show="queue.length" x-cloak x-text="queueHint()"></span>
+                        {# Run log: one entry per fasttrack run (see /api/outcomes). #}
+                        <button type="button" class="btn btn-sm" x-show="outcomes.length" x-cloak
+                                :class="outcomesOpen ? 'btn-secondary' : 'btn-ghost-secondary'"
+                                @click="outcomesOpen = !outcomesOpen" :title="$i18n('run_log')">
+                            <i class="ti ti-list-check me-1 fs-3"></i>
+                            <span x-text="$i18n('run_log')"></span>
+                            <span class="badge bg-secondary-lt ms-1" x-text="outcomes.length"></span>
+                        </button>
                         {# Solid only when paused with work waiting -- that is the #}
                         {# one state where pressing it changes something visible. #}
                         <button type="button" class="btn btn-sm ms-auto"
@@ -959,6 +977,8 @@
                                       @click.stop="copyId(item.id)"
                                       x-text="`#${item.id}`"></span>
 
+                                <i class="ti ti-bolt text-teal flex-shrink-0" x-show="item.fasttrack"
+                                   :title="$i18n('fasttrack_badge')"></i>
                                 <span class="task-queue-title text-truncate" :title="item.title"
                                       x-text="item.title"></span>
 
@@ -1011,6 +1031,52 @@
                     </ol>
                     </div>
                     </template>
+                    </div>
+
+                    {# ===== Run log ===== #}
+                    {# Every fasttrack run leaves one outcome: ok (green), failed / blocked #}
+                    {# (with the agent's summary) or ended (session died without finish). #}
+                    {# Acknowledging deletes the entry; the report stays on the task. #}
+                    <div class="task-queue-outcomes" x-show="outcomes.length && outcomesOpen" x-cloak>
+                        <template x-for="o in outcomes" :key="o.id">
+                            <div class="task-queue-outcome">
+                                <div class="d-flex align-items-center gap-2">
+                                    <i class="ti fs-3 flex-shrink-0" :class="outcomeIcon(o.status)"
+                                       :title="$i18n('outcome_status_' + o.status)"></i>
+                                    <span class="task-id badge bg-secondary-lt text-secondary font-monospace"
+                                          x-show="o.task_id" x-text="`#${o.task_id}`"></span>
+                                    <span class="fw-medium text-truncate" :title="o.title" x-text="o.title"></span>
+                                    <span class="text-secondary text-truncate flex-fill" :title="o.summary"
+                                          x-text="o.summary"></span>
+                                    <code class="small flex-shrink-0" x-show="o.commit"
+                                          x-text="(o.commit || '').slice(0, 7)"></code>
+                                    <button type="button" class="btn btn-sm btn-ghost-secondary px-1 py-0 flex-shrink-0"
+                                            x-show="o.report" @click="openReport({id: o.task_id, title: o.title, report: o.report, report_at: o.created_at})"
+                                            :title="$i18n('report_title')">
+                                        <i class="ti ti-file-text fs-3"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-ghost-success px-1 py-0 flex-shrink-0"
+                                            @click="ackOutcome(o.id)" :title="$i18n('outcome_ack')">
+                                        <i class="ti ti-check fs-3"></i>
+                                    </button>
+                                </div>
+                                <div class="task-queue-outcome-files" x-show="o.files_changed.length"
+                                     :title="o.files_changed.join('\n')">
+                                    <i class="ti ti-files me-1"></i><span x-text="filesLine(o.files_changed)"></span>
+                                </div>
+                                <ul class="task-queue-outcome-next mb-0" x-show="o.next_tasks.length">
+                                    <template x-for="(n, i) in o.next_tasks" :key="i">
+                                        <li>
+                                            <span x-text="n"></span>
+                                            <button type="button" class="btn btn-sm btn-ghost-secondary px-1 py-0"
+                                                    @click="prefillTask(o, n)" :title="$i18n('outcome_create_task')">
+                                                <i class="ti ti-plus"></i>
+                                            </button>
+                                        </li>
+                                    </template>
+                                </ul>
+                            </div>
+                        </template>
                     </div>
                 </div>
 
@@ -1219,6 +1285,11 @@
                                             <template x-if="task.draft">
                                                 <span class="badge bg-secondary-lt" :title="$i18n('draft_badge')">
                                                     <i class="ti ti-pencil me-1"></i>{{ t('Draft') }}
+                                                </span>
+                                            </template>
+                                            <template x-if="task.fasttrack">
+                                                <span class="badge bg-teal-lt" :title="$i18n('fasttrack_badge')">
+                                                    <i class="ti ti-bolt me-1"></i>{{ t('Fasttrack') }}
                                                 </span>
                                             </template>
                                         </div>
@@ -1521,6 +1592,11 @@
                                                         <i class="ti ti-pencil me-1"></i>{{ t('Draft') }}
                                                     </span>
                                                 </template>
+                                                <template x-if="task.fasttrack">
+                                                    <span class="badge bg-teal-lt" :title="$i18n('fasttrack_badge')">
+                                                        <i class="ti ti-bolt me-1"></i>{{ t('Fasttrack') }}
+                                                    </span>
+                                                </template>
 
                                                 {# Mark-done shortcut, bottom-right of the card -- same #}
                                                 {# affordance as the terminal header. Open tasks only. #}
@@ -1751,6 +1827,14 @@
                         <label class="form-check" :title="$i18n('draft_badge')">
                             <input type="checkbox" class="form-check-input" x-model="editing.draft">
                             <span class="form-check-label">{{ t('This task is a draft') }}</span>
+                        </label>
+                        <label class="form-check" :title="$i18n('fasttrack_badge')">
+                            <input type="checkbox" class="form-check-input" x-model="editing.fasttrack">
+                            <span class="form-check-label">{{ t('Fasttrack') }}</span>
+                        </label>
+                        <label class="form-check" x-show="editing.fasttrack" :title="$i18n('fail_continue_hint')">
+                            <input type="checkbox" class="form-check-input" x-model="editing.fail_continue">
+                            <span class="form-check-label">{{ t('Continue on failure') }}</span>
                         </label>
                     </div>
                     <div class="mb-2">

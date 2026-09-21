@@ -59,9 +59,10 @@ def test_cli_report_unknown_task(db, monkeypatch):
     assert cli.main(["--db", str(db), "report", "9999"]) == 1
 
 
-def test_seed_orders_report_before_handoff(db):
+def test_seed_hands_off_via_finish(db):
     seed = queue_seed_for_task({"id": 5, "title": "t", "status": "open", "priority": "normal"})
-    assert seed.index("ntasker report 5") < seed.index("ntasker patch 5 --phase review")
+    assert "ntasker finish 5 --status ok" in seed
+    assert "ntasker report 5" not in seed
 
 
 def test_seed_uses_agent_run_rules(db):

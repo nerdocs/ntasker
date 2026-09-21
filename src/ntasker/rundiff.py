@@ -135,3 +135,17 @@ def changed_files(cwd: str, base: str | None) -> dict:
             files.append(_describe(chunk, untracked=True))
     files.sort(key=lambda f: f["path"])
     return {"git": True, "files": files}
+
+
+def changed_paths(baselines: dict[str, str | None]) -> list[str]:
+    """The run's changed paths as a flat list, for a ``run_outcomes`` row.
+
+    Bare ``path`` when the run holds a single directory, ``<dir>/path`` when it
+    holds several (directory locks). Empty baselines give ``[]``.
+    """
+    if not baselines:
+        return []
+    files = run_diff(baselines)["files"]
+    if len(baselines) == 1:
+        return [f["path"] for f in files]
+    return [f"{f['dir']}/{f['path']}" for f in files]

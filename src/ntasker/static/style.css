@@ -384,6 +384,33 @@ body {
     text-align: center;
 }
 
+/* Run log under the queue: one line per fasttrack run outcome. */
+.task-queue-outcomes {
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--tblr-border-color);
+    font-size: 0.875rem;
+}
+.task-queue-outcome {
+    padding: 0.25rem 0;
+}
+.task-queue-outcome + .task-queue-outcome {
+    border-top: 1px dashed var(--tblr-border-color);
+}
+.task-queue-outcome-files {
+    color: var(--tblr-secondary);
+    font-family: var(--tblr-font-monospace);
+    font-size: 0.75rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding-left: 1.75rem;
+}
+.task-queue-outcome-next {
+    padding-left: 2.75rem;
+    color: var(--tblr-secondary);
+}
+
 /* One column per project. The worker runs one task per project at a time, so
  * a column is literally one execution lane -- which is why each gets its own
  * rail and its own 1..n numbering. Lanes share the width and wrap into further

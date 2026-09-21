@@ -51,7 +51,7 @@ from ntasker.projects import (
     discover_claude_project_dirs,
     stale_claude_projects,
 )
-from ntasker.rundiff import parse_baselines, run_diff
+from ntasker.rundiff import changed_paths, parse_baselines, run_diff
 from ntasker import completion, locks, plugins, taskqueue
 from ntasker import db as _db_module
 from ntasker.db import (
@@ -61,6 +61,7 @@ from ntasker.db import (
     delete_tags,
     get_conn,
     init_db,
+    insert_outcome,
     load_deps_bulk,
     load_deps_for,
     load_tags_bulk,
@@ -69,6 +70,7 @@ from ntasker.db import (
     normalize_dep_ids,
     normalize_tags,
     report_fields,
+    row_to_outcome,
     row_to_task,
     set_db_path,
     set_task_deps,
@@ -230,6 +232,10 @@ class TaskCreate(BaseModel):
     locks: list[str] = Field(default_factory=list)
     # Draft: parked idea, never started by anyone (see the schema comment).
     draft: bool = False
+    # Fasttrack: the agent finishes the task itself; ``fail_continue`` lets a
+    # failed run leave the queue (see ntasker.taskqueue).
+    fasttrack: bool = False
+    fail_continue: bool = False
 
 
 class TaskUpdate(BaseModel):
@@ -249,6 +255,8 @@ class TaskUpdate(BaseModel):
     model: str | None = None
     archived: bool | None = None
     draft: bool | None = None  # True also drops the task from the queue
+    fasttrack: bool | None = None
+    fail_continue: bool | None = None
     tags: list[str] | None = None  # None = unchanged; [] = clear all
     depends: list[int] | None = None  # None = unchanged; [] = clear all
     # Manual drag&drop position (fractional). None = unchanged. Written as a
@@ -257,6 +265,20 @@ class TaskUpdate(BaseModel):
     locks: list[str] | None = None  # None = unchanged; [] = clear all
     # The agent's final report (Markdown). None = unchanged; "" clears it.
     report: str | None = None
+
+
+class OutcomeIn(BaseModel):
+    """Body of ``POST /api/tasks/{id}/outcome`` -- what ``ntasker finish`` sends."""
+
+    status: Literal["ok", "failed", "blocked"]
+    summary: str | None = None
+    # Markdown report; empty/omitted keeps the report already on the task.
+    report: str | None = None
+    commit: str | None = None
+    # Changed paths; omitted = derived from the run's baselines (rundiff).
+    files: list[str] | None = None
+    # Follow-up suggestions -- listed for the user, never created as tasks.
+    next_tasks: list[str] = Field(default_factory=list)
 
 
 class SettingUpdate(BaseModel):
@@ -520,6 +542,16 @@ def build_js_strings() -> dict[str, str]:
         "task_locks_badge": _("Also locks the directories of:"),
         "draft_no_run": _("Draft -- never started. Untick Draft to run it."),
         "draft_badge": _("Draft: never started by anyone"),
+        "fasttrack_badge": _("Fasttrack: the agent commits and finishes the task itself"),
+        "fail_continue_hint": _("A failed fasttrack run leaves the queue instead of blocking it"),
+        "run_log": _("Run log"),
+        "outcome_ack": _("Acknowledge and remove"),
+        "outcome_status_ok": _("Finished"),
+        "outcome_status_failed": _("Failed"),
+        "outcome_status_blocked": _("Blocked"),
+        "outcome_status_ended": _("Session ended without a result"),
+        "outcome_create_task": _("Create a task from this suggestion"),
+        "outcome_followup_of": _("Follow-up of #{id} {title}"),
         # Report modal (the agent's final report)
         "report_open": _("Show report"),
         "report_title": _("Report"),
@@ -2418,8 +2450,8 @@ def api_create_task(payload: TaskCreate) -> JSONResponse:
         cur = conn.execute(
             """
             INSERT INTO tasks (project, title, description, phase, priority, agent,
-                               model, locks, draft, sort_order)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?,
+                               model, locks, draft, fasttrack, fail_continue, sort_order)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                     (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM tasks))
             """,
             (
@@ -2432,6 +2464,8 @@ def api_create_task(payload: TaskCreate) -> JSONResponse:
                 _normalize_model(payload.model),
                 locks.dump(locks.normalize(payload.locks, project_value)),
                 1 if payload.draft else 0,
+                1 if payload.fasttrack else 0,
+                1 if payload.fail_continue else 0,
             ),
         )
         # sqlite3 types lastrowid as ``int | None``; after a successful INSERT
@@ -2498,8 +2532,9 @@ def api_update_task(task_id: int, payload: TaskUpdate) -> JSONResponse:
     if "archived" in fields:
         fields["archived"] = 1 if fields["archived"] else 0
 
-    if "draft" in fields:
-        fields["draft"] = 1 if fields["draft"] else 0
+    for flag in ("draft", "fasttrack", "fail_continue"):
+        if flag in fields:
+            fields[flag] = 1 if fields[flag] else 0
 
     if "report" in fields:
         fields.update(report_fields(fields["report"]))
@@ -2570,6 +2605,98 @@ def api_update_task(task_id: int, payload: TaskUpdate) -> JSONResponse:
         stop_session(task_id)
 
     return JSONResponse(task)
+
+
+@app.post("/api/tasks/{task_id}/outcome")
+def api_task_outcome(task_id: int, payload: OutcomeIn) -> JSONResponse:
+    """The run's structured outcome -- the one hand-off call (``ntasker finish``).
+
+    What happens depends on the task's flags:
+
+    * plain task, ``ok`` -> report stored, ``phase=review``, session stays open;
+    * plain task, ``failed``/``blocked`` -> report stored, nothing else;
+    * fasttrack, ``ok`` -> ``status=done``, session killed, lane continues;
+    * fasttrack, ``failed``/``blocked`` -> with ``fail_continue`` the task leaves
+      the queue and its session is killed (lane continues), otherwise it stays
+      as today (session open, entry blocks the lane).
+
+    Every fasttrack run gets a ``run_outcomes`` row (the run log); a plain
+    task's ``finish`` writes none. ``files`` defaults to the run's changed paths
+    derived from its baselines (see :mod:`ntasker.rundiff`).
+    """
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail=_("Task not found"))
+    report = (payload.report or "").strip()
+    summary = (payload.summary or "").strip() or next(
+        (line.strip() for line in report.splitlines() if line.strip()), payload.status
+    )
+    summary = summary[:200]
+    next_tasks = [t.strip()[:200] for t in payload.next_tasks if t.strip()]
+    # Git runs here -- before a write connection is open.
+    files = payload.files if payload.files is not None else changed_paths(
+        parse_baselines(row["run_baselines"])
+    )
+    fasttrack = bool(row["fasttrack"])
+    kill = False
+    outcome_id: int | None = None
+    fields: dict = {}
+    if report:
+        fields.update(report_fields(report))
+    if not fasttrack:
+        if payload.status == "ok":
+            fields["phase"] = "review"
+    elif payload.status == "ok":
+        fields["status"] = "done"
+        fields["completed_at"] = datetime.now().isoformat(timespec="seconds")
+        kill = True
+    elif row["fail_continue"]:
+        fields["queue_order"] = None
+        fields["session_ended_at"] = None
+        kill = True
+    with get_conn() as conn:
+        if fields:
+            set_clause = ", ".join(f"{k} = ?" for k in fields)
+            conn.execute(f"UPDATE tasks SET {set_clause} WHERE id = ?", [*fields.values(), task_id])
+        if fasttrack:
+            outcome_id = insert_outcome(
+                conn,
+                row,
+                payload.status,
+                summary,
+                report=report or row["report"],
+                commit_sha=(payload.commit or "").strip() or None,
+                files=files,
+                next_tasks=next_tasks,
+            )
+        row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        task = row_to_task(row, load_tags_for(conn, task_id), load_deps_for(conn, task_id))
+        plugins.apply_task_hooks(conn, [task])
+    # The session is finished work: tear it down (the queue worker's sweep is
+    # the backstop for the done path). Returns before the kill lands, so the
+    # CLI call inside the session gets its answer.
+    if kill:
+        stop_session(task_id)
+    return JSONResponse({**task, "outcome_id": outcome_id})
+
+
+@app.get("/api/outcomes")
+def api_list_outcomes() -> JSONResponse:
+    """The run log: every fasttrack run outcome, newest first. Not paginated --
+    the list is emptied by acknowledging."""
+    with get_conn() as conn:
+        rows = conn.execute("SELECT * FROM run_outcomes ORDER BY id DESC").fetchall()
+    return JSONResponse([row_to_outcome(r) for r in rows])
+
+
+@app.delete("/api/outcomes/{outcome_id}", status_code=204)
+def api_ack_outcome(outcome_id: int) -> None:
+    """Acknowledge a run outcome = delete it from the log."""
+    with get_conn() as conn:
+        cur = conn.execute("DELETE FROM run_outcomes WHERE id = ?", (outcome_id,))
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail=_("Outcome not found"))
 
 
 @app.delete("/api/tasks/{task_id}", status_code=204)

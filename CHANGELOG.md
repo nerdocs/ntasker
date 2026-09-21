@@ -5,6 +5,7 @@ All notable changes to ntasker.
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
 ## [Unreleased]
+Queue: fasttrack tasks commit + finish themselves via `ntasker finish`; run log of outcomes; seeds chain dep results.
 Projects: optional misc project (`misc_project`) pinned under Cross-project; `misc_no_memory` = no Claude auto memory.
 
 ## [3.9.0] — 2026-09-21

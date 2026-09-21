@@ -76,19 +76,19 @@ panel's **Running** link opens the terminal later.
 A run does **not** use the `/task <id>` slash command. It gets a self-contained seed
 (`claude_runner.queue_seed_for_task`) which inlines the task and tells the agent to hand it off when the work is done.
 
-> When the work is done, do two things in this order, without asking:
-> 1. write your final report: `ntasker report <id>` (Markdown on stdin -- what you did, verified, left open)
-> 2. hand the task over for review, then stop and wait: `ntasker patch <id> --phase review`
+> When the work is done, report and hand over in ONE command, without asking -- the report (Markdown) goes on stdin:
+> `ntasker finish <id> --status ok --summary "<one line>" [--next "<follow-up>"] <<'EOF' ... EOF`
 
-The report lands on the task (`report`, `report_at`) and is read from the report icon on its card -- you never have to
-open the session for it. The session stays open after the hand-off: you review the task there, and closing it (`done`)
-is what retires the entry and lets the next task of that project start. **A queue run never closes a task on its
-own** -- the results wait for you in the review column, exactly like a run you started by hand. The seed allows
-`done` only when you or the task description explicitly ask for it; a task that says so closes itself and the queue
-moves on unattended.
+`ntasker finish` posts to `POST /api/tasks/{id}/outcome`; the server stores the report on the task (`report`,
+`report_at` -- read it from the report icon on the card) and, for a plain task, moves it to `phase=review`. The
+session stays open after the hand-off: you review the task there, and closing it (`done`) is what retires the entry
+and lets the next task of that project start. **A queue run never closes a task on its own** -- the results wait for
+you in the review column, exactly like a run you started by hand. The seed allows `done` only when you or the task
+description explicitly ask for it. (The old two-step `ntasker report` + `ntasker patch --phase review` still works.)
 
-The seed also tells the agent what to do when it *cannot* finish: still write the report (the blocker), leave the phase
-as-is and stop. If its session then ends -- see **ended** below.
+The seed also tells the agent what to do when it *cannot* finish: `ntasker finish <id> --status failed` (or
+`blocked`) with the blocker as its report, leave the phase as-is and stop. If its session then ends -- see **ended**
+below.
 
 The rules block is editable per agent: *Settings -> Plugins -> <agent> -> Run rules* (setting `<agent>_run_rules`,
 e.g. `claude_run_rules`). `{id}` in the text is replaced by the task id. Unset the key (the *Reset to default*
@@ -153,6 +153,41 @@ offending task.
 A successful link toasts with an **Undo** button rather than asking first. In the queue panel the middle band works
 across columns; that is exactly how a cross-project dependency gets made.
 
+## Fasttrack
+
+A task flagged **fasttrack** (`tasks.fasttrack`; the checkbox in the task form, `--fasttrack` on the CLI) is meant to
+run unattended from start to end: its seed appends the agent's *fasttrack rules* (setting `<agent>_fasttrack_rules`,
+editable next to the run rules) -- decide instead of asking, commit when everything is done, then
+`ntasker finish <id> --status ok --commit <sha>` as the very last command. What `finish` does depends on the flags:
+
+| Task | `--status ok` | `--status failed` / `blocked` |
+|---|---|---|
+| plain | report stored, `phase=review`, session stays open | report stored, phase unchanged, session stays open |
+| fasttrack | `status=done`, session killed, lane continues | report stored; entry blocks its lane until you look |
+| fasttrack + **continue on failure** | as above | entry leaves the queue (task stays open in `wip`), session killed, lane continues |
+
+*Continue on failure* is the second checkbox (`tasks.fail_continue`, `--fail-continue`), shown only with fasttrack on.
+
+### The run log
+
+Every fasttrack run leaves one row in `run_outcomes` -- also when its session ends **without** `finish` (crash, stop):
+the worker then writes an `ended` row itself. The panel's *Run log* button (visible while there are entries) lists
+them newest first: a green check for `ok`, red for `failed`, amber for `blocked` / `ended`, with the agent's one-line
+summary, the commit, the changed files and the suggested follow-ups. The check button acknowledges an entry, which
+deletes it; the report itself stays on the task.
+
+- `files_changed` is derived server-side from the run's baselines (`rundiff.changed_paths`) -- the same diff the Diff
+  view shows, so the agent's own commits count. `--files a,b` overrides it (a run without baselines).
+- `next_tasks` (`--next "..."`, repeatable) are suggestions only. The plus button next to one prefills the new-task
+  form; nothing is created until you press Create -- agents never create tasks.
+- **Chaining:** a task's seed lists the latest outcome of every task it depends on (summary and follow-ups, never the
+  report), so a downstream task starts from the upstream result. Acknowledge upstream entries after the downstream run
+  has started -- the seed reads the row.
+
+Sessions stay interactive PTY sessions. An unattended fasttrack run therefore still stalls on a permission or trust
+prompt (the `permission_prompt` hook flags the session as waiting) -- set `claude_permission_mode` / the project's
+allow-rules so the run does not have to ask.
+
 ## Storage
 
 A task is queued when its `queue_order` is not NULL; queued tasks run in `queue_order ASC` order. Unlike `sort_order`
@@ -175,6 +210,10 @@ ntasker queue start [--host --port]  # resume
 ntasker queue pause
 ntasker report <id> [--file f.md]  # store the agent's final report (Markdown from stdin)
 ntasker patch <id> --report "..."  # same; '' clears
+ntasker finish <id> --status ok|failed|blocked [--summary "..."] [--commit sha] [--next "..."] [--files a,b]
+                                   # the hand-off: report on stdin (or --file); server-only (NTASKER_URL)
+ntasker add ... --fasttrack [--fail-continue]
+ntasker patch <id> --fasttrack|--no-fasttrack --fail-continue|--no-fail-continue
 ```
 
 `ntasker queue add <id>` is the CLI's run button: it appends the task to the queue, exactly like the button on the
@@ -196,6 +235,9 @@ id deserves to be told.
 | `POST /api/queue/run` | Body `{id}` -- the run button: appends the task to the queue (an already-queued id keeps its place), moves it to `phase=wip` right away and clears its `ended` flag. Returns the queue. |
 | `POST /api/queue/resume` | Body `{id}` -- the resume button on an `ended` entry: the worker reopens the task's stored session next tick, in place; the flag clears once it is live. 409 when the task is not queued or has nothing to resume. Returns the queue. |
 | `POST /api/projects/quick-run` | Body `{project, prompt?}` -- a Quicktask: creates a `wip` task (placeholder title and blank-prompt run without `prompt`, otherwise the prompt is the task), appends it to the queue. Returns the task. |
+| `POST /api/tasks/{id}/outcome` | Body `{status, summary?, report?, commit?, files?, next_tasks?}` -- what `ntasker finish` sends; see **Fasttrack**. Returns the task plus `outcome_id` (null for a plain task). |
+| `GET /api/outcomes` | The run log, newest first: `[{id, task_id, title, project, status, summary, report, commit, files_changed, next_tasks, created_at}]`. |
+| `DELETE /api/outcomes/{id}` | Acknowledge = delete. |
 | `PUT /api/settings/queue_enabled` | `{"value": "true" \| "false"}` -- the pause switch (default `true`). |
 | `PUT /api/settings/quicktasks_bypass_lanes` | `{"value": "on" \| "off"}` -- whether Quicktasks start outside the lanes (default `on`). |
 
@@ -206,7 +248,8 @@ there is no partial state to reconcile.
 
 | File | Role |
 |---|---|
-| `src/ntasker/taskqueue.py` | The worker: retire what is finished, start what is next. Ticks every 2s. |
+| `src/ntasker/taskqueue.py` | The worker: retire what is finished, start what is next, `ended` outcome rows. Ticks every 2s. |
+| `src/ntasker/db.py` | `run_outcomes` table, `insert_outcome` / `latest_outcomes`; `rundiff.changed_paths` derives the file list. |
 | `src/ntasker/claude_runner.py` | `queue_seed_for_task` (the seed) and `start_detached_session` (spawn with no browser attached). |
 | `src/ntasker/app.py` | `/api/queue` routes plus the worker's startup / shutdown hooks. |
 | `src/ntasker/cli.py` | `cmd_queue_*` -- the `ntasker queue` subcommands. |

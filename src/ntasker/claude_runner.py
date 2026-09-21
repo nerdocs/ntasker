@@ -213,13 +213,28 @@ def queue_seed_for_task(task: dict) -> str:
     ``phase=wip`` move the loader normally performs happens server-side at
     spawn instead (see :func:`mark_wip`). The ``/task`` command stays installed
     for manual terminal sessions.
-    """
-    from ntasker.db import get_conn, load_tags_for  # noqa: PLC0415 -- lazy: avoid cycle
 
+    A task with dependencies also sees the latest run outcome of each (summary
+    and suggested follow-ups, never the report) -- that is how queued work
+    chains. A fasttrack task gets the agent's ``<agent>_fasttrack_rules``
+    appended after the run rules: commit permission and the self-finish.
+    """
+    from ntasker.db import (  # noqa: PLC0415 -- lazy: avoid cycle
+        get_conn,
+        latest_outcomes,
+        load_deps_for,
+        load_tags_for,
+        row_to_outcome,
+    )
+
+    deps: list[dict] = []
+    outcomes: dict = {}
     try:
         with get_conn() as conn:
             tags = load_tags_for(conn, int(task["id"]))
-    except Exception:  # noqa: BLE001 -- tags are nice-to-have, never block a spawn
+            deps = load_deps_for(conn, int(task["id"]))
+            outcomes = latest_outcomes(conn, [d["id"] for d in deps])
+    except Exception:  # noqa: BLE001 -- tags/deps are nice-to-have, never block a spawn
         tags = []
 
     facts = [f"Status: {task.get('status') or 'open'}"]
@@ -235,13 +250,26 @@ def queue_seed_for_task(task: dict) -> str:
     description = (task.get("description") or "").strip()
     if description:
         lines += ["", "## Description", "", description]
+    if deps:
+        lines += ["", "## Results of tasks this one depends on", ""]
+        for d in deps:
+            o = outcomes.get(d["id"])
+            if o is None:
+                lines.append(f"- #{d['id']} {d['title']} -- (no run outcome recorded)")
+                continue
+            o = row_to_outcome(o)
+            lines.append(f"- #{d['id']} {d['title']} -- {o['status']}: {o['summary']}")
+            lines += [f"  - suggested follow-up: {n}" for n in o["next_tasks"]]
     from ntasker import plugins  # noqa: PLC0415 -- lazy: avoid cycle
 
     lines += plugins.run_briefings(int(task["id"]))
-    from ntasker.settings import get_run_rules  # noqa: PLC0415 -- lazy: avoid cycle
+    from ntasker.settings import get_fasttrack_rules, get_run_rules  # noqa: PLC0415 -- lazy: avoid cycle
 
-    rules = get_run_rules(resolve_agent_key(task.get("agent")))
-    lines += ["", rules.replace("{id}", str(task["id"]))]
+    agent = resolve_agent_key(task.get("agent"))
+    task_id = str(task["id"])
+    lines += ["", get_run_rules(agent).replace("{id}", task_id)]
+    if task.get("fasttrack"):
+        lines += ["", get_fasttrack_rules(agent).replace("{id}", task_id)]
     return "\n".join(lines)
 
 

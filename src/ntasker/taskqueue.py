@@ -38,6 +38,14 @@ and leave the session open. Closing stays the user's call unless the task
 description grants it -- so a queue run leaves its results in the review
 column, and the next task in that project starts when the user closes it.
 
+A **fasttrack** task (``tasks.fasttrack``) finishes itself: its seed grants
+the commit and tells the agent to end with ``ntasker finish`` -- ``ok`` sets the
+task done (session killed, lane continues), ``failed``/``blocked`` leaves it as
+today unless ``fail_continue`` is set, which drops the entry from the queue so
+the lane keeps moving. Every fasttrack run leaves a ``run_outcomes`` row (the
+run log, see :func:`~ntasker.db.insert_outcome`); a session that ends without
+``finish`` gets an ``ended`` row from :func:`tick`.
+
 The queue is the **only** way a session starts: every run button appends to
 the queue (:func:`enqueue`), and the worker picks the task up once its project
 lane is free. ``queue_enabled`` (default on) is a pause switch.
@@ -67,7 +75,8 @@ from ntasker.claude_runner import (
     stop_session,
     terminal_available,
 )
-from ntasker.db import get_conn
+from ntasker.db import get_conn, insert_outcome
+from ntasker.rundiff import changed_paths, parse_baselines
 
 # How often the worker looks at the queue. Fast enough that the next task starts
 # right after you see the previous one finish, cheap enough to run forever: a
@@ -103,6 +112,9 @@ RESUME: set[int] = set()
 # Whether :func:`tick` has run once since the process started -- gates the
 # resume-after-restart sweep.
 _booted = False
+
+# Summary of the ``ended`` outcome row -- stored data, not UI text.
+ENDED_SUMMARY = "session ended without finish"
 
 
 def _bucket(project: str | None) -> str:
@@ -409,14 +421,29 @@ def tick() -> None:
     # Ended without a hand-off (stopped, crashed, blocker): flag the entry and
     # keep it -- it blocks its lane until the user has looked at it. A column,
     # not memory, so a server restart does not silently start it again.
-    ended = [int(r["id"]) for r in rows if int(r["id"]) in _running and int(r["id"]) not in live]
-    if ended:
+    ended_rows = [r for r in rows if int(r["id"]) in _running and int(r["id"]) not in live]
+    if ended_rows:
+        ended = [int(r["id"]) for r in ended_rows]
+        # A fasttrack run that ends without ``ntasker finish`` still gets its
+        # run-log row -- once per run (``session_ended_at`` is still NULL the
+        # first time round). Git runs before the write connection opens. With
+        # ``fail_continue`` the entry leaves the queue instead of blocking.
+        logged = [
+            (r, changed_paths(parse_baselines(r["run_baselines"])))
+            for r in ended_rows
+            if r["fasttrack"] and r["session_ended_at"] is None
+        ]
+        skipped = [int(r["id"]) for r in ended_rows if r["fasttrack"] and r["fail_continue"]]
         with get_conn() as conn:
+            for r, paths in logged:
+                insert_outcome(conn, r, "ended", ENDED_SUMMARY, report=r["report"], files=paths)
             conn.execute(
                 f"UPDATE tasks SET session_ended_at = ? "
                 f"WHERE id IN ({','.join('?' * len(ended))}) AND session_ended_at IS NULL",
                 [_now(), *ended],
             )
+            if skipped:
+                _dequeue(conn, skipped)
         _running.difference_update(ended)
         rows = load_queue()
 

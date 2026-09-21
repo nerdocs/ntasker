@@ -106,7 +106,13 @@ CREATE TABLE IF NOT EXISTS tasks (
     -- Draft: an idea parked as a task. A draft is never started -- not by the
     -- queue (it cannot be queued), not by hand (run/resume refuse it), not
     -- via ``/task`` (the loader aborts). Setting it dequeues the task.
-    draft INTEGER NOT NULL DEFAULT 0
+    draft INTEGER NOT NULL DEFAULT 0,
+    -- Fasttrack: the agent finishes the task itself (commit + ``ntasker
+    -- finish``) and every run leaves a ``run_outcomes`` row. See ntasker.taskqueue.
+    fasttrack INTEGER NOT NULL DEFAULT 0,
+    -- With fasttrack: a failed/blocked run leaves the queue instead of
+    -- blocking its lane until the user looks at it.
+    fail_continue INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_archived ON tasks(archived);
 CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project);
@@ -130,6 +136,25 @@ CREATE TABLE IF NOT EXISTS task_deps (
     PRIMARY KEY (task_id, depends_on_id)
 );
 CREATE INDEX IF NOT EXISTS idx_task_deps_dep ON task_deps(depends_on_id);
+
+-- One row per fasttrack run: written by ``ntasker finish`` (via the outcome
+-- endpoint) or by the queue worker when the session ends without one. The
+-- user's run log -- acknowledging deletes the row. Outlives its task
+-- (title/project are copied) so the log stays readable after a delete.
+CREATE TABLE IF NOT EXISTS run_outcomes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+    title TEXT NOT NULL,
+    project TEXT,
+    status TEXT NOT NULL,                       -- ok | failed | blocked | ended
+    summary TEXT NOT NULL DEFAULT '',
+    report TEXT,
+    commit_sha TEXT,
+    files_changed TEXT NOT NULL DEFAULT '[]',   -- JSON list of paths, see ntasker.rundiff.changed_paths
+    next_tasks TEXT NOT NULL DEFAULT '[]',      -- JSON list of follow-up suggestions; never auto-created
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_run_outcomes_task ON run_outcomes(task_id);
 
 -- Projects the user has hidden from the sidebar entirely -- discovered
 -- entries reappear on every scan, so "remove" has to be a persisted veto
@@ -238,6 +263,12 @@ def init_db(path: Path | None = None) -> None:
             conn.execute("ALTER TABLE tasks ADD COLUMN draft INTEGER NOT NULL DEFAULT 0")
         except sqlite3.OperationalError:
             pass
+        # v3.10 fasttrack flags (see the schema comments).
+        for column in ("fasttrack", "fail_continue"):
+            try:
+                conn.execute(f"ALTER TABLE tasks ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass
         # v3.2: the queue no longer acts on the agent's hand-off, so the
         # handed_off_at column (v3.1) goes. No-op once dropped.
         try:
@@ -433,6 +464,8 @@ def row_to_task(
         "completed_at": row["completed_at"],
         "archived": bool(row["archived"]),
         "draft": bool(row["draft"]),
+        "fasttrack": bool(row["fasttrack"]),
+        "fail_continue": bool(row["fail_continue"]),
         "agent": row["agent"],
         "model": row["model"],
         "session_id": row["session_id"],
@@ -446,6 +479,93 @@ def row_to_task(
         "tags": tags or [],
         "depends": depends or [],
     }
+
+
+# ---------------------------------------------------------------------------
+# Run outcomes (fasttrack run log)
+# ---------------------------------------------------------------------------
+
+OUTCOME_STATUSES = ("ok", "failed", "blocked", "ended")
+
+
+def insert_outcome(
+    conn: sqlite3.Connection,
+    task: sqlite3.Row,
+    status: str,
+    summary: str,
+    *,
+    report: str | None = None,
+    commit_sha: str | None = None,
+    files: list[str] | tuple[str, ...] = (),
+    next_tasks: list[str] | tuple[str, ...] = (),
+) -> int:
+    """Append a ``run_outcomes`` row for ``task`` and return its id.
+
+    ``title``/``project`` are copied from the task row so the log entry
+    survives the task's deletion. ``status`` must be one of
+    :data:`OUTCOME_STATUSES`.
+    """
+    if status not in OUTCOME_STATUSES:
+        raise ValueError(f"unknown outcome status {status!r}")
+    cur = conn.execute(
+        """
+        INSERT INTO run_outcomes
+            (task_id, title, project, status, summary, report, commit_sha, files_changed, next_tasks)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            int(task["id"]),
+            task["title"],
+            task["project"],
+            status,
+            summary,
+            report,
+            commit_sha,
+            json.dumps(list(files)),
+            json.dumps(list(next_tasks)),
+        ),
+    )
+    return int(cur.lastrowid)
+
+
+def _json_list(raw: str | None) -> list[str]:
+    try:
+        parsed = json.loads(raw or "[]")
+    except ValueError:
+        return []
+    return [str(x) for x in parsed] if isinstance(parsed, list) else []
+
+
+def row_to_outcome(row: sqlite3.Row) -> dict:
+    """JSON shape of a ``run_outcomes`` row (``commit_sha`` -> ``commit``)."""
+    return {
+        "id": row["id"],
+        "task_id": row["task_id"],
+        "title": row["title"],
+        "project": row["project"],
+        "status": row["status"],
+        "summary": row["summary"],
+        "report": row["report"],
+        "commit": row["commit_sha"],
+        "files_changed": _json_list(row["files_changed"]),
+        "next_tasks": _json_list(row["next_tasks"]),
+        "created_at": row["created_at"],
+    }
+
+
+def latest_outcomes(conn: sqlite3.Connection, task_ids: list[int]) -> dict[int, sqlite3.Row]:
+    """Newest ``run_outcomes`` row per task id (tasks without one are absent)."""
+    if not task_ids:
+        return {}
+    placeholders = ", ".join("?" for _ in task_ids)
+    rows = conn.execute(
+        f"SELECT * FROM run_outcomes WHERE task_id IN ({placeholders}) ORDER BY id DESC",
+        task_ids,
+    ).fetchall()
+    out: dict[int, sqlite3.Row] = {}
+    for r in rows:
+        out.setdefault(int(r["task_id"]), r)
+    return out
 
 
 # ---------------------------------------------------------------------------

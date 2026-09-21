@@ -221,10 +221,11 @@ autonomous closing and archival stay forbidden.
 ## 6. Review-Handoff on Agent-Side Completion (since v1.5.0)
 
 When the user assigned `#<id>` and the agent considers its work done,
-**first write the final report**, then hand off:
+report and hand off in **one command** (since v3.10) -- the report
+(Markdown) on stdin:
 
 ```bash
-ntasker report 43 <<'EOF'
+ntasker finish 43 --status ok --summary "<one line>" --next "<follow-up>" <<'EOF'
 ## What I did
 ...
 ## Verified
@@ -232,15 +233,27 @@ ntasker report 43 <<'EOF'
 ## Open / for the user
 ...
 EOF
-ntasker patch 43 --phase review
 ```
 
-The report (Markdown; `--file <path>` instead of stdin also works) is stored
-on the task (`report`, `report_at`; one per task, a new run overwrites) and
-shown in the UI via the report icon on the card -- the user reads it there,
-without opening the session. Write it *before* the hand-off, then stop
-and wait -- the session stays open for the user's review. The queue only
-moves on to the next task of the project once this one is `done`.
+`--summary` defaults to the report's first line; `--next` (repeatable) is a
+follow-up suggestion for the user -- it is only listed, **never** creates a
+task. `--file <path>` instead of stdin also works. `finish` talks to the
+running server (`NTASKER_URL` inside a spawned session, `--host/--port`
+otherwise) and stores the report on the task (`report`, `report_at`; one
+per task, a new run overwrites) -- shown via the report icon on the card,
+so the user reads it without opening the session. For a plain task it then
+sets `phase=review`. Stop and wait afterwards -- the session stays open for
+the user's review. The queue only moves on to the next task of the project
+once this one is `done`.
+
+The equivalent two-step form still works:
+
+```bash
+ntasker report 43 <<'EOF'
+...
+EOF
+ntasker patch 43 --phase review
+```
 
 The equivalent HTTP call:
 
@@ -264,9 +277,28 @@ of the handoff. Archiving stays a manual decision -- never archive on the
 user's behalf.
 
 **When NOT to move to review:** if the agent could not finish (blocker,
-missing info, failed verification), leave the phase as-is and report the
-blocker -- in the report field (`ntasker report`) as well as in the chat.
-Review is a *handoff*, not a *give-up* signal.
+missing info, failed verification), report the blocker with
+`ntasker finish 43 --status failed` (or `--status blocked` when the blocker
+lies outside the task) -- the report on stdin, as above -- and in the chat,
+then stop. The phase stays as it is. Review is a *handoff*, not a
+*give-up* signal.
+
+### 6.2 Fasttrack tasks (since v3.10)
+
+A task with `fasttrack=1` runs unattended from start to end and its seed
+says so (the agent's `<agent>_fasttrack_rules`): decide instead of asking
+-- when you genuinely cannot decide, fail; when everything is done and
+verified you are **explicitly allowed to commit** (your own changes only,
+one commit, the project's message rules apply); then, as the very last
+command, `ntasker finish <id> --status ok --commit <sha> ...`. On a
+fasttrack task `finish --status ok` sets the task `done` and ends the
+session; `failed`/`blocked` leaves it open -- with `fail_continue=1` the
+task also drops out of the queue so the lane keeps moving, otherwise the
+entry blocks its lane until the user looks. Every fasttrack run leaves one
+row in the run log (`run_outcomes`, `GET /api/outcomes`): status, summary,
+commit, changed files (derived from the run's diff), follow-up suggestions.
+A downstream task's seed lists the latest outcome of each task it depends
+on -- that is how queued work chains. Never run anything after `finish`.
 
 ### 6.1 Directory locks (since v3.1)
 
@@ -345,6 +377,8 @@ either `""` or `null` for "no project" both work.
 | `completed_at` | TEXT NULL | UTC ISO, auto-set on done |
 | `archived` | INT | 0/1 -- task remains searchable |
 | `draft` | INT | 0/1 -- a parked idea: never started (not queueable, run/resume/`/task` refuse it) |
+| `fasttrack` | INT | 0/1 -- the agent commits and finishes the task itself (`ntasker finish`), see 6.2 |
+| `fail_continue` | INT | 0/1 -- with fasttrack: a failed run leaves the queue instead of blocking its lane |
 | `agent` | TEXT NULL | `claude` / `opencode` / `pi`; NULL = the `default_agent` setting |
 | `model` | TEXT NULL | model for this task's sessions (`--model`); NULL = the agent's `<key>_model` setting |
 | tags | n:m | via `tags` + `task_tags` tables |

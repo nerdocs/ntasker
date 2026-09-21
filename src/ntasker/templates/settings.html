@@ -396,9 +396,10 @@
                                         {% endif %}
 
                                         {% if p.kind == 'agent' %}
-                                        {% set rules_key = p.name ~ '_run_rules' %}
+                                        {# Run rules + fasttrack rules: one editable textarea each, Reset restores the built-in text. #}
+                                        {% for rules_key, rows_n in [(p.name ~ '_run_rules', 12), (p.name ~ '_fasttrack_rules', 10)] %}
                                         {% call row(rules_key) %}
-                                        <textarea class="form-control font-monospace setting-run-rules" rows="12"
+                                        <textarea class="form-control font-monospace setting-run-rules" rows="{{ rows_n }}"
                                                   x-model="draft['{{ rules_key }}']"
                                                   @keydown.escape.prevent="revert('{{ rules_key }}')"></textarea>
                                         <div class="d-flex gap-2 mt-2">
@@ -413,6 +414,7 @@
                                             </button>
                                         </div>
                                         {% endcall %}
+                                        {% endfor %}
                                         {# /task integration status -- read-only, installs go through the CLI. #}
                                         <template x-if="agentFor('{{ p.name }}')">
                                             <div class="setting-row row gx-2 gx-md-4">

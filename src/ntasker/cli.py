@@ -129,6 +129,8 @@ def _print_task_detail(t: dict) -> None:
     print(f"  {_('Depends on'):<14}{dep_str}")
     print(f"  {_('Archived'):<14}{bool(t.get('archived'))}")
     print(f"  {_('Draft'):<14}{bool(t.get('draft'))}")
+    fasttrack = bool(t.get("fasttrack"))
+    print(f"  {_('Fasttrack'):<14}{fasttrack}{' (fail-continue)' if fasttrack and t.get('fail_continue') else ''}")
     print(f"  {_('Created'):<14}{t.get('created_at') or '-'}")
     if t.get("completed_at"):
         print(f"  {_('Completed'):<14}{t['completed_at']}")
@@ -697,7 +699,7 @@ def cmd_add(args: argparse.Namespace) -> int:
                 return 2
         cur = conn.execute(
             "INSERT INTO tasks (project, title, description, phase, priority, agent, model, "
-            "locks, draft) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "locks, draft, fasttrack, fail_continue) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 args.project,
                 title_value,
@@ -708,6 +710,8 @@ def cmd_add(args: argparse.Namespace) -> int:
                 (args.model or "").strip() or None,
                 locks.dump(locks.normalize(_parse_locks(args.locks), args.project)),
                 1 if args.draft else 0,
+                1 if args.fasttrack else 0,
+                1 if args.fail_continue else 0,
             ),
         )
         # sqlite3 types lastrowid as ``int | None``; after a successful INSERT
@@ -856,6 +860,10 @@ def cmd_patch(args: argparse.Namespace) -> int:
         if args.draft:   # a draft cannot stay queued (mirrors the API)
             fields["queue_order"] = None
             fields["session_ended_at"] = None
+    if args.fasttrack is not None:
+        fields["fasttrack"] = 1 if args.fasttrack else 0
+    if args.fail_continue is not None:
+        fields["fail_continue"] = 1 if args.fail_continue else 0
     if args.locks is not None:
         fields["locks"] = _parse_locks(args.locks)   # normalised below, once the project is known
     if args.report is not None:
@@ -1317,6 +1325,43 @@ def cmd_lock_rm(args: argparse.Namespace) -> int:
 
 def cmd_lock_list(args: argparse.Namespace) -> int:
     return _lock_request(args, "GET", f"/api/tasks/{args.task_id}", None)
+
+
+def cmd_finish(args: argparse.Namespace) -> int:
+    """Report the run's outcome -- the agent's one hand-off call.
+
+    Posts to ``/api/tasks/{id}/outcome``; the server decides what follows
+    (review hand-off, done, dequeue -- see the endpoint). The report comes from
+    ``--file`` or, when stdin is not a terminal, from stdin. Server-only: an
+    unreachable server is an error, not a fallback.
+    """
+    if args.file:
+        try:
+            report = pathlib.Path(args.file).read_text(encoding="utf-8")
+        except OSError as exc:
+            print(_("ntasker: cannot read {path}: {err}").format(path=args.file, err=exc), file=sys.stderr)
+            return 2
+    else:
+        report = "" if sys.stdin.isatty() else sys.stdin.read()
+    body: dict[str, Any] = {
+        "status": args.status,
+        "summary": args.summary,
+        "commit": args.commit,
+        "report": report,
+        "next_tasks": args.next or [],
+    }
+    if args.files is not None:
+        body["files"] = _parse_locks(args.files)
+    try:
+        status, data = _api_call(_server_base(args), "POST", f"/api/tasks/{args.task_id}/outcome", body)
+    except OSError as exc:
+        print(_("ntasker: server not reachable ({err})").format(err=exc), file=sys.stderr)
+        return 1
+    if status >= 400:
+        print(_("ntasker: {detail}").format(detail=data.get("detail", status)), file=sys.stderr)
+        return 1
+    print(_("#{id} finished: {status}").format(id=args.task_id, status=args.status))
+    return 0
 
 
 # Claude Code hooks -------------------------------------------------------------
@@ -2162,6 +2207,14 @@ def build_parser() -> argparse.ArgumentParser:
     sp_add.add_argument(
         "--draft", action="store_true", help=_("Park as a draft: never started by anyone.")
     )
+    sp_add.add_argument(
+        "--fasttrack", action="store_true",
+        help=_("Fasttrack: the agent commits and finishes the task itself."),
+    )
+    sp_add.add_argument(
+        "--fail-continue", action="store_true",
+        help=_("With --fasttrack: a failed run leaves the queue instead of blocking it."),
+    )
     sp_add.set_defaults(func=cmd_add)
 
     # done ----------------------------------------------------------------
@@ -2214,6 +2267,14 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("true parks the task as a draft (and drops it from the queue); false releases it."),
     )
     sp_patch.add_argument(
+        "--fasttrack", action=argparse.BooleanOptionalAction, default=None,
+        help=_("Fasttrack: the agent commits and finishes the task itself."),
+    )
+    sp_patch.add_argument(
+        "--fail-continue", action=argparse.BooleanOptionalAction, default=None,
+        help=_("With fasttrack: a failed run leaves the queue instead of blocking it."),
+    )
+    sp_patch.add_argument(
         "--depends",
         help=_("Comma-separated task ids to depend on (replaces the set; '' clears)."),
     )
@@ -2229,6 +2290,25 @@ def build_parser() -> argparse.ArgumentParser:
     sp_report.add_argument("task_id", type=_task_id)
     sp_report.add_argument("--file", help=_("Read the Markdown from this file instead of stdin."))
     sp_report.set_defaults(func=cmd_report)
+
+    # finish --------------------------------------------------------------
+    sp_finish = sub.add_parser("finish", help=_("Report the run's outcome to the server"))
+    sp_finish.add_argument("task_id", type=_task_id)
+    sp_finish.add_argument("--status", choices=["ok", "failed", "blocked"], required=True)
+    sp_finish.add_argument("--summary", help=_("One line; defaults to the report's first line."))
+    sp_finish.add_argument("--commit", help=_("The commit's sha, if you committed."))
+    sp_finish.add_argument("--file", help=_("Read the report from this file instead of stdin."))
+    sp_finish.add_argument(
+        "--files", help=_("Comma-separated changed paths (default: derived from the run's diff).")
+    )
+    sp_finish.add_argument(
+        "--next", action="append", dest="next",
+        help=_("A follow-up suggestion for the user (repeatable); never creates a task."),
+    )
+    # Server to talk to; default NTASKER_URL (set inside spawned sessions).
+    sp_finish.add_argument("--host", default=None)
+    sp_finish.add_argument("--port", type=int, default=None)
+    sp_finish.set_defaults(func=cmd_finish)
 
     # tag-add / tag-rm ----------------------------------------------------
     sp_ta = sub.add_parser("tag-add", help=_("Add a tag"))
@@ -2572,9 +2652,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "assets" and getattr(args, "assets_cmd", None) in {"fetch", "remove"}:
         set_active_language(resolve_for_cli())
         return args.func(args)
-    # `stop`, `lock` and `hook` are pure HTTP requests to a running server --
-    # never create a DB for them (hooks fire inside every spawned session).
-    if args.command in {"stop", "lock", "hook"}:
+    # `stop`, `lock`, `finish` and `hook` are pure HTTP requests to a running
+    # server -- never create a DB for them (hooks fire inside every spawned session).
+    if args.command in {"stop", "lock", "finish", "hook"}:
         set_active_language(resolve_for_cli())
         return args.func(args)
     # `service` (install/uninstall/status), `self-update` and `completion`

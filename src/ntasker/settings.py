@@ -164,20 +164,26 @@ RUN_RULES_DEFAULT = """\
 
 - The user put this task in nTasker's task queue to have it worked
   through unattended. Carry it to completion if at all possible.
-- When the work is done, do two things in this order, without asking:
-  1. Write your final report (Markdown on stdin): what you did, what
-     you verified, what is open or left for the user:
-       ntasker report {id} <<'EOF'
-       ...
-       EOF
-  2. Hand the task over for review, then stop and wait:
-       ntasker patch {id} --phase review
-- This session stays open after the hand-off; the user reviews the
+- When the work is done, report and hand over in ONE command, without
+  asking -- the report (Markdown) goes on stdin:
+      ntasker finish {id} --status ok --summary "<one line>" \\
+          --next "<follow-up you noticed>" <<'EOF'
+      ## What I did
+      ...
+      ## Verified
+      ...
+      ## Open / for the user
+      ...
+      EOF
+  `--next` is optional and repeatable: follow-up work you would
+  suggest. It is only listed for the user -- never create tasks.
+  Then stop and wait. This session stays open; the user reviews the
   task here and closes it. The next queued task in this project only
-  starts once this task is done -- so never hand off on a guess.
+  starts once this task is done -- so never finish on a guess.
 - If you cannot finish (blocker, missing info, a decision only the
-  user can make): still write the report (the blocker, what you
-  tried), leave the phase as-is and stop. Do not hand off.
+  user can make): `ntasker finish {id} --status failed` (or
+  `--status blocked` when the blocker is outside this task) with the
+  same kind of report on stdin, then stop. The task keeps its phase.
 - Never set status=done or archive on your own initiative -- only when
   the user or the task description explicitly tells you to (then:
   finish, commit if asked, then `ntasker done {id}` as the very last
@@ -212,6 +218,52 @@ def run_rules_key(agent_key: str) -> str:
 def get_run_rules(agent_key: str) -> str:
     """The run-rules template for ``agent_key`` (the built-in text when unset)."""
     return get_setting(run_rules_key(agent_key)) or RUN_RULES_DEFAULT
+
+
+# Appended to the seed of a *fasttrack* task, after the run rules. One
+# ``<agent>_fasttrack_rules`` setting per agent overrides it; same
+# placeholder and validator as the run rules.
+FASTTRACK_RULES_DEFAULT = """\
+## Fasttrack (this task finishes itself)
+
+- This is a fasttrack task: nobody reviews it in this session. Decide
+  yourself; never ask a question -- when you genuinely cannot decide,
+  fail instead (below).
+- When everything is done and verified, you are explicitly allowed to
+  commit: stage only your own changes, one commit with a short
+  descriptive message (the project's own rules for messages apply).
+- Then, as the VERY LAST command (it ends this session):
+      ntasker finish {id} --status ok --commit <sha> --summary "<one line>" \\
+          --next "<follow-up>" <<'EOF'
+      <report: what you did, what you verified>
+      EOF
+- On a failure or a blocker: do not commit, do not touch other task
+  IDs -- report and stop:
+      ntasker finish {id} --status failed --summary "<one line>" <<'EOF'
+      <what you tried, what is wrong, what the user has to decide>
+      EOF
+  (`--status blocked` when the blocker is outside this task.)
+- After `ntasker finish` run nothing else.\
+"""
+
+FASTTRACK_RULES_HINT = _lazy(
+    "Appended to the run rules for fasttrack tasks only: commit permission and the "
+    "self-finish via `ntasker finish`. {id} is replaced by the task id. Reset restores "
+    "the built-in text. An unattended fasttrack run still stalls on a permission or "
+    "trust prompt (the session is then flagged waiting) -- set the agent's permission "
+    "mode / the project's allow-rules accordingly."
+)
+FASTTRACK_RULES_LABEL = _lazy("Fasttrack rules")
+
+
+def fasttrack_rules_key(agent_key: str) -> str:
+    """Settings key holding an agent's fasttrack rules (``<agent>_fasttrack_rules``)."""
+    return f"{agent_key}_fasttrack_rules"
+
+
+def get_fasttrack_rules(agent_key: str) -> str:
+    """The fasttrack-rules template for ``agent_key`` (the built-in text when unset)."""
+    return get_setting(fasttrack_rules_key(agent_key)) or FASTTRACK_RULES_DEFAULT
 
 
 SIDEBAR_SECTIONS = ("projects", "priority", "phases", "tags", "workspace")

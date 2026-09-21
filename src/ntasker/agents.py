@@ -135,13 +135,19 @@ class AgentSpec:
         """Agent-specific permission/auto-approve CLI flags (settings-driven)."""
         return self.permission_args_fn() if self.permission_args_fn else []
 
-    def model_args(self) -> list[str]:
-        """``[model_flag, <model>]`` when a model is configured, else ``[]``."""
+    def model_args(self, override: str | None = None) -> list[str]:
+        """``[model_flag, <model>]`` when a model is configured, else ``[]``.
+
+        ``override`` (the task's own ``model``) wins over the ``<key>_model``
+        setting; an empty/None override falls through to the setting.
+        """
         if not self.model_flag:
             return []
         from ntasker.settings import get_setting  # noqa: PLC0415 -- lazy: avoid cycle
 
-        model = (get_setting(self.model_setting_key, env_var=self.model_env_var) or "").strip()
+        model = (
+            override or get_setting(self.model_setting_key, env_var=self.model_env_var) or ""
+        ).strip()
         return [self.model_flag, model] if model else []
 
     @property
@@ -172,6 +178,7 @@ class AgentSpec:
         resume_id: str | None = None,
         system_prompt: str | None = None,
         settings_path: str | None = None,
+        model: str | None = None,
     ) -> list[str]:
         """Full argv for an interactive session, incl. permission/model flags + seed.
 
@@ -186,10 +193,16 @@ class AgentSpec:
         ntasker can persist it and resume the run later. ``system_prompt`` is
         appended to the agent's system prompt (:attr:`system_prompt_flag`) --
         a briefing that leaves the user prompt untouched. ``settings_path`` is
-        an extra settings file (:attr:`settings_flag`) -- ntasker's hooks. All
-        four are no-ops on an agent that lacks the corresponding flag.
+        an extra settings file (:attr:`settings_flag`) -- ntasker's hooks.
+        ``model`` is the task's own model, overriding the ``<key>_model``
+        setting (:meth:`model_args`). All five are no-ops on an agent that
+        lacks the corresponding flag.
         """
-        args = [resolve_binary(self) or self.binary, *self.permission_args(), *self.model_args()]
+        args = [
+            resolve_binary(self) or self.binary,
+            *self.permission_args(),
+            *self.model_args(model),
+        ]
         if settings_path and self.settings_flag:
             args.extend([self.settings_flag, settings_path])
         if resume_id and self.resume_flag:

@@ -619,6 +619,18 @@
                                         </template>
                                     </select>
                                 </div>
+                                {# Model: free text with the agent's suggestions; empty = the agent's <key>_model setting. #}
+                                <div class="col-md-2" x-show="agents.length">
+                                    <label class="form-label" x-text="$i18n('model_label')"></label>
+                                    <input type="text" class="form-control" x-model="form.model"
+                                           list="model-suggestions-form" autocomplete="off" maxlength="100"
+                                           :placeholder="$i18n('model_placeholder')" :title="$i18n('model_hint')">
+                                    <datalist id="model-suggestions-form">
+                                        <template x-for="m in modelSuggestions(form.agent)" :key="m">
+                                            <option :value="m"></option>
+                                        </template>
+                                    </datalist>
+                                </div>
                                 {# Draft: a parked idea -- never started by the queue, the run button or /task. #}
                                 <div class="col-md-2 d-flex align-items-end">
                                     <label class="form-check mb-2" :title="$i18n('draft_badge')">
@@ -1656,6 +1668,17 @@
                                         x-text="a.label + (a.available ? '' : ' — ' + $i18n('agent_not_installed_hint'))"></option>
                             </template>
                         </select>
+                    </div>
+                    <div class="mb-2" x-show="agents.length">
+                        <label class="form-label" x-text="$i18n('model_label')"></label>
+                        <input type="text" class="form-control" x-model="editing.model"
+                               list="model-suggestions-edit" autocomplete="off" maxlength="100"
+                               :placeholder="$i18n('model_placeholder')" :title="$i18n('model_hint')">
+                        <datalist id="model-suggestions-edit">
+                            <template x-for="m in modelSuggestions(editing.agent)" :key="m">
+                                <option :value="m"></option>
+                            </template>
+                        </datalist>
                     </div>
                     <div class="mb-2">
                         <label class="form-check" :title="$i18n('draft_badge')">

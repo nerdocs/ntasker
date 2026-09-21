@@ -307,6 +307,10 @@ ntasker add --project myproject --title "Short title" \
   --phase planned --priority high --tag refactoring --depends 12,15
 ```
 
+Optional `--agent <key>` / `--model <alias-or-id>` (also on `patch`; `''`
+clears) pin the agent and model for the task's sessions; `"agent"` /
+`"model"` in the JSON body do the same.
+
 Field rules: `project` = any non-empty trimmed string OR `null`
 (cross-project). Projects are not pre-registered -- a new project name
 is created implicitly when the task is saved, and disappears
@@ -341,6 +345,8 @@ either `""` or `null` for "no project" both work.
 | `completed_at` | TEXT NULL | UTC ISO, auto-set on done |
 | `archived` | INT | 0/1 -- task remains searchable |
 | `draft` | INT | 0/1 -- a parked idea: never started (not queueable, run/resume/`/task` refuse it) |
+| `agent` | TEXT NULL | `claude` / `opencode` / `pi`; NULL = the `default_agent` setting |
+| `model` | TEXT NULL | model for this task's sessions (`--model`); NULL = the agent's `<key>_model` setting |
 | tags | n:m | via `tags` + `task_tags` tables |
 | depends | n:m | via `task_deps(task_id, depends_on_id)`, FK CASCADE; kept acyclic |
 | `locks` | TEXT JSON | extra project names whose directories the run holds (own project implicit) |

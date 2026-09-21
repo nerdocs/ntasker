@@ -68,6 +68,9 @@ CREATE TABLE IF NOT EXISTS tasks (
     -- Which AI coding agent runs this task. NULL = fall back to the
     -- ``default_agent`` setting (then ``claude``). See ntasker.agents.
     agent TEXT,
+    -- Model for this task's sessions, passed to the agent CLI as its model
+    -- flag. NULL = the agent's ``<key>_model`` setting (then the CLI default).
+    model TEXT,
     -- Claude session id of the last web-terminal run (forced via
     -- ``--session-id`` at spawn). NULL until the task has been run once.
     -- Lets a finished task's conversation be reopened via ``--resume``.
@@ -176,6 +179,12 @@ def init_db(path: Path | None = None) -> None:
         # default_agent setting". Existing tasks keep running on Claude.
         try:
             conn.execute("ALTER TABLE tasks ADD COLUMN agent TEXT")
+        except sqlite3.OperationalError:
+            pass
+        # v3.8: per-task ``model`` override of the agent's ``<key>_model``
+        # setting. Nullable, no default -- NULL means "use the setting".
+        try:
+            conn.execute("ALTER TABLE tasks ADD COLUMN model TEXT")
         except sqlite3.OperationalError:
             pass
         # v2.18 session-resume migration: add the ``session_id`` column that
@@ -425,6 +434,7 @@ def row_to_task(
         "archived": bool(row["archived"]),
         "draft": bool(row["draft"]),
         "agent": row["agent"],
+        "model": row["model"],
         "session_id": row["session_id"],
         "sort_order": row["sort_order"],
         "queue_order": row["queue_order"],

@@ -386,6 +386,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             phase: '',
             priority: 'normal',
             agent: '',         // '' = use the default agent
+            model: '',         // '' = the agent's <key>_model setting
             tags: [],          // committed tag list (lowercase strings)
             tagInput: '',      // current text in the tag-input
             depends: [],       // committed dependencies: [{id, title, done}]
@@ -1818,6 +1819,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 phase: this.form.phase || null,
                 priority: this.form.priority || 'normal',
                 agent: this.form.agent || null,
+                model: this.form.model || null,
                 tags: this.form.tags,
                 depends: this.form.depends.map(d => d.id),
                 locks: this.form.locks,
@@ -1839,6 +1841,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             this.form.phase = '';
             this.form.priority = 'normal';
             this.form.agent = '';
+            this.form.model = '';
             this.form.tags = [];
             this.form.tagInput = '';
             this.form.depends = [];
@@ -1967,6 +1970,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 phase: t.phase || null,
                 priority: t.priority || 'normal',
                 agent: t.agent || null,
+                model: t.model || null,
                 tags: t.tags,
                 depends: (t.depends || []).map(d => d.id),
                 locks: t.locks || [],
@@ -2752,6 +2756,12 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         agentIconUrl(task) {
             const a = this.agentByKey(this.taskAgentKey(task));
             return a && a.icon ? a.icon : '';
+        },
+        // Datalist entries for the task form's model field: the suggestions
+        // of the picked agent (or the default agent when none is picked).
+        modelSuggestions(key) {
+            const a = this.agentByKey(key || this.defaultAgent);
+            return (a && a.model_suggestions) || [];
         },
         // Human label for an agent key (for tooltips / the picker).
         agentLabel(key) {

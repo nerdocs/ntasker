@@ -245,6 +245,15 @@ ntasker patch 34 --agent ''                    # clear -> falls back to default_
 ntasker config set default_agent opencode      # change the default for new tasks
 ```
 
+A task can also pin a **model** (`model` field, passed to the agent CLI as `--model`); NULL falls back to the agent's
+`<key>_model` setting, then to the CLI default. See [docs/agents.md](docs/agents.md#per-task-model):
+
+```bash
+ntasker add --title "..." --model opus         # this task's sessions run on Opus
+ntasker patch 34 --model ''                    # clear -> falls back to the claude_model setting
+ntasker config set claude_model sonnet         # the default for all Claude sessions
+```
+
 ntasker ships a skill (`SKILL.md`) and slash-command loader (`/task <id>`) inside the package and installs them into
 **each agent's own config home** -- Claude `~/.claude`, OpenCode `~/.config/opencode`, Pi `~/.pi/agent`:
 
@@ -293,7 +302,7 @@ Coming from the drfoehn fork? See [docs/migrating-from-fork.md](docs/migrating-f
 | `ntasker restart`           | Restart the server: via the installed service if there is one, else stop + start **detached**. `--foreground` keeps it in your terminal |
 | `ntasker list [filters]`    | List tasks; supports `--project`, `--tag`, `--phase`, ...     |
 | `ntasker show <id>`         | Show a single task; pair with `--json` for raw output         |
-| `ntasker add --title=...`   | Create a task; optional `--project --phase --priority --tag --agent` |
+| `ntasker add --title=...`   | Create a task; optional `--project --phase --priority --tag --agent --model` |
 | `ntasker done <id>`         | Mark a task as done                                           |
 | `ntasker patch <id> [...]`  | Patch arbitrary fields (`--title`, `--phase`, `--status`, ...)|
 | `ntasker tag-add <id> <t>`  | Append a tag                                                  |

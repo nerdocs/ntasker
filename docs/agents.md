@@ -61,6 +61,20 @@ ntasker patch 34 --agent pi                    # repoint an existing task
 ntasker patch 34 --agent ''                    # clear -> falls back to default_agent
 ```
 
+## Per-task model
+
+Each task also has a nullable `model` field, passed to the agent CLI as its model flag (`--model`) in place of the
+agent's `<key>_model` setting (see [Settings](#settings)). Precedence: the task's `model`, then the setting (ENV
+first), then the CLI's own default. The value is free text -- an alias (`opus`) or a full id -- and is validated by
+the agent CLI itself at spawn; the task form offers the same suggestions as the setting on `/settings`. Set it in the
+new-task form, the edit dialog, or via the CLI:
+
+```bash
+ntasker add --title "..." --model opus         # this task's sessions run on Opus
+ntasker patch 34 --model sonnet                # change it on an existing task
+ntasker patch 34 --model ''                    # clear -> falls back to the <key>_model setting
+```
+
 ## Config homes and command formats
 
 ntasker installs its integration assets (the `SKILL.md` and the `/task <id>` slash command) into **each agent's own
@@ -107,9 +121,9 @@ same backup rules as the CLI); the CLI line stays for a non-default home or comm
 | `claude_bin`             | `NTASKER_CLAUDE_BIN`      | Path to the Claude CLI when not on the server PATH       |
 | `opencode_bin`           | `NTASKER_OPENCODE_BIN`    | Path to the OpenCode CLI when not on the server PATH     |
 | `pi_bin`                 | `NTASKER_PI_BIN`          | Path to the Pi CLI when not on the server PATH           |
-| `claude_model`           | `NTASKER_CLAUDE_MODEL`    | Model for Claude sessions (alias or id), passed as `--model` |
-| `opencode_model`         | `NTASKER_OPENCODE_MODEL`  | Model for OpenCode sessions (`provider/model`), `--model` |
-| `pi_model`               | `NTASKER_PI_MODEL`        | Model pattern/id for Pi sessions, passed as `--model`    |
+| `claude_model`           | `NTASKER_CLAUDE_MODEL`    | Model for Claude sessions (alias or id), passed as `--model`; a task's own `model` wins |
+| `opencode_model`         | `NTASKER_OPENCODE_MODEL`  | Model for OpenCode sessions (`provider/model`), `--model`; a task's own `model` wins |
+| `pi_model`               | `NTASKER_PI_MODEL`        | Model pattern/id for Pi sessions, passed as `--model`; a task's own `model` wins |
 | `claude_permission_mode` | --                        | `default`/`auto`/`plan`/`bypassPermissions`              |
 | `opencode_auto`          | `NTASKER_OPENCODE_AUTO`   | Run OpenCode sessions with `--auto` (auto-approve)       |
 | `claude_open_terminal`   | `NTASKER_CLAUDE_OPEN_TERMINAL` | Open the terminal now vs. start in the background   |

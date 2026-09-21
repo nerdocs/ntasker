@@ -94,13 +94,13 @@ class DraftTaskError(RuntimeError):
 
 
 def _task_row(task_id: int):
-    """The task's ``agent`` + ``project`` + ``draft`` columns, or ``None`` (missing / DB hiccup)."""
+    """The task's ``agent``/``model``/``project``/``draft`` columns, or ``None`` (missing / DB hiccup)."""
     from ntasker.db import get_conn  # noqa: PLC0415
 
     try:
         with get_conn() as conn:
             return conn.execute(
-                "SELECT agent, project, draft FROM tasks WHERE id = ?", (task_id,)
+                "SELECT agent, model, project, draft FROM tasks WHERE id = ?", (task_id,)
             ).fetchone()
     except Exception:  # noqa: BLE001 -- a DB hiccup must not crash the spawn path
         return None
@@ -528,18 +528,27 @@ def _start_session(
     # otherwise fall through to a fresh session.
     resume_id = _stored_session_id(task_id) if (resume and spec.resume_flag) else None
     sys_prompt = quick_run_system_prompt(task_id) if quick else None
+    model = row["model"] if row else None
     if resume_id:
-        args = spec.build_spawn(None, resume_id=resume_id, settings_path=settings_path)
+        args = spec.build_spawn(
+            None, resume_id=resume_id, settings_path=settings_path, model=model
+        )
     elif spec.session_flag:
         # Fresh run: force a known session id so it can be resumed later, and
         # persist it. uuid4 is what --session-id expects (a canonical UUID).
         forced_id = str(uuid.uuid4())
         args = spec.build_spawn(
-            seed, session_id=forced_id, system_prompt=sys_prompt, settings_path=settings_path
+            seed,
+            session_id=forced_id,
+            system_prompt=sys_prompt,
+            settings_path=settings_path,
+            model=model,
         )
         _store_session_id(task_id, forced_id)
     else:
-        args = spec.build_spawn(seed, system_prompt=sys_prompt, settings_path=settings_path)
+        args = spec.build_spawn(
+            seed, system_prompt=sys_prompt, settings_path=settings_path, model=model
+        )
     # The cwd is a best-effort guess from the task's project name (see
     # default_cwd_for_project). A new project's directory may not exist yet:
     # resolve_run_cwd creates it when it lives inside the configured

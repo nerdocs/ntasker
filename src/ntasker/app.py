@@ -209,6 +209,9 @@ class TaskCreate(BaseModel):
     # ``default_agent`` setting decides at run time. Validated against the
     # registry on insert; a bad value yields HTTP 400.
     agent: str | None = None
+    # Model for this task's sessions (alias or id, passed as the agent's
+    # --model). None/empty -> the agent's ``<key>_model`` setting decides.
+    model: str | None = None
     tags: list[str] = Field(default_factory=list)
     # Task ids this task depends on. Validated (existence + no cycles) on
     # insert; an invalid set yields HTTP 400.
@@ -236,6 +239,9 @@ class TaskUpdate(BaseModel):
     # None when omitted = unchanged; an explicit null clears it (-> default
     # agent). Validated against the registry on update.
     agent: str | None = None
+    # None when omitted = unchanged; an explicit null / "" clears it (-> the
+    # agent's ``<key>_model`` setting).
+    model: str | None = None
     archived: bool | None = None
     draft: bool | None = None  # True also drops the task from the queue
     tags: list[str] | None = None  # None = unchanged; [] = clear all
@@ -746,6 +752,9 @@ def build_js_strings() -> dict[str, str]:
         # New-task / edit -- agent picker
         "agent_label": _("Agent"),
         "agent_not_installed_hint": _("not installed"),
+        "model_label": _("Model"),
+        "model_placeholder": _("agent default"),
+        "model_hint": _("Overrides the agent's model setting for this task only."),
         # Tag-management page
         "tags_manage_title": _("Manage tags"),
         "tags_table_intro": _(
@@ -1321,6 +1330,9 @@ def api_agents() -> JSONResponse:
                 "available": available,
                 "reason": reason,
                 "is_default": spec.key == default,
+                # Datalist for the task form's model field (same list as the
+                # agent's ``<key>_model`` setting on /settings).
+                "model_suggestions": list(FIELD_SUGGESTIONS.get(spec.model_setting_key, ())),
                 "assets": assets,
             }
         )
@@ -2260,6 +2272,11 @@ def _normalize_project(value: str | None) -> str | None:
     return trimmed or None
 
 
+def _normalize_model(value: str | None) -> str | None:
+    """Trim whitespace; empty -> NULL (= the agent's ``<key>_model`` setting)."""
+    return (value or "").strip() or None
+
+
 @app.post("/api/tasks", status_code=201)
 def api_create_task(payload: TaskCreate) -> JSONResponse:
     if payload.priority not in PRIORITY_VALID:
@@ -2278,8 +2295,8 @@ def api_create_task(payload: TaskCreate) -> JSONResponse:
         cur = conn.execute(
             """
             INSERT INTO tasks (project, title, description, phase, priority, agent,
-                               locks, draft, sort_order)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?,
+                               model, locks, draft, sort_order)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?,
                     (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM tasks))
             """,
             (
@@ -2289,6 +2306,7 @@ def api_create_task(payload: TaskCreate) -> JSONResponse:
                 phase_value,
                 payload.priority,
                 payload.agent,
+                _normalize_model(payload.model),
                 locks.dump(locks.normalize(payload.locks, project_value)),
                 1 if payload.draft else 0,
             ),
@@ -2329,6 +2347,9 @@ def api_update_task(task_id: int, payload: TaskUpdate) -> JSONResponse:
 
     if "agent" in fields and fields["agent"] is not None and fields["agent"] not in agent_keys():
         raise HTTPException(status_code=400, detail=_("Invalid agent"))
+
+    if "model" in fields:
+        fields["model"] = _normalize_model(fields["model"])
 
     # phase is NOT NULL since v2.0: a legacy client trying to set phase=null
     # falls back to the canonical default rather than tripping the SQL

@@ -121,6 +121,8 @@ def _print_task_detail(t: dict) -> None:
     print(f"  {_('Status'):<14}{t['status']}")
     print(f"  {_('Phase'):<14}{t.get('phase') or '-'}")
     print(f"  {_('Priority'):<14}{t.get('priority') or 'normal'}")
+    print(f"  {_('Agent'):<14}{t.get('agent') or _('(default)')}")
+    print(f"  {_('Model'):<14}{t.get('model') or _('(agent default)')}")
     print(f"  {_('Tags'):<14}{', '.join(t.get('tags') or []) or '-'}")
     deps = t.get("depends") or []
     dep_str = ", ".join(f"#{d['id']}{'' if d['done'] else ' (open)'}" for d in deps) or "-"
@@ -694,8 +696,8 @@ def cmd_add(args: argparse.Namespace) -> int:
                 )
                 return 2
         cur = conn.execute(
-            "INSERT INTO tasks (project, title, description, phase, priority, agent, locks, draft) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO tasks (project, title, description, phase, priority, agent, model, "
+            "locks, draft) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 args.project,
                 title_value,
@@ -703,6 +705,7 @@ def cmd_add(args: argparse.Namespace) -> int:
                 phase_value,
                 args.priority,
                 args.agent,
+                (args.model or "").strip() or None,
                 locks.dump(locks.normalize(_parse_locks(args.locks), args.project)),
                 1 if args.draft else 0,
             ),
@@ -843,6 +846,9 @@ def cmd_patch(args: argparse.Namespace) -> int:
             )
             return 2
         fields["agent"] = candidate or None
+    if args.model is not None:
+        # Empty string clears the model (-> the agent's <key>_model setting).
+        fields["model"] = args.model.strip() or None
     if args.archived is not None:
         fields["archived"] = 1 if args.archived else 0
     if args.draft is not None:
@@ -2140,6 +2146,10 @@ def build_parser() -> argparse.ArgumentParser:
         choices=list(AGENTS),
         help=_("AI coding agent for this task (default: the default_agent setting)."),
     )
+    sp_add.add_argument(
+        "--model",
+        help=_("Model for this task's sessions, e.g. opus (default: the agent's model setting)."),
+    )
     sp_add.add_argument("--tag", action="append", default=[])
     sp_add.add_argument(
         "--depends",
@@ -2186,6 +2196,10 @@ def build_parser() -> argparse.ArgumentParser:
     sp_patch.add_argument(
         "--agent",
         help=_("Set the task's agent (claude/opencode/pi; '' clears to default)."),
+    )
+    sp_patch.add_argument(
+        "--model",
+        help=_("Set the task's model, e.g. opus ('' clears to the agent's model setting)."),
     )
     sp_patch.add_argument("--status")
     sp_patch.add_argument(

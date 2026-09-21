@@ -77,11 +77,11 @@
 {# follows the open-count badge (the folded-family pill on head rows).    #}
 {% macro project_row(p, after_badge='') %}
             <label class="form-check project-row d-flex align-items-center w-100 mb-1 flex-fill min-w-0"
-                   :class="{ 'project-hidden': isProjectHidden({{ p }}.name), 'is-dragging': draggedProject === {{ p }}.name }"
+                   :class="{ 'project-hidden': isProjectHidden({{ p }}.name), 'project-stale': {{ p }}.stale, 'is-dragging': draggedProject === {{ p }}.name }"
                    :draggable="{{ p }}.name !== '__none__'"
                    @dragstart="onProjectDragStart($event, {{ p }}.name)"
                    @dragend="onProjectDragEnd()"
-                   :title="{{ p }}.name === '__none__' ? $i18n('tasks_without_project') : {{ p }}.name">
+                   :title="{{ p }}.name === '__none__' ? $i18n('tasks_without_project') : ({{ p }}.stale ? {{ p }}.name + ' -- ' + $i18n('project_stale') : {{ p }}.name)">
                 <input type="checkbox" class="form-check-input"
                        :checked="projectFilter.includes({{ p }}.name)"
                        @change="toggleProject({{ p }}.name)">
@@ -175,6 +175,16 @@
                                             <i class="ti me-2" :class="isProjectHidden({{ p }}.name) ? 'ti-eye' : 'ti-eye-off'"></i>
                                             <span x-text="isProjectHidden({{ p }}.name) ? $i18n('unhide_project') : $i18n('hide_project')"></span>
                                         </button>
+                                        {# Stale project (Claude session dir kept, working dir gone): #}
+                                        {# wipe the session data and every task of that name.        #}
+                                        <template x-if="{{ p }}.stale">
+                                            <button type="button" class="dropdown-item text-danger"
+                                                    :title="$i18n('project_stale')"
+                                                    @click.stop.prevent="menuOpen = false; deleteProject({{ p }})">
+                                                <i class="ti ti-trash me-2"></i>
+                                                <span x-text="$i18n('delete_project')"></span>
+                                            </button>
+                                        </template>
                                     </div>
                                 </template>
                                 <template x-if="grouping">

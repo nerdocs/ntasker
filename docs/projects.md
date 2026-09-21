@@ -138,6 +138,21 @@ Hiding and grouping compose naturally: a hidden child simply drops out of its
 family's visible members; if that leaves the family with one automatic member,
 it falls back to a flat row.
 
+## Stale projects
+
+A Claude project whose working directory is gone or empty -- the session
+directory under `~/.claude/projects/` still exists, but the `cwd` it records is
+missing or holds nothing -- is shown dimmed, with the tooltip *Directory no
+longer exists*. `GET /api/projects` reports
+it as `stale: true` (plus `task_count`, every task of that name incl. done and
+archived). Its row menu gains **Delete project**: after a confirmation that
+names the task count, `POST /api/projects/delete` (`{project}`) removes the
+Claude session directories, the empty working directory (if any) *and* every
+task carrying that name; a live agent session on one of those tasks is stopped
+first and its run tab closed. The endpoint
+refuses (400) any project whose directory still exists. This is irreversible --
+it is the one place ntasker uses a blocking confirmation.
+
 ## What families are not
 
 - Not a filter. Checking a family head filters that one project, not its

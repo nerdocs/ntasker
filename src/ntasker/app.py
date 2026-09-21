@@ -46,7 +46,11 @@ from ntasker.claude_runner import (
     terminal_available,
 )
 from ntasker.claude_runner import serve as claude_serve
-from ntasker.projects import discover_claude_projects
+from ntasker.projects import (
+    delete_claude_project,
+    discover_claude_project_dirs,
+    stale_claude_projects,
+)
 from ntasker.rundiff import parse_baselines, run_diff
 from ntasker import completion, locks, plugins, taskqueue
 from ntasker import db as _db_module
@@ -606,6 +610,15 @@ def build_js_strings() -> dict[str, str]:
         "project_menu": _("Project menu"),
         "hide_project": _("Hide"),
         "unhide_project": _("Unhide"),
+        "delete_project": _("Delete project"),
+        "project_stale": _("Directory no longer exists"),
+        "confirm_delete_project": _(
+            'Project "{name}" -- delete its Claude session data permanently?'
+        ),
+        "confirm_delete_project_tasks": _(
+            'Project "{name}" -- delete its Claude session data and {count} task(s) permanently?'
+        ),
+        "project_deleted": _("Project deleted."),
         "group_project": _("Group..."),
         "group_project_hint": _(
             "Projects with the same group name are folded together in the sidebar"
@@ -1765,13 +1778,16 @@ def api_projects() -> JSONResponse:
 
     * Claude Code's own project directories under ``~/.claude/projects`` --
       decoded to ``~``-relative, ``/``-separated names (``Projekte/medux``).
-      See :func:`ntasker.projects.discover_claude_projects`.
+      See :func:`ntasker.projects.discover_claude_project_dirs`.
     * Any non-NULL ``tasks.project`` value -- so free-form names that do not
       correspond to a Claude project (and never vanish a project that still
       carries tasks) keep showing up.
 
     Each entry also carries ``hidden`` -- whether the project is on the
-    ``hidden_projects`` veto list (see :func:`api_set_project_hidden`).
+    ``hidden_projects`` veto list (see :func:`api_set_project_hidden`) --,
+    ``stale`` -- a Claude project whose working directory no longer exists
+    (see :func:`api_delete_project`) -- and ``task_count`` over every task
+    (done and archived included).
     """
     with get_conn() as conn:
         # All distinct project names currently referenced by any task
@@ -1785,30 +1801,46 @@ def api_projects() -> JSONResponse:
         # Open-counts: archived/done excluded, same semantics as in v1.x.
         count_rows = conn.execute(
             """
-            SELECT project, COUNT(*) AS c
+            SELECT project,
+                   SUM(CASE WHEN status = 'open' AND archived = 0 THEN 1 ELSE 0 END) AS c,
+                   COUNT(*) AS total
             FROM tasks
-            WHERE status = 'open' AND archived = 0
             GROUP BY project
             """
         ).fetchall()
         hidden_rows = conn.execute("SELECT project FROM hidden_projects").fetchall()
     counts: dict[str | None, int] = {row["project"]: int(row["c"]) for row in count_rows}
+    totals: dict[str | None, int] = {row["project"]: int(row["total"]) for row in count_rows}
     hidden: set[str] = {row["project"] for row in hidden_rows}
+    dirs = discover_claude_project_dirs()
+    stale = stale_claude_projects(dirs)
 
     # Union of Claude-discovered projects and names already on a task.
     # Defensively drop the reserved sentinels so a task that accidentally
     # stored one as its project value can never produce a duplicate row.
-    names = (set(discover_claude_projects()) | {row["project"] for row in names_rows}) - {
+    names = (set(dirs) | {row["project"] for row in names_rows}) - {
         PROJECT_NONE_SENTINEL,
         PROJECT_NULL_LEGACY,
     }
 
     out: list[dict] = [
-        {"name": PROJECT_NONE_SENTINEL, "open_count": counts.get(None, 0), "hidden": False},
+        {
+            "name": PROJECT_NONE_SENTINEL,
+            "open_count": counts.get(None, 0),
+            "task_count": totals.get(None, 0),
+            "hidden": False,
+            "stale": False,
+        },
     ]
     for name in sorted(names, key=str.casefold):
         out.append(
-            {"name": name, "open_count": counts.get(name, 0), "hidden": name in hidden}
+            {
+                "name": name,
+                "open_count": counts.get(name, 0),
+                "task_count": totals.get(name, 0),
+                "hidden": name in hidden,
+                "stale": name in stale,
+            }
         )
 
     return JSONResponse(out)
@@ -1842,6 +1874,38 @@ def api_set_project_hidden(payload: ProjectHiddenSet) -> JSONResponse:
         else:
             conn.execute("DELETE FROM hidden_projects WHERE project = ?", (project,))
     return JSONResponse({"project": project, "hidden": payload.hidden})
+
+
+class ProjectDelete(BaseModel):
+    """Delete a stale Claude project (session dirs + its tasks)."""
+
+    project: str
+
+
+@app.post("/api/projects/delete")
+def api_delete_project(payload: ProjectDelete) -> JSONResponse:
+    """Wipe a *stale* project: its Claude session directories and every task
+    carrying its name -- a live agent session on one of those tasks is stopped
+    first, so no orphaned run tab lingers. Refused (400) for any project whose
+    working directory still exists -- the UI only offers this for greyed-out
+    rows. Irreversible. Body-based because project names may contain slashes.
+    Returns the deleted task ids so the client can drop their tabs at once.
+    """
+    project = payload.project.strip()
+    dirs = discover_claude_project_dirs()
+    if not project or project not in stale_claude_projects(dirs):
+        raise HTTPException(status_code=400, detail=_("Project is not stale"))
+    with get_conn() as conn:
+        task_ids = [
+            int(r["id"])
+            for r in conn.execute("SELECT id FROM tasks WHERE project = ?", (project,)).fetchall()
+        ]
+        for tid in task_ids:
+            stop_session(tid)
+        conn.execute("DELETE FROM tasks WHERE project = ?", (project,))
+        conn.execute("DELETE FROM hidden_projects WHERE project = ?", (project,))
+    removed_dirs = delete_claude_project(project, dirs)
+    return JSONResponse({"project": project, "removed_dirs": removed_dirs, "tasks": task_ids})
 
 
 @app.get("/api/tags")

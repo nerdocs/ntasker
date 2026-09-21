@@ -751,8 +751,10 @@ body {
 .quick-task-input {
     width: 12rem;
 }
-/* A hidden project shown via the "Hidden" switch: present but dimmed. */
-.project-hidden .form-check-label {
+/* A hidden project shown via the "Hidden" switch, or a stale one whose
+ * working directory is gone: present but dimmed. */
+.project-hidden .form-check-label,
+.project-stale .form-check-label {
     opacity: 0.5;
 }
 

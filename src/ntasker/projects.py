@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 from pathlib import Path
 
 from ntasker.agents import AGENTS, resolve_home
@@ -167,21 +168,24 @@ def _path_to_name(path: Path, home: Path, base: Path | None = None) -> str | Non
     return path.as_posix()
 
 
-def discover_claude_projects(
+def discover_claude_project_dirs(
     claude_home: str | os.PathLike | None = None,
     home: Path | None = None,
     base: Path | None = None,
-) -> list[str]:
-    """Return sorted, unique project names discovered under ``<claude_home>/projects``.
+) -> dict[str, list[tuple[Path, Path]]]:
+    """Map every discovered project name to its ``(session_dir, cwd)`` pairs.
 
-    Names are relativized against ``base`` (the ``projects_base`` setting) when
-    given, else against ``home``. When ``base`` is left ``None`` it is read from
-    the setting; pass an explicit ``Path`` to override (or ``home`` only).
+    ``session_dir`` is the ``<claude_home>/projects/<encoded>`` directory,
+    ``cwd`` the working directory it decodes to (which may no longer exist --
+    see :func:`stale_claude_projects`). Names are relativized against ``base``
+    (the ``projects_base`` setting) when given, else against ``home``. When
+    ``base`` is left ``None`` it is read from the setting; pass an explicit
+    ``Path`` to override (or ``home`` only).
 
     Paths inside a ``.claude`` directory (agent worktrees) are skipped.
 
     Resilient by design: any unreadable entry is skipped and a missing
-    ``projects`` directory yields ``[]`` -- discovery must never break the
+    ``projects`` directory yields ``{}`` -- discovery must never break the
     sidebar feed it serves.
     """
     if home is None:
@@ -192,9 +196,9 @@ def discover_claude_projects(
         root = resolve_home(AGENTS["claude"], claude_home) / "projects"
         entries = sorted(root.iterdir()) if root.is_dir() else []
     except OSError:
-        return []
+        return {}
 
-    names: set[str] = set()
+    found: dict[str, list[tuple[Path, Path]]] = {}
     for entry in entries:
         try:
             if not entry.is_dir():
@@ -204,7 +208,52 @@ def discover_claude_projects(
                 continue
             name = _path_to_name(path, home, base)
             if name:
-                names.add(name)
+                found.setdefault(name, []).append((entry, path))
         except OSError:
             continue
-    return sorted(names, key=str.casefold)
+    return found
+
+
+def discover_claude_projects(
+    claude_home: str | os.PathLike | None = None,
+    home: Path | None = None,
+    base: Path | None = None,
+) -> list[str]:
+    """Return sorted, unique project names discovered under ``<claude_home>/projects``.
+
+    Thin wrapper over :func:`discover_claude_project_dirs`.
+    """
+    return sorted(discover_claude_project_dirs(claude_home, home, base), key=str.casefold)
+
+
+def _has_content(path: Path) -> bool:
+    """True when ``path`` is a directory with at least one entry."""
+    try:
+        return path.is_dir() and any(path.iterdir())
+    except OSError:
+        return False
+
+
+def stale_claude_projects(dirs: dict[str, list[tuple[Path, Path]]]) -> set[str]:
+    """Names from :func:`discover_claude_project_dirs` whose working directory
+    is gone or empty -- Claude still keeps session state for them, but none of
+    their decoded ``cwd`` paths holds anything on disk any more."""
+    return {name for name, pairs in dirs.items() if not any(_has_content(cwd) for _d, cwd in pairs)}
+
+
+def delete_claude_project(name: str, dirs: dict[str, list[tuple[Path, Path]]]) -> int:
+    """Remove every Claude session directory behind ``name`` (and the empty
+    working directory, if one is left); return the session-dir count.
+
+    Irreversible -- the session logs go with it. Callers gate this on
+    :func:`stale_claude_projects` so a live project is never wiped.
+    """
+    removed = 0
+    for session_dir, cwd in dirs.get(name, []):
+        shutil.rmtree(session_dir, ignore_errors=True)
+        removed += 1
+        try:
+            cwd.rmdir()  # only succeeds on an empty dir -- a stale cwd by definition
+        except OSError:
+            pass
+    return removed

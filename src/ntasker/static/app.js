@@ -524,6 +524,31 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             }
         },
 
+        // Wipe a stale project (Claude session dir kept, working dir gone):
+        // its session data plus every task of that name. Irreversible, so
+        // this is the one place a confirm() is warranted; the prompt names
+        // the task count when there is one.
+        async deleteProject(p) {
+            const msg = p.task_count > 0
+                ? _i('confirm_delete_project_tasks', {name: p.name, count: p.task_count})
+                : _i('confirm_delete_project', {name: p.name});
+            if (!confirm(msg)) return;
+            if (this.projectFilter.includes(p.name)) this.toggleProject(p.name);
+            const r = await fetch('/api/projects/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ project: p.name }),
+            });
+            if (!r.ok) {
+                this.showToast(_i('delete_failed'), 'danger');
+                return;
+            }
+            // The server stopped their sessions; drop the tabs right away.
+            for (const id of (await r.json()).tasks) this._dropTab(id);
+            this.showToast(_i('project_deleted'), 'success');
+            await this.refreshAll();
+        },
+
         // Sidebar rows as a one-level tree. Projects sharing a name prefix
         // (up to the first "-", "_" or "/") fold under one family once at
         // least two of them are visible; a lone "foo-bar" stays a flat row.

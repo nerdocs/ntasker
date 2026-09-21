@@ -4,6 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [3.7.1] — 2026-09-21
+Terminal: Ctrl+V uses the browser's native paste event instead of the Clipboard API (no Firefox "Paste" popup).
+
 ## [3.7.0] — 2026-09-21
 Agents: per-agent model setting (`claude_model`, `opencode_model`, `pi_model` / `NTASKER_<KEY>_MODEL`) passed as `--model`.
 Settings: quick-prompt editor as cards with a growing prompt field; plugin text settings can offer suggestions.

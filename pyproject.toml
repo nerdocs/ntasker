@@ -1,6 +1,6 @@
 [project]
 name = "ntasker"
-version = "3.7.0"
+version = "3.7.1"
 description = "Lightweight local task tracker for AI agents like Claude code, Pi.dev or OpenCode. Single-user, FastAPI + SQLite, Tabler.io UI."
 authors = [{ name = "Christian González", email = "christian.gonzalez@nerdocs.at" }]
 readme = "README.md"

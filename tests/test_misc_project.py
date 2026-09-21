@@ -31,6 +31,8 @@ def test_validate_misc_project():
         validate_misc_project("   ")
     with pytest.raises(ValueError):
         validate_misc_project("__none__")
+    with pytest.raises(ValueError):
+        validate_misc_project("~/Projekte/misc")
     assert validate_on_off("yes") == "on"
 
 

@@ -289,6 +289,10 @@ def validate_misc_project(value: str) -> str:
         raise ValueError(_("misc_project must not be empty -- unset it to clear."))
     if norm == "__none__":
         raise ValueError(_("misc_project must be a project name, not __none__."))
+    if norm.startswith("~"):
+        raise ValueError(
+            _("misc_project is a project name, not a directory -- use 'misc', not '~/Projekte/misc'.")
+        )
     return norm
 
 
@@ -539,8 +543,10 @@ HINTS: dict[str, object] = {
         "answer its trust prompt. ENV: NTASKER_NO_PROJECT_DIR."
     ),
     "misc_project": _lazy(
-        "Name of an optional catch-all project for one-off questions that "
-        "belong to no project, e.g. 'misc'. It gets a fixed sidebar row right "
+        "Project name (not a directory!) of an optional catch-all project for "
+        "one-off questions that belong to no project, e.g. 'misc' -- its "
+        "directory is <projects base>/misc, like for any other project. It "
+        "gets a fixed sidebar row right "
         "under Cross-project, is never grouped or hidden, and its tasks carry "
         "no dependencies or directory locks. Unset hides the feature. "
         "ENV: NTASKER_MISC_PROJECT."

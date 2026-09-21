@@ -223,6 +223,9 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // New-task form accordion: collapsed by default so more of the task
         // list stays visible; the card header toggles it (toggleNewTaskForm).
         formOpen: false,
+        // The project field is locked while the form was opened from a
+        // project's "+" (the project is given); the header toggle unlocks it.
+        formProjectLocked: false,
         // Sidebar: hide projects with 0 open tasks by default; this switch
         // (persisted) flips them back into view.
         showEmptyProjects: localStorage.getItem(LS_KEY_SHOW_EMPTY_PROJECTS) === '1',
@@ -955,17 +958,17 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             this.loadTasks();
         },
 
-        // New-task accordion toggle. On expand, move focus into the Project
-        // field. Queried by id, not $refs: the input lives inside a nested
-        // x-data combobox, so its x-ref would not register on this root
-        // component. The focus is deferred via $nextTick *and* rAF: at
-        // $nextTick the x-show'd form body is still display:none (focus() on a
-        // hidden element is a no-op), so we wait one frame for it to paint.
+        // New-task accordion toggle. On expand, move focus into the Title
+        // field -- the first and only required one. The focus is deferred via
+        // $nextTick *and* rAF: at $nextTick the x-show'd form body is still
+        // display:none (focus() on a hidden element is a no-op), so we wait
+        // one frame for it to paint.
         toggleNewTaskForm() {
             this.formOpen = !this.formOpen;
+            this.formProjectLocked = false;
             if (this.formOpen) {
                 this.$nextTick(() => requestAnimationFrame(
-                    () => document.getElementById('projectinput-form')?.focus()));
+                    () => this.$refs.titleInput?.focus()));
             }
         },
 
@@ -974,6 +977,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // the run view first (the form lives on the board) so the focus lands.
         newTaskForProject(name) {
             this.form.project = name;
+            this.formProjectLocked = true;
             this.formOpen = true;
             if (this.claudeView !== null) location.hash = '#/';
             this.$nextTick(() => {

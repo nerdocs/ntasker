@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: ntasker 3.7.1\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-09-21 12:00+0200\n"
+"POT-Creation-Date: 2026-09-21 12:14+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -18,38 +18,38 @@ msgstr ""
 "Generated-By: Babel 2.18.0\n"
 
 #: src/ntasker/app.py:132 src/ntasker/app.py:539
-#: src/ntasker/templates/index.html:598 src/ntasker/templates/index.html:1646
+#: src/ntasker/templates/index.html:624 src/ntasker/templates/index.html:1656
 msgid "Planned"
 msgstr ""
 
 #: src/ntasker/app.py:133 src/ntasker/app.py:538
-#: src/ntasker/templates/index.html:599 src/ntasker/templates/index.html:1647
+#: src/ntasker/templates/index.html:625 src/ntasker/templates/index.html:1657
 msgid "In Progress"
 msgstr ""
 
 #: src/ntasker/app.py:134 src/ntasker/app.py:540
-#: src/ntasker/templates/index.html:600 src/ntasker/templates/index.html:1648
+#: src/ntasker/templates/index.html:626 src/ntasker/templates/index.html:1658
 msgid "Review"
 msgstr ""
 
 #: src/ntasker/app.py:141 src/ntasker/app.py:541
-#: src/ntasker/templates/index.html:606 src/ntasker/templates/index.html:1654
+#: src/ntasker/templates/index.html:632 src/ntasker/templates/index.html:1664
 msgid "Critical"
 msgstr ""
 
 #: src/ntasker/app.py:142 src/ntasker/app.py:542
-#: src/ntasker/templates/index.html:607 src/ntasker/templates/index.html:1655
+#: src/ntasker/templates/index.html:633 src/ntasker/templates/index.html:1665
 msgid "High"
 msgstr ""
 
 #: src/ntasker/app.py:143 src/ntasker/app.py:543
-#: src/ntasker/templates/index.html:608 src/ntasker/templates/index.html:1656
+#: src/ntasker/templates/index.html:634 src/ntasker/templates/index.html:1666
 #: src/ntasker/templates/settings.html:356
 msgid "Normal"
 msgstr ""
 
 #: src/ntasker/app.py:144 src/ntasker/app.py:544
-#: src/ntasker/templates/index.html:609 src/ntasker/templates/index.html:1657
+#: src/ntasker/templates/index.html:635 src/ntasker/templates/index.html:1667
 msgid "Low"
 msgstr ""
 
@@ -91,8 +91,8 @@ msgid "Tasks without a project"
 msgstr ""
 
 #: src/ntasker/app.py:437 src/ntasker/cli.py:123
-#: src/ntasker/templates/index.html:326 src/ntasker/templates/index.html:604
-#: src/ntasker/templates/index.html:1652
+#: src/ntasker/templates/index.html:326 src/ntasker/templates/index.html:630
+#: src/ntasker/templates/index.html:1662
 msgid "Priority"
 msgstr ""
 
@@ -101,8 +101,8 @@ msgid "Clear priority filter"
 msgstr ""
 
 #: src/ntasker/app.py:440 src/ntasker/cli.py:126
-#: src/ntasker/templates/index.html:393 src/ntasker/templates/index.html:658
-#: src/ntasker/templates/index.html:1700 src/ntasker/templates/tags.html:47
+#: src/ntasker/templates/index.html:393 src/ntasker/templates/index.html:661
+#: src/ntasker/templates/index.html:1710 src/ntasker/templates/tags.html:47
 msgid "Tags"
 msgstr ""
 
@@ -186,7 +186,7 @@ msgid "Restore the default priority order (discards manual drag order)"
 msgstr ""
 
 #: src/ntasker/app.py:465 src/ntasker/app.py:591
-#: src/ntasker/templates/index.html:977
+#: src/ntasker/templates/index.html:987
 msgid "Done"
 msgstr ""
 
@@ -295,8 +295,8 @@ msgstr ""
 msgid "Waiting -- a directory it holds has uncommitted changes."
 msgstr ""
 
-#: src/ntasker/app.py:500 src/ntasker/templates/index.html:757
-#: src/ntasker/templates/index.html:1795
+#: src/ntasker/app.py:500 src/ntasker/templates/index.html:760
+#: src/ntasker/templates/index.html:1805
 msgid "Also locks"
 msgstr ""
 
@@ -401,7 +401,7 @@ msgid "New task"
 msgstr ""
 
 #: src/ntasker/app.py:530 src/ntasker/cli.py:120
-#: src/ntasker/templates/index.html:549 src/ntasker/templates/index.html:1604
+#: src/ntasker/templates/index.html:574 src/ntasker/templates/index.html:1614
 msgid "Project"
 msgstr ""
 
@@ -421,7 +421,7 @@ msgid ""
 msgstr ""
 
 #: src/ntasker/app.py:536 src/ntasker/cli.py:122
-#: src/ntasker/templates/index.html:596 src/ntasker/templates/index.html:1644
+#: src/ntasker/templates/index.html:622 src/ntasker/templates/index.html:1654
 msgid "Phase"
 msgstr ""
 
@@ -429,8 +429,8 @@ msgstr ""
 msgid "--"
 msgstr ""
 
-#: src/ntasker/app.py:545 src/ntasker/templates/index.html:642
-#: src/ntasker/templates/index.html:1690
+#: src/ntasker/app.py:545 src/ntasker/templates/index.html:554
+#: src/ntasker/templates/index.html:1700
 msgid "Title"
 msgstr ""
 
@@ -439,12 +439,12 @@ msgid "What needs to be done?"
 msgstr ""
 
 #: src/ntasker/app.py:547 src/ntasker/cli.py:147
-#: src/ntasker/templates/index.html:648 src/ntasker/templates/index.html:1694
+#: src/ntasker/templates/index.html:563 src/ntasker/templates/index.html:1704
 msgid "Description"
 msgstr ""
 
 #: src/ntasker/app.py:548
-msgid "Optional"
+msgid "Describe the task in more detail (optional)"
 msgstr ""
 
 #: src/ntasker/app.py:549
@@ -476,7 +476,7 @@ msgid "blocked by:"
 msgstr ""
 
 #: src/ntasker/app.py:556 src/ntasker/plugins/workspace/__init__.py:118
-#: src/ntasker/templates/index.html:807
+#: src/ntasker/templates/index.html:817
 msgid "Create"
 msgstr ""
 
@@ -576,11 +576,11 @@ msgid "Could not change the completion setup -- try again."
 msgstr ""
 
 #: src/ntasker/app.py:590 src/ntasker/app.py:765
-#: src/ntasker/templates/index.html:970 src/ntasker/templates/tags.html:77
+#: src/ntasker/templates/index.html:980 src/ntasker/templates/tags.html:77
 msgid "Open"
 msgstr ""
 
-#: src/ntasker/app.py:592 src/ntasker/templates/index.html:984
+#: src/ntasker/app.py:592 src/ntasker/templates/index.html:994
 #: src/ntasker/templates/settings.html:170
 msgid "Archive"
 msgstr ""
@@ -691,11 +691,11 @@ msgid "Delete permanently"
 msgstr ""
 
 #: src/ntasker/app.py:623 src/ntasker/app.py:787
-#: src/ntasker/templates/index.html:1847
+#: src/ntasker/templates/index.html:1857
 msgid "Delete"
 msgstr ""
 
-#: src/ntasker/app.py:625 src/ntasker/templates/index.html:1266
+#: src/ntasker/app.py:625 src/ntasker/templates/index.html:1276
 msgid "No tasks"
 msgstr ""
 
@@ -724,18 +724,18 @@ msgid "Task"
 msgstr ""
 
 #: src/ntasker/app.py:633 src/ntasker/plugins/workspace/__init__.py:97
-#: src/ntasker/templates/index.html:1916
+#: src/ntasker/templates/index.html:1926
 msgid "Close"
 msgstr ""
 
 #: src/ntasker/app.py:634 src/ntasker/plugins/workspace/__init__.py:117
-#: src/ntasker/templates/index.html:1850 src/ntasker/templates/tags.html:146
+#: src/ntasker/templates/index.html:1860 src/ntasker/templates/tags.html:146
 #: src/ntasker/templates/tags.html:197
 msgid "Cancel"
 msgstr ""
 
 #: src/ntasker/app.py:635 src/ntasker/plugins/workspace/__init__.py:116
-#: src/ntasker/templates/index.html:1854 src/ntasker/templates/tags.html:151
+#: src/ntasker/templates/index.html:1864 src/ntasker/templates/tags.html:151
 msgid "Save"
 msgstr ""
 
@@ -1377,8 +1377,8 @@ msgstr ""
 msgid "(agent default)"
 msgstr ""
 
-#: src/ntasker/cli.py:129 src/ntasker/templates/index.html:711
-#: src/ntasker/templates/index.html:1753
+#: src/ntasker/cli.py:129 src/ntasker/templates/index.html:714
+#: src/ntasker/templates/index.html:1763
 msgid "Depends on"
 msgstr ""
 
@@ -1386,8 +1386,8 @@ msgstr ""
 msgid "Archived"
 msgstr ""
 
-#: src/ntasker/cli.py:131 src/ntasker/templates/index.html:638
-#: src/ntasker/templates/index.html:1159 src/ntasker/templates/index.html:1454
+#: src/ntasker/cli.py:131 src/ntasker/templates/index.html:1169
+#: src/ntasker/templates/index.html:1464
 msgid "Draft"
 msgstr ""
 
@@ -3625,11 +3625,15 @@ msgstr ""
 msgid "Hidden"
 msgstr ""
 
-#: src/ntasker/templates/index.html:816
+#: src/ntasker/templates/index.html:813
+msgid "Park as a draft"
+msgstr ""
+
+#: src/ntasker/templates/index.html:826
 msgid "Create + Run"
 msgstr ""
 
-#: src/ntasker/templates/index.html:1686
+#: src/ntasker/templates/index.html:1696
 msgid "This task is a draft"
 msgstr ""
 

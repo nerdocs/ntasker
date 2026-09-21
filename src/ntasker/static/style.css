@@ -350,6 +350,23 @@ body {
     border-color: var(--tblr-indigo);
     box-shadow: 0 0 0 2px rgba(var(--tblr-indigo-rgb), 0.25);
 }
+/* New-task form: the tools row under the description (attach context,
+ * dictate). Plugin slots render as flex children; the voice tray takes the
+ * remaining width so its hint text has room. */
+.task-form-tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+}
+.task-form-tools .voice-slot {
+    flex: 1 1 16rem;
+    min-width: 0;
+}
+/* Thin rule between the task itself, its routing fields and the actions. */
+.task-form-divider {
+    margin: 0.25rem 0;
+}
 /* A sidebar project / board card hovering a chip input of the new-task form. */
 .form-control.chip-drop-target {
     border-color: var(--tblr-primary);

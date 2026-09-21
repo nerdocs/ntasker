@@ -56,7 +56,9 @@
     display: inline-flex;
     align-items: baseline;
     gap: 0.5rem;
+    flex: 1 1 auto;
     min-width: 0;
+    overflow: hidden;   /* the hint ellipsizes instead of widening the tray */
 }
 .voice-idle-hint {
     opacity: 0.7;

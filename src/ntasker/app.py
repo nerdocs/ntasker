@@ -545,7 +545,7 @@ def build_js_strings() -> dict[str, str]:
         "title": _("Title"),
         "title_placeholder": _("What needs to be done?"),
         "description": _("Description"),
-        "description_placeholder": _("Optional"),
+        "description_placeholder": _("Describe the task in more detail (optional)"),
         "tag_input_placeholder": _("Type a tag, Enter to add"),
         "remove_tag": _("Remove tag"),
         "dependency_input_placeholder": _("Type a task title or #id"),

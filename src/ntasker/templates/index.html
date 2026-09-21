@@ -545,6 +545,31 @@
                     <div class="card-body" x-show="formOpen" x-cloak>
                         <form @submit.prevent="createTask()">
                             <div class="row g-2">
+                                {# The task itself comes first and unlabeled: the title is the one #}
+                                {# field every task needs, so it is the biggest thing in the form. #}
+                                <div class="col-12">
+                                    <input type="text" class="form-control form-control-lg" x-model="form.title"
+                                           maxlength="500" x-ref="titleInput"
+                                           :placeholder="$i18n('title_placeholder')"
+                                           aria-label="{{ t('Title') }}">
+                                </div>
+                                <div class="col-12">
+                                    {# An image pasted here becomes a context attachment (task_context plugin). #}
+                                    <textarea class="form-control" rows="3" x-model="form.description"
+                                              @paste="typeof pluginPaste === 'function' && pluginPaste($event, null)"
+                                              @keydown.enter.ctrl.prevent="createTask()"
+                                              @keydown.enter.meta.prevent="createTask()"
+                                              :placeholder="$i18n('description_placeholder')"
+                                              aria-label="{{ t('Description') }}"></textarea>
+                                </div>
+                                {# Tools that act on the description (attach context, dictate) sit #}
+                                {# right under it in one row; each plugin slot is a flex child. #}
+                                {% if plugin_slots['task_form'] %}
+                                <div class="col-12 task-form-tools">
+                                    {% for tpl in plugin_slots['task_form'] %}{% include tpl %}{% endfor %}
+                                </div>
+                                {% endif %}
+                                <div class="col-12"><hr class="task-form-divider"></div>
                                 <div class="col-md-3">
                                     <label class="form-label">{{ t('Project') }}</label>
                                     {# Free-form text + AlpineJS combobox: pick an existing project #}
@@ -555,6 +580,7 @@
                                         <input type="text" class="form-control"
                                                x-model="form.project"
                                                id="projectinput-form"
+                                               :disabled="formProjectLocked"
                                                maxlength="100"
                                                autocomplete="off"
                                                @focus="focused = true"
@@ -609,7 +635,7 @@
                                         <option value="low">{{ t('Low') }}</option>
                                     </select>
                                 </div>
-                                <div class="col-md-2" x-show="agents.length">
+                                <div class="col-md-3" x-show="agents.length">
                                     <label class="form-label" x-text="$i18n('agent_label')"></label>
                                     <select class="form-select" x-model="form.agent">
                                         <option value="" x-text="$i18n('default_agent_label') + ' (' + agentLabel(defaultAgent) + ')'"></option>
@@ -631,30 +657,7 @@
                                         </template>
                                     </datalist>
                                 </div>
-                                {# Draft: a parked idea -- never started by the queue, the run button or /task. #}
-                                <div class="col-md-2 d-flex align-items-end">
-                                    <label class="form-check mb-2" :title="$i18n('draft_badge')">
-                                        <input type="checkbox" class="form-check-input" x-model="form.draft">
-                                        <span class="form-check-label">{{ t('Draft') }}</span>
-                                    </label>
-                                </div>
-                                <div class="col-md-3">
-                                    <label class="form-label">{{ t('Title') }}</label>
-                                    <input type="text" class="form-control" x-model="form.title" maxlength="500"
-                                           x-ref="titleInput"
-                                           :placeholder="$i18n('title_placeholder')">
-                                </div>
-                                <div class="col-12">
-                                    <label class="form-label">{{ t('Description') }}</label>
-                                    {# An image pasted here becomes a context attachment (task_context plugin). #}
-                                    <textarea class="form-control" rows="2" x-model="form.description"
-                                              @paste="typeof pluginPaste === 'function' && pluginPaste($event, null)"
-                                              @keydown.enter.ctrl.prevent="createTask()"
-                                              @keydown.enter.meta.prevent="createTask()"
-                                              :placeholder="$i18n('description_placeholder')"></textarea>
-                                </div>
-                                {% for tpl in plugin_slots['task_form'] %}{% include tpl %}{% endfor %}
-                                <div class="col-md-6">
+                                <div class="col-md-4">
                                     <label class="form-label">{{ t('Tags') }}</label>
                                     {# Tag-Input: AlpineJS-driven combobox. Tags as badges, free-text input, autocomplete dropdown. #}
                                     <div class="position-relative" x-data="{ focused: false }">
@@ -707,7 +710,7 @@
                                         </div>
                                     </div>
                                 </div>
-                                <div class="col-md-6">
+                                <div class="col-md-4">
                                     <label class="form-label">{{ t('Depends on') }}</label>
                                     {# Dependency input: autocomplete by title/#id, picks resolve to #id chips. #}
                                     <div class="position-relative" x-data="{ focused: false }">
@@ -753,7 +756,7 @@
                                     </div>
                                 </div>
 
-                                <div class="col-md-6">
+                                <div class="col-md-4">
                                     <label class="form-label">{{ t('Also locks') }}</label>
                                     {# Directory-lock chips: extra projects whose directories this run holds. #}
                                     {# Project-name combobox (pick = chip) + drop target for sidebar projects. #}
@@ -801,13 +804,20 @@
                                         </div>
                                     </div>
                                 </div>
-                                <div class="col-12 text-end">
-                                    <button type="submit" class="btn btn-sm btn-primary" :disabled="!form.title.trim()">
+                                <div class="col-12"><hr class="task-form-divider"></div>
+                                <div class="col-12 d-flex flex-wrap align-items-center gap-2">
+                                    {# Draft: a parked idea -- never started by the queue, the run button or /task. #}
+                                    {# Sits next to the actions because it decides what "create" means. #}
+                                    <label class="form-check mb-0 me-auto" :title="$i18n('draft_badge')">
+                                        <input type="checkbox" class="form-check-input" x-model="form.draft">
+                                        <span class="form-check-label">{{ t('Park as a draft') }}</span>
+                                    </label>
+                                    <button type="submit" class="btn btn-primary" :disabled="!form.title.trim()">
                                         <i class="ti ti-plus me-1 fs-3"></i>
                                         {{ t('Create') }}
                                     </button>
                                     {# Create + immediately hand the task to its agent -- only when that agent's CLI + a PTY are available. #}
-                                    <button type="button" class="btn btn-sm btn-claude-cta ms-2"
+                                    <button type="button" class="btn btn-claude-cta"
                                             x-show="agentAvailable(form.agent || defaultAgent)"
                                             :disabled="!form.title.trim() || form.draft"
                                             @click="createTask(true)"

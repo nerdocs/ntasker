@@ -4,6 +4,10 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [3.8.0] — 2026-09-21
+Tasks: per-task model override (`--model`, GUI field); new-task form reordered (title first, tools row).
+Voice: `vosk>=0.3.44` floor -- 0.3.45 ships no macOS wheel, so `ntasker[voice]` now installs on macOS.
+
 ## [3.7.1] — 2026-09-21
 Terminal: Ctrl+V uses the browser's native paste event instead of the Clipboard API (no Firefox "Paste" popup).
 

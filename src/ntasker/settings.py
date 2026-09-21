@@ -275,6 +275,23 @@ def validate_no_project_dir(value: str) -> str:
     return norm
 
 
+def validate_misc_project(value: str) -> str:
+    """Validator for the ``misc_project`` setting.
+
+    The name of the optional catch-all project for one-off questions that
+    belong to no project (see :func:`get_misc_project`). It is an ordinary
+    project name -- a relative one resolves under ``projects_base`` like any
+    other -- so the only rules are: trimmed, not empty (unset to clear), and
+    not the cross-project sentinel ``__none__``.
+    """
+    norm = (value or "").strip()
+    if not norm:
+        raise ValueError(_("misc_project must not be empty -- unset it to clear."))
+    if norm == "__none__":
+        raise ValueError(_("misc_project must be a project name, not __none__."))
+    return norm
+
+
 # Default idle window (seconds): a live Claude session that produced no output
 # for at least this long is treated as "waiting for input" (see
 # :func:`ntasker.claude_runner.session_states`). The CLI emits no explicit
@@ -473,6 +490,8 @@ VALIDATORS: dict[str, Validator] = {
     "sidebar_sections": validate_sidebar_sections,
     "quick_prompts": validate_quick_prompts,
     "no_project_dir": validate_no_project_dir,
+    "misc_project": validate_misc_project,
+    "misc_no_memory": validate_on_off,
     "claude_idle_seconds": validate_claude_idle_seconds,
     "auto_archive_days": validate_auto_archive_days,
     "claude_open_terminal": validate_claude_open_terminal,
@@ -518,6 +537,18 @@ HINTS: dict[str, object] = {
         "Unset falls back to the projects base, then to your home directory -- "
         "note that Claude Code refuses to work in the home directory until you "
         "answer its trust prompt. ENV: NTASKER_NO_PROJECT_DIR."
+    ),
+    "misc_project": _lazy(
+        "Name of an optional catch-all project for one-off questions that "
+        "belong to no project, e.g. 'misc'. It gets a fixed sidebar row right "
+        "under Cross-project, is never grouped or hidden, and its tasks carry "
+        "no dependencies or directory locks. Unset hides the feature. "
+        "ENV: NTASKER_MISC_PROJECT."
+    ),
+    "misc_no_memory": _lazy(
+        "Start Claude sessions in the misc project without auto memory "
+        "(CLAUDE_CODE_DISABLE_AUTO_MEMORY=1), so one-off questions leave no "
+        "trace in Claude's project memory. Needs a misc project."
     ),
     "default_agent": _lazy(
         "Agent new tasks use, and the fallback for any task without one. "
@@ -593,6 +624,8 @@ LABELS: dict[str, object] = {
     "default_view": _lazy("Start view"),
     "projects_base": _lazy("Projects directory"),
     "no_project_dir": _lazy("Directory for runs without a project"),
+    "misc_project": _lazy("Misc project"),
+    "misc_no_memory": _lazy("Misc project without Claude auto memory"),
     "default_agent": _lazy("Default agent"),
     "claude_open_terminal": _lazy("Open the terminal when a run starts"),
     "claude_idle_seconds": _lazy("Silence before a session counts as waiting"),
@@ -638,6 +671,10 @@ FIELD_CHOICES: dict[str, list[tuple[str, object, object]]] = {
         ("on", _lazy("On"), None),
         ("off", _lazy("Off"), None),
     ],
+    "misc_no_memory": [
+        ("on", _lazy("On"), None),
+        ("off", _lazy("Off"), None),
+    ],
 }
 
 FIELD_DEFAULTS: dict[str, str] = {
@@ -649,6 +686,7 @@ FIELD_DEFAULTS: dict[str, str] = {
     "dir_locks": "on",
     "require_clean": "off",
     "quicktasks_bypass_lanes": "on",
+    "misc_no_memory": "off",
 }
 
 
@@ -911,6 +949,26 @@ def get_quicktasks_bypass_lanes() -> bool:
     ENV ``NTASKER_QUICKTASKS_BYPASS_LANES``. See :data:`ntasker.taskqueue.LANELESS`.
     """
     return _get_on_off("quicktasks_bypass_lanes", True)
+
+
+def get_misc_project() -> str | None:
+    """Name of the catch-all project for one-off questions, or ``None``.
+
+    ENV ``NTASKER_MISC_PROJECT``. Unset means the feature is off: no sidebar
+    row, no form chip, no special treatment anywhere.
+    """
+    raw = get_setting("misc_project", env_var="NTASKER_MISC_PROJECT")
+    norm = (raw or "").strip()
+    return norm or None
+
+
+def get_misc_no_memory() -> bool:
+    """Whether Claude runs in the misc project disable auto memory (default off).
+
+    ENV ``NTASKER_MISC_NO_MEMORY``. Only meaningful while :func:`get_misc_project`
+    is set; see :func:`ntasker.claude_runner._clean_env`.
+    """
+    return _get_on_off("misc_no_memory", False)
 
 
 def get_sidebar_sections() -> dict[str, bool]:

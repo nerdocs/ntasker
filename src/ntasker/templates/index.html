@@ -78,7 +78,7 @@
 {% macro project_row(p, after_badge='') %}
             <label class="form-check project-row d-flex align-items-center w-100 mb-1 flex-fill min-w-0"
                    :class="{ 'project-hidden': isProjectHidden({{ p }}.name), 'project-stale': {{ p }}.stale, 'is-dragging': draggedProject === {{ p }}.name }"
-                   :draggable="{{ p }}.name !== '__none__'"
+                   :draggable="{{ p }}.name !== '__none__' && !{{ p }}.misc"
                    @dragstart="onProjectDragStart($event, {{ p }}.name)"
                    @dragend="onProjectDragEnd()"
                    :title="{{ p }}.name === '__none__' ? $i18n('tasks_without_project') : ({{ p }}.stale ? {{ p }}.name + ' -- ' + $i18n('project_stale') : {{ p }}.name)">
@@ -92,7 +92,14 @@
                             <span x-text="$i18n('cross_project')"></span>
                         </span>
                     </template>
-                    <template x-if="{{ p }}.name !== '__none__'">
+                    {# Misc project: fixed icon + label, the real name only in the tooltip. #}
+                    <template x-if="{{ p }}.misc">
+                        <span>
+                            <i class="ti ti-inbox me-1 text-secondary"></i>
+                            <span x-text="$i18n('misc_project')"></span>
+                        </span>
+                    </template>
+                    <template x-if="{{ p }}.name !== '__none__' && !{{ p }}.misc">
                         <span x-text="{{ p }}.label"></span>
                     </template>
                 </span>
@@ -162,19 +169,25 @@
                                             <i class="ti ti-focus-2 me-2"></i>
                                             <span x-text="$i18n('project_board')"></span>
                                         </button>
-                                        {# "Group...": swaps the menu for an inline input, prefilled #}
-                                        {# with the current family (manual or automatic).          #}
-                                        <button type="button" class="dropdown-item"
-                                                :title="$i18n('group_project_hint')"
-                                                @click.stop.prevent="grouping = true; groupName = groupPrefill({{ p }}.name)">
-                                            <i class="ti ti-folder-symlink me-2"></i>
-                                            <span x-text="$i18n('group_project')"></span>
-                                        </button>
-                                        <button type="button" class="dropdown-item"
-                                                @click.stop.prevent="menuOpen = false; setProjectHidden({{ p }}.name, !isProjectHidden({{ p }}.name))">
-                                            <i class="ti me-2" :class="isProjectHidden({{ p }}.name) ? 'ti-eye' : 'ti-eye-off'"></i>
-                                            <span x-text="isProjectHidden({{ p }}.name) ? $i18n('unhide_project') : $i18n('hide_project')"></span>
-                                        </button>
+                                        {# "Group..." / "Hide": not for the misc project -- it is #}
+                                        {# pinned under Cross-project and never folded or hidden.  #}
+                                        <template x-if="!{{ p }}.misc">
+                                            <div>
+                                                {# "Group...": swaps the menu for an inline input, prefilled #}
+                                                {# with the current family (manual or automatic).          #}
+                                                <button type="button" class="dropdown-item"
+                                                        :title="$i18n('group_project_hint')"
+                                                        @click.stop.prevent="grouping = true; groupName = groupPrefill({{ p }}.name)">
+                                                    <i class="ti ti-folder-symlink me-2"></i>
+                                                    <span x-text="$i18n('group_project')"></span>
+                                                </button>
+                                                <button type="button" class="dropdown-item"
+                                                        @click.stop.prevent="menuOpen = false; setProjectHidden({{ p }}.name, !isProjectHidden({{ p }}.name))">
+                                                    <i class="ti me-2" :class="isProjectHidden({{ p }}.name) ? 'ti-eye' : 'ti-eye-off'"></i>
+                                                    <span x-text="isProjectHidden({{ p }}.name) ? $i18n('unhide_project') : $i18n('hide_project')"></span>
+                                                </button>
+                                            </div>
+                                        </template>
                                         {# Stale project (Claude session dir kept, working dir gone): #}
                                         {# wipe the session data and every task of that name.        #}
                                         <template x-if="{{ p }}.stale">
@@ -581,7 +594,19 @@
                                 {% endif %}
                                 <div class="col-12"><hr class="task-form-divider"></div>
                                 <div class="col-md-3">
-                                    <label class="form-label">{{ t('Project') }}</label>
+                                    <div class="form-label d-flex align-items-center">
+                                        <span>{{ t('Project') }}</span>
+                                        {# Misc chip: one click puts the task into the misc project. #}
+                                        {# Only rendered while the misc_project setting is set.      #}
+                                        <button type="button" class="btn btn-sm btn-ghost-secondary ms-auto py-0 px-1"
+                                                x-show="miscProject" x-cloak
+                                                :class="{ active: isMisc(form.project) }"
+                                                :disabled="formProjectLocked"
+                                                :title="$i18n('misc_project_hint')"
+                                                @click="form.project = miscProject">
+                                            <i class="ti ti-inbox me-1"></i><span x-text="$i18n('misc_project')"></span>
+                                        </button>
+                                    </div>
                                     {# Free-form text + AlpineJS combobox: pick an existing project #}
                                     {# (Tab/Enter accept the highlighted suggestion, like tags) or #}
                                     {# type a new name -- created implicitly when the task is saved. #}
@@ -720,7 +745,9 @@
                                         </div>
                                     </div>
                                 </div>
-                                <div class="col-md-4">
+                                {# Deps and locks are hidden for a misc task: it relates to no #}
+                                {# other project (createTask sends both empty).                 #}
+                                <div class="col-md-4" x-show="!isMisc(form.project)">
                                     <label class="form-label">{{ t('Depends on') }}</label>
                                     {# Dependency input: autocomplete by title/#id, picks resolve to #id chips. #}
                                     <div class="position-relative" x-data="{ focused: false }">
@@ -766,7 +793,7 @@
                                     </div>
                                 </div>
 
-                                <div class="col-md-4">
+                                <div class="col-md-4" x-show="!isMisc(form.project)">
                                     <label class="form-label">{{ t('Also locks') }}</label>
                                     {# Directory-lock chips: extra projects whose directories this run holds. #}
                                     {# Project-name combobox (pick = chip) + drop target for sidebar projects. #}
@@ -894,7 +921,12 @@
                                     <i class="ti ti-asterisk me-1"></i><span x-text="$i18n('cross_project')"></span>
                                 </span>
                             </template>
-                            <template x-if="group.key !== '__none__'">
+                            <template x-if="isMisc(group.key)">
+                                <span class="text-truncate" :title="group.label">
+                                    <i class="ti ti-inbox me-1"></i><span x-text="$i18n('misc_project')"></span>
+                                </span>
+                            </template>
+                            <template x-if="group.key !== '__none__' && !isMisc(group.key)">
                                 <span class="text-truncate" x-text="group.label" :title="group.label"></span>
                             </template>
                             <span class="badge bg-secondary-lt ms-auto" x-text="group.items.length"></span>
@@ -1064,13 +1096,23 @@
                                                     @click="task._expanded = !task._expanded"></strong>
 
                                             {# Project badge -- click to toggle project filter #}
-                                            <template x-if="task.project">
+                                            <template x-if="task.project && !isMisc(task.project)">
                                                 <span class="badge bg-blue-lt"
                                                       role="button"
                                                       style="cursor: pointer"
                                                       :title="$i18n('filter_project', {name: task.project})"
                                                       @click.stop="toggleProject(task.project)"
                                                       x-text="task.project"></span>
+                                            </template>
+                                            {# Misc project: grey badge with the fixed label #}
+                                            <template x-if="isMisc(task.project)">
+                                                <span class="badge bg-secondary-lt"
+                                                      role="button"
+                                                      style="cursor: pointer"
+                                                      :title="$i18n('filter_project', {name: task.project})"
+                                                      @click.stop="toggleProject(task.project)">
+                                                    <i class="ti ti-inbox me-1"></i><span x-text="$i18n('misc_project')"></span>
+                                                </span>
                                             </template>
                                             {# Cross-project marker (no project) -- click toggles __none__ #}
                                             <template x-if="!task.project">
@@ -1421,8 +1463,13 @@
                                                  x-cloak></div>
 
                                             <div class="d-flex flex-wrap gap-1 small">
-                                                <template x-if="task.project">
+                                                <template x-if="task.project && !isMisc(task.project)">
                                                     <span class="badge bg-blue-lt" x-text="task.project"></span>
+                                                </template>
+                                                <template x-if="isMisc(task.project)">
+                                                    <span class="badge bg-secondary-lt" :title="task.project">
+                                                        <i class="ti ti-inbox me-1"></i><span x-text="$i18n('misc_project')"></span>
+                                                    </span>
                                                 </template>
                                                 <template x-if="!task.project">
                                                     <span class="badge bg-secondary-lt">
@@ -1769,7 +1816,7 @@
                             </div>
                         </div>
                     </div>
-                    <div class="mb-2">
+                    <div class="mb-2" x-show="!isMisc(editing.project)">
                         <label class="form-label">{{ t('Depends on') }}</label>
                         {# Edit-modal dependency input: same pattern as new-task form, bound to editing.depends. #}
                         <div class="position-relative" x-data="{ focused: false }">
@@ -1811,7 +1858,7 @@
                             </div>
                         </div>
                     </div>
-                    <div class="mb-2">
+                    <div class="mb-2" x-show="!isMisc(editing.project)">
                         <label class="form-label">{{ t('Also locks') }}</label>
                         {# Directory-lock chips: extra projects whose directories this run holds. #}
                         <div class="position-relative" x-data="{ focused: false }">

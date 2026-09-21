@@ -138,6 +138,34 @@ Hiding and grouping compose naturally: a hidden child simply drops out of its
 family's visible members; if that leaves the family with one automatic member,
 it falls back to a flat row.
 
+## Misc project
+
+One-off questions that belong to no project ("iCloud storage full -- trim the
+backups?") are not *cross-project* either: `__none__` means a task concerns
+several projects. For those the `misc_project` setting names an optional
+catch-all project. It is an ordinary project -- the value is a project name
+like any other (`misc`, `sonstiges`), resolved under `projects_base` and
+created on the first run -- but the sidebar treats it specially:
+
+- Its row sits **right under Cross-project**, always, even with no open task
+  (`GET /api/projects` returns it second, flagged `misc: true`).
+- It shows a fixed icon and label (*Misc* / *Sonstiges*) instead of its name;
+  the name stays the identity for the filter, `tasks.project` and the cwd.
+- It is never folded into a family, not draggable, and cannot be hidden. The
+  row menu offers everything else (quick "+", quick run, board, quick task).
+- Its tasks carry a grey badge in the list, the board and the queue panel.
+- The new-task form offers a **Misc** chip next to the project input, and
+  hides *Depends on* / *Also locks* while the misc project is selected -- a
+  misc task relates to no other project, so both are saved empty.
+
+`misc_no_memory` (`on`/`off`, default off) starts Claude sessions of misc tasks
+with `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`, so a throwaway question leaves no
+trace in Claude Code's auto memory. Other agents ignore it. ENV overrides:
+`NTASKER_MISC_PROJECT`, `NTASKER_MISC_NO_MEMORY`.
+
+Unset `misc_project` and the feature disappears: the tasks stay, as a normal
+project under their name.
+
 ## Stale projects
 
 A Claude project whose working directory is gone or empty -- the session

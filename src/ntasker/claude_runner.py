@@ -384,7 +384,7 @@ def session_states() -> dict[int, str]:
     return {tid: state(s) for tid, s in SESSIONS.items() if s.alive}
 
 
-def _clean_env(spec: AgentSpec, task_id: int) -> dict:
+def _clean_env(spec: AgentSpec, task_id: int, project: str | None = None) -> dict:
     """Child environment: nesting markers stripped, ntasker's own markers added.
 
     ``NTASKER_TASK_ID`` / ``NTASKER_URL`` let ``ntasker hook ...`` (and
@@ -394,7 +394,13 @@ def _clean_env(spec: AgentSpec, task_id: int) -> dict:
     first on ``PATH`` so the bare ``ntasker`` the hooks and seeds call is the
     same version as the server -- a stale install elsewhere on PATH would make
     every hook fail (and a failing ``Stop`` hook blocks the session's stop).
+
+    A Claude run of a task in the misc project (``misc_project`` setting) gets
+    ``CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`` when ``misc_no_memory`` is on -- the
+    documented switch for Claude Code's auto memory. Other agents ignore it.
     """
+    from ntasker.settings import get_misc_no_memory, get_misc_project  # noqa: PLC0415 -- lazy: avoid cycle
+
     env = {k: v for k, v in os.environ.items() if k not in spec.strip_env}
     env["TERM"] = "xterm-256color"
     env["NTASKER_TASK_ID"] = str(task_id)
@@ -402,6 +408,13 @@ def _clean_env(spec: AgentSpec, task_id: int) -> dict:
     own_bin = os.path.dirname(sys.executable)
     if os.path.isfile(os.path.join(own_bin, "ntasker")):
         env["PATH"] = own_bin + os.pathsep + env.get("PATH", "")
+    if (
+        spec.key == "claude"
+        and project
+        and project == get_misc_project()
+        and get_misc_no_memory()
+    ):
+        env["CLAUDE_CODE_DISABLE_AUTO_MEMORY"] = "1"
     return env
 
 
@@ -562,7 +575,7 @@ def _start_session(
         stdout=slave,
         stderr=slave,
         cwd=run_cwd,
-        env=_clean_env(spec, task_id),
+        env=_clean_env(spec, task_id, row["project"] if row else None),
         preexec_fn=_child_setup,
         close_fds=True,
     )

@@ -476,9 +476,24 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // the user can always un-check it.
         get visibleProjects() {
             return this.projects.filter(p =>
-                (this.showHiddenProjects || !this.isProjectHidden(p.name)) &&
-                (this.showEmptyProjects || p.open_count > 0 || this.projectFilter.includes(p.name))
+                p.misc || (
+                    (this.showHiddenProjects || !this.isProjectHidden(p.name)) &&
+                    (this.showEmptyProjects || p.open_count > 0 || this.projectFilter.includes(p.name))
+                )
             );
+        },
+
+        // Name of the misc project (the `misc_project` setting), '' when the
+        // feature is off. /api/projects flags its row with `misc: true`; the
+        // name stays the identity (filter, task.project, cwd) -- only the
+        // sidebar label and badge are fixed.
+        get miscProject() {
+            const p = this.projects.find(p => p.misc);
+            return p ? p.name : '';
+        },
+
+        isMisc(name) {
+            return !!name && name === this.miscProject;
         },
 
         isProjectHidden(name) {
@@ -593,8 +608,9 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         },
 
         // Family a project belongs to: the manual override when set (may be
-        // '' = none), else the name prefix.
+        // '' = none), else the name prefix. The misc project stands alone.
         projectFamily(name) {
+            if (this.isMisc(name)) return '';
             return name in this.projectGroups ? this.projectGroups[name] : projectPrefix(name);
         },
 
@@ -662,6 +678,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // or null when the drop makes no sense (no project drag, own family).
         dropFamilyFor(row) {
             if (this.draggedProject === null || row.name === PROJECT_NONE) return null;
+            if (this.isMisc(row.name)) return null;
             if (row.name === this.draggedProject) return null;
             if (this.projectFamily(this.draggedProject) === row.name) return null;
             return row.name;
@@ -710,7 +727,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // True when at least one project has no open tasks -- gates the switch
         // so it only appears when it would actually do something.
         get hasEmptyProjects() {
-            return this.projects.some(p => p.open_count === 0);
+            return this.projects.some(p => p.open_count === 0 && !p.misc);
         },
 
         // Sidebar tag list: narrowed by the type-ahead query and sorted
@@ -1841,6 +1858,8 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             // description. Require at least one of the two so we don't create
             // an empty task. Project is optional (empty = cross-project).
             if (!this.form.title.trim() && !this.form.description.trim()) return;
+            // A misc task relates to no other project: no deps, no locks.
+            const misc = this.isMisc(this.form.project);
             const body = {
                 project: this.form.project || null,
                 title: this.form.title.trim(),
@@ -1850,8 +1869,8 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 agent: this.form.agent || null,
                 model: this.form.model || null,
                 tags: this.form.tags,
-                depends: this.form.depends.map(d => d.id),
-                locks: this.form.locks,
+                depends: misc ? [] : this.form.depends.map(d => d.id),
+                locks: misc ? [] : this.form.locks,
                 draft: this.form.draft,
             };
             if (typeof this.pluginCreatePayload === 'function') this.pluginCreatePayload(body);
@@ -1992,6 +2011,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             // Title is optional -- the server falls back to the start of the
             // description. Require at least one of the two.
             if (!(t.title || '').trim() && !(t.description || '').trim()) return;
+            const misc = this.isMisc(t.project);
             const body = {
                 title: t.title,
                 description: t.description,
@@ -2001,8 +2021,8 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 agent: t.agent || null,
                 model: t.model || null,
                 tags: t.tags,
-                depends: (t.depends || []).map(d => d.id),
-                locks: t.locks || [],
+                depends: misc ? [] : (t.depends || []).map(d => d.id),
+                locks: misc ? [] : (t.locks || []),
                 draft: !!t.draft,
             };
             const r = await fetch(`/api/tasks/${t.id}`, {

@@ -161,6 +161,14 @@ there is no scan job and no DB-cached project list. Add or remove a
 folder/symlink in `projects_dir` and it shows up (or disappears) on the
 next reload.
 
+### Misc project
+
+`misc_project` names an optional catch-all project for one-off questions that
+belong to no project; it is pinned under *Cross-project* in the sidebar and its
+tasks carry no dependencies or locks. `misc_no_memory` (`on`/`off`) starts its
+Claude sessions with auto memory disabled. Both are unset by default; see
+[docs/projects.md](docs/projects.md#misc-project).
+
 ### Sidebar project tree
 
 Projects sharing a name prefix (`thrito`, `thrito-meta`, ...) fold into one

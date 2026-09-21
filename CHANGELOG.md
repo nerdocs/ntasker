@@ -4,6 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [Unreleased]
+Projects: optional misc project (`misc_project`) pinned under Cross-project; `misc_no_memory` = no Claude auto memory.
+
 ## [3.9.0] — 2026-09-21
 Projects: stale Claude projects (working dir missing/empty) shown dimmed; row menu deletes them incl. tasks.
 

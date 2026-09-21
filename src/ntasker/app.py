@@ -102,6 +102,7 @@ from ntasker.settings import (
     get_default_agent,
     get_default_view,
     get_dir_locks,
+    get_misc_project,
     get_quicktasks_bypass_lanes,
     get_queue_enabled,
     get_quick_prompts,
@@ -432,6 +433,8 @@ def build_js_strings() -> dict[str, str]:
         "deselect_all": _("Deselect all"),
         "no_filter_active": _("No filter active -- all tasks visible."),
         "cross_project": _("Cross-project"),
+        "misc_project": _("Misc"),
+        "misc_project_hint": _("One-off questions that belong to no project"),
         "no_project_symlinks": _("No project symlinks found."),
         # Sidebar -- phases
         "phases": _("Phases"),
@@ -1788,6 +1791,10 @@ def api_projects() -> JSONResponse:
     ``stale`` -- a Claude project whose working directory no longer exists
     (see :func:`api_delete_project`) -- and ``task_count`` over every task
     (done and archived included).
+
+    With the ``misc_project`` setting set, its row comes right after
+    ``__none__`` -- always, even with no task at all -- flagged ``misc: true``
+    and never hidden; the frontend pins it there and skips grouping/hiding.
     """
     with get_conn() as conn:
         # All distinct project names currently referenced by any task
@@ -1832,6 +1839,19 @@ def api_projects() -> JSONResponse:
             "stale": False,
         },
     ]
+    misc = get_misc_project()
+    if misc:
+        names.discard(misc)
+        out.append(
+            {
+                "name": misc,
+                "open_count": counts.get(misc, 0),
+                "task_count": totals.get(misc, 0),
+                "hidden": False,
+                "stale": False,
+                "misc": True,
+            }
+        )
     for name in sorted(names, key=str.casefold):
         out.append(
             {

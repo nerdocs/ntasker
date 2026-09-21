@@ -67,13 +67,19 @@
 
 {# Free-text setting (paths, a command line). Saves on Enter or via the button #}
 {# that appears once the draft differs; Esc reverts; the same slot resets a #}
-{# stored value to its default. #}
+{# stored value to its default. A key in field_suggestions gets a datalist. #}
 {% macro text(key, placeholder='', extra_class='') %}
 <div class="input-group">
     <input type="text" class="form-control {{ extra_class }}" x-model="draft['{{ key }}']"
            @keydown.enter.prevent="saveDraft('{{ key }}')"
            @keydown.escape.prevent="revert('{{ key }}')"
+           {% if field_suggestions.get(key) %}list="dl-{{ key }}"{% endif %}
            placeholder="{{ placeholder or t('(not set yet)') }}">
+    {% if field_suggestions.get(key) %}
+    <datalist id="dl-{{ key }}">
+        {% for opt in field_suggestions[key] %}<option value="{{ opt }}">{% endfor %}
+    </datalist>
+    {% endif %}
     <button type="button" class="btn"
             :class="isDirty('{{ key }}') ? 'btn-primary' : 'btn-ghost-secondary'"
             :disabled="!isDirty('{{ key }}') && !known['{{ key }}']"
@@ -203,19 +209,23 @@
                                 </div>
                                 {% endcall %}
 
-                                <h3 class="mt-4 mb-1">{{ t('Quick prompts') }}</h3>
-                                <p class="text-secondary small mb-2">{{ t('One button per row in the run view. The prompt is typed into the session and sent as if you had entered it.') }}</p>
                                 {% call row('quick_prompts') %}
+                                {# One card per button: the label field mirrors the button as it #}
+                                {# appears in the run view, the prompt grows with its text. #}
                                 <template x-for="(p, i) in prompts" :key="i">
-                                    <div class="input-group mb-2">
-                                        <input type="text" class="form-control quick-prompt-label" x-model="p.label"
-                                               placeholder="{{ t('Label') }}">
-                                        <textarea class="form-control" rows="5" x-model="p.prompt"
-                                                  placeholder="{{ t('Prompt') }}"></textarea>
-                                        <button type="button" class="btn btn-ghost-danger" @click="prompts.splice(i, 1)"
-                                                :aria-label="$i18n('delete')" :title="$i18n('delete')">
-                                            <i class="ti ti-trash"></i>
-                                        </button>
+                                    <div class="quick-prompt mb-2">
+                                        <div class="quick-prompt-head">
+                                            <i class="ti ti-message-forward fs-3 text-secondary"></i>
+                                            <input type="text" class="form-control form-control-sm quick-prompt-label"
+                                                   x-model="p.label" placeholder="{{ t('Button label') }}">
+                                            <button type="button" class="btn btn-sm btn-ghost-danger ms-auto px-2"
+                                                    @click="prompts.splice(i, 1)"
+                                                    :aria-label="$i18n('delete')" :title="$i18n('delete')">
+                                                <i class="ti ti-trash"></i>
+                                            </button>
+                                        </div>
+                                        <textarea class="form-control quick-prompt-text" rows="2" x-model="p.prompt"
+                                                  placeholder="{{ t('Prompt sent to the session') }}"></textarea>
                                     </div>
                                 </template>
                                 <div class="d-flex gap-2">

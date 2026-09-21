@@ -1148,8 +1148,34 @@ h3 + p + .setting-row {
 .setting-raw-value {
     max-width: 24rem;
 }
+/* Quick-prompt editor: one card per run-view button. The head row is the
+ * button's preview (icon + label), the prompt text below grows with its
+ * content instead of sitting in a fixed-height box. */
+.quick-prompt {
+    border: var(--tblr-border-width) solid var(--tblr-border-color);
+    border-radius: var(--tblr-border-radius);
+    background: var(--tblr-bg-surface-secondary);
+}
+.quick-prompt-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.375rem 0.5rem;
+}
 .quick-prompt-label {
-    flex: 0 0 9rem;
+    width: 14rem;
+    font-weight: var(--tblr-font-weight-medium);
+}
+.quick-prompt-text {
+    border: 0;
+    border-top: var(--tblr-border-width) solid var(--tblr-border-color);
+    border-radius: 0 0 var(--tblr-border-radius) var(--tblr-border-radius);
+    resize: vertical;
+    field-sizing: content;
+    min-height: 3.5rem;
+}
+.quick-prompt-text:focus {
+    box-shadow: none;
 }
 .setting-run-rules {
     font-size: 0.8125rem;

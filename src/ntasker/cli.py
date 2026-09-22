@@ -1241,6 +1241,24 @@ def cmd_queue_pause(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_queue_plan(args: argparse.Namespace) -> int:
+    """Start the queue planner -- an agent session that orders the queue.
+
+    Server-only: the planner is a live session, which only the running server
+    can spawn. 1 when the server is unreachable or a planner is already up.
+    """
+    try:
+        status, data = _api_call(_server_base(args), "POST", "/api/queue/plan", {})
+    except OSError as exc:
+        print(_("ntasker: server not reachable ({err})").format(err=exc), file=sys.stderr)
+        return 1
+    if status >= 400:
+        print(_("ntasker: {detail}").format(detail=data.get("detail", status)), file=sys.stderr)
+        return 1
+    print(_("queue planner started -- it orders the queue and switches it on"))
+    return 0
+
+
 # Directory locks --------------------------------------------------------------
 # These go through the running server's API rather than the DB: a lock grant
 # has to be checked against the *live* sessions, which only the server knows.
@@ -2393,6 +2411,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     q_pause = q_sub.add_parser("pause", help=_("Stop starting new tasks"))
     q_pause.set_defaults(func=cmd_queue_pause)
+
+    q_plan = q_sub.add_parser(
+        "plan", help=_("Let an agent order the queue and start it")
+    )
+    # Server to talk to; default NTASKER_URL (set inside spawned sessions).
+    q_plan.add_argument("--host", default=None)
+    q_plan.add_argument("--port", type=int, default=None)
+    q_plan.set_defaults(func=cmd_queue_plan)
 
     # hook ----------------------------------------------------------------
     # Claude Code hook entry points; not meant to be typed by hand.

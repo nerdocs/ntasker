@@ -71,6 +71,34 @@ With `claude_open_terminal` on (the default), a run button also opens the task's
 started the session (the browser polls for up to 15 s). Off, it only toasts and the board stays on screen; the queue
 panel's **Running** link opens the terminal later.
 
+## Planning the queue
+
+You do not have to order the queue by hand. **Plan queue** (the wand button in the panel header, `ntasker queue plan`
+on the CLI) starts a *planner* session: an agent that reads the open tasks over nTasker's own API, decides what should
+run next in each project, `PUT`s that order and switches the queue on. It plans only -- every task is still executed by
+the queue the usual way, in its own session, with the usual review hand-off.
+
+The planner's brief (`claude_runner.planner_seed`) is deliberately narrow:
+
+* it reads `GET /api/queue` first and keeps the entries whose session is live at the head of their project -- dropping a
+  running task out of the queue would orphan its session;
+* it reads `GET /api/tasks?status=open&archived=false` and leaves out drafts and tasks blocked by an open dependency;
+* it orders each project by priority, dependency direction, then phase and age, and queues a handful per project rather
+  than everything it finds;
+* it writes `PUT /api/queue` and `PUT /api/settings/queue_enabled`, and may record a dependency (`PATCH
+  /api/tasks/<id>`) when two descriptions plainly call for it -- with the reason spelled out in its plan;
+* it never creates, closes, archives or deletes a task, never edits a title, description, priority or phase, and never
+  touches a repository. Follow-ups it notices go into its plan, not into the tracker.
+
+Then it writes the plan out and stops, so you can read what it decided and why.
+
+**Only one planner runs at a time** -- a second start is refused with 409. The planner's session is registered under the
+reserved task id `0` (`claude_runner.PLANNER_TASK_ID`): it appears in the run-view tab strip as *Queue planner* and can
+be watched, taken over or stopped like any other run, but it holds no project lane and no directory lock, so the queue
+keeps starting tasks while it thinks. It runs in the directory a run without a project would use (the `no_project_dir`
+setting, else `projects_base`, else home). Pressing the button opens its terminal right away -- the plan is the whole
+output, and there is no card to click into later.
+
 ## What a queued run is told
 
 A run does **not** use the `/task <id>` slash command. It gets a self-contained seed
@@ -208,6 +236,7 @@ ntasker queue rm <id...>           # take entries out
 ntasker queue clear                # empty it
 ntasker queue start [--host --port]  # resume
 ntasker queue pause
+ntasker queue plan [--host --port]    # let an agent order the queue and start it (needs a running server)
 ntasker report <id> [--file f.md]  # store the agent's final report (Markdown from stdin)
 ntasker patch <id> --report "..."  # same; '' clears
 ntasker finish <id> --status ok|failed|blocked [--summary "..."] [--commit sha] [--next "..."] [--files a,b]
@@ -234,6 +263,7 @@ id deserves to be told.
 | `PUT /api/queue` | Body `{ids: [...]}` replaces the whole queue, head first. Ids that are closed, archived or gone are dropped. An empty list clears the queue. Never restarts an `ended` entry. |
 | `POST /api/queue/run` | Body `{id}` -- the run button: appends the task to the queue (an already-queued id keeps its place), moves it to `phase=wip` right away and clears its `ended` flag. Returns the queue. |
 | `POST /api/queue/resume` | Body `{id}` -- the resume button on an `ended` entry: the worker reopens the task's stored session next tick, in place; the flag clears once it is live. 409 when the task is not queued or has nothing to resume. Returns the queue. |
+| `POST /api/queue/plan` | Starts the queue planner (see **Planning the queue**) and returns `{id}` -- the reserved task id its session runs under. 409 while a planner is already running or when the default agent's CLI is missing. |
 | `POST /api/projects/quick-run` | Body `{project, prompt?}` -- a Quicktask: creates a `wip` task (placeholder title and blank-prompt run without `prompt`, otherwise the prompt is the task), appends it to the queue. Returns the task. |
 | `POST /api/tasks/{id}/outcome` | Body `{status, summary?, report?, commit?, files?, next_tasks?}` -- what `ntasker finish` sends; see **Fasttrack**. Returns the task plus `outcome_id` (null for a plain task). |
 | `GET /api/outcomes` | The run log, newest first: `[{id, task_id, title, project, status, summary, report, commit, files_changed, next_tasks, created_at}]`. |
@@ -250,7 +280,7 @@ there is no partial state to reconcile.
 |---|---|
 | `src/ntasker/taskqueue.py` | The worker: retire what is finished, start what is next, `ended` outcome rows. Ticks every 2s. |
 | `src/ntasker/db.py` | `run_outcomes` table, `insert_outcome` / `latest_outcomes`; `rundiff.changed_paths` derives the file list. |
-| `src/ntasker/claude_runner.py` | `queue_seed_for_task` (the seed) and `start_detached_session` (spawn with no browser attached). |
+| `src/ntasker/claude_runner.py` | `queue_seed_for_task` (the seed), `planner_seed` (the planner's brief) and `start_detached_session` (spawn with no browser attached). |
 | `src/ntasker/app.py` | `/api/queue` routes plus the worker's startup / shutdown hooks. |
 | `src/ntasker/cli.py` | `cmd_queue_*` -- the `ntasker queue` subcommands. |
 | `src/ntasker/static/app.js` | Panel state, `queueGroups` (the columns), `runNext` + `_openWhenLive`, `_dropZone` + `setDependency`. |

@@ -33,15 +33,18 @@ from ntasker.assets import (
     get_asset_url,
     get_sri,
 )
-from ntasker.agents import agent_keys, enabled_agents, get_spec, resolve_home
+from ntasker.agents import agent_keys, enabled_agents, get_spec, resolve_agent_key, resolve_home
 from ntasker.claude_assets import install_assets, scan_status
 from ntasker.claude_runner import (
+    PLANNER_TASK_ID,
     active_session_ids,
     external_session_ids,
+    planner_seed,
     projects_base_dir,
     register_external,
     session_states,
     set_hook_state,
+    start_detached_session,
     stop_session,
     terminal_available,
 )
@@ -517,6 +520,12 @@ def build_js_strings() -> dict[str, str]:
             "Stop starting new tasks. A task already running keeps going."
         ),
         "queue_empty": _("Empty. Press a task's run button or drop a card here to queue it."),
+        "queue_plan": _("Plan queue"),
+        "queue_plan_title": _(
+            "Let an agent order the queue: it reads the open tasks, sets the run "
+            "order and starts the queue. It plans only -- the queue does the work."
+        ),
+        "queue_plan_started": _("Queue planner started -- watch it in its session."),
         "queue_run_next": _("Run"),
         "queued_front": _("Task #{id} queued -- it starts as soon as its project is free."),
         "queue_paused_hint": _("Paused -- press Resume to work through these."),
@@ -1517,6 +1526,10 @@ def api_claude_sessions() -> JSONResponse:
             ).fetchall()
         projects = {row["id"]: row["project"] for row in rows}
         titles = {row["id"]: row["title"] for row in rows if row["id"] in states}
+    # The planner session has no task row (see PLANNER_TASK_ID), so its tab
+    # would go unlabelled -- name it here.
+    if PLANNER_TASK_ID in states:
+        titles[PLANNER_TASK_ID] = _("Queue planner")
     return JSONResponse(
         {
             "active": active,
@@ -1650,6 +1663,29 @@ def api_queue_resume(payload: RunIn) -> JSONResponse:
     if not taskqueue.request_resume(payload.id):
         raise HTTPException(status_code=409, detail=_("Nothing to resume"))
     return JSONResponse(_queue_payload(taskqueue.load_queue()))
+
+
+@app.post("/api/queue/plan", status_code=201)
+async def api_queue_plan() -> JSONResponse:
+    """Start the queue planner: an agent session that orders the queue.
+
+    The planner is a "chef", not a worker -- it reads the open tasks over this
+    API, PUTs a run order and switches the queue on, and the queue then
+    executes it the way it always does (one session per task, review hand-off).
+    Its session is registered under :data:`PLANNER_TASK_ID`, so it shows up in
+    the run-view tab strip and can be watched or stopped like any other run,
+    but holds no lane and no directory.
+
+    409 while a planner is already running, or when the default agent's CLI is
+    not installed. Async on purpose: the spawn registers a PTY reader on the
+    running event loop.
+    """
+    available, reason = terminal_available(get_spec(resolve_agent_key(None)))
+    if not available:
+        raise HTTPException(status_code=409, detail=reason)
+    if not start_detached_session(PLANNER_TASK_ID, planner_seed()):
+        raise HTTPException(status_code=409, detail=_("The queue planner is already running"))
+    return JSONResponse({"id": PLANNER_TASK_ID}, status_code=201)
 
 
 class QuickRunIn(BaseModel):

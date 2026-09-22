@@ -271,6 +271,9 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // marker would light up both at once.
         queue: [],
         queueEnabled: true,
+        // True while the "Plan queue" request is in flight -- the planner is a
+        // single session, so the button must not fire twice.
+        queuePlanning: false,
         // Lock / dirty reasons per queued task id, from /api/queue ``skipped``
         // ({id: {reason, project, holder}}). Drives the panel's lock badge.
         queueSkipped: {},
@@ -1568,6 +1571,34 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             } catch (_e) {
                 this.queueEnabled = !next;
                 this.showToast(_i('update_failed'), 'danger');
+            }
+        },
+
+        // Start the queue planner: an agent session that reads the open tasks,
+        // PUTs a run order and switches the queue on. It plans only -- the
+        // queue still executes each task in its own session. Opens its
+        // terminal so the plan is readable while it is written; only one
+        // planner runs at a time (the server answers 409 for a second).
+        async planQueue() {
+            if (this.queuePlanning) return;
+            this.queuePlanning = true;
+            try {
+                const r = await fetch('/api/queue/plan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: '{}',
+                });
+                const d = await r.json().catch(() => ({}));
+                if (!r.ok) {
+                    this.showToast(d.detail || _i('update_failed'), 'danger');
+                    return;
+                }
+                this.showToast(_i('queue_plan_started'), 'success');
+                this._openWhenLive(d.id);
+            } catch (_e) {
+                this.showToast(_i('update_failed'), 'danger');
+            } finally {
+                this.queuePlanning = false;
             }
         },
 

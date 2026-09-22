@@ -910,17 +910,30 @@
                             <span x-text="$i18n('run_log')"></span>
                             <span class="badge bg-secondary-lt ms-1" x-text="outcomes.length"></span>
                         </button>
-                        {# Solid only when paused with work waiting -- that is the #}
-                        {# one state where pressing it changes something visible. #}
-                        <button type="button" class="btn btn-sm ms-auto"
-                                :class="(!queueEnabled && queue.length) ? 'btn-primary' : 'btn-ghost-secondary'"
-                                :disabled="!queue.length && !queueEnabled"
-                                @click="toggleQueue()"
-                                :title="queueEnabled ? $i18n('queue_pause_title') : $i18n('queue_start_title')">
-                            <i class="ti me-1 fs-3"
-                               :class="queueEnabled ? 'ti-player-pause' : 'ti-player-play'"></i>
-                            <span x-text="queueEnabled ? $i18n('queue_pause') : $i18n('queue_start')"></span>
-                        </button>
+                        {# The two queue-wide controls, pushed right as one block #}
+                        {# so they stay together whether or not the planner shows. #}
+                        <div class="d-flex align-items-center gap-2 ms-auto">
+                            {# Queue planner: an agent session that reads the open #}
+                            {# tasks, sets the run order and switches the queue on. #}
+                            <button type="button" class="btn btn-sm btn-ghost-secondary"
+                                    x-show="claudeAvailable" x-cloak
+                                    @click="planQueue()" :disabled="queuePlanning"
+                                    :title="$i18n('queue_plan_title')">
+                                <i class="ti ti-wand me-1 fs-3"></i>
+                                <span x-text="$i18n('queue_plan')"></span>
+                            </button>
+                            {# Solid only when paused with work waiting -- that is the #}
+                            {# one state where pressing it changes something visible. #}
+                            <button type="button" class="btn btn-sm"
+                                    :class="(!queueEnabled && queue.length) ? 'btn-primary' : 'btn-ghost-secondary'"
+                                    :disabled="!queue.length && !queueEnabled"
+                                    @click="toggleQueue()"
+                                    :title="queueEnabled ? $i18n('queue_pause_title') : $i18n('queue_start_title')">
+                                <i class="ti me-1 fs-3"
+                                   :class="queueEnabled ? 'ti-player-pause' : 'ti-player-play'"></i>
+                                <span x-text="queueEnabled ? $i18n('queue_pause') : $i18n('queue_start')"></span>
+                            </button>
+                        </div>
                     </div>
 
                     {# The empty state says how tasks get in, so it stays visible. #}

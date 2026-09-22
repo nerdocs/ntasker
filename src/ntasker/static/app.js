@@ -1130,9 +1130,14 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             this.dragSource = source;
             // dataTransfer.setData is required for Firefox to even initiate
             // the drag; the value itself is unused (we keep the id in state).
+            // ``linkMove`` because a card drop is either a reorder ('move') or
+            // a dependency ('link'): a dropEffect outside effectAllowed is
+            // silently reset to 'none' by the browser, which suppresses the
+            // drop event entirely -- the dependency drop looked armed (our own
+            // hint is painted by us) but never fired.
             try {
                 event.dataTransfer.setData('text/plain', String(task.id));
-                event.dataTransfer.effectAllowed = 'move';
+                event.dataTransfer.effectAllowed = 'linkMove';
             } catch {
                 // Some embed contexts deny dataTransfer access; ignore.
             }

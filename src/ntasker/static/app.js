@@ -2890,6 +2890,24 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         canResume(task) {
             return !!(task && task.status === 'done' && !task.draft && this.sessionResumable(task));
         },
+        // Resume on an OPEN task, shown next to the run button: the run button
+        // starts the task over with a fresh seed, this one continues the
+        // conversation it already had. Offered while the task has no live
+        // session to switch to -- a done task gets its own resume button in
+        // place of the run button instead (see canResume).
+        canResumeOpen(task) {
+            return !!(task && task.status !== 'done' && !task.draft
+                && !this.taskRunPhase(task.id)
+                && this.sessionResumable(task));
+        },
+        // The board's resume button. An entry whose queued run ended goes
+        // through the queue, so it keeps its place and loses its ended flag;
+        // anything else reattaches directly, like a done task's resume.
+        resumeTask(task) {
+            return this.canResumeQueued(task)
+                ? this.resumeQueued(task)
+                : this.openClaudeResume(task);
+        },
         // Resume on an ended queue entry: reopen the conversation via the
         // worker instead of starting the task over (see resumeQueued).
         canResumeQueued(item) {

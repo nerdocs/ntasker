@@ -113,7 +113,7 @@ the API, or `ntasker done` run inside the session itself -- ntasker terminates t
 work is finished, so the interactive process is torn down and its tab disappears. A done task shows **no run
 button** -- you cannot start a *fresh* session from the Done column.
 
-## Resuming a finished session (Claude only)
+## Resuming a session (Claude only)
 
 Every Claude web-terminal run is started with a forced session id (`--session-id <uuid>`), which ntasker persists on
 the task. Because Claude Code keeps its conversation on disk, a session that has ended does not lose the history. A
@@ -124,8 +124,16 @@ project directory -- the whole conversation replays and you can keep working whe
 The button appears only when the task ran at least once (a captured session id), its agent is Claude, and the `claude`
 CLI is launchable. OpenCode and Pi have their own session mechanics and do not expose a resume button yet.
 
-An *open* task whose queued run ended early gets the same button on its queue entry, and the queue worker resumes
-such entries on its own after an ntasker restart -- see [task-queue.md](task-queue.md#skipped-entries).
+An **open** task with a stored session gets the same button too -- on its board row and kanban card, *next to* the run
+button rather than in place of it, because both make sense there: the run button starts the task over with a fresh
+seed, the resume button continues the conversation it already had. This is the common case after a review hand-off,
+where the task sits in `review` with its work described in a session nobody can reach any more. It shows while the
+task has no live session to switch to, and never on a draft.
+
+Which path the board's resume takes depends on the task: an entry whose queued run **ended** goes through the queue
+(`POST /api/queue/resume`), so it keeps its position and loses its ended flag, and the worker reopens it under the
+usual lane rules; any other task reattaches directly, exactly like a done task's resume. The queue worker also
+resumes ended entries on its own after an ntasker restart -- see [task-queue.md](task-queue.md#skipped-entries).
 
 ## Session indicators -- running vs. waiting
 

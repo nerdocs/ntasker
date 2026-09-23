@@ -19,7 +19,7 @@ read and drive your tracker, no copy-paste:
 - Finished an assigned task? The agent moves it to **Review** for you to sign off -- it
   never closes, deletes, or archives tasks on its own.
 
-![ntasker kanban board with the projects sidebar](docs/screenshot.jpg)
+![ntasker kanban board with the projects sidebar and the queue panel](docs/screenshot.jpg)
 
 ## Run with an agent (web UI)
 
@@ -31,8 +31,9 @@ permissions.
 
 Each task picks its agent (or inherits the `default_agent` setting); the run button only appears when that agent's CLI
 resolves. Sessions run in the background (the button shows a spinner, and re-opening reattaches to the live session);
-marking a task **done** ends its session. Needs the agent's CLI on `PATH` (or a configured path) and a POSIX
-pseudo-terminal, otherwise the button stays hidden. See [docs/claude-runs.md](docs/claude-runs.md) and
+marking a task **done** ends its session. An open task whose session already ended gets a **resume** button next to
+Run -- it continues that conversation instead of starting over. Needs the agent's CLI on `PATH` (or a configured
+path) and a POSIX pseudo-terminal, otherwise the button stays hidden. See [docs/claude-runs.md](docs/claude-runs.md) and
 [docs/agents.md](docs/agents.md).
 
 ![Interactive Claude Code session embedded in the ntasker web UI](docs/screenshot-xterm.jpg)
@@ -45,7 +46,9 @@ task is done -- closed by you after review, or by the agent when the task told i
 makes ntasker end a session. **Pause** stops new starts; running tasks keep going.
 
 The panel shows one column per project, because that is what runs in parallel. To make one task wait for another --
-across projects too -- drop it on the **middle** of the other; the edges keep reordering.
+across projects too -- drop it on the **middle** of the other; the edges keep reordering. A **fasttrack** task commits
+and closes itself (`ntasker finish`) and hands its result to the tasks depending on it; the **Run-Log** collects those
+outcomes. **Plan queue** lets an agent session order the queue for you and start it.
 See [docs/task-queue.md](docs/task-queue.md).
 
 ## Stack

@@ -65,6 +65,24 @@ path outside the base -- falls back to the **`no_project_dir`** setting, then to
 directory. Keep a real directory configured: Claude Code treats the home directory as an untrusted workspace and
 parks the session on its trust prompt, which looks like a run that never starts.
 
+## Starting a run from a terminal
+
+The run button has a CLI twin -- the *remote* start, for when the board is not the window in front of you:
+
+```
+ntasker run 123            # queue it and print where to watch it
+ntasker run 123 --open     # ... and open that view in a browser
+```
+
+It posts to the same endpoint the button uses, so everything above applies unchanged: the task lands in its project's
+lane, moves to `wip`, and the worker spawns the agent as soon as the lane is free. The command answers with the
+position in that lane (`1.` = starting now) and the run view's URL, and says so when the queue is paused. It needs the
+server -- that is where the worker lives. See [task-queue.md](task-queue.md#cli) for how it differs from
+`ntasker queue add`.
+
+Typed inside an agent session it means "hand this one to a session of its own": the other task runs in the web
+terminal while this session carries on.
+
 ## Quick run -- an agent in a project, right now
 
 Sometimes there is no task yet, just the urge to work in a project. Every project row in the sidebar carries the

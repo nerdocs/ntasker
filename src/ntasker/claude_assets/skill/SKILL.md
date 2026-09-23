@@ -378,6 +378,18 @@ Session id, pid and directory come from the environment; `--session` /
 `--cwd` / `--project` override them. Server-only. A `/task <id>` session
 reports its id by itself -- no `adopt` needed there.
 
+### 7.2 Starting a task's own run (only on the user's explicit instruction)
+
+"Start #43 in the UI" / "run it remotely" -- hand a task to a session of its
+own instead of doing it here:
+
+```bash
+ntasker run 43 [--open]     # the board's run button; prints lane pos + URL
+```
+
+Server-only. It starts an agent session, so it is the user's call, never the
+agent's own idea -- and never on the task you are currently working on.
+
 ## 8. Schema
 
 | Field | Type | Notes |

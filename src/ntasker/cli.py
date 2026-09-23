@@ -1259,6 +1259,66 @@ def cmd_queue_plan(args: argparse.Namespace) -> int:
     return 0
 
 
+# Run a task -------------------------------------------------------------------
+
+
+def _lane_position(items: list[dict], task_id: int) -> int:
+    """1-based run position of ``task_id`` within its own project lane.
+
+    The queue runs one task per project, so the number that says whether a run
+    starts now or waits is the position among the entries of *its* project --
+    exactly the bead the queue panel draws.
+    """
+    me = next((t for t in items if int(t["id"]) == task_id), None)
+    if me is None:
+        return 0
+    lane = [t for t in items if (t.get("project") or None) == (me.get("project") or None)]
+    return lane.index(me) + 1
+
+
+def cmd_run(args: argparse.Namespace) -> int:
+    """Press the board's run button from a terminal.
+
+    Same path as the UI (``POST /api/queue/run``): the task goes into its
+    project's lane and the worker spawns its agent as soon as that lane is
+    free. Server-only -- the worker lives in the running server, so without one
+    nothing would ever start. Prints the run view's URL, which ``--open``
+    opens.
+    """
+    rc = _reject_unqueueable(args.task_id)
+    if rc is not None:
+        return rc
+    base = _server_base(args)
+    paused = False
+    for tid in args.task_id:
+        try:
+            status, data = _api_call(base, "POST", "/api/queue/run", {"id": tid})
+        except OSError as exc:
+            print(_("ntasker: server not reachable ({err})").format(err=exc), file=sys.stderr)
+            return 1
+        if status >= 400:
+            print(_("ntasker: {detail}").format(detail=data.get("detail", status)), file=sys.stderr)
+            return 1
+        print(
+            _("#{id} queued -- {pos}. in its lane; watch it at {url}").format(
+                id=tid,
+                pos=_lane_position(data.get("items", []), tid),
+                url=f"{base}/#/run/{tid}",
+            )
+        )
+        paused = not data.get("enabled")
+    if paused:   # nothing starts at all until the queue is running again
+        print(
+            _("ntasker: note -- the queue is paused; `ntasker queue start` runs it"),
+            file=sys.stderr,
+        )
+    if args.open:
+        import webbrowser  # noqa: PLC0415
+
+        webbrowser.open(f"{base}/#/run/{args.task_id[0]}")
+    return 0
+
+
 # Directory locks --------------------------------------------------------------
 # These go through the running server's API rather than the DB: a lock grant
 # has to be checked against the *live* sessions, which only the server knows.
@@ -2525,6 +2585,19 @@ def build_parser() -> argparse.ArgumentParser:
     q_plan.add_argument("--host", default=None)
     q_plan.add_argument("--port", type=int, default=None)
     q_plan.set_defaults(func=cmd_queue_plan)
+
+    # run -------------------------------------------------------------------
+    sp_run = sub.add_parser(
+        "run", help=_("Start a task in the UI -- the board's run button, from a terminal")
+    )
+    sp_run.add_argument("task_id", type=_task_id, nargs="+")
+    sp_run.add_argument(
+        "--open", action="store_true", help=_("Open the run view in a browser")
+    )
+    # Server to talk to; default NTASKER_URL (set inside spawned sessions).
+    sp_run.add_argument("--host", default=None)
+    sp_run.add_argument("--port", type=int, default=None)
+    sp_run.set_defaults(func=cmd_run)
 
     # hook ----------------------------------------------------------------
     # Claude Code hook entry points; not meant to be typed by hand.

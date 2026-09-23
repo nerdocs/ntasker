@@ -10,6 +10,7 @@ Queue: fasttrack tasks commit + finish themselves via `ntasker finish`; run log 
 Projects: optional misc project (`misc_project`) pinned under Cross-project; `misc_no_memory` = no Claude auto memory.
 Queue: `Plan queue` / `ntasker queue plan` -- an agent session orders the queue and starts it; one planner at a time.
 Runs: open tasks with a stored session get a resume button next to Run -- continue the conversation, don't restart.
+Runs: `ntasker run <id> [--open]` -- the board's run button from a terminal; prints the lane position + run URL.
 
 ## [3.9.0] — 2026-09-21
 Projects: stale Claude projects (working dir missing/empty) shown dimmed; row menu deletes them incl. tasks.

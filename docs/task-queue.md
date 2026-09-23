@@ -237,6 +237,7 @@ ntasker queue clear                # empty it
 ntasker queue start [--host --port]  # resume
 ntasker queue pause
 ntasker queue plan [--host --port]    # let an agent order the queue and start it (needs a running server)
+ntasker run <id...> [--open] [--host --port]   # the run button, from a terminal (needs a running server)
 ntasker report <id> [--file f.md]  # store the agent's final report (Markdown from stdin)
 ntasker patch <id> --report "..."  # same; '' clears
 ntasker finish <id> --status ok|failed|blocked [--summary "..."] [--commit sha] [--next "..."] [--files a,b]
@@ -245,8 +246,15 @@ ntasker add ... --fasttrack [--fail-continue]
 ntasker patch <id> --fasttrack|--no-fasttrack --fail-continue|--no-fail-continue
 ```
 
-`ntasker queue add <id>` is the CLI's run button: it appends the task to the queue, exactly like the button on the
-board; `--top` jumps the line. There is no separate `ntasker run`.
+`ntasker run <id>` **is** the run button, typed instead of clicked -- the remote start. It goes through the running
+server (`POST /api/queue/run`), so it does exactly what the board does: append the task to its project's lane, move it
+to `wip`, clear an `ended` flag. It answers with the position in that lane -- `1.` starts now, higher waits -- and the
+run view's URL (`http://<host>:<port>/#/run/<id>`), which `--open` opens in a browser. A paused queue is pointed out,
+because then nothing starts at all. Several ids in one call are queued in the order given.
+
+`ntasker queue add <id...>` is the *worklist* edit next to it -- the CLI twin of dragging cards onto the panel. It
+writes the DB directly (no server needed), appends or, with `--top`, jumps the line; it does not move a task to `wip`
+and only `--top` clears an `ended` flag.
 
 The CLI only edits the queue and its switch; the running server's worker is what actually starts tasks. `queue start`
 therefore probes `/healthz` and points it out when nothing is listening -- otherwise the queue would sit there looking
@@ -282,7 +290,7 @@ there is no partial state to reconcile.
 | `src/ntasker/db.py` | `run_outcomes` table, `insert_outcome` / `latest_outcomes`; `rundiff.changed_paths` derives the file list. |
 | `src/ntasker/claude_runner.py` | `queue_seed_for_task` (the seed), `planner_seed` (the planner's brief) and `start_detached_session` (spawn with no browser attached). |
 | `src/ntasker/app.py` | `/api/queue` routes plus the worker's startup / shutdown hooks. |
-| `src/ntasker/cli.py` | `cmd_queue_*` -- the `ntasker queue` subcommands. |
+| `src/ntasker/cli.py` | `cmd_queue_*` -- the `ntasker queue` subcommands; `cmd_run` -- `ntasker run`. |
 | `src/ntasker/static/app.js` | Panel state, `queueGroups` (the columns), `runNext` + `_openWhenLive`, `_dropZone` + `setDependency`. |
 | `src/ntasker/static/style.css` | `.task-queue*` (rail, columns) and `.drop-link` (the dependency drop). |
 

@@ -3359,7 +3359,6 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // cancelled; accepted files are base64-encoded and sent as a `file`
         // message (the server saves them and types the path into the PTY).
         _wireTerminalDnd(el, ws) {
-            const MAX = 25 * 1024 * 1024;   // keep in sync with MAX_UPLOAD_BYTES
             const cancel = (e) => { e.preventDefault(); e.stopPropagation(); };
             el.addEventListener('dragover', (e) => {
                 cancel(e);
@@ -3375,24 +3374,46 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             el.addEventListener('drop', (e) => {
                 cancel(e);
                 el.classList.remove('term-drag-over');
-                const files = e.dataTransfer ? Array.from(e.dataTransfer.files) : [];
-                if (!files.length || ws.readyState !== WebSocket.OPEN) return;
-                for (const file of files) {
-                    if (file.size > MAX) {
-                        this.showToast(_i('claude_file_too_large'), 'danger');
-                        continue;
-                    }
-                    const reader = new FileReader();
-                    reader.onload = () => {
-                        // reader.result is a data: URL -> keep only the base64 tail.
-                        const b64 = String(reader.result).split(',', 2)[1] || '';
-                        if (b64 && ws.readyState === WebSocket.OPEN) {
-                            ws.send(JSON.stringify({ type: 'file', name: file.name, data: b64 }));
-                        }
-                    };
-                    reader.readAsDataURL(file);
-                }
+                this._uploadToPty(e.dataTransfer ? Array.from(e.dataTransfer.files) : [], ws);
             });
+            // Pasting an image: xterm's own paste handler only ever reads
+            // text/plain, so the bytes would be dropped without a trace (before
+            // Ctrl+V was intercepted, a bare ^V reached the PTY and the agent
+            // read the image off the system clipboard itself). Capture the
+            // event before xterm sees it -- it calls stopPropagation() -- and
+            // route the image through the same upload as a drop. A text paste
+            // is left untouched.
+            el.addEventListener('paste', (e) => {
+                const files = e.clipboardData
+                    ? Array.from(e.clipboardData.files).filter(f => f.type.startsWith('image/'))
+                    : [];
+                if (!files.length) return;
+                cancel(e);
+                this._uploadToPty(files, ws);
+            }, true);
+        },
+
+        // Ship files to the PTY: base64 each one as a `file` message; the server
+        // saves it and types the saved path into the terminal. Oversized files
+        // are refused with a toast (the server caps them too).
+        _uploadToPty(files, ws) {
+            const MAX = 25 * 1024 * 1024;   // keep in sync with MAX_UPLOAD_BYTES
+            if (!files.length || ws.readyState !== WebSocket.OPEN) return;
+            for (const file of files) {
+                if (file.size > MAX) {
+                    this.showToast(_i('claude_file_too_large'), 'danger');
+                    continue;
+                }
+                const reader = new FileReader();
+                reader.onload = () => {
+                    // reader.result is a data: URL -> keep only the base64 tail.
+                    const b64 = String(reader.result).split(',', 2)[1] || '';
+                    if (b64 && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: 'file', name: file.name, data: b64 }));
+                    }
+                };
+                reader.readAsDataURL(file);
+            }
         },
 
         // Fit a tab's terminal to its (now visible) host and tell the PTY the new

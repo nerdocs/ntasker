@@ -48,7 +48,9 @@ working in manual terminal sessions.
    soon as the session is live; off, you get a toast and the board stays.
 2. Work interactively, exactly as in a terminal: read Claude's output, answer its questions, approve or deny its
    permission prompts, type follow-ups, `Ctrl-C` to interrupt. Clipboard: selecting text copies it; `Ctrl-V` and
-   middle-click paste the clipboard; `Ctrl-C` with a selection keeps it instead of interrupting.
+   middle-click paste the clipboard; `Ctrl-C` with a selection keeps it instead of interrupting. An image -- pasted
+   with `Ctrl-V` or dragged onto the terminal -- is saved to a temp file and its path typed into the prompt, so the
+   agent can read it.
 3. **Stop** terminates the session (kills the process group). **Back** returns to the list/kanban.
 
 Another agent already live in the same project? The run simply waits in the queue behind it -- the worker runs one

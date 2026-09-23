@@ -30,6 +30,8 @@ Design notes:
 from __future__ import annotations
 
 import hashlib
+import json
+import os
 import re
 from dataclasses import dataclass
 from datetime import datetime
@@ -37,7 +39,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Iterable
 
-from ntasker.agents import AgentSpec, enabled_agents, resolve_home
+from ntasker.agents import AGENTS, AgentSpec, enabled_agents, resolve_home
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -463,3 +465,140 @@ def iter_asset_paths(spec: AgentSpec, home: Path, command_name: str = "task") ->
     """Yield the 3 absolute target paths in the standard order."""
     for af in expected_files(spec, home, command_name):
         yield af.path
+
+
+# ---------------------------------------------------------------------------
+# Session-discovery hook (the user's own Claude Code settings)
+# ---------------------------------------------------------------------------
+#
+# Everything above installs files ntasker owns. This part is different: it
+# edits ``<claude_home>/settings.json``, which belongs to the user. It is
+# therefore opt-in (the ``session_discovery`` setting), merges into whatever
+# is already configured, backs the file up before the first change, and
+# removes exactly its own entries again when switched off.
+
+#: The hook command ntasker adds. Doubles as the marker identifying its own
+#: entries on removal -- nothing else in the file will carry this string.
+SESSION_HOOK_COMMAND = "ntasker hook session"
+
+#: Events the hook listens to. ``SessionStart`` catches a session as it opens;
+#: ``UserPromptSubmit`` re-reports it, so a session that was already running
+#: when ntasker restarted is known again from the next prompt on.
+SESSION_HOOK_EVENTS = ("SessionStart", "UserPromptSubmit")
+
+
+def _settings_file(claude_home: str | os.PathLike | None = None) -> Path:
+    """Path of the user's Claude Code settings file.
+
+    Falls back to ``CLAUDE_CONFIG_DIR`` / ``~/.claude`` when the Claude plugin
+    is not loaded -- the hook is managed from the CLI too, where the agent
+    registry may be empty.
+    """
+    spec = AGENTS.get("claude")
+    if spec is not None:
+        home = resolve_home(spec, claude_home)
+    elif claude_home is not None:
+        home = Path(os.path.abspath(os.path.expanduser(str(claude_home))))
+    else:
+        home = Path(os.path.abspath(os.path.expanduser(
+            os.environ.get("CLAUDE_CONFIG_DIR", "~/.claude")
+        )))
+    return Path(home) / "settings.json"
+
+
+def _read_settings(path: Path) -> dict:
+    """Parse the settings file; ``{}`` when it is missing.
+
+    A file that exists but does not parse is *not* treated as empty -- writing
+    over it would throw away the user's configuration, so the error propagates
+    and the caller refuses the change.
+    """
+    if not path.exists():
+        return {}
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError(f"{path}: expected a JSON object")
+    return data
+
+
+def _entries_without_ours(entries: object) -> list:
+    """An event's hook list with ntasker's own entries stripped out."""
+    kept = []
+    for entry in entries if isinstance(entries, list) else []:
+        if not isinstance(entry, dict):
+            kept.append(entry)
+            continue
+        hooks = [
+            h
+            for h in entry.get("hooks", [])
+            if not (isinstance(h, dict) and h.get("command") == SESSION_HOOK_COMMAND)
+        ]
+        if hooks:
+            kept.append({**entry, "hooks": hooks})
+        elif not entry.get("hooks"):
+            kept.append(entry)  # an entry that never had hooks is not ours
+    return kept
+
+
+def session_hook_state(claude_home: str | os.PathLike | None = None) -> dict:
+    """``{installed, path, readable}`` for the session-discovery hook.
+
+    ``readable`` is False when the settings file exists but cannot be parsed --
+    the UI then says so instead of offering a switch that would fail.
+    """
+    path = _settings_file(claude_home)
+    try:
+        data = _read_settings(path)
+    except (OSError, ValueError):
+        return {"installed": False, "path": str(path), "readable": False}
+    hooks = data.get("hooks")
+    installed = all(
+        any(
+            isinstance(entry, dict)
+            and any(
+                isinstance(h, dict) and h.get("command") == SESSION_HOOK_COMMAND
+                for h in entry.get("hooks", [])
+            )
+            for entry in (hooks or {}).get(event, [])
+        )
+        for event in SESSION_HOOK_EVENTS
+    ) if isinstance(hooks, dict) else False
+    return {"installed": installed, "path": str(path), "readable": True}
+
+
+def _write_settings(path: Path, data: dict) -> None:
+    """Write the settings back, keeping a timestamped backup of the old file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        path.replace(path.with_name(f"{path.name}.{stamp}.bak"))
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def set_session_hook(enabled: bool, claude_home: str | os.PathLike | None = None) -> dict:
+    """Add or remove ntasker's session hook in the user's Claude Code settings.
+
+    Idempotent in both directions, and surgical: other hooks on the same events
+    stay untouched, and switching off leaves an event key behind only if
+    something else still uses it. Returns the resulting
+    :func:`session_hook_state`. Raises ``OSError`` / ``ValueError`` when the
+    file cannot be read or written -- the caller reports that rather than
+    silently leaving the setting and the file out of sync.
+    """
+    path = _settings_file(claude_home)
+    data = _read_settings(path)
+    hooks = dict(data.get("hooks") or {})
+    for event in SESSION_HOOK_EVENTS:
+        kept = _entries_without_ours(hooks.get(event))
+        if enabled:
+            kept.append({"hooks": [{"type": "command", "command": SESSION_HOOK_COMMAND}]})
+        if kept:
+            hooks[event] = kept
+        else:
+            hooks.pop(event, None)
+    if hooks:
+        data["hooks"] = hooks
+    else:
+        data.pop("hooks", None)
+    _write_settings(path, data)
+    return session_hook_state(claude_home)

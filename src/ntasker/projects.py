@@ -168,6 +168,48 @@ def _path_to_name(path: Path, home: Path, base: Path | None = None) -> str | Non
     return path.as_posix()
 
 
+def name_for_dir(path: str | os.PathLike) -> str | None:
+    """Project name a directory belongs to, or ``None`` for home/base itself.
+
+    Used when a session is adopted and has to be filed under a project: the
+    only thing known about it is where it runs. With a ``projects_base`` set,
+    the folder right under the base *is* the project, so a deeper working
+    directory (``<base>/ntasker/src``) still names its project (``ntasker``) --
+    that is the same rule the base setting states for discovery. Without a
+    base, the home-relative path stands as the name, as everywhere else.
+    """
+    base = _resolve_projects_base()
+    name = _path_to_name(Path(os.path.abspath(os.path.expanduser(str(path)))), Path.home(), base)
+    if not name:
+        return None
+    if base and not name.startswith("/"):
+        name = name.split("/", 1)[0]
+    # A session may well run in a subdirectory of its project. Prefer the
+    # longest known project the derived name sits under, so adopting from
+    # ``<project>/src`` files the task under ``<project>`` instead of
+    # inventing a second project next to it.
+    known = _known_projects()
+    if name in known:
+        return name
+    below = [p for p in known if name.startswith(p + "/")]
+    return max(below, key=len) if below else name
+
+
+def _known_projects() -> set[str]:
+    """Project names that already carry tasks. Empty on any DB trouble --
+    naming then falls back to the derived path, never to an error."""
+    try:
+        from ntasker.db import get_conn  # noqa: PLC0415 -- lazy: keep this module DB-free at import
+
+        with get_conn() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT project FROM tasks WHERE project IS NOT NULL"
+            ).fetchall()
+        return {row["project"] for row in rows}
+    except Exception:  # noqa: BLE001 -- naming must never fail on a DB hiccup
+        return set()
+
+
 def discover_claude_project_dirs(
     claude_home: str | os.PathLike | None = None,
     home: Path | None = None,

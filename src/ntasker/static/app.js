@@ -346,6 +346,20 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         reportTask: null,
         reportHtml: '',
 
+        // ---- Terminal session pick-up ----
+        // Conversations started outside ntasker, listed per project from their
+        // transcripts (/api/claude/sessions/discovered). ``pickerBusyId`` is the
+        // session currently being taken over -- ending and resuming take a
+        // moment and must not be triggered twice.
+        sessionPicker: false,
+        // Mirrors the `session_discovery` setting: without it the dialog knows
+        // nothing about which sessions still run, and says so.
+        sessionDiscovery: window.__sessionDiscovery === true,
+        pickerProject: '',
+        pickerRows: [],
+        pickerLoading: false,
+        pickerBusyId: '',
+
         // ---- Report pane in the run view ----
         // The active run's task (id, report, report_at), fetched on tab switch
         // and refreshed by the change poll so a report written mid-session
@@ -2084,6 +2098,109 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
 
         closeReport() {
             this.reportTask = null;
+        },
+
+        // Open the pick-up dialog. Pre-selects the project when the board is
+        // filtered to exactly one -- otherwise the dialog asks, since a session
+        // is only findable inside the directories of one project.
+        openSessionPicker() {
+            const chosen = this.projectFilter.filter(n => n !== PROJECT_NONE);
+            if (chosen.length === 1) this.pickerProject = chosen[0];
+            this.sessionPicker = true;
+            this.loadPickerRows();
+        },
+
+        closeSessionPicker() {
+            if (this.pickerBusyId) return;  // a pick-up is running; let it finish
+            this.sessionPicker = false;
+        },
+
+        async loadPickerRows() {
+            if (!this.pickerProject) {
+                this.pickerRows = [];
+                return;
+            }
+            this.pickerLoading = true;
+            try {
+                const url = `/api/claude/sessions/discovered?project=${encodeURIComponent(this.pickerProject)}`;
+                const r = await fetch(url);
+                const rows = r.ok ? (await r.json()).sessions : [];
+                // ``target`` is the per-row task choice: '' creates a new task.
+                this.pickerRows = rows.map(s => ({ ...s, target: s.task_id ? String(s.task_id) : '' }));
+            } catch (e) {
+                this.pickerRows = [];
+            } finally {
+                this.pickerLoading = false;
+            }
+        },
+
+        // Open tasks of the picked project, as targets for a session.
+        pickerTargets() {
+            return this.tasks.filter(t => t.status === 'open' && !t.archived
+                && (t.project || '') === this.pickerProject);
+        },
+
+        // Take a terminal conversation over: end it if it is still running,
+        // point a task at it, and open it right here. That last step is the
+        // whole point -- the user wanted to carry on, not just file it.
+        async pickUpSession(row) {
+            if (this.pickerBusyId) return;
+            this.pickerBusyId = row.session_id;
+            try {
+                if (row.live && !(await this._endSession(row))) return;
+                const id = row.target ? Number(row.target) : await this._taskForSession(row);
+                if (!id) return;
+                const r = await fetch(`/api/claude/sessions/${id}/adopt`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ session_id: row.session_id, cwd: row.cwd }),
+                });
+                if (!r.ok) {
+                    this.showToast(await this._errorDetail(r, 'session_adopt_failed'), 'danger');
+                    return;
+                }
+                await this.loadTasks();
+                this.pickerBusyId = '';
+                this.closeSessionPicker();
+                const task = this.tasks.find(t => t.id === id);
+                if (task) this.resumeTask(task);
+            } finally {
+                this.pickerBusyId = '';
+            }
+        },
+
+        // SIGTERM the running session and wait for it to be gone -- two
+        // processes on one transcript would fight over it. The server does the
+        // waiting; a session that refuses to go comes back as an error.
+        async _endSession(row) {
+            const r = await fetch(`/api/claude/sessions/discovered/${row.session_id}/end`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+            });
+            if (!r.ok) {
+                this.showToast(await this._errorDetail(r, 'session_end_failed'), 'danger');
+                await this.loadPickerRows();
+                return false;
+            }
+            return true;
+        },
+
+        // A session with no task yet gets one, named after what was asked first.
+        async _taskForSession(row) {
+            const r = await fetch('/api/tasks', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    title: (row.preview || '').slice(0, 80) || _i('session_untitled'),
+                    project: this.pickerProject || null,
+                    phase: 'wip',
+                }),
+            });
+            if (!r.ok) {
+                this.showToast(await this._errorDetail(r, 'create_failed'), 'danger');
+                return 0;
+            }
+            return (await r.json()).id;
         },
 
         // Escape / click-outside on the edit modal. A plugin modal opened from

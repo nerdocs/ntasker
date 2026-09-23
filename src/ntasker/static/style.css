@@ -1278,3 +1278,15 @@ h3 + p + .setting-row {
         transition: none;
     }
 }
+
+/* Session pick-up dialog: the per-row task target stays narrow so the
+   conversation preview keeps the width, and drops below it on a phone. */
+.session-pick-target {
+    max-width: 14rem;
+}
+
+@media (max-width: 576px) {
+    .session-pick-target {
+        max-width: none;
+    }
+}

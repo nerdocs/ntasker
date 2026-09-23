@@ -418,6 +418,12 @@ def active_session_ids() -> list[int]:
 # and a dead entry drops out on its own -- no end-of-session hook needed.
 EXTERNAL: dict[int, int] = {}
 
+#: A Claude Code session id is a canonical UUID -- it names the transcript
+#: file (``~/.claude/projects/<cwd-slug>/<id>.jsonl``) and is what
+#: ``--session-id`` / ``--resume`` take. Everything that accepts an id from
+#: outside (API payloads, the CLI, a directory listing) validates against this.
+SESSION_ID_RE = r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+
 
 def register_external(task_id: int, pid: int) -> None:
     """Record that task ``task_id`` is being worked on by external process ``pid``.
@@ -547,21 +553,31 @@ def mark_wip(task_id: int) -> None:
             )
 
 
-def _store_session_id(task_id: int, session_id: str) -> None:
-    """Persist a run's forced session id so the task can be resumed later.
+def bind_session(task_id: int, session_id: str, cwd: str | None = None) -> None:
+    """Point a task at a session id and the directory that session runs in.
 
-    Best-effort, mirroring :func:`mark_wip`: a DB hiccup must never block the
-    spawn. Overwrites any previous id -- the column always points at the task's
-    most recent web-terminal run.
+    The one writer of ``session_id`` / ``session_cwd``: a fresh spawn records
+    the id it forced, and the adoption paths (terminal ``/task``, ``ntasker
+    adopt``, the UI's session pick-up) record an id Claude Code chose itself.
+    Overwrites any previous pair -- the columns always point at the task's most
+    recent session. ``cwd`` matters because ``claude --resume`` only finds a
+    transcript from the directory it was recorded under (see
+    :func:`_stored_session`).
     """
     from ntasker.db import get_conn  # noqa: PLC0415 -- lazy: avoid cycle
 
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE tasks SET session_id = ?, session_cwd = ? WHERE id = ?",
+            (session_id, cwd, task_id),
+        )
+
+
+def _store_session_id(task_id: int, session_id: str, cwd: str | None = None) -> None:
+    """:func:`bind_session` for the spawn path -- best-effort, mirroring
+    :func:`mark_wip`: a DB hiccup must never block a starting session."""
     with contextlib.suppress(Exception):
-        with get_conn() as conn:
-            conn.execute(
-                "UPDATE tasks SET session_id = ? WHERE id = ?",
-                (session_id, task_id),
-            )
+        bind_session(task_id, session_id, cwd)
 
 
 def _store_run_baselines(task_id: int, cwd: str) -> None:
@@ -590,18 +606,27 @@ def _store_run_baselines(task_id: int, cwd: str) -> None:
             )
 
 
-def _stored_session_id(task_id: int) -> str | None:
-    """The task's persisted Claude session id, or ``None`` if it never ran."""
+def _stored_session(task_id: int) -> tuple[str | None, str | None]:
+    """The task's persisted session id and the directory it ran in.
+
+    ``(None, None)`` if the task never ran. The directory is only returned
+    when it still exists -- a resume spawned somewhere else would not find
+    the transcript, so a stale path falls back to the project directory
+    (which at least starts a session rather than none).
+    """
     from ntasker.db import get_conn  # noqa: PLC0415 -- lazy: avoid cycle
 
     try:
         with get_conn() as conn:
             row = conn.execute(
-                "SELECT session_id FROM tasks WHERE id = ?", (task_id,)
+                "SELECT session_id, session_cwd FROM tasks WHERE id = ?", (task_id,)
             ).fetchone()
     except Exception:  # noqa: BLE001 -- a DB hiccup must not break the spawn path
-        return None
-    return row["session_id"] if row else None
+        return None, None
+    if row is None:
+        return None, None
+    cwd = row["session_cwd"]
+    return row["session_id"], cwd if cwd and os.path.isdir(cwd) else None
 
 
 def _start_session(
@@ -642,7 +667,9 @@ def _start_session(
     # Resume: reopen the stored session (conversation replays, no seed). Only
     # when the agent supports it and an id was captured on a previous run --
     # otherwise fall through to a fresh session.
-    resume_id = _stored_session_id(task_id) if (resume and spec.resume_flag) else None
+    resume_id, resume_cwd = (
+        _stored_session(task_id) if (resume and spec.resume_flag) else (None, None)
+    )
     sys_prompt = quick_run_system_prompt(task_id) if quick else None
     model = row["model"] if row else None
     if resume_id:
@@ -660,7 +687,6 @@ def _start_session(
             settings_path=settings_path,
             model=model,
         )
-        _store_session_id(task_id, forced_id)
     else:
         args = spec.build_spawn(
             seed, system_prompt=sys_prompt, settings_path=settings_path, model=model
@@ -671,7 +697,12 @@ def _start_session(
     # ``projects_base`` (so a new project starts in a fresh dir), and otherwise
     # falls back to the home directory so the agent always starts rather than
     # dying on a FileNotFoundError before the TUI ever paints.
-    run_cwd = resolve_run_cwd(cwd)
+    # A resume must spawn where the transcript was recorded -- Claude Code
+    # looks for a session id under the *current* directory only. Everything
+    # else starts in the task's project directory.
+    run_cwd = resume_cwd or resolve_run_cwd(cwd)
+    if not resume_id and spec.session_flag:
+        _store_session_id(task_id, forced_id, run_cwd)
     proc = subprocess.Popen(
         args,
         stdin=slave,

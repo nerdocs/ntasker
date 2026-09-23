@@ -75,6 +75,12 @@ CREATE TABLE IF NOT EXISTS tasks (
     -- ``--session-id`` at spawn). NULL until the task has been run once.
     -- Lets a finished task's conversation be reopened via ``--resume``.
     session_id TEXT,
+    -- Working directory that session ran in. ``claude --resume`` only finds a
+    -- transcript from the directory it was recorded under, so a resume spawns
+    -- here instead of re-guessing the project directory. Also set when a
+    -- session started outside ntasker is adopted (terminal ``/task``,
+    -- ``ntasker adopt``, the UI's session pick-up). NULL = use the project dir.
+    session_cwd TEXT,
     -- Manual drag&drop position. Higher = nearer the top (rows are ordered
     -- ``sort_order DESC``). New tasks get ``MAX(sort_order)+1`` so they land
     -- on top; a drop between two neighbours stores the average of their
@@ -217,6 +223,13 @@ def init_db(path: Path | None = None) -> None:
         # resumed. Nullable, no default -- NULL means "never run in a session".
         try:
             conn.execute("ALTER TABLE tasks ADD COLUMN session_id TEXT")
+        except sqlite3.OperationalError:
+            pass
+        # v3.11 adopted-session migration: the directory ``session_id`` was
+        # recorded in. Nullable -- NULL falls back to the project directory,
+        # which is what every pre-existing row implicitly used.
+        try:
+            conn.execute("ALTER TABLE tasks ADD COLUMN session_cwd TEXT")
         except sqlite3.OperationalError:
             pass
         # v2.15 drag&drop migration: add the manual ``sort_order`` column.
@@ -469,6 +482,7 @@ def row_to_task(
         "agent": row["agent"],
         "model": row["model"],
         "session_id": row["session_id"],
+        "session_cwd": row["session_cwd"],
         "sort_order": row["sort_order"],
         "queue_order": row["queue_order"],
         "locks": locks.parse(row["locks"]),

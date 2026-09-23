@@ -26,6 +26,7 @@ const BOOL_DEFAULTS = {
     require_clean: false,
     quicktasks_bypass_lanes: true,
     misc_no_memory: false,
+    session_discovery: false,
     opencode_auto: false,
 };
 const TRUE_STRINGS = ['1', 'true', 'yes', 'on'];

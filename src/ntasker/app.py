@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import functools
+import re
 import sqlite3
 import subprocess
 import uuid
@@ -34,10 +35,12 @@ from ntasker.assets import (
     get_sri,
 )
 from ntasker.agents import agent_keys, enabled_agents, get_spec, resolve_agent_key, resolve_home
-from ntasker.claude_assets import install_assets, scan_status
+from ntasker.claude_assets import install_assets, scan_status, session_hook_state
 from ntasker.claude_runner import (
     PLANNER_TASK_ID,
+    SESSION_ID_RE,
     active_session_ids,
+    bind_session,
     external_session_ids,
     planner_seed,
     projects_base_dir,
@@ -55,7 +58,7 @@ from ntasker.projects import (
     stale_claude_projects,
 )
 from ntasker.rundiff import changed_paths, parse_baselines, run_diff
-from ntasker import completion, locks, plugins, taskqueue
+from ntasker import completion, locks, plugins, sessions, taskqueue
 from ntasker import db as _db_module
 from ntasker.db import (
     DepError,
@@ -111,6 +114,7 @@ from ntasker.settings import (
     get_quicktasks_bypass_lanes,
     get_queue_enabled,
     get_quick_prompts,
+    get_session_discovery,
     get_sidebar_sections,
     get_setting_raw,
     list_settings,
@@ -797,6 +801,28 @@ def build_js_strings() -> dict[str, str]:
             "it cannot be started here until that session ends."
         ),
         "claude_external_badge": _("Running in an external terminal"),
+        # Picking up a session started outside ntasker
+        "session_pickup": _("Pick up a session"),
+        "session_pickup_title": _("Sessions started in a terminal"),
+        "session_pickup_intro": _(
+            "Conversations of this project that ntasker did not start. Picking one "
+            "up files it under a task and opens it here."
+        ),
+        "session_pickup_project": _("Project"),
+        "session_pickup_none": _("No terminal sessions recorded for this project."),
+        "session_pickup_pick_project": _("Choose a project to see its sessions."),
+        "session_pickup_new_task": _("New task"),
+        "session_pickup_take": _("Continue here"),
+        "session_pickup_end_take": _("End and continue here"),
+        "session_pickup_bound": _("Already on task #{id}"),
+        "session_running": _("Running"),
+        "session_discovery_off": _(
+            "Switch on \"Pick up terminal sessions\" in the settings to see which "
+            "of these are still running and to end one from here."
+        ),
+        "session_untitled": _("Session from a terminal"),
+        "session_adopt_failed": _("Could not attach that session"),
+        "session_end_failed": _("That session did not end -- close it in its terminal"),
         "claude_back": _("Back"),
         "claude_stop": _("Stop"),
         "claude_mark_done": _("Mark done"),
@@ -1219,6 +1245,9 @@ def index(request: Request) -> HTMLResponse:
             # input show where a new project's directory will be created.
             "projects_base": str(projects_base_dir() or ""),
             "sidebar_sections": get_sidebar_sections(),
+            # Whether terminal sessions report themselves: without it the
+            # pick-up dialog cannot tell a running session from an ended one.
+            "session_discovery": get_session_discovery(),
             "quick_prompts": get_quick_prompts(),
             "links": LINKS,
             **_page_plugins(),
@@ -1267,6 +1296,10 @@ def settings_page(request: Request) -> HTMLResponse:
             "language": get_active_language(),
             "js_strings": build_js_strings(),
             "can_restart": service.service_installed(),
+            # Whether the session-discovery hook is actually in the user's
+            # Claude Code settings -- the switch stores intent, this is the
+            # file's truth, and the page flags a mismatch.
+            "session_hook": session_hook_state(),
             "links": LINKS,
             **_page_plugins(),
         },
@@ -1547,6 +1580,8 @@ def api_claude_sessions() -> JSONResponse:
 
 class ExternalSessionIn(BaseModel):
     pid: int = Field(gt=0)
+    session_id: str | None = Field(default=None, pattern=SESSION_ID_RE)
+    cwd: str | None = None
 
 
 @app.post("/api/claude/sessions/{task_id}/external")
@@ -1556,12 +1591,94 @@ def api_claude_session_external(task_id: int, payload: ExternalSessionIn) -> JSO
     Called by the ``/task`` loader when it runs in a terminal Claude Code
     (``CLAUDE_PID`` set, ``NTASKER_TASK_ID`` not). The task then shows as busy
     and its run button locks until that process exits. 404 for an unknown task.
+
+    The loader also reports the session's own id (``CLAUDE_CODE_SESSION_ID``)
+    and working directory, which get stored on the task -- so once the terminal
+    session ends, the board's resume button reopens *that* conversation instead
+    of having nothing to offer. Both are optional: an older loader, or a Claude
+    Code that does not export the id, still registers the busy state.
     """
     with get_conn() as conn:
         if conn.execute("SELECT 1 FROM tasks WHERE id = ?", (task_id,)).fetchone() is None:
             raise HTTPException(status_code=404, detail=_("Task not found"))
     register_external(task_id, payload.pid)
+    if payload.session_id:
+        bind_session(task_id, payload.session_id, payload.cwd or None)
+    return JSONResponse({"ok": True, "session_id": payload.session_id})
+
+
+class LiveSessionIn(BaseModel):
+    session_id: str = Field(pattern=SESSION_ID_RE)
+    pid: int = Field(gt=0)
+    cwd: str
+
+
+@app.post("/api/claude/sessions/live")
+def api_claude_session_live(payload: LiveSessionIn) -> JSONResponse:
+    """A terminal session reporting that it is running.
+
+    Posted by ``ntasker hook session`` from the user's own Claude Code hooks
+    (the ``session_discovery`` setting installs them). Knowing the process is
+    what lets the board end a session before taking it over -- a session that
+    never reports is still listed and adoptable, just not endable. Deliberately
+    task-free: most of these belong to no task yet.
+    """
+    sessions.register_live(payload.session_id, payload.pid, payload.cwd)
     return JSONResponse({"ok": True})
+
+
+@app.get("/api/claude/sessions/discovered")
+def api_claude_sessions_discovered(project: str | None = None) -> JSONResponse:
+    """Terminal sessions recorded for a project, newest first.
+
+    Feeds the board's "pick up a session" dialog: each entry carries what the
+    user needs to recognise a conversation (when it last ran, the first thing
+    they typed), whether it is still running, and which task already owns it.
+    """
+    found = sessions.discover_for_project(project)
+    return JSONResponse({"sessions": [s.as_dict() for s in found]})
+
+
+@app.post("/api/claude/sessions/discovered/{session_id}/end")
+def api_claude_session_end(session_id: str) -> JSONResponse:
+    """Ask a running terminal session to exit, so a task can resume it.
+
+    409 when no live process is known for the id: it has already ended (then
+    there is nothing to do -- adopt it), or it never reported itself because
+    session discovery is off.
+    """
+    if not re.fullmatch(SESSION_ID_RE, session_id):
+        raise HTTPException(status_code=422, detail=_("Invalid session id"))
+    if not sessions.end_live(session_id):
+        raise HTTPException(status_code=409, detail=_("No running session with that id"))
+    return JSONResponse({"ok": True})
+
+
+class AdoptSessionIn(BaseModel):
+    session_id: str = Field(pattern=SESSION_ID_RE)
+    cwd: str | None = None
+    # Set when the session is still running, so the task shows as busy until
+    # that process exits -- the same bookkeeping the ``/task`` loader does.
+    pid: int | None = Field(default=None, gt=0)
+
+
+@app.post("/api/claude/sessions/{task_id}/adopt")
+def api_claude_session_adopt(task_id: int, payload: AdoptSessionIn) -> JSONResponse:
+    """Point a task at a session ntasker did not start, so it can resume it.
+
+    The pick-up path for conversations begun in a terminal: ``ntasker adopt``
+    from inside the running session, or the board's session picker for one
+    that has already ended. Unlike ``/external`` the process need not be alive
+    -- what matters is the id and the directory, which is where a resume has
+    to spawn to find the transcript. 404 for an unknown task.
+    """
+    with get_conn() as conn:
+        if conn.execute("SELECT 1 FROM tasks WHERE id = ?", (task_id,)).fetchone() is None:
+            raise HTTPException(status_code=404, detail=_("Task not found"))
+    bind_session(task_id, payload.session_id, payload.cwd or None)
+    if payload.pid:
+        register_external(task_id, payload.pid)
+    return JSONResponse({"ok": True, "id": task_id, "session_id": payload.session_id})
 
 
 class SessionStateIn(BaseModel):

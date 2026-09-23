@@ -179,7 +179,52 @@ prevents. The card stays editable. The queue treats the session like one of its 
 and the directory locks (the lane and the held dirs are occupied), but it is no queue run: it never advances or
 ends a queue entry. There is no waiting/running distinction for external sessions -- they carry no hooks.
 
-Requires the loader from v3.4+ (`ntasker agent install claude` after upgrading).
+The loader also reports the session's **own id**. Claude Code exports it as `CLAUDE_CODE_SESSION_ID` -- the same
+canonical UUID that names its transcript and that `--resume` takes -- so the loader sends it along with the pid and
+the working directory, and the server stores both on the task. The moment that terminal is closed, the board's
+**Resume session** button reopens exactly that conversation. Nothing to copy, nothing to type.
+
+Requires the loader from v3.4+ (`ntasker agent install claude` after upgrading); the session id needs v3.11+.
+
+## Picking up a session ntasker did not start
+
+A conversation often starts in a terminal without any task -- you were just trying something -- and only later turns
+into work worth tracking. Three ways lead from there into ntasker, all ending in the same place: a task whose
+`session_id` and `session_cwd` point at that conversation, resumable from the board.
+
+**From inside the running session** -- `ntasker adopt`:
+
+```
+ntasker adopt 42                      # hand this session to an existing task
+ntasker adopt --title "Fix the parser" # ... or to one created right here
+```
+
+It reads the session id and pid from its own environment and the directory from the shell, so there is nothing to
+look up. With `--title`, the project is derived from the working directory (the known project it sits in, else the
+path relative to `projects_base` / home) unless `--project` says otherwise. While the session keeps running the task
+shows as busy, exactly like a `/task` one.
+
+**From the board** -- the *Pick up a session* button in the page header. It lists the conversations recorded for a
+project, newest first, each with the first thing you asked and when it last ran. Choose a target (a new task, or an
+open one of that project) and ntasker files the session there and opens it right away -- for a session that is still
+running, it ends that one first, since two processes on one transcript would fight over it.
+
+The list is read from the transcripts Claude Code writes under `<claude home>/projects/<cwd-slug>/<session-id>.jsonl`,
+so it also finds sessions from long before ntasker knew anything about them. A session already owned by a task is
+marked as such.
+
+**Knowing which sessions are still running** needs the **Pick up terminal sessions** setting
+(*Settings -> Agents & runs*, key `session_discovery`). It is off by default because switching it on writes into
+*your* Claude Code settings (`<claude home>/settings.json`): two hooks calling `ntasker hook session`, on
+`SessionStart` and `UserPromptSubmit`. Every terminal session then reports its id, pid and directory to ntasker --
+that is what makes the *running* badge and the *End and continue here* button possible. The edit is surgical (other
+hooks stay, a timestamped `.bak` is kept) and switching the setting off removes exactly those two entries again.
+Without it, past sessions are still listed and adoptable; ntasker just cannot tell which are alive, and a session
+that is still open has to be closed in its own terminal first.
+
+A resume always spawns in the directory the session was recorded in (`session_cwd`), not in the project directory:
+Claude Code finds a session id only under the directory it belongs to, so a conversation started in a subfolder
+resumes there.
 
 ## Quick prompts
 
@@ -211,7 +256,14 @@ included** -- gated solely by that loopback bind. Keep the bind local (never `0.
   build step), driving the terminal in `static/app.js` (`runNext` queues, `_openWhenLive` waits for the session).
 * Endpoints: `GET /api/claude/status` (CLI + PTY available?), `GET /api/claude/sessions` (`{active, waiting, external,
   projects, titles}`, for the busy / waiting indicators and the run tabs), `POST /api/projects/quick-run`,
-  `POST /api/claude/sessions/<id>/external` (the `/task` loader's registration, see above).
+  `POST /api/claude/sessions/<id>/external` (the `/task` loader's registration, see above),
+  `POST /api/claude/sessions/<id>/adopt` (point a task at a session ntasker did not start),
+  `POST /api/claude/sessions/live` (a terminal session reporting itself, from `ntasker hook session`),
+  `GET /api/claude/sessions/discovered?project=<name>` (transcripts of a project),
+  `POST /api/claude/sessions/discovered/<session id>/end` (SIGTERM, waits for the exit).
+* Session discovery (`src/ntasker/sessions.py`): reads the head of each transcript for the working directory and the
+  first user message, merges in the live registry filled by the hook, and marks sessions a task already owns. The
+  hook itself is managed in `claude_assets.py` (`set_session_hook`), driven by the `session_discovery` setting.
 
 ## Requirements
 

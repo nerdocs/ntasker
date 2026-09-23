@@ -50,8 +50,12 @@ def register_external_via_server(tid: str) -> bool:
 
     Claude Code exports ``CLAUDE_PID`` to its subprocesses; the server keeps
     the task marked busy (run button locked, lane occupied) for as long as
-    that process lives. Skipped inside an ntasker-spawned session
-    (``NTASKER_TASK_ID`` set) -- the server already tracks that one.
+    that process lives. It also exports ``CLAUDE_CODE_SESSION_ID`` -- the
+    session's own id, which names its transcript -- so the server can store it
+    on the task together with this directory. That is what lets the board
+    resume *this* conversation once the terminal is closed. Skipped inside an
+    ntasker-spawned session (``NTASKER_TASK_ID`` set) -- the server already
+    tracks that one.
     """
     if os.environ.get("NTASKER_TASK_ID"):
         return False
@@ -61,10 +65,15 @@ def register_external_via_server(tid: str) -> bool:
         return False
     if pid <= 0:
         return False
+    body = {"pid": pid}
+    sid = (os.environ.get("CLAUDE_CODE_SESSION_ID") or "").strip()
+    if re.fullmatch(r"[0-9a-fA-F-]{36}", sid):
+        body["session_id"] = sid
+        body["cwd"] = os.getcwd()
     try:
         req = urllib.request.Request(
             f"{BASE_URL}/api/claude/sessions/{tid}/external",
-            data=json.dumps({"pid": pid}).encode("utf-8"),
+            data=json.dumps(body).encode("utf-8"),
             method="POST",
             headers={"Content-Type": "application/json"},
         )

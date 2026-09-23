@@ -52,3 +52,47 @@ def test_unknown_task_or_bad_pid(client):
     assert client.post("/api/claude/sessions/999/external", json={"pid": 1}).status_code == 404
     t = client.post("/api/tasks", json={"title": "t"}).json()
     assert client.post(f"/api/claude/sessions/{t['id']}/external", json={"pid": 0}).status_code == 422
+
+
+SID = "11111111-2222-3333-4444-555555555555"
+
+
+def test_session_id_is_stored_on_the_task(client, tmp_path):
+    """A terminal session reports its own id -- the task can be resumed later."""
+    t = client.post("/api/tasks", json={"title": "t"}).json()
+    r = client.post(
+        f"/api/claude/sessions/{t['id']}/external",
+        json={"pid": os.getpid(), "session_id": SID, "cwd": str(tmp_path)},
+    )
+    assert r.status_code == 200 and r.json()["session_id"] == SID
+    row = client.get(f"/api/tasks/{t['id']}").json()
+    assert row["session_id"] == SID and row["session_cwd"] == str(tmp_path)
+    assert claude_runner._stored_session(t["id"]) == (SID, str(tmp_path))
+
+
+def test_registration_without_a_session_id_still_works(client):
+    """An older loader (or no exported id) registers the busy state only."""
+    t = client.post("/api/tasks", json={"title": "t"}).json()
+    assert client.post(
+        f"/api/claude/sessions/{t['id']}/external", json={"pid": os.getpid()}
+    ).status_code == 200
+    assert client.get(f"/api/tasks/{t['id']}").json()["session_id"] is None
+
+
+def test_malformed_session_id_is_rejected(client):
+    t = client.post("/api/tasks", json={"title": "t"}).json()
+    r = client.post(
+        f"/api/claude/sessions/{t['id']}/external",
+        json={"pid": os.getpid(), "session_id": "not-a-uuid"},
+    )
+    assert r.status_code == 422
+
+
+def test_stale_session_cwd_falls_back(client, tmp_path):
+    """A recorded directory that no longer exists must not steer a resume."""
+    t = client.post("/api/tasks", json={"title": "t"}).json()
+    client.post(
+        f"/api/claude/sessions/{t['id']}/external",
+        json={"pid": os.getpid(), "session_id": SID, "cwd": str(tmp_path / "gone")},
+    )
+    assert claude_runner._stored_session(t["id"]) == (SID, None)

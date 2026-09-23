@@ -553,6 +553,7 @@ VALIDATORS: dict[str, Validator] = {
     "claude_open_terminal": validate_claude_open_terminal,
     "queue_enabled": validate_queue_enabled,
     "dir_locks": validate_on_off,
+    "session_discovery": validate_on_off,
     "require_clean": validate_on_off,
     "quicktasks_bypass_lanes": validate_on_off,
     "plugins_disabled": validate_plugins_disabled,
@@ -632,6 +633,13 @@ HINTS: dict[str, object] = {
         "you press Resume on the queue panel. One task runs per project at a "
         "time. ENV: NTASKER_QUEUE_ENABLED."
     ),
+    "session_discovery": _lazy(
+        "Let sessions you start in a terminal report themselves, so the board "
+        "can pick one up and carry on with it. This adds two hooks to your own "
+        "Claude Code settings file (a backup is kept); switching it off removes "
+        "them again. Without it, ntasker still finds past sessions of a project "
+        "but cannot tell which are still running."
+    ),
     "dir_locks": _lazy(
         "A queued task waits while another live session holds one of its "
         "directories, and sessions refuse edits inside directories they do not "
@@ -690,6 +698,7 @@ LABELS: dict[str, object] = {
     "auto_archive_days": _lazy("Archive done tasks after (days)"),
     "queue_enabled": _lazy("Queue starts tasks automatically"),
     "dir_locks": _lazy("Directory locks"),
+    "session_discovery": _lazy("Pick up terminal sessions"),
     "require_clean": _lazy("Require a clean git state"),
     "quicktasks_bypass_lanes": _lazy("Quicktasks bypass the lanes"),
     "update_command": _lazy("Update command"),
@@ -859,14 +868,39 @@ def get_setting(key: str, env_var: str | None = None) -> str | None:
     return row["value"] if row else None
 
 
-def set_setting(key: str, value: str) -> dict:
-    """Validate + UPSERT. Returns the persisted row.
+def _apply_session_discovery(value: str) -> None:
+    """Put ntasker's session hook into the user's Claude Code settings, or
+    take it out again -- see :func:`ntasker.claude_assets.set_session_hook`."""
+    from ntasker.claude_assets import set_session_hook  # noqa: PLC0415 -- lazy: avoid cycle
 
-    Raises :class:`ValueError` if a registered validator rejects the value.
+    set_session_hook(value.strip().lower() in _TRUE_STRINGS)
+
+
+APPLIERS: dict[str, Callable[[str], None]] = {
+    "session_discovery": _apply_session_discovery,
+}
+"""Settings whose value has to take effect somewhere outside this KV store.
+
+Run *before* the row is written (and with an empty value when the key is
+unset), so a failure to apply leaves the stored setting untouched instead of
+claiming a state the system is not in. Keep this for genuinely external
+effects -- everything readable on demand belongs in a typed accessor below.
+"""
+
+
+def set_setting(key: str, value: str) -> dict:
+    """Validate + apply + UPSERT. Returns the persisted row.
+
+    Raises :class:`ValueError` if a registered validator rejects the value, or
+    whatever a registered applier (:data:`APPLIERS`) raises -- in both cases
+    nothing is persisted.
     """
     validator = VALIDATORS.get(key)
     if validator is not None:
         value = validator(value)
+    applier = APPLIERS.get(key)
+    if applier is not None:
+        applier(value)
     now = datetime.utcnow().isoformat(timespec="seconds")
     with get_conn() as conn:
         conn.execute(
@@ -882,7 +916,14 @@ def set_setting(key: str, value: str) -> dict:
 
 
 def delete_setting(key: str) -> bool:
-    """DELETE the row. Returns ``True`` if a row was removed."""
+    """DELETE the row. Returns ``True`` if a row was removed.
+
+    Unsetting means falling back to the default, so a registered applier runs
+    with an empty value -- for an on/off key that is "off".
+    """
+    applier = APPLIERS.get(key)
+    if applier is not None:
+        applier("")
     with get_conn() as conn:
         cur = conn.execute("DELETE FROM settings WHERE key = ?", (key,))
         return cur.rowcount > 0
@@ -986,6 +1027,15 @@ def _get_on_off(key: str, default: bool) -> bool:
     if raw is None:
         return default
     return raw.strip().lower() in _TRUE_STRINGS
+
+
+def get_session_discovery() -> bool:
+    """Whether terminal sessions report themselves to ntasker (default off).
+
+    Off by default because switching it on edits the user's own Claude Code
+    settings file. ENV ``NTASKER_SESSION_DISCOVERY``.
+    """
+    return _get_on_off("session_discovery", False)
 
 
 def get_dir_locks() -> bool:

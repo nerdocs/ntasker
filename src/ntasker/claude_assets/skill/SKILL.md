@@ -362,6 +362,22 @@ Reuse an existing name (see `GET /api/projects`) before inventing a new
 one. Empty/whitespace names collapse to `null` server-side, so passing
 either `""` or `null` for "no project" both work.
 
+### 7.1 Adopting the session you are in (since v3.11)
+
+A conversation started in a terminal can be handed to a task, so the board
+can reopen it later (`claude --resume`). Only on the user's explicit
+instruction -- and `--title` creates a task, which section 5 otherwise
+forbids: it is the user's command, never the agent's own idea.
+
+```bash
+ntasker adopt 43                        # this session belongs to #43
+ntasker adopt --title "<short title>"   # ... or to a task created for it
+```
+
+Session id, pid and directory come from the environment; `--session` /
+`--cwd` / `--project` override them. Server-only. A `/task <id>` session
+reports its id by itself -- no `adopt` needed there.
+
 ## 8. Schema
 
 | Field | Type | Notes |
@@ -386,6 +402,8 @@ either `""` or `null` for "no project" both work.
 | `locks` | TEXT JSON | extra project names whose directories the run holds (own project implicit) |
 | `report` | TEXT NULL | the agent's final report, Markdown; one per task, overwritten by each run |
 | `report_at` | TEXT NULL | when the report was written |
+| `session_id` | TEXT NULL | the task's last agent session (`claude --resume`); NULL = never ran |
+| `session_cwd` | TEXT NULL | directory that session ran in -- a resume spawns there, see 7.1 |
 | settings | KV | `key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT` |
 
 Workflow phases read left-to-right in the kanban view:

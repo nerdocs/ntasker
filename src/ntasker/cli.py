@@ -40,7 +40,7 @@ from ntasker.assets import (
     local_path_for,
     resolve_mode,
 )
-from ntasker import completion, plugins
+from ntasker import completion, plugins, projects
 from ntasker.agents import AGENTS, agent_available, agent_keys, enabled_agents, resolve_home
 from ntasker.claude_assets import (
     install_assets,
@@ -1382,6 +1382,66 @@ def cmd_finish(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_adopt(args: argparse.Namespace) -> int:
+    """Hand a session started outside ntasker over to a task.
+
+    Typed inside the running terminal session: Claude Code exports its own
+    session id and pid, so the only thing to say is *which* task it belongs to
+    -- an existing ``<id>``, or ``--title`` for a task created on the spot.
+    From then on the board can reopen this conversation. Server-only, like
+    :func:`cmd_finish`: the task must be visible to the running server.
+    """
+    if (args.task_id is None) == (not args.title):
+        print(_("ntasker: name a task id or pass --title, not both."), file=sys.stderr)
+        return 2
+    session = (args.session or os.environ.get("CLAUDE_CODE_SESSION_ID") or "").strip()
+    if not session:
+        print(
+            _(
+                "ntasker: no session id -- run this inside a Claude Code session, "
+                "or pass --session <uuid>."
+            ),
+            file=sys.stderr,
+        )
+        return 2
+    cwd = os.path.abspath(os.path.expanduser(args.cwd)) if args.cwd else os.getcwd()
+    base = _server_base(args)
+    task_id = args.task_id
+    if task_id is None:
+        project = args.project if args.project is not None else projects.name_for_dir(cwd)
+        try:
+            status, data = _api_call(
+                base,
+                "POST",
+                "/api/tasks",
+                {"title": args.title, "project": project, "phase": "wip"},
+            )
+        except OSError as exc:
+            print(_("ntasker: server not reachable ({err})").format(err=exc), file=sys.stderr)
+            return 1
+        if status >= 400:
+            print(_("ntasker: {detail}").format(detail=data.get("detail", status)), file=sys.stderr)
+            return 1
+        task_id = data["id"]
+    body: dict[str, Any] = {"session_id": session, "cwd": cwd}
+    # Only a session that is actually running holds the task -- a pid from
+    # somewhere else would mark it busy forever.
+    with contextlib.suppress(TypeError, ValueError):
+        pid = int(os.environ.get("CLAUDE_PID") or 0)
+        if pid > 0:
+            body["pid"] = pid
+    try:
+        status, data = _api_call(base, "POST", f"/api/claude/sessions/{task_id}/adopt", body)
+    except OSError as exc:
+        print(_("ntasker: server not reachable ({err})").format(err=exc), file=sys.stderr)
+        return 1
+    if status >= 400:
+        print(_("ntasker: {detail}").format(detail=data.get("detail", status)), file=sys.stderr)
+        return 1
+    print(_("#{id} adopted this session -- resume it from the board.").format(id=task_id))
+    return 0
+
+
 # Claude Code hooks -------------------------------------------------------------
 # Run *inside* an ntasker-spawned Claude Code session (wired via the
 # ``--settings`` file, see claude_assets/hooks/*.json). They read the hook's
@@ -1455,6 +1515,37 @@ def _pretooluse_target(payload: dict) -> str | None:
         return None
     target = os.path.expanduser(tokens[1])
     return os.path.join(payload.get("cwd") or os.getcwd(), target)
+
+
+def cmd_hook_session(args: argparse.Namespace) -> int:
+    """Report the terminal session this hook fires in, so ntasker can pick it up.
+
+    Wired into the *user's* Claude Code settings by the ``session_discovery``
+    setting, which means it runs in every session -- including ones ntasker
+    started itself (skipped: the server already tracks those) and while no
+    server is running (a refused connection is not an error here). The pid
+    comes from ``CLAUDE_PID``, the session id and directory from the hook
+    payload, with the environment as a fallback.
+    """
+    if os.environ.get("NTASKER_TASK_ID"):
+        return 0
+    try:
+        payload = json.loads(sys.stdin.read() or "{}")
+    except ValueError:
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    session = str(payload.get("session_id") or os.environ.get("CLAUDE_CODE_SESSION_ID") or "")
+    try:
+        pid = int(os.environ.get("CLAUDE_PID") or 0)
+    except ValueError:
+        pid = 0
+    if not session or pid <= 0:
+        return 0
+    body = {"session_id": session, "pid": pid, "cwd": str(payload.get("cwd") or os.getcwd())}
+    with contextlib.suppress(Exception):
+        _api_call(_server_base(args), "POST", "/api/claude/sessions/live", body, 2.0)
+    return 0
 
 
 def cmd_hook_pretooluse(args: argparse.Namespace) -> int:
@@ -2328,6 +2419,21 @@ def build_parser() -> argparse.ArgumentParser:
     sp_finish.add_argument("--port", type=int, default=None)
     sp_finish.set_defaults(func=cmd_finish)
 
+    # adopt ---------------------------------------------------------------
+    sp_adopt = sub.add_parser(
+        "adopt", help=_("Attach the session you are in to a task, so it can be resumed")
+    )
+    sp_adopt.add_argument("task_id", type=_task_id, nargs="?", default=None)
+    sp_adopt.add_argument("--title", help=_("Create a task with this title instead."))
+    sp_adopt.add_argument(
+        "--project", help=_("Project for --title (default: derived from the directory).")
+    )
+    sp_adopt.add_argument("--session", help=_("Session id (default: the session you are in)."))
+    sp_adopt.add_argument("--cwd", help=_("Directory the session runs in (default: here)."))
+    sp_adopt.add_argument("--host", default=None)
+    sp_adopt.add_argument("--port", type=int, default=None)
+    sp_adopt.set_defaults(func=cmd_adopt)
+
     # tag-add / tag-rm ----------------------------------------------------
     sp_ta = sub.add_parser("tag-add", help=_("Add a tag"))
     sp_ta.add_argument("task_id", type=_task_id)
@@ -2428,6 +2534,7 @@ def build_parser() -> argparse.ArgumentParser:
         ("waiting", cmd_hook_waiting),
         ("running", cmd_hook_running),
         ("pretooluse", cmd_hook_pretooluse),
+        ("session", cmd_hook_session),
     ):
         hook_sub.add_parser(name).set_defaults(func=func)
 

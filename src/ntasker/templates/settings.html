@@ -242,6 +242,29 @@
                                 </div>
                                 {% endcall %}
 
+                                <h3 class="mt-4 mb-1">{{ t('Terminal sessions') }}</h3>
+                                <p class="text-secondary small mb-2">{{ t('Carry on with a conversation you started outside ntasker.') }}</p>
+                                {% call row('session_discovery') %}
+                                    {{ switch('session_discovery', 'on', 'off') }}
+                                    <div class="text-secondary small mt-2">
+                                        {{ t('Hooks are written to') }}
+                                        <code>{{ session_hook.path }}</code>
+                                    </div>
+                                    {% if not session_hook.readable %}
+                                    <div class="text-danger small mt-1">
+                                        {{ t('This file cannot be read as JSON -- fix or remove it, otherwise the switch has nothing to write to.') }}
+                                    </div>
+                                    {% elif session_hook.installed %}
+                                    <div class="text-warning small mt-1" x-show="!isOn('session_discovery')" x-cloak>
+                                        {{ t('The hooks are still in that file although the switch is off. Turn it on and off again to remove them.') }}
+                                    </div>
+                                    {% else %}
+                                    <div class="text-warning small mt-1" x-show="isOn('session_discovery')" x-cloak>
+                                        {{ t('The hooks are missing from that file although the switch is on. Turn it off and on again to write them.') }}
+                                    </div>
+                                    {% endif %}
+                                {% endcall %}
+
                                 <h3 class="mt-4 mb-1">{{ t('Queue') }}</h3>
                                 <p class="text-secondary small mb-2">{{ t('Every run goes through the queue; one task runs per project at a time.') }}</p>
                                 {% call row('queue_enabled') %}{{ switch('queue_enabled') }}{% endcall %}

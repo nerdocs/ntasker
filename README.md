@@ -1,471 +1,130 @@
 # ntasker
 
-Lightweight local task tracker. Single-user, FastAPI + SQLite, Tabler.io UI.
+**Put your coding agent on a kanban board.**
 
-[<img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy me a coffee" height="40">](https://buymeacoffee.com/nerdoc)
-
-## In your AI coding agent
-
-ntasker is **agent-agnostic**: every task can run on **Claude Code, OpenCode or Pi** (and the framework is extensible
-to more). It doubles as your agent's task memory -- the [skill + `/task` command](#ai-agent-integration) let the agent
-read and drive your tracker, no copy-paste:
-
-- **"What should I work on next?"** -- the agent grabs the open tasks for your current
-  project folder and ranks them by urgency.
-- **`/task 34`** -- pulls #34 into the session (title, description, tags), flips it to
-  *in progress*, and warns you if you're sitting in the wrong project.
-- **"Add a todo: ..."** -- it files the task for you; drop a `#34` anywhere later and it
-  knows exactly which task you mean.
-- Finished an assigned task? The agent moves it to **Review** for you to sign off -- it
-  never closes, deletes, or archives tasks on its own.
+Drop your tasks on the board, hit **run**, and Claude Code, OpenCode or Pi picks one up -- in a real terminal embedded
+in the page, in that task's project directory, already briefed on the task. A queue works through the rest unattended,
+one task per project, while you do something else. Runs on your own machine: one Python package, a SQLite file, no
+account, no build step, nothing leaves the box.
 
 ![ntasker kanban board with the projects sidebar and the queue panel](docs/screenshot.jpg)
 
-## Run with an agent (web UI)
-
-The flip side of the integration above: every task row has a **run** button -- showing that task's agent logo -- that
-queues the task and opens a real interactive session -- the genuine TUI, embedded in the page via xterm.js
--- running in the task's project directory and seeded with the task. You answer the agent's questions, approve its tool
-prompts and interrupt it exactly as in a terminal; it is the same CLI with the same `CLAUDE.md`, skills, MCP and
-permissions.
-
-Each task picks its agent (or inherits the `default_agent` setting); the run button only appears when that agent's CLI
-resolves. Sessions run in the background (the button shows a spinner, and re-opening reattaches to the live session);
-marking a task **done** ends its session. An open task whose session already ended gets a **resume** button next to
-Run -- it continues that conversation instead of starting over. Needs the agent's CLI on `PATH` (or a configured
-path) and a POSIX pseudo-terminal, otherwise the button stays hidden. See [docs/claude-runs.md](docs/claude-runs.md) and
-[docs/agents.md](docs/agents.md).
-
-![Interactive Claude Code session embedded in the ntasker web UI](docs/screenshot-xterm.jpg)
-
-## Task queue
-
-The queue is the only way a session starts: every run button puts its task at the head of its project's lane, and
-ntasker works through the queue unattended, one task per project at a time, taking the next one as soon as the previous
-task is done -- closed by you after review, or by the agent when the task told it to. `done` is the only thing that
-makes ntasker end a session. **Pause** stops new starts; running tasks keep going.
-
-The panel shows one column per project, because that is what runs in parallel. To make one task wait for another --
-across projects too -- drop it on the **middle** of the other; the edges keep reordering. A **fasttrack** task commits
-and closes itself (`ntasker finish`) and hands its result to the tasks depending on it; the **Run-Log** collects those
-outcomes. **Plan queue** lets an agent session order the queue for you and start it.
-See [docs/task-queue.md](docs/task-queue.md).
-
-## Stack
-
-- Backend: FastAPI + uvicorn, Python stdlib `sqlite3`
-- Frontend: HTML + AlpineJS + Tabler.io. **Default = jsDelivr CDN at runtime, with
-  SRI hashes pinned in `src/ntasker/assets.py`**. Optional fully-offline mode
-  via `ntasker assets fetch` (writes into the user-data dir, never into the
-  Python wheel). No build step.
-- Storage: SQLite at `platformdirs.user_data_dir("nTasker")/tasks.db` by default
-  (Linux: `~/.local/share/nTasker/tasks.db`)
-- Layout: PyPA src-layout, package `src/ntasker/`, entry point `ntasker = ntasker.cli:main`
-
-## Bind
-
-Default `127.0.0.1:8766`. Do **not** expose this on a network -- there is no auth.
-Override via `ntasker serve --host <h> --port <p>` if you really need to.
-This is a personal local tool, not a multi-user service.
-
-## DB path resolution
-
-Highest precedence wins:
-
-1. `--db <path>` flag on every CLI invocation.
-2. Environment variable `NTASKER_DB`.
-3. `platformdirs.user_data_dir("nTasker") / "tasks.db"` (default).
-
-Per-OS defaults:
-
-| OS      | Path                                                     |
-|---------|----------------------------------------------------------|
-| Linux   | `~/.local/share/nTasker/tasks.db`                        |
-| macOS   | `~/Library/Application Support/nTasker/tasks.db`         |
-| Windows | `%LOCALAPPDATA%\nTasker\tasks.db`                        |
-
-Only the Linux path is regularly tested; the others are derived via `platformdirs`.
-
-## Setup
-
-Install from PyPI, then run it as a background service that starts at login and restarts on crash -- `systemd --user`
-on Linux, `launchd` on macOS. User-scoped, no root:
+## Quickstart
 
 ```bash
 uv tool install ntasker                  # install from PyPI
 ntasker service install --auto-update    # run as a service + daily auto-update
+ntasker config set projects_dir ~/Projekte
 ```
 
-Open <http://127.0.0.1:8766> in a browser. That's it -- the service creates the database on first start, restarts on
-crash, and keeps itself up to date.
+Open <http://127.0.0.1:8766>. The service creates the database on first start, restarts on crash and keeps itself up to
+date. On Linux, run `loginctl enable-linger $USER` once so it survives logout. No supervisor wanted? `ntasker serve`
+runs it in the foreground until you close it.
 
-On Linux, run this once so the service survives logout:
+Then teach your agent about it:
 
 ```bash
-loginctl enable-linger $USER
+ntasker agent install claude     # or: opencode, pi
 ```
 
-Manage it later:
+## Why
+
+Three things a plain to-do list cannot do.
+
+### The board is your agent's memory
+
+The installed skill and `/task` command let the agent read and drive the tracker -- no copy-paste, no re-explaining:
+
+- **"What should I work on next?"** -- it grabs the open tasks for your current project folder and ranks them by
+  urgency.
+- **`/task 34`** -- pulls #34 into the session (title, description, tags), flips it to *in progress*, and warns you if
+  you are sitting in the wrong project.
+- **"Add a todo: ..."** -- it files the task for you; drop a `#34` anywhere later and it knows which task you mean.
+- Finished an assigned task? It moves the task to **Review** for you to sign off. It never closes, deletes or archives
+  anything on its own.
+
+### Run a task without leaving the board
+
+Every task row has a **run** button showing that task's agent logo. It opens the genuine TUI, embedded in the page via
+xterm.js, running in the task's project directory and seeded with the task. You answer the agent's questions, approve
+its tool prompts and interrupt it exactly as in a terminal -- same CLI, same `CLAUDE.md`, same skills, MCP and
+permissions.
+
+Sessions run in the background (the button shows a spinner; re-opening reattaches to the live session), and marking a
+task **done** ends its session. An open task whose session already ended gets a **resume** button next to Run, which
+continues that conversation instead of starting over. The button only appears when the agent's CLI resolves and a POSIX
+pseudo-terminal is available. See [docs/claude-runs.md](docs/claude-runs.md).
+
+![Interactive Claude Code session embedded in the ntasker web UI](docs/screenshot-xterm.jpg)
+
+### The queue keeps going when you stop watching
+
+Every run button puts its task at the head of its project's lane, and ntasker works through the queue one task per
+project at a time, taking the next one as soon as the previous is closed -- by you after review, or by the agent when
+the task told it to. `done` is the only thing that ends a session. **Pause** stops new starts; running tasks keep going.
+
+The panel shows one column per project, because that is what runs in parallel. To make one task wait for another --
+across projects too -- drop it on the **middle** of the other; the edges keep reordering. A **fasttrack** task commits
+and closes itself and hands its result to the tasks depending on it; the **Run-Log** collects those outcomes. **Plan
+queue** lets an agent session order the queue for you and start it. See [docs/task-queue.md](docs/task-queue.md).
+
+## Pick your agent per task
+
+ntasker is agent-agnostic: **Claude Code, OpenCode and Pi** are supported out of the box, and adding another is one
+plugin. Each task carries an `agent` and an optional `model`; either can fall back to a global default.
 
 ```bash
-ntasker service status            # install + active state
-ntasker service start / stop      # start / stop the installed service
-ntasker self-update               # upgrade from PyPI now, then restart
+ntasker add --title "..." --agent opencode --model opus
+ntasker config set default_agent opencode
+ntasker agent list                             # CLI availability + integration status per agent
 ```
 
-Full reference (uninstall, restart, `update_command` override, scheduling): [docs/service.md](docs/service.md).
-
-### Run in the foreground instead
-
-No supervisor -- just run the server until you close it:
-
-```bash
-ntasker serve          # http://127.0.0.1:8766, Ctrl-C to stop
-```
-
-### Repo-local development
-
-```bash
-cd /path/to/ntasker
-make install   # uv sync
-make run       # uv run ntasker serve --reload
-```
-
-For a global `ntasker` command that runs live from your working tree -- edits take effect immediately, no rebuild --
-install it editable as a uv tool:
-
-```bash
-uv tool install -e .   # global `ntasker`, live from src/
-```
-
-This is independent of the PyPI install above; the two compete for the same `~/.local/bin/ntasker` symlink and the same
-`ntasker.service` unit, so use one or the other as your active setup. To validate the real PyPI install without
-disturbing your repo setup, install it into a throwaway venv instead.
-
-## Settings
-
-Required for the project sidebar to populate: configure where your project
-symlinks live.
-
-Via UI:  open `/settings` in the browser, fill in `projects_dir`, save.
-Via CLI: `ntasker config set projects_dir ~/Projekte`
-Via ENV: `NTASKER_PROJECTS_DIR=/path/to/projects ntasker serve` (overrides the DB value).
-
-The validator requires the path to be absolute, exist, be a directory, and be readable.
-
-### How `projects_dir` is interpreted
-
-ntasker tracks a directory. Each immediate subdirectory (or symlink to a
-project repo) inside `projects_dir` is exposed as a selectable Project in
-the UI sidebar and the `project=` API filter. Tasks can be assigned to
-one of these projects (by folder/symlink name) or stay cross-project
-(`null`). The directory listing is read on demand on every request --
-there is no scan job and no DB-cached project list. Add or remove a
-folder/symlink in `projects_dir` and it shows up (or disappears) on the
-next reload.
-
-### Misc project
-
-`misc_project` names an optional catch-all project for one-off questions that
-belong to no project; it is pinned under *Cross-project* in the sidebar and its
-tasks carry no dependencies or locks. `misc_no_memory` (`on`/`off`) starts its
-Claude sessions with auto memory disabled. Both are unset by default; see
-[docs/projects.md](docs/projects.md#misc-project).
-
-### Sidebar project tree
-
-Projects sharing a name prefix (`thrito`, `thrito-meta`, ...) fold into one
-family; the row menu and drag-and-drop override the rule, and projects can be
-hidden. Full reference: [docs/projects.md](docs/projects.md).
-
-## Localization
-
-ntasker ships with English (default) and German UI strings. Translation
-uses the Python stdlib `gettext` module; catalogs live at
-`src/ntasker/locale/<lang>/LC_MESSAGES/ntasker.{po,mo}`.
-
-Pick the UI language via the `language` setting:
-
-| Value  | Behaviour                                                            |
-|--------|----------------------------------------------------------------------|
-| `auto` | Parse the `Accept-Language` HTTP header; fallback English. **Default.** |
-| `en`   | Always English.                                                      |
-| `de`   | Always German.                                                       |
-
-```bash
-ntasker config set language de       # pin to German
-ntasker config unset language        # back to auto
-NTASKER_LANGUAGE=en ntasker serve    # one-shot ENV override
-```
-
-CLI follows: setting > `LANG`/`LC_MESSAGES` env > English.
-
-For development, regenerate catalogs after touching strings:
-
-```bash
-make i18n          # extract + update + compile
-make i18n-init-de  # bootstrap a fresh language (idempotent)
-```
-
-Extraction uses [Babel](https://babel.pocoo.org/) (dev-only dep; runtime
-needs only the stdlib). Catalog keywords: `_`, `_lazy`, `t` (Jinja
-shorthand), `N_` (no-op marker for module-level constants).
-
-## Vendor assets (CDN default, opt-in offline)
-
-Tabler core CSS, Tabler-Icons webfont, and Alpine.js are loaded from
-[jsDelivr](https://www.jsdelivr.com/) by default with [SRI](https://developer.mozilla.org/en-US/docs/Web/Security/Subresource_Integrity)
-hashes pinned in `src/ntasker/assets.py`. The wheel ships **no** vendor
-binaries -- it stays under 100 KB.
-
-For offline use, populate the user-data cache once:
-
-```bash
-ntasker assets fetch    # downloads + verifies SRI for each manifest entry
-ntasker assets status   # shows mode + per-asset state
-ntasker assets remove --yes  # wipes the cache
-```
-
-The cache lives at `platformdirs.user_data_dir("nTasker") / "vendor"`
-(Linux: `~/.local/share/nTasker/vendor`). Mode selection is via the
-`assets_mode` setting:
-
-| Value   | Behaviour                                                        |
-|---------|------------------------------------------------------------------|
-| `cdn`   | always load from jsDelivr (with SRI)                             |
-| `local` | always load from the user-data cache (must run `assets fetch`)   |
-| `auto`  | local if cache is complete, else CDN. **Default.**               |
-
-ENV override: `NTASKER_ASSETS_MODE=cdn ntasker serve`. SRI is emitted in
-both modes (catches on-disk tampering for `local` too).
-
-## AI agent integration
-
-ntasker is **agent-agnostic** -- it integrates with **Claude Code, OpenCode and Pi**, and adding another agent is one
-plugin. The agent registry in `src/ntasker/agents.py` (one `AgentSpec` per agent, contributed by
-`src/ntasker/plugins/<key>/`) is the single source of
-truth for the binary, the spawn command, the config home, and the icon.
-
-Each task carries an `agent` (a nullable field). NULL falls back to the **`default_agent`** setting, then to `claude`.
-Pick it in the new-task form, the edit dialog, or via the CLI:
-
-```bash
-ntasker add --title "..." --agent opencode    # create a task pinned to OpenCode
-ntasker patch 34 --agent pi                    # repoint a task
-ntasker patch 34 --agent ''                    # clear -> falls back to default_agent
-ntasker config set default_agent opencode      # change the default for new tasks
-```
-
-A task can also pin a **model** (`model` field, passed to the agent CLI as `--model`); NULL falls back to the agent's
-`<key>_model` setting, then to the CLI default. See [docs/agents.md](docs/agents.md#per-task-model):
-
-```bash
-ntasker add --title "..." --model opus         # this task's sessions run on Opus
-ntasker patch 34 --model ''                    # clear -> falls back to the claude_model setting
-ntasker config set claude_model sonnet         # the default for all Claude sessions
-```
-
-ntasker ships a skill (`SKILL.md`) and slash-command loader (`/task <id>`) inside the package and installs them into
-**each agent's own config home** -- Claude `~/.claude`, OpenCode `~/.config/opencode`, Pi `~/.pi/agent`:
-
-```bash
-ntasker agent list                       # all agents: CLI availability + integration status
-ntasker agent install opencode           # install the SKILL.md + /task slash command
-ntasker agent install pi --check         # status check: exit 0=identical, 1=drift, 2=not installed
-ntasker agent install claude --force     # update after a version bump (timestamped backups)
-ntasker agent install opencode --dry-run # show planned actions without writing
-ntasker agent install pi --command-name todo  # use /todo instead of /task
-ntasker agent install claude --home /tmp/test-home  # redirect to a non-default config home
-```
-
-`install-claude-assets` remains as a **deprecated alias** of `ntasker agent install claude`. The `--command-name` flag
-accepts only `[A-Za-z0-9_-]+` (no slashes, no dots) to prevent path traversal.
-
-**Configurable CLI path.** Auto-detection looks on `PATH`, then in the conventional install dirs (`~/.local/bin`,
-`~/.claude/local`, `~/.opencode/bin`, Homebrew, `/usr/local/bin`, nvm-managed Nodes), so a `systemd --user` unit or
-launchd agent with a narrow `PATH` still finds the CLI. For installs elsewhere, set the per-agent `claude_bin` /
-`opencode_bin` / `pi_bin` setting (ENV `NTASKER_CLAUDE_BIN` etc.). Empty auto-detects.
-
-`ntasker serve` prints a one-liner to stderr at boot if installed assets are out of date relative to the running
-version. The `/settings` UI shows the same status as read-only cards (one per agent under an **AI agent integration**
-card); there is intentionally no HTTP write endpoint (installs are user-initiated via the CLI to avoid CSRF /
-DNS-rebinding write surface). Full reference: [docs/agents.md](docs/agents.md).
+Full reference incl. per-agent binary paths: [docs/agents.md](docs/agents.md).
 
 ## Plugins
 
-Agent integrations and optional features are plugins that can be switched off individually: `/settings` -> *Plugins*, `ntasker config set plugins_disabled '["pi"]'`, or
-`NTASKER_PLUGINS_DISABLED=pi,opencode`. A disabled plugin's routes 404, its agent is neither listed nor resolvable, and
-its data stays intact. Contract and slots: [docs/plugins.md](docs/plugins.md). Built-in feature plugins:
-`task_context` -- attach files, notes, personas, skills and MCP servers to a task, handed to the agent in its
-briefing ([docs/task-context.md](docs/task-context.md)); `workspace` -- team (Claude Code subagents), skills, knowledge
-base and documents on a `/workspace` page and in the sidebar, plus a viewer ([docs/workspace.md](docs/workspace.md));
-`voice` (opt-in: `ntasker enable voice` installs the `ntasker[voice]` extra; models are downloaded from a catalog
-on `/settings`) -- dictate task descriptions with local speech recognition ([docs/voice.md](docs/voice.md)).
+Optional features ship as plugins you can switch off individually (`/settings` -> *Plugins*):
+
+| Plugin         | What it adds                                                                                     |
+|----------------|---------------------------------------------------------------------------------------------------|
+| `task_context` | Attach files, notes, personas, skills and MCP servers to a task, handed to the agent in its briefing ([docs](docs/task-context.md)) |
+| `workspace`    | Team (Claude Code subagents), skills, knowledge base and documents on a `/workspace` page ([docs](docs/workspace.md)) |
+| `voice`        | Dictate task descriptions with local speech recognition; opt-in via `ntasker enable voice` ([docs](docs/voice.md)) |
+
+A disabled plugin's routes 404, its agent is neither listed nor resolvable, and its data stays intact. Contract and
+slots: [docs/plugins.md](docs/plugins.md).
+
+## Documentation
+
+| Topic | |
+|---|---|
+| [Configuration](docs/configuration.md) | Settings, DB path, `projects_dir`, language, vendor assets, **why you must not expose the port** |
+| [CLI reference](docs/cli.md) | Every subcommand and flag |
+| [HTTP API](docs/api.md) | Endpoints, SQLite schema, design notes |
+| [Agents](docs/agents.md) | The agent registry, per-task model, skill installation |
+| [Agent runs](docs/claude-runs.md) | How an embedded session is spawned and reattached |
+| [Task queue](docs/task-queue.md) | Queue semantics, dependencies, fasttrack, run log |
+| [Directory locks](docs/directory-locks.md) | Keeping two agents out of the same working directory |
+| [Kanban view](docs/kanban.md) | Board vs. list view, drag-and-drop, keyboard shortcuts |
+| [Projects](docs/projects.md) | Sidebar tree, project families, misc project |
+| [Service](docs/service.md) | systemd / launchd, auto-update, uninstall |
+| [Development](docs/development.md) | Repo setup, smoke test, translations |
+
 Coming from the drfoehn fork? See [docs/migrating-from-fork.md](docs/migrating-from-fork.md).
 
-## CLI
+## Stack
 
-| Command                     | What it does                                                  |
-|-----------------------------|---------------------------------------------------------------|
-| `ntasker init`              | Create / migrate the schema at the active DB path             |
-| `ntasker serve` / `start`   | Run the FastAPI server (defaults: 127.0.0.1:8766); `start` is an alias |
-| `ntasker stop`              | Shut down a running server over HTTP (`POST /shutdown`)       |
-| `ntasker restart`           | Restart the server: via the installed service if there is one, else stop + start **detached**. `--foreground` keeps it in your terminal |
-| `ntasker list [filters]`    | List tasks; supports `--project`, `--tag`, `--phase`, ...     |
-| `ntasker show <id>`         | Show a single task; pair with `--json` for raw output         |
-| `ntasker add --title=...`   | Create a task; optional `--project --phase --priority --tag --agent --model` |
-| `ntasker done <id>`         | Mark a task as done                                           |
-| `ntasker patch <id> [...]`  | Patch arbitrary fields (`--title`, `--phase`, `--status`, ...)|
-| `ntasker tag-add <id> <t>`  | Append a tag                                                  |
-| `ntasker tag-rm  <id> <t>`  | Remove a tag                                                  |
-| `ntasker stats [filters]`   | Tab counts (open/done/archive) honoring filters               |
-| `ntasker run <id...>`       | Start tasks like the board's run button; `--open` opens the run view |
-| `ntasker queue list`        | Show the auto-run queue in run order, plus its on/off state   |
-| `ntasker queue add <id...>` | Queue tasks (`--top` inserts at the front); an already-queued id moves |
-| `ntasker queue rm <id...>`  | Take tasks out of the queue                                   |
-| `ntasker queue clear`       | Empty the queue                                               |
-| `ntasker queue start / pause` | Let the queue work through its tasks, or stop starting new ones |
-| `ntasker config list`       | Show all settings                                             |
-| `ntasker config get <k>`    | Read a setting                                                |
-| `ntasker config set <k> <v>`| Write a setting (validated)                                   |
-| `ntasker config unset <k>`  | Remove a setting                                              |
-| `ntasker enable <plugin>`   | Switch a plugin on; installs its extra's packages if missing |
-| `ntasker disable <plugin>`  | Switch a plugin off                                           |
-| `ntasker agent list`        | List agents with CLI availability + `/task` integration status |
-| `ntasker agent install <key>` | Install / check an agent's skill + `/task` slash-command (`claude`/`opencode`/`pi`) |
-| `ntasker assets fetch / status / remove` | Manage the optional local vendor-asset cache |
-| `ntasker service install / uninstall / status / start / stop` | Run ntasker as an OS service (systemd / launchd) |
-| `ntasker self-update`       | Upgrade the package from PyPI, then restart the service        |
-| `ntasker completion <shell>` | Print the bash/zsh completion script; `--install` / `--uninstall` hook it into the shell rc |
+FastAPI + uvicorn on the Python stdlib `sqlite3` -- no ORM, no migration files. The frontend is HTML + AlpineJS +
+Tabler.io loaded from jsDelivr with pinned SRI hashes, so the wheel stays under 100 KB and there is no build step; an
+offline mode is one command away. Requires Python 3.12+.
 
-Global flags:
-
-- `--db <path>` -- override the resolved DB path for this invocation.
-- `--version` -- print the package version and exit.
-
-Most listing commands accept `--json` for machine-readable output.
-
-### Shell completion
-
-`ntasker completion bash --install` (or `zsh`) writes a completion script to the user-data dir and sources it from
-`~/.bashrc` (`~/.bash_profile` on macOS) / `~/.zshrc`; the same switch lives under *Settings → Maintenance*. The
-script is generated from the CLI's own argument tree and refreshed on every server start, so new subcommands
-(including plugin ones) complete without a reinstall. Without installing: `eval "$(ntasker completion bash)"`.
-
-## Smoke test
-
-```bash
-make smoke
-```
-
-Runs an in-process FastAPI test client against a temp DB *and* exercises a
-couple of CLI subcommands via subprocess.
-
-## API
-
-| Method | Path | Notes |
-|---|---|---|
-| GET | `/` | The single-page task UI |
-| GET | `/settings` | The settings UI |
-| GET | `/api/changes` | Cheap change token (`{v}` = DB file mtime in ns). The UI polls it and refetches only when it changed, so CLI/API writes surface live. See [docs/live-updates.md](docs/live-updates.md). |
-| GET | `/api/projects` | `[{name, open_count}]`, `__none__` first; sets `X-Settings-Missing: projects_dir` if unconfigured |
-| GET | `/api/tags` | `[{name, open_count}]`, sorted by `open_count DESC, name ASC` |
-| POST | `/api/tags/cleanup` | Delete dangling tags (no `task_tags` row). Returns `{removed, removed_names}`. Idempotent. |
-| GET | `/api/phases` | `[{value, label, open_count}]`, fixed workflow order: `wip`, `planned`, `later`, `__none__` |
-| GET | `/api/priorities` | `[{value, label, open_count}]`, fixed order: `critical`, `high`, `normal`, `low` |
-| GET | `/api/tasks` | Filters: `project` (multi), `tag` (multi, OR), `phase` (multi, OR; `__none__` = phase IS NULL), `priority` (multi), `status`, `archived`, `search`. Filters across params combine with **AND**. |
-| GET | `/api/tasks/{id}` | Single task incl. `tags` |
-| GET | `/api/stats` | Tab counts (`open`/`done`/`archive`), respects all filters |
-| POST | `/api/tasks` | `{project?, title, description?, phase?, priority?, tags?}` |
-| PATCH | `/api/tasks/{id}` | Any subset of `{title, description, project, phase, priority, status, archived, tags}` -- `tags` is a **full replace** |
-| DELETE | `/api/tasks/{id}` | Hard delete (the UI archives by default) |
-| GET | `/api/settings` | List all settings rows |
-| GET | `/api/settings/{key}` | Single setting or 404 |
-| PUT | `/api/settings/{key}` | `{value: "..."}` -- 200 on accept, 400 if a registered validator rejects |
-| DELETE | `/api/settings/{key}` | 204 on success, 404 if not present |
-| GET | `/api/queue` | `{enabled, items[]}` -- the auto-run task queue in run order. See [docs/task-queue.md](docs/task-queue.md). |
-| PUT | `/api/queue` | `{ids: [...]}` replaces the whole queue, head first. Closed / archived / missing ids are dropped. |
-| GET | `/api/agents` | Read-only registry feed: per-agent availability + `/task` integration status, plus the default |
-| GET | `/api/plugins` | Built-in plugins + `enabled` flag; toggle via `PUT /api/settings/plugins_disabled` / `plugins_enabled` |
-| WS | `/api/voice/ws` | Voice plugin: 16 kHz PCM in, `partial` / `final` text out ([docs/voice.md](docs/voice.md)) |
-| GET/POST | `/api/voice/models[/{name}|/job]` | Voice plugin: installed models + catalog, background model download |
-| GET/POST/DELETE | `/api/tasks/{id}/context[/{cid}]` | Attachments ([docs/task-context.md](docs/task-context.md)) |
-| GET/PUT/POST | `/api/workspace[/file|browse|entry|rename|delete|reveal]` | Workspace ([docs/workspace.md](docs/workspace.md)) |
-| GET | `/api/claude-assets/status` | Read-only: `{installed, drift, package_version, claude_home, files[]}` |
-
-OpenAPI: <http://127.0.0.1:8766/api/docs>
-
-## Schema
-
-```sql
-CREATE TABLE tasks (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    project TEXT,
-    title TEXT NOT NULL,
-    description TEXT,
-    status TEXT NOT NULL DEFAULT 'open',
-    phase TEXT,
-    priority TEXT NOT NULL DEFAULT 'normal',
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    completed_at TEXT,
-    archived INTEGER NOT NULL DEFAULT 0,
-    agent TEXT                       -- AI agent for this task; NULL = default_agent setting (then claude)
-);
-CREATE TABLE tags (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL UNIQUE COLLATE NOCASE
-);
-CREATE TABLE task_tags (
-    task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-    tag_id  INTEGER NOT NULL REFERENCES tags(id)  ON DELETE CASCADE,
-    PRIMARY KEY (task_id, tag_id)
-);
-CREATE TABLE settings (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL,
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-```
-
-`status`: `open` | `done`. `phase`: `wip` | `planned` | `later` | NULL.
-`priority`: `critical` | `high` | `normal` | `low` (NOT NULL, default `normal`).
-Tag names are normalised to lowercase on write; `UNIQUE COLLATE NOCASE` keeps it tidy.
-
-## Design notes
-
-- DB init on startup; pure idempotent `CREATE TABLE IF NOT EXISTS`. Legacy
-  columns are dropped or added in `try/except OperationalError` blocks --
-  no Alembic, no migration files.
-- All SQL parameterised (`?`); no string interpolation.
-- Project list is read live each request from the symlinks under the
-  configured `projects_dir` -- no caching.
-- Sidebar `open_count` values are absolute (always count all open + non-archived
-  tasks), so toggling filters does not flicker the sidebar.
-- Hard-delete is intentionally rare; archive is the default. Deleting a task
-  cascades through `task_tags` but leaves `tags` rows in place (zero-cost dangling).
-- Project / phase / tag / priority badges in a task row are clickable: each one
-  toggles the matching filter. `@click.stop` prevents the parent row interactions.
-- Dates stored as UTC ISO strings, rendered locally via `Intl.RelativeTimeFormat('de-DE')`.
-
-## Project home
-
-GitHub: <https://github.com/nerdocs/ntasker>
-
-## Changelog
-
-See [`CHANGELOG.md`](CHANGELOG.md). Highlights:
-
-- **1.2.0** -- Packaged Claude Code assets generalised (no user-specific routing/paths). AGPL-3.0-or-later license. README explains `projects_dir` semantics. `/task` accepts `#`-prefix. Task-ID click copies `/task #<id>` to clipboard. Existing installs need `ntasker install-claude-assets --force` after upgrade.
-- **1.1.0** -- `install-claude-assets` CLI for shipping the Claude Code skill + `/task` slash-command from the package; read-only `/api/claude-assets/status` endpoint and Settings UI card; boot drift warning.
-- **1.0.0** -- Renamed `nerdocs-tracker` -> `ntasker`; src-Layout; CLI with subcommands; settings module + UI; configurable `projects_dir`; DB moved to `platformdirs` default. **Breaking.**
-- **0.4.0** -- `priority` field with sidebar filter and badge.
-- **0.3.x** -- Cache-buster, version badge, archive button polish.
+Binds to `127.0.0.1:8766` and has **no authentication** -- it is a personal local tool, not a multi-user service.
 
 ## License
 
-Licensed under the GNU Affero General Public License, version 3 or later
-(AGPL-3.0-or-later). See [`LICENSE`](LICENSE) for the full text.
+[AGPL-3.0-or-later](LICENSE). The Affero clause means: if you run a modified version as a network service, you must
+offer the modified source to its users. For local single-user use this has no practical impact.
 
-The Affero clause means: if you run a modified version of nTasker as a
-network service, you must offer the modified source code to its users.
-For local single-user use this has no practical impact.
+Changelog: [CHANGELOG.md](CHANGELOG.md) -- issues and source: <https://github.com/nerdocs/ntasker>
+
+If it saves you an afternoon, you can [buy me a coffee](https://buymeacoffee.com/nerdoc).

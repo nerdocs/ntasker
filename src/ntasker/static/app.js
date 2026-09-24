@@ -347,18 +347,26 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         reportHtml: '',
 
         // ---- Terminal session pick-up ----
-        // Conversations started outside ntasker, listed per project from their
-        // transcripts (/api/claude/sessions/discovered). ``pickerBusyId`` is the
-        // session currently being taken over -- ending and resuming take a
-        // moment and must not be triggered twice.
+        // ``pickerRows`` are the conversations running elsewhere right now
+        // (/api/claude/sessions/live) -- what the dialog opens on, across all
+        // projects. ``pickerPastRows`` are finished ones, folded away behind a
+        // toggle and only findable per project
+        // (/api/claude/sessions/discovered). ``pickerBusyId`` is the session
+        // currently being taken over -- ending and resuming take a moment and
+        // must not be triggered twice.
         sessionPicker: false,
-        // Mirrors the `session_discovery` setting: without it the dialog knows
-        // nothing about which sessions still run, and says so.
-        sessionDiscovery: window.__sessionDiscovery === true,
-        pickerProject: '',
+        // The `session_discovery` setting, as the live listing reports it:
+        // without it nothing reports itself, so the running list stays empty
+        // and the dialog says so. Null until that first answer -- the hint
+        // must not flash up while the truth is still unknown.
+        sessionDiscovery: null,
         pickerRows: [],
         pickerLoading: false,
         pickerBusyId: '',
+        pickerPast: false,
+        pickerProject: '',
+        pickerPastRows: [],
+        pickerPastLoading: false,
 
         // ---- Report pane in the run view ----
         // The active run's task (id, report, report_at), fetched on tab switch
@@ -2100,9 +2108,10 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             this.reportTask = null;
         },
 
-        // Open the pick-up dialog. Pre-selects the project when the board is
-        // filtered to exactly one -- otherwise the dialog asks, since a session
-        // is only findable inside the directories of one project.
+        // Open the pick-up dialog on the sessions running elsewhere right now.
+        // Pre-selects the project for the folded-away list of finished ones when
+        // the board is filtered to exactly one -- those are only findable inside
+        // the directories of a single project.
         openSessionPicker() {
             const chosen = this.projectFilter.filter(n => n !== PROJECT_NONE);
             if (chosen.length === 1) this.pickerProject = chosen[0];
@@ -2116,17 +2125,12 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         },
 
         async loadPickerRows() {
-            if (!this.pickerProject) {
-                this.pickerRows = [];
-                return;
-            }
             this.pickerLoading = true;
             try {
-                const url = `/api/claude/sessions/discovered?project=${encodeURIComponent(this.pickerProject)}`;
-                const r = await fetch(url);
-                const rows = r.ok ? (await r.json()).sessions : [];
-                // ``target`` is the per-row task choice: '' creates a new task.
-                this.pickerRows = rows.map(s => ({ ...s, target: s.task_id ? String(s.task_id) : '' }));
+                const r = await fetch('/api/claude/sessions/live');
+                const body = r.ok ? await r.json() : {};
+                this.pickerRows = body.sessions || [];
+                if (r.ok) this.sessionDiscovery = body.discovery === true;
             } catch (e) {
                 this.pickerRows = [];
             } finally {
@@ -2134,21 +2138,38 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             }
         },
 
-        // Open tasks of the picked project, as targets for a session.
-        pickerTargets() {
-            return this.tasks.filter(t => t.status === 'open' && !t.archived
-                && (t.project || '') === this.pickerProject);
+        togglePickerPast() {
+            this.pickerPast = !this.pickerPast;
+            if (this.pickerPast) this.loadPastRows();
         },
 
-        // Take a terminal conversation over: end it if it is still running,
-        // point a task at it, and open it right here. That last step is the
-        // whole point -- the user wanted to carry on, not just file it.
+        async loadPastRows() {
+            if (!this.pickerProject) {
+                this.pickerPastRows = [];
+                return;
+            }
+            this.pickerPastLoading = true;
+            try {
+                const url = `/api/claude/sessions/discovered?project=${encodeURIComponent(this.pickerProject)}`;
+                const r = await fetch(url);
+                this.pickerPastRows = r.ok ? (await r.json()).sessions : [];
+            } catch (e) {
+                this.pickerPastRows = [];
+            } finally {
+                this.pickerPastLoading = false;
+            }
+        },
+
+        // Take a terminal conversation over in one click: end it if it is still
+        // running, give it a task -- the one it already belongs to, else a fresh
+        // one -- and open it right here. That last step is the whole point: the
+        // user wanted to carry on, not just file it.
         async pickUpSession(row) {
             if (this.pickerBusyId) return;
             this.pickerBusyId = row.session_id;
             try {
                 if (row.live && !(await this._endSession(row))) return;
-                const id = row.target ? Number(row.target) : await this._taskForSession(row);
+                const id = row.task_id || await this._taskForSession(row);
                 if (!id) return;
                 const r = await fetch(`/api/claude/sessions/${id}/adopt`, {
                     method: 'POST',
@@ -2180,6 +2201,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             if (!r.ok) {
                 this.showToast(await this._errorDetail(r, 'session_end_failed'), 'danger');
                 await this.loadPickerRows();
+                if (this.pickerPast) await this.loadPastRows();
                 return false;
             }
             return true;
@@ -2192,7 +2214,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     title: (row.preview || '').slice(0, 80) || _i('session_untitled'),
-                    project: this.pickerProject || null,
+                    project: row.project || null,
                     phase: 'wip',
                 }),
             });

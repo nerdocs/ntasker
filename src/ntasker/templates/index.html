@@ -38,10 +38,6 @@
         // Folded/open state of the sidebar sections (the `sidebar_sections`
         // setting) -- rendered server-side so nothing flashes on load.
         window.__sidebarSections = {{ sidebar_sections | tojson }};
-        // Whether terminal sessions report themselves (the `session_discovery`
-        // setting). Off means the pick-up dialog cannot tell which sessions
-        // are still running, so it says so instead of pretending.
-        window.__sessionDiscovery = {{ session_discovery | default(false) | tojson }};
         // Quick-prompt buttons of the run view (the `quick_prompts` setting).
         window.__quickPrompts = {{ quick_prompts | tojson }};
         // Names of the enabled plugins; plugin scripts register mixins on
@@ -222,6 +218,34 @@
 {% endmacro %}
 {# Folded-family pill on a head row: how many children hide behind the #}
 {# chevron; lit up when one of them is part of the active filter.       #}
+{# One row of the session pick-up dialog -- same markup for the running and the #}
+{# finished list. `row` is the Alpine loop variable of the enclosing template.  #}
+{% macro session_pick_row() %}
+                            <div class="list-group-item px-0">
+                                <div class="d-flex align-items-start gap-2">
+                                    <div class="flex-fill min-w-0">
+                                        <div class="text-truncate" x-text="row.preview || row.cwd"></div>
+                                        <div class="text-secondary small mt-1">
+                                            <i class="ti ti-folder me-1"></i>
+                                            <span x-text="row.project || row.cwd"></span>
+                                            <span class="ms-2" x-text="formatRelative(row.last_active)"></span>
+                                            <span class="badge bg-green-lt ms-2" x-show="row.live" x-cloak
+                                                  x-text="$i18n('session_running')"></span>
+                                            <span class="badge bg-secondary-lt ms-2" x-show="row.task_id" x-cloak
+                                                  x-text="$i18n('session_pickup_bound', {id: row.task_id})"></span>
+                                        </div>
+                                    </div>
+                                    <button type="button" class="btn btn-sm btn-primary text-nowrap"
+                                            {# An empty string still reads as "disabled" when bound directly. #}
+                                            :disabled="pickerBusyId !== ''" @click="pickUpSession(row)">
+                                        <span class="spinner-border spinner-border-sm me-1"
+                                              x-show="pickerBusyId === row.session_id" x-cloak></span>
+                                        <span x-text="row.live ? $i18n('session_pickup_end_take') : $i18n('session_pickup_take')"></span>
+                                    </button>
+                                </div>
+                            </div>
+{% endmacro %}
+
 {% macro fold_pill() %}
                 <template x-if="row.children.length && !row.expanded">
                     <span class="project-fold-summary ms-1" :class="{ 'is-filtered': row.filtered }"
@@ -2094,55 +2118,56 @@
                 </div>
                 <div class="modal-body">
                     <p class="text-secondary" x-text="$i18n('session_pickup_intro')"></p>
-                    <div class="mb-3">
-                        <label class="form-label" x-text="$i18n('session_pickup_project')"></label>
-                        <select class="form-select" x-model="pickerProject" @change="loadPickerRows()">
-                            <option value=""></option>
-                            <template x-for="p in projects.filter(p => !p.misc)" :key="p.name">
-                                <option :value="p.name" x-text="p.name"></option>
-                            </template>
-                        </select>
+                    {# No d-flex on the x-show element itself -- Bootstrap's !important would
+                       beat the inline display:none and the hint could never go away. #}
+                    <div class="alert alert-info py-2" x-show="sessionDiscovery === false" x-cloak>
+                        <div class="d-flex align-items-center gap-3">
+                            <span x-text="$i18n('session_discovery_off')"></span>
+                            <a href="/settings#agents" class="ms-auto text-nowrap"
+                               x-text="$i18n('session_pickup_open_settings')"></a>
+                        </div>
                     </div>
-                    <div class="alert alert-info py-2" x-show="!sessionDiscovery" x-cloak
-                         x-text="$i18n('session_discovery_off')"></div>
-                    <div class="text-secondary" x-show="!pickerProject"
-                         x-text="$i18n('session_pickup_pick_project')"></div>
                     <div class="text-secondary" x-show="pickerLoading" x-cloak>
                         <span class="spinner-border spinner-border-sm me-2"></span>
                     </div>
-                    <div class="text-secondary" x-show="pickerProject && !pickerLoading && !pickerRows.length" x-cloak
-                         x-text="$i18n('session_pickup_none')"></div>
+                    <div class="text-secondary" x-show="!pickerLoading && !pickerRows.length" x-cloak
+                         x-text="$i18n('session_pickup_live_none')"></div>
                     <div class="list-group list-group-flush" x-show="pickerRows.length" x-cloak>
                         <template x-for="row in pickerRows" :key="row.session_id">
-                            <div class="list-group-item px-0">
-                                <div class="d-flex align-items-start gap-2">
-                                    <div class="flex-fill">
-                                        <div x-text="row.preview"></div>
-                                        <div class="text-secondary small mt-1">
-                                            <span x-text="formatRelative(row.last_active)"></span>
-                                            <span class="badge bg-green-lt ms-2" x-show="row.live" x-cloak
-                                                  x-text="$i18n('session_running')"></span>
-                                            <span class="badge bg-secondary-lt ms-2" x-show="row.task_id" x-cloak
-                                                  x-text="$i18n('session_pickup_bound', {id: row.task_id})"></span>
-                                        </div>
-                                    </div>
-                                    <select class="form-select form-select-sm session-pick-target"
-                                            x-model="row.target">
-                                        <option value="" x-text="$i18n('session_pickup_new_task')"></option>
-                                        <template x-for="t in pickerTargets()" :key="t.id">
-                                            <option :value="String(t.id)" x-text="`#${t.id} ${t.title}`"></option>
-                                        </template>
-                                    </select>
-                                    <button type="button" class="btn btn-sm btn-primary text-nowrap"
-                                            {# An empty string still reads as "disabled" when bound directly. #}
-                                            :disabled="pickerBusyId !== ''" @click="pickUpSession(row)">
-                                        <span class="spinner-border spinner-border-sm me-1"
-                                              x-show="pickerBusyId === row.session_id" x-cloak></span>
-                                        <span x-text="row.live ? $i18n('session_pickup_end_take') : $i18n('session_pickup_take')"></span>
-                                    </button>
-                                </div>
-                            </div>
+                            {{ session_pick_row() }}
                         </template>
+                    </div>
+
+                    {# Finished conversations are the rarer case and need a project to look in,
+                       so they stay folded away behind this toggle. #}
+                    <div class="mt-3">
+                        <button type="button" class="btn btn-sm btn-ghost-secondary px-0" @click="togglePickerPast()">
+                            <i class="ti me-1" :class="pickerPast ? 'ti-chevron-down' : 'ti-chevron-right'"></i>
+                            <span x-text="pickerPast ? $i18n('session_pickup_hide_past') : $i18n('session_pickup_show_past')"></span>
+                        </button>
+                        <div x-show="pickerPast" x-cloak class="mt-2">
+                            <div class="mb-3">
+                                <label class="form-label" x-text="$i18n('session_pickup_project')"></label>
+                                <select class="form-select" x-model="pickerProject" @change="loadPastRows()">
+                                    <option value=""></option>
+                                    <template x-for="p in projects.filter(p => !p.misc)" :key="p.name">
+                                        <option :value="p.name" x-text="p.name"></option>
+                                    </template>
+                                </select>
+                            </div>
+                            <div class="text-secondary" x-show="!pickerProject"
+                                 x-text="$i18n('session_pickup_pick_project')"></div>
+                            <div class="text-secondary" x-show="pickerPastLoading" x-cloak>
+                                <span class="spinner-border spinner-border-sm me-2"></span>
+                            </div>
+                            <div class="text-secondary" x-show="pickerProject && !pickerPastLoading && !pickerPastRows.length"
+                                 x-cloak x-text="$i18n('session_pickup_none')"></div>
+                            <div class="list-group list-group-flush" x-show="pickerPastRows.length" x-cloak>
+                                <template x-for="row in pickerPastRows" :key="row.session_id">
+                                    {{ session_pick_row() }}
+                                </template>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">

@@ -72,6 +72,11 @@ function settingsPage() {
         plugins: cfg.plugins,
         // Running / last install of a plugin's extra (GET /api/plugins/install).
         installJob: null,
+        // State of the session-discovery hook in the user's Claude Code
+        // settings (GET /api/claude/session-hook), seeded server-side. Re-read
+        // whenever the switch rewrote that file, so the mismatch hints do not
+        // keep claiming what was true when the page loaded.
+        sessionHook: cfg.sessionHook || {installed: false, path: '', readable: true},
 
         async init() {
             this.readHash();
@@ -208,6 +213,15 @@ function settingsPage() {
             }
         },
 
+        async refreshSessionHook() {
+            try {
+                const r = await fetch('/api/claude/session-hook');
+                if (r.ok) this.sessionHook = await r.json();
+            } catch (e) {
+                // Best-effort -- the hints keep the previous verdict.
+            }
+        },
+
         async refreshPlugins() {
             try {
                 const r = await fetch('/api/plugins');
@@ -305,6 +319,7 @@ function settingsPage() {
             await this.refresh();
             // A CLI path override changes whether the agent is launchable.
             if (key.endsWith('_bin')) await this.refreshAgents();
+            if (key === 'session_discovery') await this.refreshSessionHook();
             this.toast(this.i18n('saved'));
         },
 
@@ -326,6 +341,7 @@ function settingsPage() {
                 this.errors[key] = '';
                 await this.refresh();
                 if (key.endsWith('_bin')) await this.refreshAgents();
+                if (key === 'session_discovery') await this.refreshSessionHook();
                 this.toast(this.i18n('removed'));
             }
         },

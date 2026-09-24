@@ -128,6 +128,47 @@ def test_end_live_without_a_live_process(home):
     assert sessions.end_live(SID) is False
 
 
+# --- Sessions running right now ---------------------------------------------
+
+
+def test_live_discovery_names_the_project_of_each_session(home, project_dir):
+    write_transcript(home, project_dir, SID, "what the user asked")
+    sessions.register_live(SID, os.getpid(), str(project_dir))
+    found = sessions.discover_live(home)
+    assert [s.session_id for s in found] == [SID]
+    assert found[0].project == "repo"
+    assert found[0].preview == "what the user asked"
+    assert found[0].pid == os.getpid()
+
+
+def test_live_discovery_lists_a_session_without_a_transcript(home, project_dir):
+    """A session that has not been typed into yet is still running somewhere."""
+    sessions.register_live(SID, os.getpid(), str(project_dir))
+    found = sessions.discover_live(home)
+    assert [s.session_id for s in found] == [SID]
+    assert found[0].preview == ""
+    assert found[0].cwd == str(project_dir)
+
+
+def test_live_discovery_skips_a_session_that_has_a_task(home, project_dir):
+    """Those are on the board already -- the dialog lists what is elsewhere."""
+    from ntasker.claude_runner import bind_session
+    from ntasker.db import get_conn
+
+    write_transcript(home, project_dir, SID, "q")
+    with get_conn() as conn:
+        task_id = conn.execute("INSERT INTO tasks (title) VALUES ('t')").lastrowid
+    bind_session(task_id, SID, str(project_dir))
+    sessions.register_live(SID, os.getpid(), str(project_dir))
+    assert sessions.discover_live(home) == []
+
+
+def test_live_discovery_drops_a_process_that_is_gone(home, project_dir):
+    sessions.register_live(SID, 2**30, str(project_dir))
+    assert sessions.discover_live(home) == []
+    assert SID not in sessions.LIVE
+
+
 # --- API -------------------------------------------------------------------
 
 
@@ -168,6 +209,27 @@ def test_discovered_endpoint_lists_a_project(client, home, project_dir, monkeypa
 
 def test_discovered_endpoint_without_a_project(client):
     assert client.get("/api/claude/sessions/discovered").json() == {"sessions": []}
+
+
+def test_live_listing_endpoint(client, home, project_dir, monkeypatch):
+    write_transcript(home, project_dir, SID, "carry this on")
+    real = sessions.discover_live
+    monkeypatch.setattr(sessions, "discover_live", lambda h=None: real(home))
+    sessions.register_live(SID, os.getpid(), str(project_dir))
+    body = client.get("/api/claude/sessions/live").json()
+    assert [r["session_id"] for r in body["sessions"]] == [SID]
+    assert body["sessions"][0]["project"] == "repo"
+    assert body["sessions"][0]["live"] is True
+    # An empty list means something else once the hook is off, so the flag
+    # travels with the listing instead of being baked into the page.
+    assert body["discovery"] is False
+
+
+def test_live_listing_reports_discovery_being_on(client, monkeypatch):
+    from ntasker import app as app_module
+
+    monkeypatch.setattr(app_module, "get_session_discovery", lambda: True)
+    assert client.get("/api/claude/sessions/live").json()["discovery"] is True
 
 
 def test_end_endpoint_reports_a_session_that_is_not_running(client):

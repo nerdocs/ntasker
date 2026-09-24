@@ -11,8 +11,8 @@ A conversation begun in a terminal leaves two traces ntasker can use:
   session has to report it: with the ``session_discovery`` setting on, ntasker
   installs a ``SessionStart`` / ``UserPromptSubmit`` hook into the user's own
   Claude Code settings which calls ``ntasker hook session`` (see
-  :mod:`ntasker.cli`). That fills :data:`LIVE` -- and only a session in there
-  can be ended from the board.
+  :mod:`ntasker.cli`). That fills :data:`LIVE` -- what :func:`discover_live`
+  lists, and only a session in there can be ended from the board.
 
 Everything here is read-only discovery plus one kill; binding a session to a
 task is :func:`ntasker.claude_runner.bind_session`.
@@ -30,8 +30,9 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from ntasker.agents import AGENTS, resolve_home
 from ntasker.claude_runner import SESSION_ID_RE, _pid_alive
-from ntasker.projects import discover_claude_project_dirs
+from ntasker.projects import discover_claude_project_dirs, name_for_dir
 
 #: Lines read from a transcript before giving up on its metadata. The working
 #: directory shows up within the first handful; the first user message follows
@@ -125,6 +126,9 @@ class DiscoveredSession:
     started: str | None
     last_active: float
     preview: str
+    #: Project the working directory belongs to -- the list mixes projects, so
+    #: every row names its own.
+    project: str | None = None
     #: Process id while the session is still running, else ``None``.
     pid: int | None = None
     #: Task already pointing at this session, if any -- the UI marks it instead
@@ -138,6 +142,7 @@ class DiscoveredSession:
             "session_id": self.session_id,
             "cwd": self.cwd,
             "started": self.started,
+            "project": self.project,
             "last_active": datetime.fromtimestamp(self.last_active, tz=timezone.utc)
             .isoformat(timespec="seconds")
             .replace("+00:00", "Z"),
@@ -259,6 +264,7 @@ def discover_for_project(
                 started=started,
                 last_active=mtime,
                 preview=preview,
+                project=project,
                 pid=live_pid(path.stem),
             )
         )
@@ -266,3 +272,57 @@ def discover_for_project(
     for session in sessions:
         session.task_id = bound.get(session.session_id)
     return sessions
+
+
+def _transcript_of(session_id: str, claude_home: str | os.PathLike | None = None) -> Path | None:
+    """The transcript of a session whose project directory is not known yet.
+
+    A live session reports its ``cwd``, not its transcript, and the directory
+    name Claude Code derives from a path cannot be reproduced reliably (the
+    encoding is lossy -- see :mod:`ntasker.projects`). So the file is looked up
+    by the one thing that is unambiguous: its name is the session id.
+    """
+    try:
+        root = resolve_home(AGENTS["claude"], claude_home) / "projects"
+        return next(root.glob(f"*/{session_id}.jsonl"), None)
+    except OSError:
+        return None
+
+
+def discover_live(claude_home: str | os.PathLike | None = None) -> list[DiscoveredSession]:
+    """Terminal sessions running right now, across all projects, newest first.
+
+    What the pick-up dialog opens on: with only a handful of conversations
+    running anywhere, asking for a project first is a detour -- so each row
+    names its own project instead. Sessions that already belong to a task are
+    left out; they are on the board, not somewhere else. Empty while the
+    ``session_discovery`` hook is off, since nothing then reports itself.
+    """
+    found: list[DiscoveredSession] = []
+    for session_id in list(LIVE):
+        pid = live_pid(session_id)
+        if pid is None:
+            continue  # process gone; ``live_pid`` just pruned it
+        entry = LIVE[session_id]
+        path = _transcript_of(session_id, claude_home)
+        cwd, started, preview = _read_transcript(path) if path else (None, None, "")
+        cwd = cwd or entry.cwd
+        last_active = entry.seen_at
+        if path is not None:
+            with contextlib.suppress(OSError):
+                last_active = path.stat().st_mtime
+        found.append(
+            DiscoveredSession(
+                session_id=session_id,
+                cwd=cwd,
+                started=started,
+                last_active=last_active,
+                preview=preview,
+                project=name_for_dir(cwd) if cwd else None,
+                pid=pid,
+            )
+        )
+    bound = _bound_tasks([s.session_id for s in found])
+    found = [s for s in found if s.session_id not in bound]
+    found.sort(key=lambda s: s.last_active, reverse=True)
+    return found

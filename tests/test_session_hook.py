@@ -113,3 +113,19 @@ def test_a_failing_apply_leaves_the_setting_unwritten(tmp_path, home, monkeypatc
     from ntasker.settings import get_setting
 
     assert get_setting("session_discovery") is None
+
+
+def test_state_endpoint_reports_the_file(tmp_path, home, monkeypatch):
+    """The settings page re-reads this after the switch rewrote the file."""
+    from fastapi.testclient import TestClient
+
+    from ntasker.app import app
+
+    set_db_path(tmp_path / "t.db")
+    init_db(tmp_path / "t.db")
+    monkeypatch.setattr(claude_assets, "_settings_file", lambda h=None: home / "settings.json")
+    client = TestClient(app, base_url="http://127.0.0.1:8766")
+    assert client.get("/api/claude/session-hook").json()["installed"] is False
+    claude_assets.set_session_hook(True, home)
+    body = client.get("/api/claude/session-hook").json()
+    assert body == {"installed": True, "path": str(home / "settings.json"), "readable": True}

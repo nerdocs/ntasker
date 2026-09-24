@@ -805,21 +805,24 @@ def build_js_strings() -> dict[str, str]:
         "session_pickup": _("Pick up a session"),
         "session_pickup_title": _("Sessions started in a terminal"),
         "session_pickup_intro": _(
-            "Conversations of this project that ntasker did not start. Picking one "
-            "up files it under a task and opens it here."
+            "Conversations running elsewhere right now. Taking one over ends it "
+            "there, files it under a new task and opens it here."
         ),
         "session_pickup_project": _("Project"),
         "session_pickup_none": _("No terminal sessions recorded for this project."),
+        "session_pickup_live_none": _("No terminal session is running right now."),
         "session_pickup_pick_project": _("Choose a project to see its sessions."),
-        "session_pickup_new_task": _("New task"),
+        "session_pickup_show_past": _("Also show finished sessions"),
+        "session_pickup_hide_past": _("Hide finished sessions"),
         "session_pickup_take": _("Continue here"),
         "session_pickup_end_take": _("End and continue here"),
         "session_pickup_bound": _("Already on task #{id}"),
         "session_running": _("Running"),
         "session_discovery_off": _(
-            "Switch on \"Pick up terminal sessions\" in the settings to see which "
-            "of these are still running and to end one from here."
+            "ntasker only sees which sessions are running with \"Pick up terminal "
+            "sessions\" switched on."
         ),
+        "session_pickup_open_settings": _("Open settings"),
         "session_untitled": _("Session from a terminal"),
         "session_adopt_failed": _("Could not attach that session"),
         "session_end_failed": _("That session did not end -- close it in its terminal"),
@@ -1245,9 +1248,6 @@ def index(request: Request) -> HTMLResponse:
             # input show where a new project's directory will be created.
             "projects_base": str(projects_base_dir() or ""),
             "sidebar_sections": get_sidebar_sections(),
-            # Whether terminal sessions report themselves: without it the
-            # pick-up dialog cannot tell a running session from an ended one.
-            "session_discovery": get_session_discovery(),
             "quick_prompts": get_quick_prompts(),
             "links": LINKS,
             **_page_plugins(),
@@ -1625,6 +1625,34 @@ def api_claude_session_live(payload: LiveSessionIn) -> JSONResponse:
     """
     sessions.register_live(payload.session_id, payload.pid, payload.cwd)
     return JSONResponse({"ok": True})
+
+
+@app.get("/api/claude/sessions/live")
+def api_claude_sessions_live() -> JSONResponse:
+    """Terminal sessions running right now, across all projects, newest first.
+
+    What the board's pick-up dialog opens on: the conversations actually going
+    on elsewhere, each naming its own project. Empty without the
+    ``session_discovery`` hook -- nothing then reports itself, which is why
+    ``discovery`` comes along: an empty list means something different once the
+    hook is off, and the dialog says so. Read here rather than baked into the
+    page, so switching the setting shows up without a reload.
+    """
+    found = sessions.discover_live()
+    return JSONResponse(
+        {"sessions": [s.as_dict() for s in found], "discovery": get_session_discovery()}
+    )
+
+
+@app.get("/api/claude/session-hook")
+def api_claude_session_hook() -> JSONResponse:
+    """``{installed, path, readable}`` of the session-discovery hook.
+
+    The settings page renders this once and re-reads it after the switch was
+    flipped: the switch stores intent, the file is the truth, and the page
+    flags a mismatch -- which it can only drop again by looking at the file.
+    """
+    return JSONResponse(session_hook_state())
 
 
 @app.get("/api/claude/sessions/discovered")

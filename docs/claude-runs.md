@@ -222,14 +222,17 @@ look up. With `--title`, the project is derived from the working directory (the 
 path relative to `projects_base` / home) unless `--project` says otherwise. While the session keeps running the task
 shows as busy, exactly like a `/task` one.
 
-**From the board** -- the *Pick up a session* button in the page header. It lists the conversations recorded for a
-project, newest first, each with the first thing you asked and when it last ran. Choose a target (a new task, or an
-open one of that project) and ntasker files the session there and opens it right away -- for a session that is still
-running, it ends that one first, since two processes on one transcript would fight over it.
+**From the board** -- the *Pick up a session* button in the page header. It opens on the conversations running
+elsewhere *right now*, across all projects, newest first: each row names its project, the first thing you asked and
+when it last ran. One click ends that session, files it under a new task (titled after that first prompt, in the
+session's own project) and opens it right here. Sessions that already belong to a task are left out -- they are on the
+board anyway.
 
-The list is read from the transcripts Claude Code writes under `<claude home>/projects/<cwd-slug>/<session-id>.jsonl`,
-so it also finds sessions from long before ntasker knew anything about them. A session already owned by a task is
-marked as such.
+*Also show finished sessions* folds out the ones that have ended. Those are only findable inside the directories of
+one project, so that list asks for a project first. It is read from the transcripts Claude Code writes under
+`<claude home>/projects/<cwd-slug>/<session-id>.jsonl`, so it also finds sessions from long before ntasker knew
+anything about them; one already owned by a task is marked as such and a click continues that task instead of making
+a second one.
 
 **Knowing which sessions are still running** needs the **Pick up terminal sessions** setting
 (*Settings -> Agents & runs*, key `session_discovery`). It is off by default because switching it on writes into
@@ -237,8 +240,9 @@ marked as such.
 `SessionStart` and `UserPromptSubmit`. Every terminal session then reports its id, pid and directory to ntasker --
 that is what makes the *running* badge and the *End and continue here* button possible. The edit is surgical (other
 hooks stay, a timestamped `.bak` is kept) and switching the setting off removes exactly those two entries again.
-Without it, past sessions are still listed and adoptable; ntasker just cannot tell which are alive, and a session
-that is still open has to be closed in its own terminal first.
+Without it the running list stays empty -- the dialog says so and links to the setting; the finished sessions behind
+the toggle are still listed and adoptable, but a session that is still open has to be closed in its own terminal
+first.
 
 A resume always spawns in the directory the session was recorded in (`session_cwd`), not in the project directory:
 Claude Code finds a session id only under the directory it belongs to, so a conversation started in a subfolder
@@ -277,6 +281,8 @@ included** -- gated solely by that loopback bind. Keep the bind local (never `0.
   `POST /api/claude/sessions/<id>/external` (the `/task` loader's registration, see above),
   `POST /api/claude/sessions/<id>/adopt` (point a task at a session ntasker did not start),
   `POST /api/claude/sessions/live` (a terminal session reporting itself, from `ntasker hook session`),
+  `GET /api/claude/sessions/live` (the sessions running right now, across all projects, plus whether discovery is on),
+  `GET /api/claude/session-hook` (`{installed, path, readable}`, re-read by the settings page after the switch),
   `GET /api/claude/sessions/discovered?project=<name>` (transcripts of a project),
   `POST /api/claude/sessions/discovered/<session id>/end` (SIGTERM, waits for the exit).
 * Session discovery (`src/ntasker/sessions.py`): reads the head of each transcript for the working directory and the

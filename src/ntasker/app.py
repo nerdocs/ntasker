@@ -805,8 +805,8 @@ def build_js_strings() -> dict[str, str]:
         "session_pickup": _("Pick up a session"),
         "session_pickup_title": _("Sessions started in a terminal"),
         "session_pickup_intro": _(
-            "Conversations running elsewhere right now. Taking one over ends it "
-            "there, files it under a new task and opens it here."
+            "Sessions running in a terminal on this machine right now. Taking one "
+            "over ends it there, files it as a new task here and starts it."
         ),
         "session_pickup_project": _("Project"),
         "session_pickup_none": _("No terminal sessions recorded for this project."),

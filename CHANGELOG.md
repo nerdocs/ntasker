@@ -4,8 +4,9 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
-## [Unreleased]
-Sessions: carry on with a terminal conversation -- `/task` reports its id, `ntasker adopt`, and a board pick-up dialog.
+## [3.10.0] — 2026-09-24
+Sessions: carry on with a terminal conversation -- `/task` reports its id, `ntasker adopt`, and a board dialog of the
+sessions running elsewhere right now.
 Queue: fasttrack tasks commit + finish themselves via `ntasker finish`; run log of outcomes; seeds chain dep results.
 Projects: optional misc project (`misc_project`) pinned under Cross-project; `misc_no_memory` = no Claude auto memory.
 Queue: `Plan queue` / `ntasker queue plan` -- an agent session orders the queue and starts it; one planner at a time.

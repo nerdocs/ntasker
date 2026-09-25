@@ -64,6 +64,7 @@ PLUGINS_DIR = files("ntasker") / "plugins"
 #: core templates; a slot template is included with the page's context.
 SLOTS: tuple[str, ...] = (
     "head",  # index.html <head>: extra <link>/<script>
+    "topbar",  # index.html navbar: between the inbox field and the icon bar
     "sidebar",  # index.html: below the tags section
     "task_form",  # index.html: create form, after the description
     "task_edit",  # index.html: edit modal, after the description

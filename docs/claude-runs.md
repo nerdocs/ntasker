@@ -274,6 +274,20 @@ The text goes straight to the agent's input line, so use them while the session 
 agent is working, Claude Code queues the text for the next turn; at a permission dialog or a selection prompt the
 keystrokes land in that dialog instead.
 
+## Subscription limits in the topbar
+
+With a claude.ai subscription login, the topbar shows the two usage windows Claude Code itself reports -- the
+**5-hour** and the **weekly** window -- as small meters (`5h 11%`, `7d 90%`): green, yellow from 50 %, red from
+80 %. Hovering a meter shows when the window resets. The numbers come from the same endpoint the `/usage` slash
+command reads, authenticated with the OAuth token Claude Code keeps in `<claude home>/.credentials.json`
+(`NTASKER_CLAUDE_HOME` moves the home). The widget is hidden when there is nothing to show: the Claude plugin is
+off, no token is stored (API-key login, never logged in, or the token lives in the macOS keychain), the token has
+expired, or the account has no subscription limits. ntasker never refreshes the token -- a running Claude Code does
+that.
+
+`GET /api/claude/usage` -> `{"usage": {"five_hour": {"utilization", "resets_at"}, "seven_day": {...}} | null}`.
+The server caches the answer for 30 s; the page polls once a minute. A failed refresh serves the last answer.
+
 ## Security
 
 ntasker has no authentication and binds to `127.0.0.1` only. A session is your **full interactive Claude Code, shell

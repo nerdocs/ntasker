@@ -1,0 +1,13 @@
+{# Subscription limits (5h / weekly) from /api/claude/usage; hidden without a claude.ai login. #}
+<div class="claude-usage me-3" x-show="claudeUsage" x-cloak>
+    <img src="/static/plugins/claude/claude.webp" alt="" width="16" height="16" class="claude-usage-icon">
+    <template x-for="w in claudeUsageWindows()" :key="w.key">
+        <span class="claude-usage-item" :title="w.title">
+            <span class="claude-usage-label" x-text="w.label"></span>
+            <span class="progress progress-sm claude-usage-bar">
+                <span class="progress-bar" :class="w.color" :style="`width:${w.pct}%`"></span>
+            </span>
+            <span class="claude-usage-pct" :class="w.text" x-text="w.pct + '%'"></span>
+        </span>
+    </template>
+</div>

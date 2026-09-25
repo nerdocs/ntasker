@@ -17,6 +17,7 @@ from pathlib import Path
 from ntasker.agents import AgentSpec
 from ntasker.i18n import _, _lazy
 from ntasker.plugins import PluginContext, PluginSpec
+from ntasker.plugins.claude.routes import router
 from ntasker.settings import (
     _FALSE_STRINGS,
     _TRUE_STRINGS,
@@ -110,7 +111,22 @@ def _permission_args() -> list[str]:
     return []
 
 
+def _js_strings() -> dict[str, str]:
+    return {
+        "claude_usage_5h": _("5h"),
+        "claude_usage_7d": _("7d"),
+        "claude_usage_5h_title": _("Claude Code: 5-hour window"),
+        "claude_usage_7d_title": _("Claude Code: weekly window"),
+        "claude_usage_resets": _("resets {when}"),
+    }
+
+
 def register(ctx: PluginContext) -> None:
+    ctx.add_router(router)
+    ctx.add_js_strings(_js_strings)
+    ctx.add_template_slot("head", "claude/templates/head.html")
+    ctx.add_template_slot("topbar", "claude/templates/topbar.html")
+    ctx.add_template_slot("scripts", "claude/templates/scripts.html")
     ctx.add_agent(
         AgentSpec(
             key="claude",

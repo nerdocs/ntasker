@@ -1,0 +1,40 @@
+/* Claude usage limits in the topbar: one quiet item per window (5h / 7d):
+   label, a thin meter that turns yellow at 50 % and red at 80 %, the number.
+   Hidden on narrow screens where the inbox field needs the room. */
+.claude-usage {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-size: 0.75rem;
+    color: var(--tblr-secondary);
+    white-space: nowrap;
+}
+.claude-usage-icon {
+    opacity: 0.7;
+}
+.claude-usage-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+}
+.claude-usage-bar {
+    width: 3.5rem;
+}
+.claude-usage-pct {
+    min-width: 2.25rem;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--tblr-body-color);
+}
+.claude-usage-pct.is-warn {
+    color: var(--tblr-yellow);
+}
+.claude-usage-pct.is-hot {
+    color: var(--tblr-red);
+    font-weight: 600;
+}
+@media (max-width: 991.98px) {
+    .claude-usage {
+        display: none !important;
+    }
+}

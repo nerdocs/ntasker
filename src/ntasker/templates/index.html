@@ -658,6 +658,8 @@
                        @keydown.enter.prevent="sendInbox()"
                        @keydown.escape="$el.blur()">
             </div>
+            {# Plugin topbar widgets (enabled plugins only; see ntasker/plugins). #}
+            {% for tpl in plugin_slots['topbar'] %}{% include tpl %}{% endfor %}
             {% include "_topnav.html" %}
         </div>
     </header>

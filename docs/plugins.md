@@ -87,6 +87,7 @@ page's full context. Slots:
 | Slot | Where |
 |---|---|
 | `head` | `index.html` `<head>`, after `style.css` |
+| `topbar` | `index.html` navbar, between the inbox field and the icon bar |
 | `sidebar` | `index.html`, below the tags section |
 | `task_form` | `index.html`, create form, after the description |
 | `task_edit` | `index.html`, edit modal, after the description |

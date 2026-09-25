@@ -72,8 +72,10 @@ queue** lets an agent session order the queue for you and start it. See [docs/ta
 
 Type a raw thought into the topbar field (`Ctrl+K`) or `ntasker in "..."` and carry on. A stateless `claude -p` call
 turns it into a proposed task -- title, prompt, priority, tags and the project, chosen from a catalog of one-paragraph
-project summaries -- and the Inbox column shows the proposal with project chips. One click accepts it, a chip accepts
-it elsewhere, and every correction becomes an example for the next triage. Nothing becomes a task until you say so.
+project summaries -- and the Inbox column shows the proposal with its candidate projects pre-ticked. One click
+accepts it; tick another project, or several (the rest become directory locks), and every correction becomes an
+example for the next triage. Nothing becomes a task until you say so.
+
 See [docs/inbox.md](docs/inbox.md).
 
 ## Pick your agent per task

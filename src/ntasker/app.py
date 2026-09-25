@@ -584,8 +584,11 @@ def build_js_strings() -> dict[str, str]:
         "inbox_retry": _("Retry"),
         "inbox_accept": _("Accept"),
         "inbox_discard": _("Discard"),
-        "inbox_accept_as": _("Accept for {project}"),
-        "inbox_accept_cross": _("Accept as cross-project"),
+        "inbox_pick_hint": _(
+            "Tick the projects the task touches: the first is its project, the rest "
+            "become directory locks. None ticked = cross-project."
+        ),
+
         "inbox_confidence": _("Confidence"),
         "inbox_prompt": _("Generated prompt"),
         "project_summary": _("Summary..."),
@@ -2210,9 +2213,11 @@ class InboxIn(BaseModel):
 
 class AcceptIn(BaseModel):
     """Accept a proposal; ``project`` overrides the model's choice when set
-    (``null`` = cross-project, omitted = keep)."""
+    (``null`` = cross-project, omitted = keep). ``locks``: further projects
+    whose directories the task's run holds (a run touching several repos)."""
 
     project: str | None = None
+    locks: list[str] = []
 
 
 def _inbox_row(row: sqlite3.Row) -> dict:
@@ -2289,10 +2294,11 @@ def api_accept_proposal(task_id: int, payload: AcceptIn) -> JSONResponse:
     """Turn a proposal into a real task (``proposed = 0``).
 
     ``project`` in the body overrides the model's choice (``null`` =
-    cross-project; omitted = keep). A project that differs from the model's
-    pick is recorded as a correction in ``triage_examples`` -- the next
-    triage sees it as an example. 409 unless the task is a proposal.
-    Discard = the ordinary ``DELETE /api/tasks/{id}``.
+    cross-project; omitted = keep); ``locks`` are the other projects the
+    task touches (stored as directory locks, see :mod:`ntasker.locks`). A
+    project that differs from the model's pick is recorded as a correction in
+    ``triage_examples`` -- the next triage sees it as an example. 409 unless
+    the task is a proposal. Discard = the ordinary ``DELETE /api/tasks/{id}``.
     """
     fields = payload.model_dump(exclude_unset=True)
     with get_conn() as conn:
@@ -2311,7 +2317,8 @@ def api_accept_proposal(task_id: int, payload: AcceptIn) -> JSONResponse:
                 (info["raw"], project),
             )
         conn.execute(
-            "UPDATE tasks SET proposed = 0, project = ? WHERE id = ?", (project, task_id)
+            "UPDATE tasks SET proposed = 0, project = ?, locks = ? WHERE id = ?",
+            (project, locks.dump(locks.normalize(payload.locks, project)), task_id),
         )
         row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         task = row_to_task(row, load_tags_for(conn, task_id), load_deps_for(conn, task_id))

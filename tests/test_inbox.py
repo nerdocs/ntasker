@@ -219,7 +219,15 @@ def test_accept_cross_project_records_null_example(client):
     assert _examples() == [("the note", None)]
 
 
+def test_accept_with_locks(client):
+    pid = _propose_full("x")
+    t = client.post(f"/api/tasks/{pid}/accept", json={"project": "x", "locks": ["y", "x", " ", "z"]}).json()
+    assert t["project"] == "x" and t["locks"] == ["y", "z"]
+    assert _examples() == []
+
+
 def test_accept_non_proposal_is_409(client):
+
     t = client.post("/api/tasks", json={"title": "t"}).json()
     assert client.post(f"/api/tasks/{t['id']}/accept", json={}).status_code == 409
     assert client.post("/api/tasks/999/accept", json={}).status_code == 404

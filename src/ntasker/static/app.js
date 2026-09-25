@@ -1018,10 +1018,16 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 const r = await fetch('/api/inbox');
                 if (!r.ok) return;
                 const data = await r.json();
-                // Keep the expand state of proposals still on the board.
-                const expanded = new Set(this.inbox.tasks.filter(t => t._expanded).map(t => t.id));
-                data.tasks.forEach(t => { t._expanded = expanded.has(t.id); });
+                // Keep the expand state and the ticked projects of proposals
+                // still on the board; a new proposal starts with the model's pick.
+                const prev = new Map(this.inbox.tasks.map(t => [t.id, t]));
+                data.tasks.forEach(t => {
+                    const old = prev.get(t.id);
+                    t._expanded = old ? old._expanded : false;
+                    t._picked = old ? old._picked : (t.project ? [t.project] : []);
+                });
                 this.inbox = data;
+
             } catch (_e) { /* server momentarily unreachable */ }
         },
 
@@ -1051,36 +1057,33 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             await this.refreshAll();
         },
 
-        // Chips of a proposal card: the chosen project first (lit), the other
-        // candidates, and a cross-project chip. A click accepts for that project.
-        proposalChips(task) {
+        // The projects a proposal card offers: the model's candidates (best
+        // first), with its chosen project always among them.
+        proposalChoices(task) {
             const info = task.triage || {};
-            const chosen = task.project || null;
-            const chips = [];
-            const seen = new Set();
+            const out = [];
             const add = (project, reason) => {
-                const key = project === null ? '__none__' : project;
-                if (seen.has(key)) return;
-                seen.add(key);
-                chips.push({
-                    key,
-                    project,
-                    label: project === null ? _i('cross_project') : project,
-                    chosen: project === chosen,
-                    title: reason || (project === null
-                        ? _i('inbox_accept_cross')
-                        : _i('inbox_accept_as', { project })),
-                });
+                if (!project || out.some(c => c.project === project)) return;
+                out.push({ project, reason: reason || '' });
             };
-            add(chosen, null);
+            add(task.project, null);
             for (const c of info.candidates || []) add(c.project, c.reason);
-            add(null, null);
-            return chips;
+            return out;
         },
 
-        // ``project`` undefined = keep the model's choice; null = cross-project.
-        async acceptProposal(task, project) {
-            const body = project === undefined ? {} : { project };
+        togglePick(task, project) {
+            task._picked = task._picked.includes(project)
+                ? task._picked.filter(p => p !== project)
+                : [...task._picked, project];
+        },
+
+        // Accept with the ticked projects in candidate order: the first is
+        // the task's project, the rest its directory locks; none = cross-project.
+        async acceptProposal(task) {
+            const picked = this.proposalChoices(task)
+                .map(c => c.project)
+                .filter(p => (task._picked || []).includes(p));
+            const body = picked.length ? { project: picked[0], locks: picked.slice(1) } : { project: null };
             const r = await fetch(`/api/tasks/${task.id}/accept`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

@@ -217,9 +217,10 @@ body {
 .inbox-item-failed {
     border-color: var(--tblr-danger);
 }
-.inbox-chip {
+.inbox-pick {
     cursor: pointer;
 }
+
 .project-summary-edit {
     min-width: 20rem;
 }

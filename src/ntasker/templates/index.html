@@ -342,17 +342,23 @@
                                         <div x-show="task._expanded" class="mb-1 text-muted small" style="white-space: pre-wrap"
                                              :title="$i18n('inbox_prompt')"
                                              x-text="task.triage ? task.triage.prompt : task.description" x-cloak></div>
-                                        {# Project chips: the chosen one lit, the other candidates muted; a #}
-                                        {# click accepts the proposal for that project in one go.          #}
-                                        <div class="d-flex flex-wrap gap-1 small mb-1">
-                                            <template x-for="c in proposalChips(task)" :key="c.key">
-                                                <span class="badge inbox-chip" role="button"
-                                                      :class="c.chosen ? 'bg-blue text-white' : 'bg-secondary-lt'"
-                                                      :title="c.title"
-                                                      @click.stop="acceptProposal(task, c.project)">
-                                                    <i class="ti ti-asterisk me-1" x-show="c.project === null"></i><span x-text="c.label"></span>
-                                                </span>
+                                        {# Project picks: the model's candidates as checkboxes, its choice   #}
+                                        {# pre-ticked. First ticked = project, the rest = locks, none = cross. #}
+                                        <div class="d-flex flex-wrap align-items-center gap-2 small mb-1"
+                                             :title="$i18n('inbox_pick_hint')">
+                                            <template x-for="c in proposalChoices(task)" :key="c.project">
+                                                <label class="form-check form-check-inline mb-0 inbox-pick" :title="c.reason">
+                                                    <input type="checkbox" class="form-check-input"
+                                                           :checked="task._picked.includes(c.project)"
+                                                           @change="togglePick(task, c.project)">
+                                                    <span class="form-check-label" x-text="c.project"></span>
+                                                </label>
                                             </template>
+                                            <span class="badge bg-secondary-lt" x-show="task._picked.length === 0">
+                                                <i class="ti ti-asterisk me-1"></i><span x-text="$i18n('cross_project')"></span>
+                                            </span>
+                                        </div>
+                                        <div class="d-flex flex-wrap gap-1 small mb-1">
                                             <template x-if="task.priority === 'critical'">
                                                 <span class="badge bg-danger text-white">
                                                     <i class="ti ti-alert-triangle-filled me-1"></i><span x-text="$i18n('priority_critical')"></span>
@@ -376,7 +382,9 @@
                                              x-text="task.triage ? task.triage.raw : ''"></div>
                                         <div class="d-flex gap-1">
                                             <button class="btn btn-primary btn-sm" @click="acceptProposal(task)"
+                                                    :title="$i18n('inbox_pick_hint')"
                                                     x-text="$i18n('inbox_accept')"></button>
+
                                             <button class="btn btn-ghost-danger btn-sm" @click="discardProposal(task)"
                                                     x-text="$i18n('inbox_discard')"></button>
                                         </div>

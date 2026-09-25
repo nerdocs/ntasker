@@ -15,11 +15,11 @@ not confirm ever becomes a task.
    priority and tags, the generated prompt as description (the raw note is appended under a `## Original` heading)
    and the whole model output in the task's `triage` column; the inbox row becomes `triaged`. On any failure the row
    becomes `failed` with the reason -- **Retry** puts it back, the trash icon drops it.
-3. **Confirm.** A proposal card shows the title, the project chips (the chosen one lit, the other candidates muted
-   with the model's reason as tooltip, a *Cross-project* chip), priority, tags, the model's confidence and, when the
-   note was too vague, its clarifying question. Click the title to see the generated prompt.
-   - **Accept** takes the proposal as it is.
-   - **A chip** accepts it for that project instead.
+3. **Confirm.** A proposal card shows the title, the model's candidate projects as checkboxes (its choice pre-ticked,
+   its reason as tooltip), priority, tags, the model's confidence and, when the note was too vague, its clarifying
+   question. Click the title to see the generated prompt.
+   - **Accept** creates the task from the ticked projects: the first ticked is the task's project, every further one
+     becomes a [directory lock](directory-locks.md) (a run that touches several repos). Nothing ticked = cross-project.
    - **Discard** deletes the proposed task; the raw note stays in its inbox row. No confirmation -- there is nothing
      to lose.
 
@@ -31,7 +31,7 @@ open anywhere, cannot be queued, run or loaded via `/task` (the loader stops wit
 
 Start the note with the project: `ntasker: add a --json flag` or `#ntasker add a --json flag`. The prefix (matched
 case-insensitively against the catalog, slashes allowed: `medux/online: ...`) is stripped before the call and wins over
-the model's choice; the card marks it as the first chip with reason `prefix`.
+the model's choice; the card lists it first with reason `prefix`.
 
 ## The catalog and project summaries
 
@@ -83,9 +83,9 @@ Stored on the task (`triage`) together with `raw` (the note) and `prefix` (wheth
 
 ## Corrections become examples
 
-Accepting a proposal for a project other than the model's choice (a chip, or the *Cross-project* chip) records
+Accepting a proposal with a project other than the model's choice (another candidate, or none) records
 `(raw note, final project)` in `triage_examples`. The last 20 go into every later triage prompt as few-shot examples
--- the triage learns your sorting without any state of its own.
+-- the triage learns your sorting without any state of its own. Locks are not part of the example.
 
 ## Settings
 
@@ -104,7 +104,8 @@ Both live under *Settings -> Inbox*.
 | GET | `/api/inbox` | `{items: [rows not yet triaged, oldest first], tasks: [proposals, newest first]}` |
 | POST | `/api/inbox/{id}/retry` | Failed row back to `pending`; 409 unless failed |
 | DELETE | `/api/inbox/{id}` | 204 / 404 |
-| POST | `/api/tasks/{id}/accept` | `{project?}`: omitted = keep, `null` = cross-project; 409 unless proposed |
+| POST | `/api/tasks/{id}/accept` | `{project?, locks?}`: omitted = keep, `null` = cross-project; 409 unless proposed |
+
 | DELETE | `/api/tasks/{id}` | Discard a proposal (the ordinary delete) |
 | PUT | `/api/projects/summary` | `{project, summary}`; empty summary deletes the row |
 | POST | `/api/projects/summary/regenerate` | `{project}` -> `{project, summary}`; 400 no directory, 502 call failed |

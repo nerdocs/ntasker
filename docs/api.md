@@ -23,7 +23,8 @@ Interactive OpenAPI docs: <http://127.0.0.1:8766/api/docs>
 | POST | `/api/inbox` | `{text, source?}` -> 201 inbox row; the triage turns it into a proposal ([inbox.md](inbox.md)) |
 | GET | `/api/inbox` | `{items, tasks}`: notes not yet triaged + proposals; the only feed serving proposed tasks |
 | POST/DELETE | `/api/inbox/{id}[/retry]` | Retry a failed note (409 unless failed) / drop a note |
-| POST | `/api/tasks/{id}/accept` | `{project?}` turns a proposal into a task (`null` = cross-project); 409 unless proposed |
+| POST | `/api/tasks/{id}/accept` | `{project?, locks?}` turns a proposal into a task (`null` = cross-project); 409 unless proposed |
+
 
 | PUT/POST | `/api/projects/summary[/regenerate]` | Edit / regenerate the project summary the triage sees |
 | POST | `/api/tasks` | `{project?, title, description?, phase?, priority?, tags?}` |

@@ -554,6 +554,7 @@ VALIDATORS: dict[str, Validator] = {
     "queue_enabled": validate_queue_enabled,
     "dir_locks": validate_on_off,
     "session_discovery": validate_on_off,
+    "claude_permissions": validate_on_off,
     "require_clean": validate_on_off,
     "quicktasks_bypass_lanes": validate_on_off,
     "plugins_disabled": validate_plugins_disabled,
@@ -640,6 +641,12 @@ HINTS: dict[str, object] = {
         "them again. Without it, ntasker still finds past sessions of a project "
         "but cannot tell which are still running."
     ),
+    "claude_permissions": _lazy(
+        "Let Claude run ntasker commands without stopping to ask for each one. "
+        "This adds one allow rule to your own Claude Code settings file (a "
+        "backup is kept); switching it off removes it again. Without it a "
+        "session has to ask before it can even report its own task as finished."
+    ),
     "dir_locks": _lazy(
         "A queued task waits while another live session holds one of its "
         "directories, and sessions refuse edits inside directories they do not "
@@ -699,6 +706,7 @@ LABELS: dict[str, object] = {
     "queue_enabled": _lazy("Queue starts tasks automatically"),
     "dir_locks": _lazy("Directory locks"),
     "session_discovery": _lazy("Pick up terminal sessions"),
+    "claude_permissions": _lazy("Run ntasker commands without asking"),
     "require_clean": _lazy("Require a clean git state"),
     "quicktasks_bypass_lanes": _lazy("Quicktasks bypass the lanes"),
     "update_command": _lazy("Update command"),
@@ -876,8 +884,17 @@ def _apply_session_discovery(value: str) -> None:
     set_session_hook(value.strip().lower() in _TRUE_STRINGS)
 
 
+def _apply_claude_permissions(value: str) -> None:
+    """Put ntasker's allow rule into the user's Claude Code settings, or take
+    it out again -- see :func:`ntasker.claude_assets.set_permission_rule`."""
+    from ntasker.claude_assets import set_permission_rule  # noqa: PLC0415 -- lazy: avoid cycle
+
+    set_permission_rule(value.strip().lower() in _TRUE_STRINGS)
+
+
 APPLIERS: dict[str, Callable[[str], None]] = {
     "session_discovery": _apply_session_discovery,
+    "claude_permissions": _apply_claude_permissions,
 }
 """Settings whose value has to take effect somewhere outside this KV store.
 
@@ -1036,6 +1053,15 @@ def get_session_discovery() -> bool:
     settings file. ENV ``NTASKER_SESSION_DISCOVERY``.
     """
     return _get_on_off("session_discovery", False)
+
+
+def get_claude_permissions() -> bool:
+    """Whether Claude may run ntasker commands unprompted (default off).
+
+    Off by default because switching it on edits the user's own Claude Code
+    settings file. ENV ``NTASKER_CLAUDE_PERMISSIONS``.
+    """
+    return _get_on_off("claude_permissions", False)
 
 
 def get_dir_locks() -> bool:

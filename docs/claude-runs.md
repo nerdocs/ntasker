@@ -248,6 +248,18 @@ A resume always spawns in the directory the session was recorded in (`session_cw
 Claude Code finds a session id only under the directory it belongs to, so a conversation started in a subfolder
 resumes there.
 
+## Letting a session run ntasker commands
+
+Claude Code's auto mode counts every `ntasker` call as a write to an external system and stops to ask -- including
+the `ntasker finish` a session ends its own task with, which makes an unattended queued run stall on a permission
+dialog. The **Run ntasker commands without asking** setting (*Settings -> Agents & runs*, key
+`claude_permissions`) adds one allow rule, `Bash(ntasker *)`, to `permissions.allow` in *your* Claude Code settings
+(`<claude home>/settings.json`).
+
+Off by default, for the same reason as the setting above: it edits a file that belongs to you. The edit is surgical
+(every other rule stays, a timestamped `.bak` is kept) and switching it off removes exactly that one rule again.
+`ntasker agent install claude` notes when the rule is missing but never writes it by itself.
+
 ## Quick prompts
 
 The run view's toolbar can carry buttons that type a canned prompt into the live session and send it -- the same
@@ -283,11 +295,14 @@ included** -- gated solely by that loopback bind. Keep the bind local (never `0.
   `POST /api/claude/sessions/live` (a terminal session reporting itself, from `ntasker hook session`),
   `GET /api/claude/sessions/live` (the sessions running right now, across all projects, plus whether discovery is on),
   `GET /api/claude/session-hook` (`{installed, path, readable}`, re-read by the settings page after the switch),
+  `GET /api/claude/permission-rule` (the same for ntasker's allow rule),
   `GET /api/claude/sessions/discovered?project=<name>` (transcripts of a project),
   `POST /api/claude/sessions/discovered/<session id>/end` (SIGTERM, waits for the exit).
 * Session discovery (`src/ntasker/sessions.py`): reads the head of each transcript for the working directory and the
   first user message, merges in the live registry filled by the hook, and marks sessions a task already owns. The
   hook itself is managed in `claude_assets.py` (`set_session_hook`), driven by the `session_discovery` setting.
+* Permission rule (`claude_assets.py`, `set_permission_rule` / `permission_rule_state`): the same surgical patch of
+  the user's settings file, driven by the `claude_permissions` setting.
 
 ## Requirements
 

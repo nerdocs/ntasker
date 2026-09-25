@@ -602,3 +602,70 @@ def set_session_hook(enabled: bool, claude_home: str | os.PathLike | None = None
         data.pop("hooks", None)
     _write_settings(path, data)
     return session_hook_state(claude_home)
+
+
+# ---------------------------------------------------------------------------
+# Permission rule (the user's own Claude Code settings)
+# ---------------------------------------------------------------------------
+#
+# Same deal as the session hook above: this edits ``settings.json``, which
+# belongs to the user. It is therefore opt-in (the ``claude_permissions``
+# setting), merges into whatever is already configured, backs the file up
+# before the first change, and removes exactly its own entry again when
+# switched off.
+#
+# Without it, Claude Code's auto mode classifies every ``ntasker`` call as an
+# external system write and stops to ask -- including the ``ntasker finish``
+# an agent ends its own task with.
+
+#: The rule ntasker adds to ``permissions.allow``. Doubles as the marker
+#: identifying its own entry on removal -- an allow rule for the ``ntasker``
+#: binary is ours and nothing else's.
+PERMISSION_RULE = "Bash(ntasker *)"
+
+
+def permission_rule_state(claude_home: str | os.PathLike | None = None) -> dict:
+    """``{installed, path, readable}`` for ntasker's permission rule.
+
+    ``readable`` is False when the settings file exists but cannot be parsed --
+    the UI then says so instead of offering a switch that would fail.
+    """
+    path = _settings_file(claude_home)
+    try:
+        data = _read_settings(path)
+    except (OSError, ValueError):
+        return {"installed": False, "path": str(path), "readable": False}
+    permissions = data.get("permissions")
+    allow = permissions.get("allow") if isinstance(permissions, dict) else None
+    installed = PERMISSION_RULE in allow if isinstance(allow, list) else False
+    return {"installed": installed, "path": str(path), "readable": True}
+
+
+def set_permission_rule(
+    enabled: bool, claude_home: str | os.PathLike | None = None
+) -> dict:
+    """Add or remove ntasker's allow rule in the user's Claude Code settings.
+
+    Idempotent in both directions, and surgical: every other permission rule
+    stays untouched, and switching off leaves ``permissions`` behind only if
+    something else still uses it. Returns the resulting
+    :func:`permission_rule_state`. Raises ``OSError`` / ``ValueError`` when the
+    file cannot be read or written -- the caller reports that rather than
+    silently leaving the setting and the file out of sync.
+    """
+    path = _settings_file(claude_home)
+    data = _read_settings(path)
+    permissions = dict(data.get("permissions") or {})
+    allow = [r for r in (permissions.get("allow") or []) if r != PERMISSION_RULE]
+    if enabled:
+        allow.append(PERMISSION_RULE)
+    if allow:
+        permissions["allow"] = allow
+    else:
+        permissions.pop("allow", None)
+    if permissions:
+        data["permissions"] = permissions
+    else:
+        data.pop("permissions", None)
+    _write_settings(path, data)
+    return permission_rule_state(claude_home)

@@ -27,6 +27,7 @@ const BOOL_DEFAULTS = {
     quicktasks_bypass_lanes: true,
     misc_no_memory: false,
     session_discovery: false,
+    claude_permissions: false,
     opencode_auto: false,
 };
 const TRUE_STRINGS = ['1', 'true', 'yes', 'on'];
@@ -77,6 +78,9 @@ function settingsPage() {
         // whenever the switch rewrote that file, so the mismatch hints do not
         // keep claiming what was true when the page loaded.
         sessionHook: cfg.sessionHook || {installed: false, path: '', readable: true},
+        // Same for ntasker's allow rule in that file
+        // (GET /api/claude/permission-rule).
+        permissionRule: cfg.permissionRule || {installed: false, path: '', readable: true},
 
         async init() {
             this.readHash();
@@ -222,6 +226,15 @@ function settingsPage() {
             }
         },
 
+        async refreshPermissionRule() {
+            try {
+                const r = await fetch('/api/claude/permission-rule');
+                if (r.ok) this.permissionRule = await r.json();
+            } catch (e) {
+                // Best-effort -- the hints keep the previous verdict.
+            }
+        },
+
         async refreshPlugins() {
             try {
                 const r = await fetch('/api/plugins');
@@ -320,6 +333,7 @@ function settingsPage() {
             // A CLI path override changes whether the agent is launchable.
             if (key.endsWith('_bin')) await this.refreshAgents();
             if (key === 'session_discovery') await this.refreshSessionHook();
+            if (key === 'claude_permissions') await this.refreshPermissionRule();
             this.toast(this.i18n('saved'));
         },
 
@@ -342,6 +356,7 @@ function settingsPage() {
                 await this.refresh();
                 if (key.endsWith('_bin')) await this.refreshAgents();
                 if (key === 'session_discovery') await this.refreshSessionHook();
+                if (key === 'claude_permissions') await this.refreshPermissionRule();
                 this.toast(this.i18n('removed'));
             }
         },

@@ -35,7 +35,12 @@ from ntasker.assets import (
     get_sri,
 )
 from ntasker.agents import agent_keys, enabled_agents, get_spec, resolve_agent_key, resolve_home
-from ntasker.claude_assets import install_assets, scan_status, session_hook_state
+from ntasker.claude_assets import (
+    install_assets,
+    permission_rule_state,
+    scan_status,
+    session_hook_state,
+)
 from ntasker.claude_runner import (
     PLANNER_TASK_ID,
     SESSION_ID_RE,
@@ -1300,6 +1305,8 @@ def settings_page(request: Request) -> HTMLResponse:
             # Claude Code settings -- the switch stores intent, this is the
             # file's truth, and the page flags a mismatch.
             "session_hook": session_hook_state(),
+            # Same for ntasker's allow rule -- switch stores intent, file wins.
+            "permission_rule": permission_rule_state(),
             "links": LINKS,
             **_page_plugins(),
         },
@@ -1653,6 +1660,17 @@ def api_claude_session_hook() -> JSONResponse:
     flags a mismatch -- which it can only drop again by looking at the file.
     """
     return JSONResponse(session_hook_state())
+
+
+@app.get("/api/claude/permission-rule")
+def api_claude_permission_rule() -> JSONResponse:
+    """``{installed, path, readable}`` of ntasker's permission allow rule.
+
+    Read by the settings page exactly like the session hook above: the switch
+    stores intent, the file is the truth, and a mismatch is only cleared by
+    looking at the file again.
+    """
+    return JSONResponse(permission_rule_state())
 
 
 @app.get("/api/claude/sessions/discovered")

@@ -44,6 +44,7 @@ from ntasker import completion, plugins, projects
 from ntasker.agents import AGENTS, agent_available, agent_keys, enabled_agents, resolve_home
 from ntasker.claude_assets import (
     install_assets,
+    permission_rule_state,
     scan_status,
     validate_command_name,
 )
@@ -1724,6 +1725,24 @@ def cmd_projects_migrate(args: argparse.Namespace) -> int:
 # Agent integration assets (skill + /task slash command) --------------------
 
 
+def _note_missing_permission_rule(spec) -> None:
+    """Point at the permission switch when Claude Code would still stop and ask
+    for every ntasker command.
+
+    Deliberately only a note: the rule goes into the user's own settings file,
+    so it stays opt-in (``ntasker config set claude_permissions on``) exactly
+    like the session hook does.
+    """
+    if spec.key != "claude" or permission_rule_state()["installed"]:
+        return
+    print(
+        _(
+            "ntasker: Claude Code still asks before every ntasker command. "
+            "Run `ntasker config set claude_permissions on` to allow them."
+        )
+    )
+
+
 def _do_agent_install(
     spec,
     command_name_raw: str,
@@ -1796,6 +1815,7 @@ def _do_agent_install(
         print(_("ntasker: would install to {path}").format(path=home))
     else:
         print(_("ntasker: installed to {path}").format(path=home))
+        _note_missing_permission_rule(spec)
     return 0
 
 

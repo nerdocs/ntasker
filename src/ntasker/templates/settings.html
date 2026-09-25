@@ -20,6 +20,7 @@
             fieldChoices: {{ field_choices | tojson }},
             plugins: {{ plugin_cards | tojson }},
             sessionHook: {{ session_hook | tojson }},
+            permissionRule: {{ permission_rule | tojson }},
         };
     </script>
 </head>
@@ -264,6 +265,29 @@
                                     <div class="text-warning small mt-1" x-cloak
                                          x-show="sessionHook.readable && !sessionHook.installed && isOn('session_discovery')">
                                         {{ t('The hooks are missing from that file although the switch is on. Turn it off and on again to write them.') }}
+                                    </div>
+                                {% endcall %}
+
+                                <h3 class="mt-4 mb-1">{{ t('Permissions') }}</h3>
+                                <p class="text-secondary small mb-2">{{ t('What a session may do on its own, without stopping to ask you first.') }}</p>
+                                {# Same file as the switch above, same reason the hints follow
+                                   `permissionRule` instead of the render-time state. #}
+                                {% call row('claude_permissions') %}
+                                    {{ switch('claude_permissions', 'on', 'off') }}
+                                    <div class="text-secondary small mt-2">
+                                        {{ t('The rule is written to') }}
+                                        <code x-text="permissionRule.path"></code>
+                                    </div>
+                                    <div class="text-danger small mt-1" x-show="!permissionRule.readable" x-cloak>
+                                        {{ t('This file cannot be read as JSON -- fix or remove it, otherwise the switch has nothing to write to.') }}
+                                    </div>
+                                    <div class="text-warning small mt-1" x-cloak
+                                         x-show="permissionRule.readable && permissionRule.installed && !isOn('claude_permissions')">
+                                        {{ t('The rule is still in that file although the switch is off. Turn it on and off again to remove it.') }}
+                                    </div>
+                                    <div class="text-warning small mt-1" x-cloak
+                                         x-show="permissionRule.readable && !permissionRule.installed && isOn('claude_permissions')">
+                                        {{ t('The rule is missing from that file although the switch is on. Turn it off and on again to write it.') }}
                                     </div>
                                 {% endcall %}
 

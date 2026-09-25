@@ -591,6 +591,10 @@ def build_js_strings() -> dict[str, str]:
         ),
 
         "inbox_confidence": _("Confidence"),
+        "inbox_summaries": _("Learning the projects: {done} of {total} summarised"),
+        "inbox_summaries_hint": _(
+            "The triage works already; projects without a summary are only offered by name."
+        ),
         "inbox_prompt": _("Generated prompt"),
         "project_summary": _("Summary..."),
         "project_summary_hint": _("What the inbox triage knows about this project"),
@@ -1034,6 +1038,7 @@ UPDATE_POLL_INTERVAL = 24 * 60 * 60  # once a day
 _update_poll_task: asyncio.Task | None = None
 _queue_task: asyncio.Task | None = None
 _triage_task: asyncio.Task | None = None
+_summary_task: asyncio.Task | None = None
 
 
 @app.on_event("startup")
@@ -1044,16 +1049,20 @@ async def _start_queue_worker() -> None:
 
 @app.on_event("startup")
 async def _start_triage_worker() -> None:
-    global _triage_task
+    global _triage_task, _summary_task
     _triage_task = asyncio.create_task(triage.worker())
+    # Separate loop: the catalog's missing project summaries must not hold up
+    # a single inbox note (see ntasker.triage.summary_worker).
+    _summary_task = asyncio.create_task(triage.summary_worker())
 
 
 @app.on_event("shutdown")
 async def _stop_triage_worker() -> None:
-    if _triage_task is not None:
-        _triage_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await _triage_task
+    for task in (_triage_task, _summary_task):
+        if task is not None:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
 
 
 @app.on_event("shutdown")
@@ -2251,7 +2260,9 @@ def api_inbox_create(payload: InboxIn) -> JSONResponse:
 def api_inbox_list() -> JSONResponse:
     """Everything the Inbox column shows: ``items`` = inbox rows still pending
     or failed (oldest first), ``tasks`` = the proposals awaiting the user
-    (newest first). The only feed that serves proposed tasks."""
+    (newest first), ``summaries`` = the catalog's summary coverage so the
+    column can show the background worker's progress. The only feed that
+    serves proposed tasks."""
     with get_conn() as conn:
         item_rows = conn.execute(
             "SELECT * FROM inbox WHERE status != 'triaged' ORDER BY id ASC"
@@ -2263,7 +2274,13 @@ def api_inbox_list() -> JSONResponse:
             row_to_task(r, load_tags_for(conn, int(r["id"])), load_deps_for(conn, int(r["id"])))
             for r in task_rows
         ]
-    return JSONResponse({"items": [_inbox_row(r) for r in item_rows], "tasks": tasks})
+    return JSONResponse(
+        {
+            "items": [_inbox_row(r) for r in item_rows],
+            "tasks": tasks,
+            "summaries": triage.summary_progress(),
+        }
+    )
 
 
 @app.post("/api/inbox/{item_id}/retry")

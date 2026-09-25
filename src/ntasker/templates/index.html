@@ -287,6 +287,15 @@
 {# so the hidden copy holds no rows (see inboxFor in app.js).                  #}
 {% macro inbox_column(view) %}
                             <div class="inbox-column d-flex flex-column gap-2">
+                                {# Background catch-up of the project summaries (ntasker.triage.summary_worker):
+                                   visible only while the catalog is incomplete, so the wait has a number. #}
+                                <template x-if="summaryProgress('{{ view }}')">
+                                    <div class="text-secondary small p-2 d-flex align-items-center gap-2"
+                                         :title="$i18n('inbox_summaries_hint')">
+                                        <span class="spinner-border spinner-border-sm flex-shrink-0"></span>
+                                        <span x-text="$i18n('inbox_summaries', summaryProgress('{{ view }}'))"></span>
+                                    </div>
+                                </template>
                                 <template x-if="inboxFor('{{ view }}').items.length === 0 && inboxFor('{{ view }}').tasks.length === 0">
                                     <div class="text-secondary small p-2" x-text="$i18n('inbox_empty')"></div>
                                 </template>

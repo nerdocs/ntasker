@@ -21,7 +21,7 @@ Interactive OpenAPI docs: <http://127.0.0.1:8766/api/docs>
 | GET | `/api/tasks/{id}` | Single task incl. `tags` |
 | GET | `/api/stats` | Tab counts (`open`/`done`/`archive`/`inbox`), respects all filters |
 | POST | `/api/inbox` | `{text, source?}` -> 201 inbox row; the triage turns it into a proposal ([inbox.md](inbox.md)) |
-| GET | `/api/inbox` | `{items, tasks}`: notes not yet triaged + proposals; the only feed serving proposed tasks |
+| GET | `/api/inbox` | `{items, tasks, summaries}`: notes not yet triaged + proposals + summary coverage; the only feed serving proposed tasks |
 | POST/DELETE | `/api/inbox/{id}[/retry]` | Retry a failed note (409 unless failed) / drop a note |
 | POST | `/api/tasks/{id}/accept` | `{project?, locks?}` turns a proposal into a task (`null` = cross-project); 409 unless proposed |
 

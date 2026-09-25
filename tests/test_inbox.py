@@ -239,7 +239,8 @@ def test_discard_proposal_keeps_inbox_row(client):
     with get_conn() as conn:
         row = conn.execute("SELECT status, task_id FROM inbox").fetchone()
     assert row["status"] == "triaged" and row["task_id"] is None
-    assert client.get("/api/inbox").json() == {"items": [], "tasks": []}
+    body = client.get("/api/inbox").json()
+    assert body["items"] == [] and body["tasks"] == []
 
 
 # --- API: project summaries --------------------------------------------------

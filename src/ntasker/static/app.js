@@ -452,7 +452,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // the proposals awaiting the user. Off = no field, no column, no tab.
         triageEnabled: !!window.__triageEnabled,
         inboxText: '',
-        inbox: { items: [], tasks: [] },
+        inbox: { items: [], tasks: [], summaries: { done: 0, total: 0 } },
 
         async init() {
             this.restoreProjectFilter();
@@ -1038,7 +1038,15 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             const active = view === 'kanban'
                 ? this.viewMode === 'kanban'
                 : this.viewMode === 'list' && this.tab === 'inbox';
-            return active ? this.inbox : { items: [], tasks: [] };
+            return active ? this.inbox : { items: [], tasks: [], summaries: { done: 0, total: 0 } };
+        },
+
+        // Project summaries still being generated in the background (see
+        // ntasker.triage.summary_worker). Null once the catalog is complete --
+        // the Inbox column then shows nothing.
+        summaryProgress(view) {
+            const s = this.inboxFor(view).summaries;
+            return s && s.total > s.done ? s : null;
         },
 
         async sendInbox() {

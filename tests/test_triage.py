@@ -35,6 +35,7 @@ def db(tmp_path, monkeypatch):
     monkeypatch.delenv("NTASKER_TRIAGE_MODEL", raising=False)
     monkeypatch.setattr(locks, "resolve_dir", lambda name: str(tmp_path / name))
     monkeypatch.setattr(triage, "catalog", lambda: [(n, f"{n} summary") for n in NAMES])
+    triage._summary_failed.clear()
     return path
 
 
@@ -155,28 +156,8 @@ def test_tick_without_pending_rows_is_a_noop(db, monkeypatch):
     triage.tick()
 
 
-def test_lazy_summary_generated_first(db, monkeypatch, tmp_path):
-    (tmp_path / "ntasker").mkdir()
-    monkeypatch.setattr(triage, "catalog", lambda: [("ntasker", None), ("Thrito", "t summary")])
-    monkeypatch.setattr(triage, "_argv", lambda system, schema: ["claude", system])
-    calls: list[str] = []
-
-    def fake(argv, stdin):
-        calls.append(stdin)
-        if len(calls) == 1:
-            return {"summary": "  ntasker is a tracker.  "}
-        return dict(GOOD)
-
-    monkeypatch.setattr(triage, "run_claude", fake)
-    _inbox("note")
-    triage.tick()
-    assert len(calls) == 2 and calls[0].startswith("Project name: ntasker")
-    with get_conn() as conn:
-        row = conn.execute("SELECT summary FROM project_summaries WHERE project='ntasker'").fetchone()
-    assert row["summary"] == "ntasker is a tracker."
-
-
-def test_failed_summary_drops_project_from_this_run(db, monkeypatch, tmp_path):
+def test_missing_summary_does_not_block_the_tick(db, monkeypatch, tmp_path):
+    """A project without a summary goes into the prompt by name -- no extra call."""
     (tmp_path / "ntasker").mkdir()
     monkeypatch.setattr(triage, "catalog", lambda: [("ntasker", None), ("Thrito", "t summary")])
     monkeypatch.setattr(triage, "_argv", lambda system, schema: ["claude", system])
@@ -184,14 +165,75 @@ def test_failed_summary_drops_project_from_this_run(db, monkeypatch, tmp_path):
 
     def fake(argv, stdin):
         calls.append(argv[1])
-        if len(calls) == 1:
-            raise triage.TriageError("nope")
-        return {**GOOD, "project": "Thrito"}
+        return dict(GOOD)
 
     monkeypatch.setattr(triage, "run_claude", fake)
     _inbox("note")
     triage.tick()
-    assert "ntasker" not in calls[1] and "Thrito" in calls[1]
+    assert len(calls) == 1
+    assert "- ntasker: (no summary)" in calls[0] and "- Thrito: t summary" in calls[0]
+
+
+def _stored_catalog() -> list[tuple[str, str | None]]:
+    """A two-project catalog that reflects what is stored -- like the real one."""
+    with get_conn() as conn:
+        stored = {
+            r["project"]: r["summary"]
+            for r in conn.execute("SELECT project, summary FROM project_summaries")
+        }
+    return [(n, stored.get(n)) for n in ("ntasker", "Thrito")]
+
+
+def test_summary_tick_fills_one_missing_summary(db, monkeypatch, tmp_path):
+    (tmp_path / "ntasker").mkdir()
+    (tmp_path / "Thrito").mkdir()
+    monkeypatch.setattr(triage, "catalog", lambda: [("ntasker", None), ("Thrito", None)])
+    monkeypatch.setattr(triage, "_argv", lambda system, schema: ["claude", system])
+    calls: list[str] = []
+
+    def fake(argv, stdin):
+        calls.append(stdin)
+        return {"summary": "  ntasker is a tracker.  "}
+
+    monkeypatch.setattr(triage, "run_claude", fake)
+    assert triage.summary_tick() is True
+    assert len(calls) == 1 and calls[0].startswith("Project name: ntasker")
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT summary FROM project_summaries WHERE project = 'ntasker'"
+        ).fetchone()
+    assert row["summary"] == "ntasker is a tracker."
+
+
+def test_summary_tick_without_gaps_is_a_noop(db, monkeypatch):
+    monkeypatch.setattr(triage, "run_claude", lambda *a: pytest.fail("must not be called"))
+    assert triage.summary_tick() is False
+
+
+def test_summary_tick_skips_a_failing_project(db, monkeypatch, tmp_path):
+    """A project whose call fails is not retried in this process -- no hot loop."""
+    (tmp_path / "ntasker").mkdir()
+    (tmp_path / "Thrito").mkdir()
+    monkeypatch.setattr(triage, "catalog", _stored_catalog)
+    monkeypatch.setattr(triage, "_argv", lambda system, schema: ["claude", system])
+    calls: list[str] = []
+
+    def fake(argv, stdin):
+        calls.append(stdin)
+        if stdin.startswith("Project name: ntasker"):
+            raise triage.TriageError("nope")
+        return {"summary": "Thrito is a thing."}
+
+    monkeypatch.setattr(triage, "run_claude", fake)
+    assert triage.summary_tick() is True
+    assert triage.summary_tick() is True
+    assert [c.splitlines()[0] for c in calls] == ["Project name: ntasker", "Project name: Thrito"]
+    assert triage.summary_tick() is False
+
+
+def test_summary_progress_counts_the_catalog(db, monkeypatch):
+    monkeypatch.setattr(triage, "catalog", lambda: [("a", "s"), ("b", None), ("c", None)])
+    assert triage.summary_progress() == {"done": 1, "total": 3}
 
 
 def test_examples_land_in_prompt(db, monkeypatch):

@@ -286,7 +286,17 @@ expired, or the account has no subscription limits. ntasker never refreshes the 
 that.
 
 `GET /api/claude/usage` -> `{"usage": {"five_hour": {"utilization", "resets_at"}, "seven_day": {...}} | null}`.
-The server caches the answer for 30 s; the page polls once a minute. A failed refresh serves the last answer.
+The server caches the answer for 30 s. A failed refresh serves the last answer.
+
+### When the meters refresh
+
+- **Every minute** while the tab is visible. A hidden tab skips the tick -- browsers throttle its timer anyway --
+  and refreshes the moment it comes back to the front, so the numbers you look at are never the ones from before
+  you switched away.
+- **Whenever Claude was in contact:** a run starting or ending. The UI already polls the live-session set every
+  5 s, so the widget reacts to a real start or end of a session -- exactly the moments the numbers move. Such a
+  refresh asks with `?fresh=1`, which looks past the 30 s cache; a server-side floor of 5 s keeps session churn
+  across several open tabs from turning into a request flood.
 
 ## Security
 

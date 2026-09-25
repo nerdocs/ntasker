@@ -15,6 +15,10 @@ router = APIRouter()
 
 
 @router.get("/api/claude/usage")
-def get_usage() -> JSONResponse:
-    """``{"usage": {five_hour, seven_day} | null}`` -- ``null`` without a subscription login."""
-    return JSONResponse({"usage": usage.snapshot()})
+def get_usage(fresh: bool = False) -> JSONResponse:
+    """``{"usage": {five_hour, seven_day} | null}`` -- ``null`` without a subscription login.
+
+    ``fresh=1`` asks past the usual cache window (the topbar sends it the
+    moment a Claude session starts or ends), rate-limited server-side.
+    """
+    return JSONResponse({"usage": usage.snapshot(force=fresh)})

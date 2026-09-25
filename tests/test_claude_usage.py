@@ -88,3 +88,24 @@ def test_widget_follows_the_plugin_switch(client, monkeypatch):
     monkeypatch.setenv(plugins.ENV_DISABLED, "claude")
     assert "claude-usage" not in client.get("/").text
     assert client.get("/api/claude/usage").status_code == 404
+
+
+def test_fresh_bypasses_the_cache_ttl(client, tmp_path, monkeypatch):
+    """``?fresh=1`` refetches inside CACHE_TTL -- the topbar's post-session refresh."""
+    _login(tmp_path)
+    calls = []
+    monkeypatch.setattr(usage, "_request", lambda token: calls.append(token) or PAYLOAD)
+    client.get("/api/claude/usage")
+    monkeypatch.setattr(usage, "MIN_INTERVAL", 0.0)
+    client.get("/api/claude/usage?fresh=1")
+    assert len(calls) == 2
+
+
+def test_fresh_still_honours_the_min_interval(client, tmp_path, monkeypatch):
+    """Session churn across many tabs must not turn into a request flood."""
+    _login(tmp_path)
+    calls = []
+    monkeypatch.setattr(usage, "_request", lambda token: calls.append(token) or PAYLOAD)
+    for _ in range(5):
+        client.get("/api/claude/usage?fresh=1")
+    assert len(calls) == 1

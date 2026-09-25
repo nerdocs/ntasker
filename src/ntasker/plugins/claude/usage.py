@@ -8,7 +8,10 @@ never logged in, macOS keychain storage) means no subscription to show:
 :func:`snapshot` returns ``None`` and the topbar widget stays hidden.
 
 One in-process cache for :data:`CACHE_TTL` seconds keeps several tabs
-from hammering the endpoint; a failed refresh serves the stale copy.
+from hammering the endpoint; a failed refresh serves the stale copy. A
+forced refresh (the topbar right after a Claude session started or ended)
+bypasses that TTL but still honours :data:`MIN_INTERVAL`, so no number of
+tabs can turn session churn into a request flood.
 """
 
 from __future__ import annotations
@@ -24,6 +27,7 @@ from ntasker.agents import AGENTS, resolve_home
 
 USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 CACHE_TTL = 30.0
+MIN_INTERVAL = 5.0
 TIMEOUT = 5.0
 
 _lock = threading.Lock()
@@ -65,10 +69,15 @@ def _window(block: Any) -> dict[str, Any] | None:
     return {"utilization": float(block["utilization"]), "resets_at": block.get("resets_at")}
 
 
-def snapshot() -> dict[str, Any] | None:
-    """Current ``{five_hour, seven_day}`` utilisation, or ``None`` without a subscription."""
+def snapshot(force: bool = False) -> dict[str, Any] | None:
+    """Current ``{five_hour, seven_day}`` utilisation, or ``None`` without a subscription.
+
+    ``force`` shortens the cache window to :data:`MIN_INTERVAL` -- for the
+    moments where the numbers just moved (a session started or ended) and the
+    usual :data:`CACHE_TTL` would serve a figure from before that.
+    """
     with _lock:
-        if time.time() - _cache["at"] < CACHE_TTL:
+        if time.time() - _cache["at"] < (MIN_INTERVAL if force else CACHE_TTL):
             return _cache["usage"]
         token = _token()
         if token is None:

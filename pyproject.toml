@@ -1,6 +1,6 @@
 [project]
 name = "ntasker"
-version = "3.10.0"
+version = "3.11.0"
 description = "Put your coding agent on a kanban board: a local tracker that runs Claude Code, OpenCode or Pi on your tasks, unattended."
 authors = [{ name = "Christian González", email = "christian.gonzalez@nerdocs.at" }]
 readme = "README.md"

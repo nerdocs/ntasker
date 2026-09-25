@@ -84,7 +84,8 @@ Trigger: the user explicitly asks for it ("committe als v2.5.0", "bump version")
 1. Bump `__version__` in `src/ntasker/__init__.py`.
 2. Bump `version` in `pyproject.toml`.
 3. Prepend a one-liner to `CHANGELOG.md` under a new version section.
-4. Commit + tag sequence:
+4. Run `uv lock` so `uv.lock`'s own `ntasker` entry follows the bump -- it belongs in the release commit.
+5. Commit + tag sequence:
    ```
    git -C path/to/ntasker/ntasker add <files>
    git -C path/to/ntasker/ntasker commit -m "release: v<x.y.z> -- <one-liner>"

@@ -297,6 +297,12 @@
                                 {% call row('dir_locks') %}{{ switch('dir_locks', 'on', 'off') }}{% endcall %}
                                 {% call row('require_clean') %}{{ switch('require_clean', 'on', 'off') }}{% endcall %}
                                 {% call row('quicktasks_bypass_lanes') %}{{ switch('quicktasks_bypass_lanes', 'on', 'off') }}{% endcall %}
+
+                                <h3 class="mt-4 mb-1">{{ t('Inbox') }}</h3>
+                                <p class="text-secondary small mb-2">{{ t('A raw note becomes a task proposal; you confirm every proposal.') }}</p>
+                                {% call row('triage_enabled') %}{{ switch('triage_enabled', 'on', 'off') }}{% endcall %}
+                                {% call row('triage_model') %}{{ text('triage_model', 'haiku') }}{% endcall %}
+
                             </div>
 
                             {# ================= Plugins ================= #}

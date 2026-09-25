@@ -40,6 +40,8 @@
         window.__sidebarSections = {{ sidebar_sections | tojson }};
         // Quick-prompt buttons of the run view (the `quick_prompts` setting).
         window.__quickPrompts = {{ quick_prompts | tojson }};
+        // The inbox (the `triage_enabled` setting): topbar field + Inbox column/tab.
+        window.__triageEnabled = {{ triage_enabled | tojson }};
         // Names of the enabled plugins; plugin scripts register mixins on
         // window.ntaskerPlugins (merged into tracker() in app.js).
         window.__plugins = {{ plugins_enabled | tojson }};
@@ -110,7 +112,8 @@
                 {# width. Skipped for the cross-project sentinel (nothing to seed). #}
                 <template x-if="{{ p }}.name !== '__none__'">
                     <span class="project-actions" :class="{ 'is-open': menuOpen }"
-                          x-data="{ menuOpen: false, grouping: false, groupName: '', quickPrompt: '' }">
+                          x-data="{ menuOpen: false, grouping: false, groupName: '', quickPrompt: '', summarizing: false, summaryText: '', summaryBusy: false }">
+
                         {# Quick "+": open the new-task form pre-filled with this project. #}
                         <button type="button" class="btn btn-sm btn-ghost-secondary px-1 py-0"
                                 @click.stop.prevent="newTaskForProject({{ p }}.name)"
@@ -131,15 +134,15 @@
                         </template>
                         {# Dots menu: hide the project from the sidebar, or bring it #}
                         {# back when the "Hidden" switch shows it.                   #}
-                        <span class="dropdown project-menu" @click.outside="menuOpen = false; grouping = false">
+                        <span class="dropdown project-menu" @click.outside="menuOpen = false; grouping = false; summarizing = false">
                             <button type="button" class="btn btn-sm btn-ghost-secondary px-1 py-0"
-                                    @click.stop.prevent="menuOpen = !menuOpen; grouping = false"
+                                    @click.stop.prevent="menuOpen = !menuOpen; grouping = false; summarizing = false"
                                     :aria-expanded="menuOpen ? 'true' : 'false'"
                                     :aria-label="$i18n('project_menu')">
                                 <i class="ti ti-dots-vertical"></i>
                             </button>
                             <div class="dropdown-menu dropdown-menu-end" :class="{ show: menuOpen }" x-cloak>
-                                <template x-if="!grouping">
+                                <template x-if="!grouping && !summarizing">
                                     <div>
                                         {# Quick task: one-line prompt + go -- creates a task from the #}
                                         {# prompt and starts the agent with it. Hidden when the default #}
@@ -181,6 +184,16 @@
                                                     <i class="ti ti-folder-symlink me-2"></i>
                                                     <span x-text="$i18n('group_project')"></span>
                                                 </button>
+                                                {# "Summary...": the paragraph the inbox triage sees for this #}
+                                                {# project -- edit inline or regenerate with Claude.          #}
+                                                <template x-if="triageEnabled">
+                                                    <button type="button" class="dropdown-item"
+                                                            :title="$i18n('project_summary_hint')"
+                                                            @click.stop.prevent="summarizing = true; summaryText = {{ p }}.summary || ''">
+                                                        <i class="ti ti-file-description me-2"></i>
+                                                        <span x-text="$i18n('project_summary')"></span>
+                                                    </button>
+                                                </template>
                                                 <button type="button" class="dropdown-item"
                                                         @click.stop.prevent="menuOpen = false; setProjectHidden({{ p }}.name, !isProjectHidden({{ p }}.name))">
                                                     <i class="ti me-2" :class="isProjectHidden({{ p }}.name) ? 'ti-eye' : 'ti-eye-off'"></i>
@@ -208,6 +221,29 @@
                                                @click.stop
                                                @keydown.enter.prevent="menuOpen = false; grouping = false; setProjectGroup({{ p }}.name, groupName)"
                                                @keydown.escape.stop="menuOpen = false; grouping = false">
+                                    </div>
+                                </template>
+                                <template x-if="summarizing">
+                                    <div class="px-2 py-1 project-summary-edit">
+                                        <textarea class="form-control form-control-sm" rows="5"
+                                                  x-init="$el.focus()" x-model="summaryText"
+                                                  :placeholder="$i18n('project_summary_placeholder')"
+                                                  :disabled="summaryBusy"
+                                                  @click.stop
+                                                  @keydown.enter.prevent="menuOpen = false; summarizing = false; setProjectSummary({{ p }}.name, summaryText)"
+                                                  @keydown.escape.stop="menuOpen = false; summarizing = false"></textarea>
+                                        <div class="d-flex gap-1 mt-1">
+                                            <button type="button" class="btn btn-sm btn-primary"
+                                                    :disabled="summaryBusy"
+                                                    @click.stop.prevent="menuOpen = false; summarizing = false; setProjectSummary({{ p }}.name, summaryText)"
+                                                    x-text="$i18n('save')"></button>
+                                            <button type="button" class="btn btn-sm btn-ghost-secondary"
+                                                    :disabled="summaryBusy"
+                                                    @click.stop.prevent="summaryBusy = true; regenerateSummary({{ p }}.name).then(s => { if (s !== null) summaryText = s; summaryBusy = false })">
+                                                <span class="spinner-border spinner-border-sm me-1" x-show="summaryBusy" x-cloak></span>
+                                                <span x-text="$i18n('project_summary_regenerate')"></span>
+                                            </button>
+                                        </div>
                                     </div>
                                 </template>
                             </div>
@@ -246,6 +282,109 @@
                             </div>
 {% endmacro %}
 
+{# The Inbox column / tab body: notes still being triaged (or failed), then the #}
+{# proposals awaiting the user. Rendered once per view; `view` gates the data   #}
+{# so the hidden copy holds no rows (see inboxFor in app.js).                  #}
+{% macro inbox_column(view) %}
+                            <div class="inbox-column d-flex flex-column gap-2">
+                                <template x-if="inboxFor('{{ view }}').items.length === 0 && inboxFor('{{ view }}').tasks.length === 0">
+                                    <div class="text-secondary small p-2" x-text="$i18n('inbox_empty')"></div>
+                                </template>
+                                <template x-for="item in inboxFor('{{ view }}').items" :key="'i' + item.id">
+                                    <div class="kanban-card inbox-item" :class="{ 'inbox-item-failed': item.status === 'failed' }">
+                                        <div class="d-flex align-items-start gap-2">
+                                            <template x-if="item.status === 'pending'">
+                                                <span class="spinner-border spinner-border-sm text-secondary mt-1 flex-shrink-0"
+                                                      :title="$i18n('inbox_pending')"></span>
+                                            </template>
+                                            <template x-if="item.status === 'failed'">
+                                                <i class="ti ti-alert-circle text-danger mt-1 flex-shrink-0" :title="$i18n('inbox_failed')"></i>
+                                            </template>
+                                            <div class="flex-fill min-w-0">
+                                                <div class="small" style="white-space: pre-wrap" x-text="item.text"></div>
+                                                <template x-if="item.error">
+                                                    <div class="text-danger small mt-1" x-text="item.error"></div>
+                                                </template>
+                                            </div>
+                                            <template x-if="item.status === 'failed'">
+                                                <button class="btn btn-sm btn-ghost-secondary px-1 py-0" @click="retryInbox(item)"
+                                                        :title="$i18n('inbox_retry')" :aria-label="$i18n('inbox_retry')">
+                                                    <i class="ti ti-refresh fs-3"></i>
+                                                </button>
+                                            </template>
+                                            <button class="btn btn-sm btn-ghost-danger px-1 py-0" @click="deleteInbox(item)"
+                                                    :title="$i18n('delete')" :aria-label="$i18n('delete')">
+                                                <i class="ti ti-trash fs-3"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </template>
+                                <template x-for="task in inboxFor('{{ view }}').tasks" :key="'t' + task.id">
+                                    <div class="kanban-card inbox-proposal">
+                                        <div class="d-flex align-items-start gap-1 mb-1">
+                                            <span class="task-id badge bg-secondary-lt text-secondary font-monospace"
+                                                  role="button"
+                                                  :title="$i18n('click_to_copy_id', {id: task.id})"
+                                                  @click.stop="copyId(task.id)"
+                                                  x-text="`#${task.id}`"></span>
+                                            <strong class="flex-fill" style="cursor: pointer"
+                                                    @click.stop="task._expanded = !task._expanded"
+                                                    x-text="task.title"></strong>
+                                            <template x-if="task.triage">
+                                                <span class="text-secondary small text-nowrap" :title="$i18n('inbox_confidence')"
+                                                      x-text="Math.round((task.triage.confidence || 0) * 100) + '%'"></span>
+                                            </template>
+                                        </div>
+                                        <template x-if="task.triage && task.triage.question">
+                                            <div class="alert alert-warning py-1 px-2 small mb-1" x-text="task.triage.question"></div>
+                                        </template>
+                                        {# The generated prompt (the description minus its "Original" tail). #}
+                                        <div x-show="task._expanded" class="mb-1 text-muted small" style="white-space: pre-wrap"
+                                             :title="$i18n('inbox_prompt')"
+                                             x-text="task.triage ? task.triage.prompt : task.description" x-cloak></div>
+                                        {# Project chips: the chosen one lit, the other candidates muted; a #}
+                                        {# click accepts the proposal for that project in one go.          #}
+                                        <div class="d-flex flex-wrap gap-1 small mb-1">
+                                            <template x-for="c in proposalChips(task)" :key="c.key">
+                                                <span class="badge inbox-chip" role="button"
+                                                      :class="c.chosen ? 'bg-blue text-white' : 'bg-secondary-lt'"
+                                                      :title="c.title"
+                                                      @click.stop="acceptProposal(task, c.project)">
+                                                    <i class="ti ti-asterisk me-1" x-show="c.project === null"></i><span x-text="c.label"></span>
+                                                </span>
+                                            </template>
+                                            <template x-if="task.priority === 'critical'">
+                                                <span class="badge bg-danger text-white">
+                                                    <i class="ti ti-alert-triangle-filled me-1"></i><span x-text="$i18n('priority_critical')"></span>
+                                                </span>
+                                            </template>
+                                            <template x-if="task.priority === 'high'">
+                                                <span class="badge bg-orange-lt">
+                                                    <i class="ti ti-arrow-up me-1"></i><span x-text="$i18n('priority_high')"></span>
+                                                </span>
+                                            </template>
+                                            <template x-if="task.priority === 'low'">
+                                                <span class="badge bg-azure-lt">
+                                                    <i class="ti ti-arrow-down me-1"></i><span x-text="$i18n('priority_low')"></span>
+                                                </span>
+                                            </template>
+                                            <template x-for="tag in task.tags" :key="tag">
+                                                <span class="badge bg-purple-lt">#<span x-text="tag"></span></span>
+                                            </template>
+                                        </div>
+                                        <div class="text-secondary small mb-2" style="white-space: pre-wrap"
+                                             x-text="task.triage ? task.triage.raw : ''"></div>
+                                        <div class="d-flex gap-1">
+                                            <button class="btn btn-primary btn-sm" @click="acceptProposal(task)"
+                                                    x-text="$i18n('inbox_accept')"></button>
+                                            <button class="btn btn-ghost-danger btn-sm" @click="discardProposal(task)"
+                                                    x-text="$i18n('inbox_discard')"></button>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+{% endmacro %}
+
 {% macro fold_pill() %}
                 <template x-if="row.children.length && !row.expanded">
                     <span class="project-fold-summary ms-1" :class="{ 'is-filtered': row.filtered }"
@@ -257,7 +396,8 @@
 <body>
 <div class="d-flex" style="min-height: 100vh;"
      x-data="tracker(window.__defaultView, window.__claudeOpenTerminal, window.__defaultAgent)"
-     x-init="init()">
+     x-init="init()"
+     @keydown.window.ctrl.k.prevent="$refs.inbox && $refs.inbox.focus()">
 
     {# Sidebar: project + tag filter (full-width checkboxes). Hidden on mobile (<768px). #}
     {# Sticky-positioned aside outside the .page wrapper. Tabler/Bootstrap surface vars #}
@@ -503,6 +643,13 @@
                 ntasker
                 <span class="badge bg-secondary-lt ms-2 font-monospace small align-middle">v{{ version }}</span>
             </h1>
+            {# Inbox capture: one field, Enter stores the note, the triage worker does the rest. #}
+            <div class="inbox-capture flex-fill mx-3" x-show="triageEnabled" x-cloak>
+                <input type="text" class="form-control" x-ref="inbox" x-model="inboxText"
+                       :placeholder="$i18n('inbox_placeholder')"
+                       @keydown.enter.prevent="sendInbox()"
+                       @keydown.escape="$el.blur()">
+            </div>
             {% include "_topnav.html" %}
         </div>
     </header>
@@ -1152,10 +1299,24 @@
                             <span class="badge bg-secondary-lt ms-1" x-text="counts.archive"></span>
                         </button>
                     </li>
+                    <li class="nav-item" role="presentation" x-show="triageEnabled" x-cloak>
+                        <button class="nav-link" :class="tab === 'inbox' ? 'active' : ''" @click="setTab('inbox')">
+                            <i class="ti ti-inbox me-1"></i>
+                            {{ t('Inbox') }}
+                            <span class="badge bg-yellow-lt ms-1" x-text="counts.inbox"></span>
+                        </button>
+                    </li>
                 </ul>
 
+                {# Inbox tab: the same column body as on the board, in a card. #}
+                <div class="card" x-show="viewMode === 'list' && tab === 'inbox'" x-cloak>
+                    <div class="card-body">
+                        {{ inbox_column('list') }}
+                    </div>
+                </div>
+
                 {# Task list #}
-                <div class="card" x-show="viewMode === 'list'" x-cloak>
+                <div class="card" x-show="viewMode === 'list' && tab !== 'inbox'" x-cloak>
                     <div class="list-group list-group-flush" x-show="tasks.length > 0">
                         <template x-for="task in listTasks" :key="task.id">
                             <div class="list-group-item"
@@ -1468,7 +1629,7 @@
                 {# the kanban view just groups it by phase. #}
                 <div x-show="viewMode === 'kanban'" x-cloak>
                     <div class="kanban-board"
-                         :class="doneCollapsed ? 'kanban-done-collapsed' : ''">
+                         :class="{ 'kanban-done-collapsed': doneCollapsed, 'kanban-has-inbox': triageEnabled }">
                         <template x-for="col in kanbanColumns" :key="col.key">
                             <div class="kanban-column"
                                  :class="{
@@ -1484,7 +1645,7 @@
                                     <i class="ti me-2 fs-2" :class="col.icon"></i>
                                     <span class="fw-bold flex-fill text-truncate" x-text="col.label"></span>
                                     <span class="badge bg-secondary-lt ms-2"
-                                          x-text="kanbanTasksFor(col.key).length"></span>
+                                          x-text="col.key === 'inbox' ? inbox.items.length + inbox.tasks.length : kanbanTasksFor(col.key).length"></span>
                                     <template x-if="col.key === 'done'">
                                         <button type="button"
                                                 class="btn btn-sm btn-ghost-secondary ms-1 px-1 py-0"
@@ -1498,6 +1659,10 @@
 
                                 <div class="kanban-column-body"
                                      x-show="!(col.key === 'done' && doneCollapsed)">
+                                    {# Inbox column: not a phase -- fed by /api/inbox, cards not draggable. #}
+                                    <template x-if="col.key === 'inbox'">
+                                        {{ inbox_column('kanban') }}
+                                    </template>
                                     <template x-for="task in kanbanColumnTasks(col.key)" :key="task.id">
                                         <div class="kanban-card"
                                              :class="{'kanban-card-dragging': draggedTaskId === task.id,
@@ -1680,7 +1845,8 @@
                                     </template>
 
                                     <div class="kanban-column-empty text-muted small text-center py-2"
-                                         x-show="kanbanTasksFor(col.key).length === 0">
+                                         x-show="col.key !== 'inbox' && kanbanTasksFor(col.key).length === 0">
+
                                         <i class="ti ti-inbox me-1"></i>
                                         <span x-text="$i18n('kanban_empty_column')"></span>
                                     </div>

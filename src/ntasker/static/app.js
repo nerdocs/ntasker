@@ -446,7 +446,13 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // caret, Delete the chip right of it. See the chip-nav helpers below.
         tagCaret: { form: -1, edit: -1 },
         editing: null,               // task object or null
-        counts: { open: 0, done: 0, archive: 0 },
+        counts: { open: 0, done: 0, archive: 0, inbox: 0 },
+        // The inbox (see ntasker.triage): the topbar field's draft and the
+        // rows /api/inbox serves -- notes still being triaged (or failed) and
+        // the proposals awaiting the user. Off = no field, no column, no tab.
+        triageEnabled: !!window.__triageEnabled,
+        inboxText: '',
+        inbox: { items: [], tasks: [] },
 
         async init() {
             this.restoreProjectFilter();
@@ -462,8 +468,10 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 this.loadClaudeSessions(),
                 this.loadQueue(),
                 this.loadOutcomes(),
+                this.loadInbox(),
             ]);
             // After loading projects/tags, drop stale entries silently.
+
             this.pruneStaleProjectFilter();
             this.pruneStaleTagFilter();
             // A restored single-project filter prefills the new-task form.
@@ -1003,6 +1011,140 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             this.loadTasks();
         },
 
+        // ---- Inbox ----
+        async loadInbox() {
+            if (!this.triageEnabled) return;
+            try {
+                const r = await fetch('/api/inbox');
+                if (!r.ok) return;
+                const data = await r.json();
+                // Keep the expand state of proposals still on the board.
+                const expanded = new Set(this.inbox.tasks.filter(t => t._expanded).map(t => t.id));
+                data.tasks.forEach(t => { t._expanded = expanded.has(t.id); });
+                this.inbox = data;
+            } catch (_e) { /* server momentarily unreachable */ }
+        },
+
+        // The rows the Inbox column of ``view`` ('kanban' | 'list') renders.
+        // Both copies live in the document; the one not on screen gets none
+        // (same reason as listTasks / kanbanColumnTasks).
+        inboxFor(view) {
+            const active = view === 'kanban'
+                ? this.viewMode === 'kanban'
+                : this.viewMode === 'list' && this.tab === 'inbox';
+            return active ? this.inbox : { items: [], tasks: [] };
+        },
+
+        async sendInbox() {
+            const text = this.inboxText.trim();
+            if (!text) return;
+            const r = await fetch('/api/inbox', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text, source: 'ui' }),
+            });
+            if (!r.ok) {
+                this.showToast(await this._errorDetail(r, 'inbox_send_failed'), 'danger');
+                return;
+            }
+            this.inboxText = '';
+            await this.refreshAll();
+        },
+
+        // Chips of a proposal card: the chosen project first (lit), the other
+        // candidates, and a cross-project chip. A click accepts for that project.
+        proposalChips(task) {
+            const info = task.triage || {};
+            const chosen = task.project || null;
+            const chips = [];
+            const seen = new Set();
+            const add = (project, reason) => {
+                const key = project === null ? '__none__' : project;
+                if (seen.has(key)) return;
+                seen.add(key);
+                chips.push({
+                    key,
+                    project,
+                    label: project === null ? _i('cross_project') : project,
+                    chosen: project === chosen,
+                    title: reason || (project === null
+                        ? _i('inbox_accept_cross')
+                        : _i('inbox_accept_as', { project })),
+                });
+            };
+            add(chosen, null);
+            for (const c of info.candidates || []) add(c.project, c.reason);
+            add(null, null);
+            return chips;
+        },
+
+        // ``project`` undefined = keep the model's choice; null = cross-project.
+        async acceptProposal(task, project) {
+            const body = project === undefined ? {} : { project };
+            const r = await fetch(`/api/tasks/${task.id}/accept`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            if (!r.ok) {
+                this.showToast(await this._errorDetail(r, 'update_failed'), 'danger');
+                return;
+            }
+            await this.refreshAll();
+        },
+
+        // No confirmation: the raw note survives in its inbox row.
+        async discardProposal(task) {
+            const r = await fetch(`/api/tasks/${task.id}`, { method: 'DELETE' });
+            if (!r.ok) {
+                this.showToast(_i('delete_failed'), 'danger');
+                return;
+            }
+            await this.refreshAll();
+        },
+
+        async retryInbox(item) {
+            const r = await fetch(`/api/inbox/${item.id}/retry`, { method: 'POST' });
+            if (!r.ok) this.showToast(await this._errorDetail(r, 'update_failed'), 'danger');
+            await this.loadInbox();
+        },
+
+        async deleteInbox(item) {
+            const r = await fetch(`/api/inbox/${item.id}`, { method: 'DELETE' });
+            if (!r.ok) this.showToast(_i('delete_failed'), 'danger');
+            await this.refreshAll();
+        },
+
+        // The paragraph the triage sees for a project (project row menu).
+        async setProjectSummary(name, text) {
+            const r = await fetch('/api/projects/summary', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ project: name, summary: text }),
+            });
+            if (!r.ok) {
+                this.showToast(await this._errorDetail(r, 'update_failed'), 'danger');
+                return;
+            }
+            await this.loadProjects();
+        },
+
+        // Resolves to the new summary, or null when generation failed.
+        async regenerateSummary(name) {
+            const r = await fetch('/api/projects/summary/regenerate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ project: name }),
+            });
+            if (!r.ok) {
+                this.showToast(await this._errorDetail(r, 'summary_failed'), 'danger');
+                return null;
+            }
+            const data = await r.json();
+            await this.loadProjects();
+            return data.summary;
+        },
+
         // ---- View mode (list / kanban) ----
         async setViewMode(mode) {
             if (!VIEW_MODES.includes(mode)) return;
@@ -1113,6 +1255,10 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // tabler-icons subset (see comments in index.html).
         get kanbanColumns() {
             return [
+                // The Inbox is not a phase: fed by /api/inbox, no drop target.
+                ...(this.triageEnabled
+                    ? [{key: 'inbox', label: _i('kanban_col_inbox'), icon: 'ti-inbox'}]
+                    : []),
                 {key: 'planned', label: _i('phase_planned'),    icon: 'ti-clock'},
                 {key: 'wip',     label: _i('phase_wip'),        icon: 'ti-progress'},
                 {key: 'review',  label: _i('phase_review'),     icon: 'ti-eye'},
@@ -1124,6 +1270,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // phase columns only get status==='open' tasks (a done task in phase
         // 'wip' belongs in Done, not in WIP).
         kanbanTasksFor(colKey) {
+            if (colKey === 'inbox') return [];   // proposals come from /api/inbox
             if (colKey === 'done') {
                 return this.tasks.filter(t => t.status === 'done');
             }
@@ -1146,7 +1293,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // keeps a full set of rows in the DOM (and re-renders them on every
         // refresh) while the user looks at the other.
         get listTasks() {
-            return this.viewMode === 'list' ? this.tasks : [];
+            return this.viewMode === 'list' && this.tab !== 'inbox' ? this.tasks : [];
         },
 
         // ---- Drag & Drop (kanban) ----
@@ -1417,6 +1564,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
 
         // A blocked task (open dependencies) must not advance to Review or Done.
         canDropOn(task, colKey) {
+            if (colKey === 'inbox') return false;   // not a phase
             if ((colKey === 'review' || colKey === 'done') && this.isBlocked(task)) {
                 return false;
             }
@@ -1886,7 +2034,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             // the Done column has content; status tabs are irrelevant here.
             if (view === 'kanban') {
                 params.set('archived', 'false');
-            } else if (this.tab === 'open') {
+            } else if (this.tab === 'open' || this.tab === 'inbox') {
                 params.set('status', 'open');
                 params.set('archived', 'false');
             } else if (this.tab === 'done') {
@@ -2319,8 +2467,10 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 this.loadPriorities(),
                 this.loadQueue(),
                 this.loadOutcomes(),
+                this.loadInbox(),
             ]);
             this.pruneStaleProjectFilter();
+
             this.pruneStaleTagFilter();
             await this.loadTasks();
         },

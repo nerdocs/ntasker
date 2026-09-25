@@ -187,6 +187,13 @@ body {
 .kanban-board.kanban-done-collapsed {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) auto;
 }
+/* With the inbox on: a fifth column in front (see ntasker.triage). */
+.kanban-board.kanban-has-inbox {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+.kanban-board.kanban-has-inbox.kanban-done-collapsed {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+}
 @media (max-width: 767.98px) {
     .kanban-board,
     .kanban-board.kanban-done-collapsed {
@@ -194,7 +201,29 @@ body {
         overflow-x: auto;
         padding-bottom: 0.5rem;
     }
+    .kanban-board.kanban-has-inbox,
+    .kanban-board.kanban-has-inbox.kanban-done-collapsed {
+        grid-template-columns: repeat(5, minmax(240px, 1fr));
+    }
 }
+
+/* Inbox column / tab (see the inbox_column macro in index.html). */
+.inbox-capture {
+    max-width: 32rem;
+}
+.inbox-column .kanban-card {
+    cursor: default;
+}
+.inbox-item-failed {
+    border-color: var(--tblr-danger);
+}
+.inbox-chip {
+    cursor: pointer;
+}
+.project-summary-edit {
+    min-width: 20rem;
+}
+
 
 .kanban-column {
     background-color: var(--tblr-bg-surface-secondary, var(--tblr-bg-surface));

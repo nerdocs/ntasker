@@ -19,7 +19,13 @@ Interactive OpenAPI docs: <http://127.0.0.1:8766/api/docs>
 | GET | `/api/priorities` | `[{value, label, open_count}]`, fixed order: `critical`, `high`, `normal`, `low` |
 | GET | `/api/tasks` | Filters: `project` (multi), `tag` (multi, OR), `phase` (multi, OR; `__none__` = phase IS NULL), `priority` (multi), `status`, `archived`, `search`. Filters across params combine with **AND**. |
 | GET | `/api/tasks/{id}` | Single task incl. `tags` |
-| GET | `/api/stats` | Tab counts (`open`/`done`/`archive`), respects all filters |
+| GET | `/api/stats` | Tab counts (`open`/`done`/`archive`/`inbox`), respects all filters |
+| POST | `/api/inbox` | `{text, source?}` -> 201 inbox row; the triage turns it into a proposal ([inbox.md](inbox.md)) |
+| GET | `/api/inbox` | `{items, tasks}`: notes not yet triaged + proposals; the only feed serving proposed tasks |
+| POST/DELETE | `/api/inbox/{id}[/retry]` | Retry a failed note (409 unless failed) / drop a note |
+| POST | `/api/tasks/{id}/accept` | `{project?}` turns a proposal into a task (`null` = cross-project); 409 unless proposed |
+
+| PUT/POST | `/api/projects/summary[/regenerate]` | Edit / regenerate the project summary the triage sees |
 | POST | `/api/tasks` | `{project?, title, description?, phase?, priority?, tags?}` |
 | PATCH | `/api/tasks/{id}` | Any subset of `{title, description, project, phase, priority, status, archived, tags}` -- `tags` is a **full replace** |
 | DELETE | `/api/tasks/{id}` | Hard delete (the UI archives by default) |
@@ -51,7 +57,9 @@ CREATE TABLE tasks (
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     completed_at TEXT,
     archived INTEGER NOT NULL DEFAULT 0,
-    agent TEXT                       -- AI agent for this task; NULL = default_agent setting (then claude)
+    agent TEXT,                      -- AI agent for this task; NULL = default_agent setting (then claude)
+    proposed INTEGER NOT NULL DEFAULT 0,  -- inbox proposal awaiting the user; never listed, queued or run
+    triage TEXT                      -- JSON: the triage output + the raw note; NULL for hand-made tasks
 );
 CREATE TABLE tags (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -72,6 +80,9 @@ CREATE TABLE settings (
 `status`: `open` | `done`. `phase`: `wip` | `planned` | `later` | NULL.
 `priority`: `critical` | `high` | `normal` | `low` (NOT NULL, default `normal`).
 Tag names are normalised to lowercase on write; `UNIQUE COLLATE NOCASE` keeps it tidy.
+`GET /api/tasks` never returns a task with `proposed = 1` -- see [inbox.md](inbox.md) for the `inbox`,
+`project_summaries` and `triage_examples` tables.
+
 
 ## Design notes
 

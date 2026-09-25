@@ -4,7 +4,12 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [Unreleased]
+Inbox: capture a raw idea (topbar, Ctrl+K, `ntasker in`); a stateless `claude -p` triage proposes title, prompt and
+project from a summary catalog -- one click to accept.
+
 ## [3.10.0] — 2026-09-24
+
 Sessions: carry on with a terminal conversation -- `/task` reports its id, `ntasker adopt`, and a board dialog of the
 sessions running elsewhere right now.
 Queue: fasttrack tasks commit + finish themselves via `ntasker finish`; run log of outcomes; seeds chain dep results.

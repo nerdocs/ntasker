@@ -68,6 +68,14 @@ across projects too -- drop it on the **middle** of the other; the edges keep re
 and closes itself and hands its result to the tasks depending on it; the **Run-Log** collects those outcomes. **Plan
 queue** lets an agent session order the queue for you and start it. See [docs/task-queue.md](docs/task-queue.md).
 
+### The inbox sorts your ideas
+
+Type a raw thought into the topbar field (`Ctrl+K`) or `ntasker in "..."` and carry on. A stateless `claude -p` call
+turns it into a proposed task -- title, prompt, priority, tags and the project, chosen from a catalog of one-paragraph
+project summaries -- and the Inbox column shows the proposal with project chips. One click accepts it, a chip accepts
+it elsewhere, and every correction becomes an example for the next triage. Nothing becomes a task until you say so.
+See [docs/inbox.md](docs/inbox.md).
+
 ## Pick your agent per task
 
 ntasker is agent-agnostic: **Claude Code, OpenCode and Pi** are supported out of the box, and adding another is one
@@ -106,6 +114,8 @@ slots: [docs/plugins.md](docs/plugins.md).
 | [Task queue](docs/task-queue.md) | Queue semantics, dependencies, fasttrack, run log |
 | [Directory locks](docs/directory-locks.md) | Keeping two agents out of the same working directory |
 | [Kanban view](docs/kanban.md) | Board vs. list view, drag-and-drop, keyboard shortcuts |
+| [Inbox](docs/inbox.md) | Raw notes triaged into task proposals by a stateless `claude -p` call |
+
 | [Projects](docs/projects.md) | Sidebar tree, project families, misc project |
 | [Service](docs/service.md) | systemd / launchd, auto-update, uninstall |
 | [Development](docs/development.md) | Repo setup, smoke test, translations |

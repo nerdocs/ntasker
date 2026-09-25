@@ -274,7 +274,7 @@ def test_cli_in_with_arg_and_stdin(db, capsys, monkeypatch):
     from ntasker import cli
 
     assert cli.main(["--db", str(db), "in", "ntasker: from arg"]) == 0
-    assert "inbox #1" in capsys.readouterr().out
+    assert "#1" in capsys.readouterr().out   # locale-dependent text
     monkeypatch.setattr("sys.stdin", io.StringIO("from stdin\n"))
     assert cli.main(["--db", str(db), "in"]) == 0
     monkeypatch.setattr("sys.stdin", io.StringIO("   "))

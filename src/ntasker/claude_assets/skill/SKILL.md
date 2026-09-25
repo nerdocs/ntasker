@@ -218,6 +218,14 @@ agent has finished its part, it moves the task to `phase=review` so the
 user can validate and close it. Neither is "marking the task done" --
 autonomous closing and archival stay forbidden.
 
+**The inbox is user-only (since v3.11).** `POST /api/inbox` and `ntasker in`
+take the user's raw notes and turn them into *proposals* the user confirms.
+Agents never feed it -- an idea of your own goes into your report, as
+above. Proposals (`proposed=1`) never appear in `GET /api/tasks`, so the
+"what's next" ranking (section 3.1) is unaffected; `/task` on a proposal
+stops with `ENTWURF`.
+
+
 ## 6. Review-Handoff on Agent-Side Completion (since v1.5.0)
 
 When the user assigned `#<id>` and the agent considers its work done,
@@ -405,6 +413,8 @@ agent's own idea -- and never on the task you are currently working on.
 | `completed_at` | TEXT NULL | UTC ISO, auto-set on done |
 | `archived` | INT | 0/1 -- task remains searchable |
 | `draft` | INT | 0/1 -- a parked idea: never started (not queueable, run/resume/`/task` refuse it) |
+| `proposed` | INT | 0/1 -- an inbox proposal awaiting the user; never returned by `GET /api/tasks`, never started |
+| `triage` | TEXT NULL | JSON: the inbox triage's output + the raw note; NULL for hand-made tasks |
 | `fasttrack` | INT | 0/1 -- the agent commits and finishes the task itself (`ntasker finish`), see 6.2 |
 | `fail_continue` | INT | 0/1 -- with fasttrack: a failed run leaves the queue instead of blocking its lane |
 | `agent` | TEXT NULL | `claude` / `opencode` / `pi`; NULL = the `default_agent` setting |

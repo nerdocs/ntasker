@@ -181,7 +181,15 @@ first and its run tab closed. The endpoint
 refuses (400) any project whose directory still exists. This is irreversible --
 it is the one place ntasker uses a blocking confirmation.
 
+## Project summary
+
+The inbox triage chooses a note's project from a one-paragraph summary per project (generated on first use from the
+project's `CLAUDE.md`, `README.md` and directory listing). The row menu's **Summary...** shows it in an inline editor
+-- Enter saves, **Regenerate** asks Claude again. Hidden projects are not offered to the triage at all. See
+[inbox.md](inbox.md).
+
 ## What families are not
+
 
 - Not a filter. Checking a family head filters that one project, not its
   children -- the checkbox belongs to the row, the chevron to the family.

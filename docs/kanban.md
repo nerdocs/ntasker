@@ -12,7 +12,8 @@ The page header carries a pair of pseudo-tabs:
 | Toggle | What it shows |
 |---|---|
 | **Task list** (`ti-list-check`) | Classic flat list with Open / Done / Archive tabs and per-row actions (edit, archive, delete). |
-| **Kanban** (`ti-columns`) | 4-column board: Planned -> In Progress -> Review -> Done. |
+| **Kanban** (`ti-columns`) | 4-column board: Planned -> In Progress -> Review -> Done (+ Inbox in front when on). |
+
 
 The active mode is persisted to `localStorage` (`ntasker.viewMode`). On a
 fresh browser the server-side `default_view` setting kicks in instead
@@ -31,6 +32,14 @@ The phase vocabulary changed in v2.0 and is now NOT NULL:
 | _new_ | `review` | "Review" -- staging column before done |
 
 Workflow direction: `planned -> wip -> review -> (done)`.
+
+## Inbox column
+
+With `triage_enabled` on, a fifth column sits in front of Planned. It is not a phase: it is fed by `GET /api/inbox`
+(notes still being triaged, then the proposals awaiting you), its cards are not draggable and nothing can be dropped
+on it. Accepting a proposal moves it to Planned as an ordinary task. The list view shows the same content as an
+**Inbox** tab. See [inbox.md](inbox.md).
+
 
 Done is **not** a phase value: it's `status='done'`. The kanban view
 derives the fourth column from status, so dragging a card from `review`

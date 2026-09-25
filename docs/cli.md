@@ -12,6 +12,10 @@ Every command honours the global flags below and resolves the database via the
 | `ntasker list [filters]`    | List tasks; supports `--project`, `--tag`, `--phase`, ...     |
 | `ntasker show <id>`         | Show a single task; pair with `--json` for raw output         |
 | `ntasker add --title=...`   | Create a task; optional `--project --phase --priority --tag --agent --model` |
+| `ntasker in [TEXT]`         | Drop a raw note into the inbox (no argument reads stdin), see [inbox.md](inbox.md) |
+
+| `ntasker project summary <name>` | Show the project summary the triage sees; `--regenerate` / `--set TEXT` |
+
 | `ntasker done <id>`         | Mark a task as done                                           |
 | `ntasker patch <id> [...]`  | Patch arbitrary fields (`--title`, `--phase`, `--status`, ...)|
 | `ntasker tag-add <id> <t>`  | Append a tag                                                  |

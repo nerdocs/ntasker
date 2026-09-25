@@ -41,6 +41,20 @@ on it. Accepting a proposal moves it to Planned as an ordinary task. The list vi
 **Inbox** tab. See [inbox.md](inbox.md).
 
 
+## Card layout
+
+A board card reads top to bottom in three bands:
+
+1. **Head** -- the `#id` badge (click to copy) on the left, every action on the right: run / resume, report, diff,
+   edit. The row wraps rather than pushing the id out of the card.
+2. **Title** -- its own full-width row, click to expand the description.
+3. **Badges** -- project, priority, tags, blockers, queue position, locks, and the mark-done check at the far right.
+
+The title used to share the head row with the id and the buttons. In a five-column board next to an open sidebar a
+column is only ~170px wide, which left the title a few dozen pixels: it broke to one word per line, and the id badge
+was shrunk until its text ran over the title. Columns now also have a floor of `11rem` -- below that the board scrolls
+sideways instead of squeezing the cards further.
+
 Done is **not** a phase value: it's `status='done'`. The kanban view
 derives the fourth column from status, so dragging a card from `review`
 into `done` issues `PATCH {"status": "done"}` rather than a phase

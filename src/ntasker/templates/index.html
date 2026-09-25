@@ -321,20 +321,22 @@
                                 </template>
                                 <template x-for="task in inboxFor('{{ view }}').tasks" :key="'t' + task.id">
                                     <div class="kanban-card inbox-proposal">
-                                        <div class="d-flex align-items-start gap-1 mb-1">
+                                        {# Id and confidence on one row, title on the next -- see the #}
+                                        {# board card: side by side the title has no room in a column. #}
+                                        <div class="kanban-card-head">
                                             <span class="task-id badge bg-secondary-lt text-secondary font-monospace"
                                                   role="button"
                                                   :title="$i18n('click_to_copy_id', {id: task.id})"
                                                   @click.stop="copyId(task.id)"
                                                   x-text="`#${task.id}`"></span>
-                                            <strong class="flex-fill" style="cursor: pointer"
-                                                    @click.stop="task._expanded = !task._expanded"
-                                                    x-text="task.title"></strong>
                                             <template x-if="task.triage">
-                                                <span class="text-secondary small text-nowrap" :title="$i18n('inbox_confidence')"
+                                                <span class="text-secondary small text-nowrap ms-auto" :title="$i18n('inbox_confidence')"
                                                       x-text="Math.round((task.triage.confidence || 0) * 100) + '%'"></span>
                                             </template>
                                         </div>
+                                        <strong class="kanban-card-title"
+                                                @click.stop="task._expanded = !task._expanded"
+                                                x-text="task.title"></strong>
                                         <template x-if="task.triage && task.triage.question">
                                             <div class="alert alert-warning py-1 px-2 small mb-1" x-text="task.triage.question"></div>
                                         </template>
@@ -1694,79 +1696,85 @@
                                                 </div>
                                             </template>
 
-                                            <div class="d-flex align-items-start gap-1 mb-1">
+                                            {# Card head: id on the left, every action on the right. The title #}
+                                            {# sits on its own row below -- in the same flex row it got squeezed #}
+                                            {# to one word per line once a column turned narrow, and the id badge #}
+                                            {# shrank until its text ran into the title. #}
+                                            <div class="kanban-card-head">
                                                 <span class="task-id badge bg-secondary-lt text-secondary font-monospace"
                                                       role="button"
                                                       :title="$i18n('click_to_copy_id', {id: task.id})"
                                                       @click.stop="copyId(task.id)"
                                                       x-text="`#${task.id}`"></span>
-                                                {# Title is click-to-toggle (description expand/collapse), #}
-                                                {# same affordance as the list view. ``@click.stop`` so the #}
-                                                {# click doesn't bubble into a parent drag-start handler. #}
-                                                <strong class="flex-fill"
-                                                        :class="task.status === 'done' ? 'text-muted text-decoration-line-through' : ''"
-                                                        style="cursor: pointer"
-                                                        @click.stop="task._expanded = !task._expanded"
-                                                        x-text="task.title"></strong>
-                                                {# Continue the last session instead of starting over -- see the list row. #}
-                                                <template x-if="canResumeOpen(task)">
-                                                    <button class="btn btn-sm btn-claude px-1 py-0" @click.stop="resumeTask(task)"
-                                                            :aria-label="$i18n('claude_resume')"
-                                                            :title="$i18n('claude_resume_open')">
-                                                        <img :src="agentIconUrl(task)" class="claude-logo-icon" alt="">
-                                                        <i class="ti ti-rotate-clockwise-2 claude-resume-glyph"></i>
-                                                    </button>
-                                                </template>
-                                                {# Runnable: session indicator (spinner / waiting) INSIDE the button, #}
-                                                {# left of the logo -- see the list row. #}
-                                                <template x-if="taskRunnable(task) && task.status !== 'done'">
-                                                    <button class="btn btn-sm btn-claude px-1 py-0"
-                                                            @click.stop="runNext(task)"
-                                                            :disabled="taskRunPhase(task.id) === 'external' || (task.draft && !taskRunPhase(task.id))"
-                                                            :class="{'btn-claude-waiting': taskRunPhase(task.id) === 'waiting'}"
-                                                            :aria-label="runButtonTitle(task)"
-                                                            :title="runButtonTitle(task)">
-                                                        <template x-if="['running', 'external'].includes(taskRunPhase(task.id))"><span class="spinner-border spinner-border-sm text-secondary"></span></template>
-                                                        <template x-if="taskRunPhase(task.id) === 'waiting'"><i class="ti ti-help fs-3"></i></template>
-                                                        <img :src="agentIconUrl(task)" class="claude-logo-icon" alt="">
-                                                    </button>
-                                                </template>
-                                                {# Agent CLI not installed: greyed-out logo in a non-clickable button #}
-                                                {# box so it lines up exactly with the run buttons on other cards. #}
-                                                <template x-if="!taskRunnable(task) && task.status !== 'done' && agentIconUrl(task)">
-                                                    <span class="btn btn-sm btn-claude px-1 py-0 agent-logo-btn-disabled"
-                                                          :title="agentLabel(taskAgentKey(task)) + ' — ' + $i18n('agent_not_installed_hint')">
-                                                        <img :src="agentIconUrl(task)" class="claude-logo-icon agent-logo-disabled" alt="">
-                                                    </span>
-                                                </template>
-                                                {# Resume: reopen a finished task's stored Claude session. #}
-                                                <template x-if="canResume(task)">
-                                                    <button class="btn btn-sm btn-claude px-1 py-0" @click.stop="openClaudeResume(task)"
-                                                            :aria-label="$i18n('claude_resume')" :title="$i18n('claude_resume')">
-                                                        <img :src="agentIconUrl(task)" class="claude-logo-icon" alt="">
-                                                        <i class="ti ti-rotate-clockwise-2 claude-resume-glyph"></i>
-                                                    </button>
-                                                </template>
-                                                <template x-if="task.report">
+                                                <div class="kanban-card-actions">
+                                                    {# Continue the last session instead of starting over -- see the list row. #}
+                                                    <template x-if="canResumeOpen(task)">
+                                                        <button class="btn btn-sm btn-claude px-1 py-0" @click.stop="resumeTask(task)"
+                                                                :aria-label="$i18n('claude_resume')"
+                                                                :title="$i18n('claude_resume_open')">
+                                                            <img :src="agentIconUrl(task)" class="claude-logo-icon" alt="">
+                                                            <i class="ti ti-rotate-clockwise-2 claude-resume-glyph"></i>
+                                                        </button>
+                                                    </template>
+                                                    {# Runnable: session indicator (spinner / waiting) INSIDE the button, #}
+                                                    {# left of the logo -- see the list row. #}
+                                                    <template x-if="taskRunnable(task) && task.status !== 'done'">
+                                                        <button class="btn btn-sm btn-claude px-1 py-0"
+                                                                @click.stop="runNext(task)"
+                                                                :disabled="taskRunPhase(task.id) === 'external' || (task.draft && !taskRunPhase(task.id))"
+                                                                :class="{'btn-claude-waiting': taskRunPhase(task.id) === 'waiting'}"
+                                                                :aria-label="runButtonTitle(task)"
+                                                                :title="runButtonTitle(task)">
+                                                            <template x-if="['running', 'external'].includes(taskRunPhase(task.id))"><span class="spinner-border spinner-border-sm text-secondary"></span></template>
+                                                            <template x-if="taskRunPhase(task.id) === 'waiting'"><i class="ti ti-help fs-3"></i></template>
+                                                            <img :src="agentIconUrl(task)" class="claude-logo-icon" alt="">
+                                                        </button>
+                                                    </template>
+                                                    {# Agent CLI not installed: greyed-out logo in a non-clickable button #}
+                                                    {# box so it lines up exactly with the run buttons on other cards. #}
+                                                    <template x-if="!taskRunnable(task) && task.status !== 'done' && agentIconUrl(task)">
+                                                        <span class="btn btn-sm btn-claude px-1 py-0 agent-logo-btn-disabled"
+                                                              :title="agentLabel(taskAgentKey(task)) + ' — ' + $i18n('agent_not_installed_hint')">
+                                                            <img :src="agentIconUrl(task)" class="claude-logo-icon agent-logo-disabled" alt="">
+                                                        </span>
+                                                    </template>
+                                                    {# Resume: reopen a finished task's stored Claude session. #}
+                                                    <template x-if="canResume(task)">
+                                                        <button class="btn btn-sm btn-claude px-1 py-0" @click.stop="openClaudeResume(task)"
+                                                                :aria-label="$i18n('claude_resume')" :title="$i18n('claude_resume')">
+                                                            <img :src="agentIconUrl(task)" class="claude-logo-icon" alt="">
+                                                            <i class="ti ti-rotate-clockwise-2 claude-resume-glyph"></i>
+                                                        </button>
+                                                    </template>
+                                                    <template x-if="task.report">
+                                                        <button class="btn btn-sm btn-ghost-secondary px-1 py-0"
+                                                                @click.stop="openReport(task)"
+                                                                :aria-label="$i18n('report_open')" :title="$i18n('report_open')">
+                                                            <i class="ti ti-file-text fs-3"></i>
+                                                        </button>
+                                                    </template>
+                                                    <template x-if="task.has_diff">
+                                                        <button class="btn btn-sm btn-ghost-secondary px-1 py-0"
+                                                                @click.stop="openDiff(task)"
+                                                                :aria-label="$i18n('diff_open')" :title="$i18n('diff_open')">
+                                                            <i class="ti ti-file-diff fs-3"></i>
+                                                        </button>
+                                                    </template>
                                                     <button class="btn btn-sm btn-ghost-secondary px-1 py-0"
-                                                            @click.stop="openReport(task)"
-                                                            :aria-label="$i18n('report_open')" :title="$i18n('report_open')">
-                                                        <i class="ti ti-file-text fs-3"></i>
+                                                            @click.stop="startEdit(task)"
+                                                            :aria-label="$i18n('edit')" :title="$i18n('edit')">
+                                                        <i class="ti ti-pencil fs-3"></i>
                                                     </button>
-                                                </template>
-                                                <template x-if="task.has_diff">
-                                                    <button class="btn btn-sm btn-ghost-secondary px-1 py-0"
-                                                            @click.stop="openDiff(task)"
-                                                            :aria-label="$i18n('diff_open')" :title="$i18n('diff_open')">
-                                                        <i class="ti ti-file-diff fs-3"></i>
-                                                    </button>
-                                                </template>
-                                                <button class="btn btn-sm btn-ghost-secondary px-1 py-0"
-                                                        @click.stop="startEdit(task)"
-                                                        :aria-label="$i18n('edit')" :title="$i18n('edit')">
-                                                    <i class="ti ti-pencil fs-3"></i>
-                                                </button>
+                                                </div>
                                             </div>
+
+                                            {# Title is click-to-toggle (description expand/collapse), #}
+                                            {# same affordance as the list view. ``@click.stop`` so the #}
+                                            {# click doesn't bubble into a parent drag-start handler. #}
+                                            <strong class="kanban-card-title"
+                                                    :class="task.status === 'done' ? 'text-muted text-decoration-line-through' : ''"
+                                                    @click.stop="task._expanded = !task._expanded"
+                                                    x-text="task.title"></strong>
 
                                             {# Description toggle: hidden by default, shown when the user #}
                                             {# clicked the title. Same pattern as in the list view. #}

@@ -173,11 +173,17 @@ body {
  */
 .kanban-board {
     display: grid;
-    /* minmax(0, 1fr), not a bare 1fr (= minmax(auto, 1fr)): the auto floor lets a
-     * card's min-content (e.g. a long unbreakable URL/path) push its column far
-     * wider than 1/4 and blow the board out. The 0 floor lets tracks shrink so
-     * the card text wraps (see .kanban-card overflow-wrap) instead. */
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+    /* minmax(<floor>, 1fr), not a bare 1fr (= minmax(auto, 1fr)): the auto floor
+     * lets a card's min-content (e.g. a long unbreakable URL/path) push its
+     * column far wider than 1/4 and blow the board out. The fixed floor stops
+     * the opposite -- five columns next to an open sidebar shrank to ~110px,
+     * where a card title breaks to one word per line. Below the floor the board
+     * scrolls sideways instead of squeezing the cards further. */
+    grid-template-columns: repeat(4, minmax(11rem, 1fr));
+    overflow-x: auto;
+    /* Room for the drop-link label that hangs below a card while dragging --
+     * overflow-x makes the board a scroll container on both axes. */
+    padding-bottom: 0.25rem;
     gap: 0.75rem;
     /* Stretch every column to the height of the tallest one so the whole
      * column (which is the drop target) stays a big, easy-to-hit area --
@@ -185,14 +191,14 @@ body {
     align-items: stretch;
 }
 .kanban-board.kanban-done-collapsed {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+    grid-template-columns: repeat(3, minmax(11rem, 1fr)) auto;
 }
 /* With the inbox on: a fifth column in front (see ntasker.triage). */
 .kanban-board.kanban-has-inbox {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(11rem, 1fr));
 }
 .kanban-board.kanban-has-inbox.kanban-done-collapsed {
-    grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+    grid-template-columns: repeat(4, minmax(11rem, 1fr)) auto;
 }
 @media (max-width: 767.98px) {
     .kanban-board,
@@ -288,6 +294,38 @@ body {
 .kanban-card:hover {
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
 }
+/* Card head: the id and the action buttons share one row, the title gets the
+ * next one to itself. With all three in a single flex row a narrow column
+ * (five columns plus a wide sidebar leaves ~170px) squeezed the title down to
+ * one word per line and shrank the id badge until its text ran into it. */
+.kanban-card-head {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    margin-bottom: 0.125rem;
+    /* The buttons are ~1.5rem each; on the narrowest columns they wrap to a
+     * second line rather than pushing the id out of the card. */
+    flex-wrap: wrap;
+}
+.kanban-card-head .task-id {
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+.kanban-card-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.125rem;
+    margin-left: auto;
+}
+.kanban-card-title {
+    display: block;
+    margin-bottom: 0.25rem;
+    line-height: 1.25;
+    cursor: pointer;
+}
+
 .kanban-card:active {
     cursor: grabbing;
 }

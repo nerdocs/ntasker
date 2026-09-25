@@ -5,6 +5,7 @@ All notable changes to ntasker.
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
 ## [Unreleased]
+Kanban: readable cards -- id and actions on one row, the title full-width below, columns no thinner than 11rem.
 Claude plugin: the subscription's 5-hour and weekly usage limits as meters in the topbar (`/api/claude/usage`).
 Inbox: capture a raw idea (topbar, Ctrl+K, `ntasker in`); a stateless `claude -p` triage proposes title, prompt and
 project from a summary catalog -- one click to accept.

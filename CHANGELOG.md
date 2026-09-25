@@ -5,6 +5,7 @@ All notable changes to ntasker.
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
 ## [Unreleased]
+Voice: dictate into the inbox field too -- a mic button in its input group (new `inbox_capture` plugin slot).
 Inbox: project summaries are filled by their own background loop -- a note is no longer queued behind them.
 Kanban: readable cards -- id and actions on one row, the title full-width below, columns no thinner than 11rem.
 Claude plugin: the subscription's 5-hour and weekly usage limits as meters in the topbar (`/api/claude/usage`).

@@ -107,3 +107,52 @@
     .voice-mic.is-live { animation: none; }
     .voice-wave span { transition: none; }
 }
+
+/* Inbox capture (navbar): the mic is an input-group button, and the
+   waveform + hypothesis hang below the field while dictation runs. */
+.voice-mic-inbox {
+    border: var(--tblr-border-width) solid var(--tblr-border-color);
+    color: var(--tblr-secondary);
+    touch-action: none;           /* pointer events stay ours on touch */
+    user-select: none;
+    -webkit-user-select: none;
+}
+.voice-mic-inbox:hover {
+    color: var(--tblr-primary);
+}
+.voice-mic-inbox.is-live {
+    color: #fff;
+    border-color: var(--tblr-red);
+    background: var(--tblr-red);
+    animation: voice-pulse 1.6s ease-out infinite;
+}
+.voice-mic-inbox.is-live:hover {
+    color: #fff;
+}
+
+.voice-inbox-live {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    margin-top: 0.25rem;
+    padding: 0.25rem 0.625rem;
+    border: 1px solid var(--tblr-red);
+    border-radius: var(--tblr-border-radius);
+    background: var(--tblr-bg-surface);
+    font-size: 0.8125rem;
+}
+/* One line only -- the popover must not grow over the board below it. */
+.voice-inbox-live .voice-text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .voice-mic-inbox.is-live { animation: none; }
+}

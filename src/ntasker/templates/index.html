@@ -678,10 +678,14 @@
             </h1>
             {# Inbox capture: one field, Enter stores the note, the triage worker does the rest. #}
             <div class="inbox-capture flex-fill mx-3" x-show="triageEnabled" x-cloak>
-                <input type="text" class="form-control" x-ref="inbox" x-model="inboxText"
-                       :placeholder="$i18n('inbox_placeholder')"
-                       @keydown.enter.prevent="sendInbox()"
-                       @keydown.escape="$el.blur()">
+                <div class="input-group">
+                    {# Plugin buttons left of the field (voice dictation; see ntasker/plugins). #}
+                    {% for tpl in plugin_slots['inbox_capture'] %}{% include tpl %}{% endfor %}
+                    <input type="text" class="form-control" x-ref="inbox" x-model="inboxText"
+                           :placeholder="$i18n('inbox_placeholder')"
+                           @keydown.enter.prevent="sendInbox()"
+                           @keydown.escape="$el.blur()">
+                </div>
             </div>
             {# Plugin topbar widgets (enabled plugins only; see ntasker/plugins). #}
             {% for tpl in plugin_slots['topbar'] %}{% include tpl %}{% endfor %}

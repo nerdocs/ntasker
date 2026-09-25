@@ -9,7 +9,8 @@ not confirm ever becomes a task.
 ## The flow
 
 1. **Capture.** The note lands in the `inbox` table as `pending` -- from the topbar field, `ntasker in "..."`
-   (or piped in), or `POST /api/inbox`. The Inbox column shows it with a spinner at once.
+   (or piped in), or `POST /api/inbox`. The Inbox column shows it with a spinner at once. With the `voice` plugin on,
+   the field has a microphone button on its left and the note can be dictated (see [voice.md](voice.md)).
 2. **Triage.** The worker (`ntasker.triage.worker`, one tick every 2 s) takes the oldest pending row and calls
    `claude -p` with the catalog and the note. On success it inserts a task with `proposed = 1`, the model's title,
    priority and tags, the generated prompt as description (the raw note is appended under a `## Original` heading)

@@ -65,6 +65,7 @@ PLUGINS_DIR = files("ntasker") / "plugins"
 SLOTS: tuple[str, ...] = (
     "head",  # index.html <head>: extra <link>/<script>
     "topbar",  # index.html navbar: between the inbox field and the icon bar
+    "inbox_capture",  # index.html navbar: inside the inbox field's input group, left of it
     "sidebar",  # index.html: below the tags section
     "task_form",  # index.html: create form, after the description
     "task_edit",  # index.html: edit modal, after the description

@@ -1,0 +1,26 @@
+{# Dictation for the inbox capture in the navbar. No tray here -- there is no #}
+{# room for the waveform beside a field that has to stay usable, so the mic is #}
+{# a plain input-group button and the live hypothesis drops below the field. #}
+<button type="button" class="btn voice-mic-inbox"
+        :class="{ 'is-live': voice.active && voice.target === 'inbox' }"
+        :title="voice.active && voice.target === 'inbox' ? $i18n('voice_stop') : $i18n('voice_hint')"
+        :aria-label="$i18n('voice_dictate')"
+        :aria-pressed="voice.active && voice.target === 'inbox'"
+        @pointerdown.prevent="voiceDown('inbox')"
+        @pointerup="voiceUp()"
+        @pointercancel="voiceUp()"
+        @keydown.enter.prevent="voiceToggle('inbox')"
+        @keydown.space.prevent="voiceToggle('inbox')">
+    <i class="ti ti-microphone"></i>
+</button>
+<template x-if="voice.active && voice.target === 'inbox'">
+    <div class="voice-inbox-live">
+        <div class="voice-wave" aria-hidden="true">
+            <template x-for="(level, i) in voice.bars" :key="i">
+                <span :style="`height:${8 + Math.round(level * 92)}%`"></span>
+            </template>
+        </div>
+        <span class="voice-text" x-text="voice.status || voice.partial || $i18n('voice_listening')"
+              :class="{ 'is-status': voice.status }"></span>
+    </div>
+</template>

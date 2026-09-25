@@ -88,6 +88,7 @@ page's full context. Slots:
 |---|---|
 | `head` | `index.html` `<head>`, after `style.css` |
 | `topbar` | `index.html` navbar, between the inbox field and the icon bar |
+| `inbox_capture` | `index.html` navbar, inside the inbox field's input group, left of the field |
 | `sidebar` | `index.html`, below the tags section |
 | `task_form` | `index.html`, create form, after the description |
 | `task_edit` | `index.html`, edit modal, after the description |

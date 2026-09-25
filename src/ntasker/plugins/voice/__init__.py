@@ -100,6 +100,7 @@ def register(ctx: PluginContext) -> None:
     )
     ctx.add_js_strings(_js_strings)
     ctx.add_template_slot("head", "voice/templates/head.html")
+    ctx.add_template_slot("inbox_capture", "voice/templates/inbox.html")
     ctx.add_template_slot("task_form", "voice/templates/task_form.html")
     ctx.add_template_slot("task_edit", "voice/templates/task_edit.html")
     ctx.add_template_slot("scripts", "voice/templates/scripts.html")

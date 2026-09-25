@@ -1,8 +1,9 @@
 # Voice input
 
-Plugin `voice` (see [plugins.md](plugins.md)), **opt-in**. Dictate a task description -- in the create form and in
-the edit modal -- with speech recognition that runs entirely on this machine. Text appears while you speak: a grey,
-revisable hypothesis next to the field, and at each pause the recognised sentence is appended to the description.
+Plugin `voice` (see [plugins.md](plugins.md)), **opt-in**. Dictate a task description -- in the create form, in
+the edit modal and in the inbox field at the top -- with speech recognition that runs entirely on this machine. Text
+appears while you speak: a grey, revisable hypothesis next to the field, and at each pause the recognised sentence is
+appended to the description.
 Nothing leaves the machine; there is no cloud service involved. Background and alternatives considered:
 [voice-input-research.md](voice-input-research.md).
 
@@ -50,6 +51,10 @@ The tray under the description field has one microphone button that works both w
 
 While live, the tray shows a level meter driven by the microphone and the current hypothesis in grey italics.
 Recognised text is appended at the end of the description.
+
+The inbox field in the navbar (see [inbox.md](inbox.md)) has the same microphone as an input-group button on its
+left. The navbar has no room for a tray, so the button itself turns red while live and the meter plus hypothesis
+drop below the field; recognised text is appended to the field, Enter sends the note as usual.
 
 ### Spoken punctuation
 

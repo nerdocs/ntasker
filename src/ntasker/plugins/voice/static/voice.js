@@ -4,7 +4,8 @@
 // it to toggle (click again or Esc stops). Audio goes 16 kHz PCM over a
 // WebSocket to /api/voice/ws; the server answers with a grey, revisable
 // `partial` hypothesis and a `final` text at each pause, which is appended
-// to the description of the target ('form' = create form, 'edit' = modal).
+// to the target field ('form' = create form, 'edit' = modal, 'inbox' = the
+// idea capture in the navbar).
 
 (function () {
     'use strict';
@@ -98,16 +99,24 @@
                 }
             },
 
-            // Append confirmed text to the target's description: a space after
-            // a word, nothing after a line break or before a punctuation mark,
-            // and a capital letter when it starts a sentence.
-            voiceAppend(text) {
+            // The field the dictation writes into: the inbox capture in the
+            // navbar, or the description of the create form / edit modal.
+            voiceField() {
+                if (this.voice.target === 'inbox') return { obj: this, key: 'inboxText' };
                 const obj = this.voice.target === 'edit' ? this.editing : this.form;
-                if (!obj) return;
-                const cur = (obj.description || '').replace(/ +$/, '');
+                return obj ? { obj, key: 'description' } : null;
+            },
+
+            // Append confirmed text to the target field: a space after a word,
+            // nothing after a line break or before a punctuation mark, and a
+            // capital letter when it starts a sentence.
+            voiceAppend(text) {
+                const field = this.voiceField();
+                if (!field) return;
+                const cur = (field.obj[field.key] || '').replace(/ +$/, '');
                 if (!cur || /[.?!\n]$/.test(cur)) text = text.charAt(0).toUpperCase() + text.slice(1);
                 const glue = !cur || /\n$/.test(cur) || /^[.,:;?!]/.test(text) ? '' : ' ';
-                obj.description = cur + glue + text;
+                field.obj[field.key] = cur + glue + text;
             },
 
             voiceStop() {

@@ -536,6 +536,19 @@ def validate_queue_enabled(value: str) -> str:
     )
 
 
+TRIAGE_MODEL_DEFAULT = "haiku"
+
+
+def validate_triage_model(value: str) -> str:
+
+    """Validator for ``triage_model``: the model alias/id the inbox triage's
+    ``claude -p`` call runs with. Any non-empty string; trimmed."""
+    norm = (value or "").strip()
+    if not norm:
+        raise ValueError(_("triage_model must not be empty."))
+    return norm
+
+
 VALIDATORS: dict[str, Validator] = {
     "assets_mode": validate_assets_mode,
     "language": validate_language,
@@ -557,6 +570,8 @@ VALIDATORS: dict[str, Validator] = {
     "claude_permissions": validate_on_off,
     "require_clean": validate_on_off,
     "quicktasks_bypass_lanes": validate_on_off,
+    "triage_enabled": validate_on_off,
+    "triage_model": validate_triage_model,
     "plugins_disabled": validate_plugins_disabled,
     "plugins_enabled": validate_plugins_enabled,
     "update_command": validate_update_command,
@@ -634,6 +649,17 @@ HINTS: dict[str, object] = {
         "you press Resume on the queue panel. One task runs per project at a "
         "time. ENV: NTASKER_QUEUE_ENABLED."
     ),
+    "triage_enabled": _lazy(
+        "The inbox: a raw note typed into the topbar (Ctrl+K), `ntasker in` or "
+        "POST /api/inbox is turned into a task proposal by a single stateless "
+        "Claude call -- title, prompt, priority, tags and project. You confirm "
+        "every proposal. Off hides the inbox. ENV: NTASKER_TRIAGE_ENABLED."
+    ),
+    "triage_model": _lazy(
+        "Model the inbox triage runs with (passed to `claude -p --model`). "
+        "Default haiku -- the call reads one note and a catalog of project "
+        "summaries. ENV: NTASKER_TRIAGE_MODEL."
+    ),
     "session_discovery": _lazy(
         "Let sessions you start in a terminal report themselves, so the board "
         "can pick one up and carry on with it. This adds two hooks to your own "
@@ -704,6 +730,8 @@ LABELS: dict[str, object] = {
     "claude_idle_seconds": _lazy("Silence before a session counts as waiting"),
     "auto_archive_days": _lazy("Archive done tasks after (days)"),
     "queue_enabled": _lazy("Queue starts tasks automatically"),
+    "triage_enabled": _lazy("Inbox"),
+    "triage_model": _lazy("Inbox triage model"),
     "dir_locks": _lazy("Directory locks"),
     "session_discovery": _lazy("Pick up terminal sessions"),
     "claude_permissions": _lazy("Run ntasker commands without asking"),
@@ -750,6 +778,10 @@ FIELD_CHOICES: dict[str, list[tuple[str, object, object]]] = {
         ("on", _lazy("On"), None),
         ("off", _lazy("Off"), None),
     ],
+    "triage_enabled": [
+        ("on", _lazy("On"), None),
+        ("off", _lazy("Off"), None),
+    ],
 }
 
 FIELD_DEFAULTS: dict[str, str] = {
@@ -762,13 +794,17 @@ FIELD_DEFAULTS: dict[str, str] = {
     "require_clean": "off",
     "quicktasks_bypass_lanes": "on",
     "misc_no_memory": "off",
+    "triage_enabled": "on",
+    "triage_model": TRIAGE_MODEL_DEFAULT,
 }
 
 
 # Datalist suggestions for free-text keys the /settings page renders: the
 # input stays free text, the list only offers the common values. Plugins
 # contribute theirs through ``PluginContext.add_setting(suggestions=...)``.
-FIELD_SUGGESTIONS: dict[str, tuple[str, ...]] = {}
+FIELD_SUGGESTIONS: dict[str, tuple[str, ...]] = {
+    "triage_model": ("haiku", "sonnet", "opus"),
+}
 
 
 def make_model_validator(agent_key: str) -> Validator:
@@ -1096,7 +1132,23 @@ def get_misc_project() -> str | None:
     return norm or None
 
 
+def get_triage_enabled() -> bool:
+    """Whether the inbox triage runs (default on). ENV ``NTASKER_TRIAGE_ENABLED``."""
+    return _get_on_off("triage_enabled", True)
+
+
+def get_triage_model() -> str:
+    """Model alias/id for the triage's ``claude -p`` call (default haiku).
+
+    ENV ``NTASKER_TRIAGE_MODEL``.
+    """
+    raw = get_setting("triage_model", env_var="NTASKER_TRIAGE_MODEL")
+    norm = (raw or "").strip()
+    return norm or TRIAGE_MODEL_DEFAULT
+
+
 def get_misc_no_memory() -> bool:
+
     """Whether Claude runs in the misc project disable auto memory (default off).
 
     ENV ``NTASKER_MISC_NO_MEMORY``. Only meaningful while :func:`get_misc_project`

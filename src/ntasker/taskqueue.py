@@ -147,7 +147,7 @@ def set_queue(ids: list[int]) -> list[sqlite3.Row]:
         for tid in ids:
             cur = conn.execute(
                 "UPDATE tasks SET queue_order = ? "
-                "WHERE id = ? AND archived = 0 AND status = 'open' AND draft = 0",
+                "WHERE id = ? AND archived = 0 AND status = 'open' AND draft = 0 AND proposed = 0",
                 (float(position + 1), int(tid)),
             )
             if cur.rowcount:
@@ -186,10 +186,12 @@ def enqueue(task_id: int) -> list[sqlite3.Row]:
 
 
 def is_draft(task_id: int) -> bool:
-    """True when the task is a draft (never to be started); False when missing."""
+    """True when the task is a draft or an inbox proposal (never to be started); False when missing."""
     with get_conn() as conn:
-        row = conn.execute("SELECT draft FROM tasks WHERE id = ?", (task_id,)).fetchone()
-    return bool(row and row["draft"])
+        row = conn.execute(
+            "SELECT draft, proposed FROM tasks WHERE id = ?", (task_id,)
+        ).fetchone()
+    return bool(row and (row["draft"] or row["proposed"]))
 
 
 def clear_ended(ids: list[int]) -> None:
@@ -407,11 +409,14 @@ def tick() -> None:
     # Finished: ``status=done`` (the user closed it, or the agent did because
     # the task told it to) or archived. The entry leaves the queue; a done
     # task's session is already being killed by ``_kill_done``. A review
-    # hand-off is not a finish. A draft leaves too (a direct DB write can
-    # flag a queued row) -- it must never reach the start step.
+    # hand-off is not a finish. A draft or proposal leaves too (a direct DB
+    # write can flag a queued row) -- it must never reach the start step.
     retired = [
-        int(r["id"]) for r in rows if r["status"] == "done" or r["archived"] or r["draft"]
+        int(r["id"])
+        for r in rows
+        if r["status"] == "done" or r["archived"] or r["draft"] or r["proposed"]
     ]
+
     if retired:
         with get_conn() as conn:
             _dequeue(conn, retired)

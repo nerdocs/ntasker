@@ -118,7 +118,16 @@ CREATE TABLE IF NOT EXISTS tasks (
     fasttrack INTEGER NOT NULL DEFAULT 0,
     -- With fasttrack: a failed/blocked run leaves the queue instead of
     -- blocking its lane until the user looks at it.
-    fail_continue INTEGER NOT NULL DEFAULT 0
+    fail_continue INTEGER NOT NULL DEFAULT 0,
+    -- Inbox proposal: created by the triage worker from an ``inbox`` row and
+    -- awaiting the user's accept. Behaves like a draft everywhere a draft is
+    -- refused (never queued/run/``/task``-loaded) and is invisible to every
+    -- task list -- ``GET /api/inbox`` alone serves proposals. See ntasker.triage.
+    proposed INTEGER NOT NULL DEFAULT 0,
+    -- The triage output that produced the proposal (JSON: title, prompt,
+    -- project, candidates, ... plus ``raw`` = the inbox text). NULL for
+    -- hand-made tasks.
+    triage TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_archived ON tasks(archived);
 CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project);
@@ -174,6 +183,40 @@ CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Inbox: raw notes the user typed (topbar, ``ntasker in``, ``POST
+-- /api/inbox``). The triage worker turns a ``pending`` row into a proposed
+-- task (``triaged``, ``task_id`` set) or marks it ``failed`` with the reason.
+-- See ntasker.triage.
+CREATE TABLE IF NOT EXISTS inbox (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    text TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'ui',           -- ui | cli | api
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    status TEXT NOT NULL DEFAULT 'pending',      -- pending | triaged | failed
+    error TEXT,
+    task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL
+);
+
+-- One-paragraph summary per project, the triage's catalog. Generated lazily
+-- by ``claude -p`` on the first triage that needs it; the user can edit or
+-- regenerate it. A table (like hidden_projects) rather than settings keys so
+-- the rows do not clutter ``ntasker config list``.
+CREATE TABLE IF NOT EXISTS project_summaries (
+    project TEXT PRIMARY KEY,
+    summary TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- The user's corrections: an accepted proposal whose project differs from
+-- the model's choice leaves (raw text, final project) here; the last ones go
+-- into the triage prompt as few-shot examples. NULL project = cross-project.
+CREATE TABLE IF NOT EXISTS triage_examples (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    text TEXT NOT NULL,
+    project TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 """
 
@@ -282,6 +325,15 @@ def init_db(path: Path | None = None) -> None:
                 conn.execute(f"ALTER TABLE tasks ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0")
             except sqlite3.OperationalError:
                 pass
+        # v3.11 inbox proposals (see the schema comments).
+        try:
+            conn.execute("ALTER TABLE tasks ADD COLUMN proposed INTEGER NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE tasks ADD COLUMN triage TEXT")
+        except sqlite3.OperationalError:
+            pass
         # v3.2: the queue no longer acts on the agent's hand-off, so the
         # handed_off_at column (v3.1) goes. No-op once dropped.
         try:
@@ -479,7 +531,10 @@ def row_to_task(
         "draft": bool(row["draft"]),
         "fasttrack": bool(row["fasttrack"]),
         "fail_continue": bool(row["fail_continue"]),
+        "proposed": bool(row["proposed"]),
+        "triage": json.loads(row["triage"]) if row["triage"] else None,
         "agent": row["agent"],
+
         "model": row["model"],
         "session_id": row["session_id"],
         "session_cwd": row["session_cwd"],

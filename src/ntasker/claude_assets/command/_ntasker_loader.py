@@ -349,6 +349,14 @@ def main(argv: list[str]) -> int:
             "gestartet. Nichts tun; dem User nur diese Meldung zeigen."
         )
         return 1
+    # An inbox proposal is not a task yet: the user has to accept it first.
+    if data.get("proposed"):
+        print(
+            f"ENTWURF -- Task #{tid} ist ein Inbox-Vorschlag und wird nicht gestartet.\n"
+            "Erst in der Inbox annehmen. Nichts tun; dem User nur diese Meldung zeigen."
+        )
+        return 1
+
     # Detect a project mismatch BEFORE marking the task in progress: if the
     # current directory is not inside the task's project, the agent must ask
     # the user first -- so defer phase=wip until they confirm.

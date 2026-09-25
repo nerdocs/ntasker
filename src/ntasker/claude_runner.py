@@ -90,17 +90,20 @@ def terminal_available(spec: AgentSpec) -> tuple[bool, str | None]:
 
 
 class DraftTaskError(RuntimeError):
-    """Raised by :func:`_start_session` for a draft task -- drafts never start."""
+    """Raised by :func:`_start_session` for a draft or proposed task -- neither ever starts."""
 
 
 def _task_row(task_id: int):
-    """The task's ``agent``/``model``/``project``/``draft`` columns, or ``None`` (missing / DB hiccup)."""
+    """The task's ``agent``/``model``/``project``/``draft``/``proposed`` columns,
+    or ``None`` (missing / DB hiccup)."""
+
     from ntasker.db import get_conn  # noqa: PLC0415
 
     try:
         with get_conn() as conn:
             return conn.execute(
-                "SELECT agent, model, project, draft FROM tasks WHERE id = ?", (task_id,)
+                "SELECT agent, model, project, draft, proposed FROM tasks WHERE id = ?",
+                (task_id,),
             ).fetchone()
     except Exception:  # noqa: BLE001 -- a DB hiccup must not crash the spawn path
         return None
@@ -654,9 +657,11 @@ def _start_session(
 
     row = _task_row(task_id)
     # The one choke point every spawn passes (queue, resume): a draft is an
-    # idea on file, never a job -- refuse here so no caller can slip past.
-    if row is not None and row["draft"]:
-        raise DraftTaskError(f"task #{task_id} is a draft")
+    # idea on file, never a job -- and an inbox proposal is not yet a task at
+    # all. Refuse here so no caller can slip past.
+    if row is not None and (row["draft"] or row["proposed"]):
+        raise DraftTaskError(f"task #{task_id} is a draft or inbox proposal")
+
     spec = get_spec(resolve_agent_key(row["agent"] if row else None))
     cwd = default_cwd_for_project(row["project"] if row else None)
     # ntasker's Claude Code hooks (explicit waiting/running state, and the

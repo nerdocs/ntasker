@@ -159,7 +159,7 @@ def _print_task_detail(t: dict) -> None:
 
 def _query_tasks(args: argparse.Namespace) -> list[dict]:
     """In-process equivalent of ``GET /api/tasks`` with the same filter semantics."""
-    sql = "SELECT tasks.* FROM tasks WHERE 1=1"
+    sql = "SELECT tasks.* FROM tasks WHERE proposed = 0"
     params: list[object] = []
 
     if args.project:
@@ -1132,12 +1132,19 @@ def _reject_unqueueable(task_ids: list[int]) -> int | None:
     with get_conn() as conn:
         for tid in task_ids:
             row = conn.execute(
-                "SELECT status, archived, draft FROM tasks WHERE id = ?", (tid,)
+                "SELECT status, archived, draft, proposed FROM tasks WHERE id = ?", (tid,)
             ).fetchone()
             if row is None:
                 print(_("ntasker: task #{id} not found").format(id=tid), file=sys.stderr)
                 return 1
+            if row["proposed"]:
+                print(
+                    _("ntasker: #{id} is an inbox proposal -- accept it first").format(id=tid),
+                    file=sys.stderr,
+                )
+                return 2
             if row["draft"]:
+
                 print(
                     _("ntasker: #{id} is a draft -- drafts are never started").format(id=tid),
                     file=sys.stderr,

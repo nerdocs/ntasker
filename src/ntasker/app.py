@@ -1811,10 +1811,12 @@ def api_queue_run(payload: RunIn) -> JSONResponse:
 
     Also the way to run an entry again whose session ended before it was done
     -- it clears that flag (see :func:`ntasker.taskqueue.enqueue`), which
-    a plain ``PUT /api/queue`` reorder deliberately does not. 409 for a draft.
+    a plain ``PUT /api/queue`` reorder deliberately does not. 409 for a draft
+    or an inbox proposal.
     """
     if taskqueue.is_draft(payload.id):
-        raise HTTPException(status_code=409, detail=_("Draft tasks are never started"))
+        raise HTTPException(status_code=409, detail=_("Drafts and proposals are never started"))
+
     return JSONResponse(_queue_payload(taskqueue.enqueue(payload.id)))
 
 
@@ -2041,10 +2043,12 @@ def api_projects() -> JSONResponse:
             "ORDER BY project COLLATE NOCASE ASC"
         ).fetchall()
         # Open-counts: archived/done excluded, same semantics as in v1.x.
+        # Inbox proposals are not tasks yet and never count.
         count_rows = conn.execute(
             """
             SELECT project,
-                   SUM(CASE WHEN status = 'open' AND archived = 0 THEN 1 ELSE 0 END) AS c,
+                   SUM(CASE WHEN status = 'open' AND archived = 0 AND proposed = 0
+                            THEN 1 ELSE 0 END) AS c,
                    COUNT(*) AS total
             FROM tasks
             GROUP BY project
@@ -2173,6 +2177,7 @@ def api_tags() -> JSONResponse:
             """
             SELECT t.name AS name,
                    COALESCE(SUM(CASE WHEN tasks.status = 'open' AND tasks.archived = 0
+                                     AND tasks.proposed = 0
                                      THEN 1 ELSE 0 END), 0) AS open_count,
                    COUNT(tasks.id) AS total_count
             FROM tags t
@@ -2260,7 +2265,7 @@ def api_priorities() -> JSONResponse:
             """
             SELECT priority, COUNT(*) AS c
             FROM tasks
-            WHERE status = 'open' AND archived = 0
+            WHERE status = 'open' AND archived = 0 AND proposed = 0
             GROUP BY priority
             """
         ).fetchall()
@@ -2289,7 +2294,7 @@ def api_phases() -> JSONResponse:
             """
             SELECT phase, COUNT(*) AS c
             FROM tasks
-            WHERE status = 'open' AND archived = 0
+            WHERE status = 'open' AND archived = 0 AND proposed = 0
             GROUP BY phase
             """
         ).fetchall()
@@ -2389,8 +2394,11 @@ def _query_tasks(
     ``sort`` picks the primary in-group ordering: ``priority`` (default)
     ranks critical->low then newest first; ``manual`` honours the
     drag&drop ``sort_order``.
+
+    Inbox proposals (``proposed = 1``) are never returned -- they are not
+    tasks yet; ``GET /api/inbox`` alone serves them.
     """
-    sql = "SELECT tasks.* FROM tasks WHERE 1=1"
+    sql = "SELECT tasks.* FROM tasks WHERE proposed = 0"
     params: list[object] = []
 
     proj_clause, proj_params = _build_project_filter(project)
@@ -2484,7 +2492,11 @@ def api_stats(
     priority: list[str] = Query(default=[]),  # noqa: B008
     search: str | None = None,
 ) -> JSONResponse:
-    """Tab counts (open/done/archive) honoring all filters + search."""
+    """Tab counts (open/done/archive/inbox) honoring all filters + search.
+
+    ``inbox`` counts the open proposals plus the inbox rows still pending or
+    failed; ``open`` never includes a proposal.
+    """
     proj_clause, proj_params = _build_project_filter(project)
     tag_clause, tag_params = _build_tag_filter(tag)
     phase_clause, phase_params = _build_phase_filter(phase)
@@ -2510,9 +2522,10 @@ def api_stats(
         base_params.extend([like, like])
 
     queries = {
-        "open": " AND status = 'open' AND archived = 0",
-        "done": " AND status = 'done' AND archived = 0",
-        "archive": " AND archived = 1",
+        "open": " AND status = 'open' AND archived = 0 AND proposed = 0",
+        "done": " AND status = 'done' AND archived = 0 AND proposed = 0",
+        "archive": " AND archived = 1 AND proposed = 0",
+        "inbox": " AND status = 'open' AND archived = 0 AND proposed = 1",
     }
 
     counts: dict[str, int] = {}
@@ -2523,6 +2536,10 @@ def api_stats(
                 base_params,
             ).fetchone()
             counts[key] = int(row["c"])
+        row = conn.execute(
+            "SELECT COUNT(*) AS c FROM inbox WHERE status != 'triaged'"
+        ).fetchone()
+        counts["inbox"] += int(row["c"])
     return JSONResponse(counts)
 
 

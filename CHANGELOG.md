@@ -9,6 +9,7 @@ Kanban: readable cards -- id and actions on one row, the title full-width below,
 Claude plugin: the subscription's 5-hour and weekly usage limits as meters in the topbar (`/api/claude/usage`).
 Inbox: capture a raw idea (topbar, Ctrl+K, `ntasker in`); a stateless `claude -p` triage proposes title, prompt and
 project from a summary catalog -- one click to accept.
+Inbox: proposal actions are icon buttons now, with an added `Accept + Run` that queues the task right away.
 
 ## [3.10.0] — 2026-09-24
 

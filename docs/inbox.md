@@ -18,10 +18,14 @@ not confirm ever becomes a task.
 3. **Confirm.** A proposal card shows the title, the model's candidate projects as checkboxes (its choice pre-ticked,
    its reason as tooltip), priority, tags, the model's confidence and, when the note was too vague, its clarifying
    question. Click the title to see the generated prompt.
-   - **Accept** creates the task from the ticked projects: the first ticked is the task's project, every further one
-     becomes a [directory lock](directory-locks.md) (a run that touches several repos). Nothing ticked = cross-project.
-   - **Discard** deletes the proposed task; the raw note stays in its inbox row. No confirmation -- there is nothing
-     to lose.
+   The three actions are icon buttons -- the card is a kanban column wide, the labels live in their tooltips.
+   - **Accept** (check) creates the task from the ticked projects: the first ticked is the task's project, every
+     further one becomes a [directory lock](directory-locks.md) (a run that touches several repos). Nothing ticked =
+     cross-project.
+   - **Accept + Run** (agent logo) does the same and appends the fresh task to its project's queue lane right away --
+     the inbox counterpart of *Create + Run*. Only shown when the task's agent CLI is available.
+   - **Discard** (cross) deletes the proposed task; the raw note stays in its inbox row. No confirmation -- there is
+     nothing to lose.
 
 A proposal is invisible to everything else: it never shows in `GET /api/tasks` or `ntasker list`, does not count as
 open anywhere, cannot be queued, run or loaded via `/task` (the loader stops with `ENTWURF`, like a draft). Only

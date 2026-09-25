@@ -583,6 +583,7 @@ def build_js_strings() -> dict[str, str]:
         "inbox_failed": _("Triage failed"),
         "inbox_retry": _("Retry"),
         "inbox_accept": _("Accept"),
+        "inbox_accept_run": _("Accept + Run"),
         "inbox_discard": _("Discard"),
         "inbox_pick_hint": _(
             "Tick the projects the task touches: the first is its project, the rest "

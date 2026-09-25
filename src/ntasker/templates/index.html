@@ -382,13 +382,27 @@
                                         </div>
                                         <div class="text-secondary small mb-2" style="white-space: pre-wrap"
                                              x-text="task.triage ? task.triage.raw : ''"></div>
+                                        {# Icon-only actions -- a proposal card is narrow, the labels #}
+                                        {# lived in the tooltips anyway. #}
                                         <div class="d-flex gap-1">
                                             <button class="btn btn-primary btn-sm" @click="acceptProposal(task)"
-                                                    :title="$i18n('inbox_pick_hint')"
-                                                    x-text="$i18n('inbox_accept')"></button>
-
+                                                    :aria-label="$i18n('inbox_accept')"
+                                                    :title="$i18n('inbox_accept') + ' — ' + $i18n('inbox_pick_hint')">
+                                                <i class="ti ti-check fs-3"></i>
+                                            </button>
+                                            {# Accept and hand the task straight to its agent -- only when #}
+                                            {# that agent's CLI is available (see the board's run button). #}
+                                            <button class="btn btn-claude btn-sm" x-show="taskRunnable(task)"
+                                                    @click="acceptProposal(task, true)"
+                                                    :aria-label="$i18n('inbox_accept_run')"
+                                                    :title="$i18n('inbox_accept_run') + ' (' + agentLabel(taskAgentKey(task)) + ')'">
+                                                <img :src="agentIconUrl(task)" class="claude-logo-icon" alt="">
+                                            </button>
                                             <button class="btn btn-ghost-danger btn-sm" @click="discardProposal(task)"
-                                                    x-text="$i18n('inbox_discard')"></button>
+                                                    :aria-label="$i18n('inbox_discard')"
+                                                    :title="$i18n('inbox_discard')">
+                                                <i class="ti ti-x fs-3"></i>
+                                            </button>
                                         </div>
                                     </div>
                                 </template>

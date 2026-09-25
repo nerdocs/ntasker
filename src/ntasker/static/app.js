@@ -1079,7 +1079,9 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
 
         // Accept with the ticked projects in candidate order: the first is
         // the task's project, the rest its directory locks; none = cross-project.
-        async acceptProposal(task) {
+        // With ``run``, the accepted task goes straight into its project's
+        // queue lane -- the inbox equivalent of "Create + Run".
+        async acceptProposal(task, run = false) {
             const picked = this.proposalChoices(task)
                 .map(c => c.project)
                 .filter(p => (task._picked || []).includes(p));
@@ -1093,7 +1095,9 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 this.showToast(await this._errorDetail(r, 'update_failed'), 'danger');
                 return;
             }
+            const accepted = await r.json();
             await this.refreshAll();
+            if (run && this.taskRunnable(accepted)) this.runNext(accepted);
         },
 
         // No confirmation: the raw note survives in its inbox row.

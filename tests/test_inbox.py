@@ -140,3 +140,162 @@ def test_spawn_refuses_proposal(client):
     with pytest.raises(claude_runner.DraftTaskError):
         claude_runner._start_session(pid)
     assert claude_runner.start_detached_session(pid, "seed") is False
+
+
+# --- API: inbox rows ---------------------------------------------------------
+
+def test_inbox_post_and_get_shape(client):
+    r = client.post("/api/inbox", json={"text": "  a raw note  ", "source": "ui"})
+    assert r.status_code == 201
+    item = r.json()
+    assert item["text"] == "a raw note" and item["status"] == "pending" and item["source"] == "ui"
+    assert client.post("/api/inbox", json={"text": "   "}).status_code == 400
+    assert client.post("/api/inbox", json={"text": "default source"}).json()["source"] == "api"
+    body = client.get("/api/inbox").json()
+    assert [i["text"] for i in body["items"]] == ["a raw note", "default source"]
+    assert body["tasks"] == []
+    pid = _propose(title="prop")
+    body = client.get("/api/inbox").json()
+    assert [t["id"] for t in body["tasks"]] == [pid] and body["tasks"][0]["proposed"] is True
+
+
+def test_inbox_retry_only_from_failed(client):
+    item = client.post("/api/inbox", json={"text": "x"}).json()
+    assert client.post(f"/api/inbox/{item['id']}/retry").status_code == 409
+    with get_conn() as conn:
+        conn.execute("UPDATE inbox SET status='failed', error='boom' WHERE id=?", (item["id"],))
+    r = client.post(f"/api/inbox/{item['id']}/retry")
+    assert r.status_code == 200 and r.json()["status"] == "pending" and r.json()["error"] is None
+    assert client.post("/api/inbox/999/retry").status_code == 404
+
+
+def test_inbox_delete(client):
+    item = client.post("/api/inbox", json={"text": "x"}).json()
+    assert client.delete(f"/api/inbox/{item['id']}").status_code == 204
+    assert client.delete(f"/api/inbox/{item['id']}").status_code == 404
+    assert client.get("/api/inbox").json()["items"] == []
+
+
+# --- API: accept / discard --------------------------------------------------
+
+def _propose_full(project="x"):
+    with get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO tasks (title, project, proposed, triage) VALUES ('p', ?, 1, ?)",
+            (project, '{"raw": "the note", "project": %s}' % ('null' if project is None else f'"{project}"')),
+        )
+        tid = int(cur.lastrowid)
+        conn.execute(
+            "INSERT INTO inbox (text, status, task_id) VALUES ('the note', 'triaged', ?)", (tid,)
+        )
+        return tid
+
+
+def _examples():
+    with get_conn() as conn:
+        return [tuple(r) for r in conn.execute("SELECT text, project FROM triage_examples")]
+
+
+def test_accept_unchanged(client):
+    pid = _propose_full("x")
+    t = client.post(f"/api/tasks/{pid}/accept", json={}).json()
+    assert t["proposed"] is False and t["project"] == "x"
+    assert _examples() == []
+    assert client.get("/api/inbox").json()["tasks"] == []
+    assert [x["id"] for x in client.get("/api/tasks").json()] == [pid]
+
+
+def test_accept_with_other_project_records_example(client):
+    pid = _propose_full("x")
+    t = client.post(f"/api/tasks/{pid}/accept", json={"project": "y"}).json()
+    assert t["project"] == "y" and t["proposed"] is False
+    assert _examples() == [("the note", "y")]
+
+
+def test_accept_cross_project_records_null_example(client):
+    pid = _propose_full("x")
+    t = client.post(f"/api/tasks/{pid}/accept", json={"project": None}).json()
+    assert t["project"] is None
+    assert _examples() == [("the note", None)]
+
+
+def test_accept_non_proposal_is_409(client):
+    t = client.post("/api/tasks", json={"title": "t"}).json()
+    assert client.post(f"/api/tasks/{t['id']}/accept", json={}).status_code == 409
+    assert client.post("/api/tasks/999/accept", json={}).status_code == 404
+
+
+def test_discard_proposal_keeps_inbox_row(client):
+    pid = _propose_full("x")
+    assert client.delete(f"/api/tasks/{pid}").status_code == 204
+    with get_conn() as conn:
+        row = conn.execute("SELECT status, task_id FROM inbox").fetchone()
+    assert row["status"] == "triaged" and row["task_id"] is None
+    assert client.get("/api/inbox").json() == {"items": [], "tasks": []}
+
+
+# --- API: project summaries --------------------------------------------------
+
+def test_project_summary_put_and_listing(client):
+    client.post("/api/tasks", json={"title": "t", "project": "x"})
+    r = client.put("/api/projects/summary", json={"project": "x", "summary": " A tracker. "})
+    assert r.json() == {"project": "x", "summary": "A tracker."}
+    x = next(p for p in client.get("/api/projects").json() if p["name"] == "x")
+    assert x["summary"] == "A tracker."
+    client.put("/api/projects/summary", json={"project": "x", "summary": ""})
+    x = next(p for p in client.get("/api/projects").json() if p["name"] == "x")
+    assert x["summary"] is None
+    assert client.put("/api/projects/summary", json={"project": " ", "summary": "s"}).status_code == 400
+
+
+def test_project_summary_regenerate(client, monkeypatch, tmp_path):
+    from ntasker import locks, triage
+
+    monkeypatch.setattr(locks, "resolve_dir", lambda name: str(tmp_path / name))
+    assert client.post("/api/projects/summary/regenerate", json={"project": "nodir"}).status_code == 400
+    (tmp_path / "x").mkdir()
+    monkeypatch.setattr(triage, "summarize_project", lambda name: f"fresh {name}")
+    r = client.post("/api/projects/summary/regenerate", json={"project": "x"})
+    assert r.json() == {"project": "x", "summary": "fresh x"}
+
+    def boom(name):
+        raise triage.TriageError("claude CLI not found")
+
+    monkeypatch.setattr(triage, "summarize_project", boom)
+    r = client.post("/api/projects/summary/regenerate", json={"project": "x"})
+    assert r.status_code == 502 and "claude CLI not found" in r.json()["detail"]
+
+
+# --- CLI ------------------------------------------------------------------------
+
+def test_cli_in_with_arg_and_stdin(db, capsys, monkeypatch):
+    import io
+
+    from ntasker import cli
+
+    assert cli.main(["--db", str(db), "in", "ntasker: from arg"]) == 0
+    assert "inbox #1" in capsys.readouterr().out
+    monkeypatch.setattr("sys.stdin", io.StringIO("from stdin\n"))
+    assert cli.main(["--db", str(db), "in"]) == 0
+    monkeypatch.setattr("sys.stdin", io.StringIO("   "))
+    assert cli.main(["--db", str(db), "in", "-"]) == 2
+    with get_conn() as conn:
+        rows = conn.execute("SELECT text, source, status FROM inbox ORDER BY id").fetchall()
+    assert [tuple(r) for r in rows] == [
+        ("ntasker: from arg", "cli", "pending"),
+        ("from stdin", "cli", "pending"),
+    ]
+
+
+def test_cli_project_summary_set_show_regenerate(db, capsys, monkeypatch):
+    from ntasker import cli, triage
+
+    assert cli.main(["--db", str(db), "project", "summary", "x", "--set", "Stored text"]) == 0
+    assert cli.main(["--db", str(db), "project", "summary", "x"]) == 0
+    assert capsys.readouterr().out.strip().endswith("Stored text")
+    monkeypatch.setattr(triage, "summarize_project", lambda name: f"generated {name}")
+    assert cli.main(["--db", str(db), "project", "summary", "x", "--regenerate"]) == 0
+    assert capsys.readouterr().out.strip() == "generated x"
+    assert cli.main(["--db", str(db), "project", "summary", "x", "--set", ""]) == 0
+    assert cli.main(["--db", str(db), "project", "summary", "y"]) == 0   # missing -> generated
+    assert capsys.readouterr().out.strip().endswith("generated y")

@@ -726,6 +726,54 @@ def cmd_add(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_in(args: argparse.Namespace) -> int:
+    """Drop a raw note into the inbox (``TEXT`` or stdin); the server triages it.
+
+    Direct DB insert like ``add`` -- works without a running server, the
+    triage worker picks the row up on its next tick. See ntasker.triage.
+    """
+    text = args.text if args.text not in (None, "-") else sys.stdin.read()
+    text = (text or "").strip()
+    if not text:
+        print(_("ntasker: nothing to store -- pass a note or pipe it in"), file=sys.stderr)
+        return 2
+    with get_conn() as conn:
+        cur = conn.execute("INSERT INTO inbox (text, source) VALUES (?, 'cli')", (text,))
+    print(_("inbox #{id} stored -- the server triages it").format(id=cur.lastrowid))
+    return 0
+
+
+def cmd_project_summary(args: argparse.Namespace) -> int:
+    """Show, set or regenerate the summary the inbox triage sees for a project.
+
+    Prints the stored summary, generating one (``claude -p``) when missing;
+    ``--regenerate`` forces a new call; ``--set TEXT`` stores the text
+    (``--set ""`` deletes). Direct DB, no server needed.
+    """
+    from ntasker import triage  # noqa: PLC0415 -- lazy: keeps plain CLI calls light
+
+    name = args.name.strip()
+    if args.set is not None:
+        triage.set_summary(name, args.set)
+        print(_("summary cleared") if not args.set.strip() else _("summary stored"))
+        return 0
+    summary = None
+    if not args.regenerate:
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT summary FROM project_summaries WHERE project = ?", (name,)
+            ).fetchone()
+        summary = row["summary"] if row else None
+    if summary is None:
+        try:
+            summary = triage.summarize_project(name)
+        except triage.TriageError as exc:
+            print(_("ntasker: summary failed: {err}").format(err=exc), file=sys.stderr)
+            return 1
+    print(summary)
+    return 0
+
+
 def cmd_report(args: argparse.Namespace) -> int:
     """Store the agent's final report for a task (Markdown from --file or stdin).
 
@@ -2413,6 +2461,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sp_add.set_defaults(func=cmd_add)
 
+    # in (inbox) ------------------------------------------------------------
+    sp_in = sub.add_parser("in", help=_("Drop a raw note into the inbox; the server triages it"))
+    sp_in.add_argument("text", nargs="?", help=_("The note; omitted or '-' reads stdin."))
+    sp_in.set_defaults(func=cmd_in)
+
     # done ----------------------------------------------------------------
     sp_done = sub.add_parser("done", help=_("Mark a task as done"))
     sp_done.add_argument("task_id", type=_task_id)
@@ -2670,6 +2723,21 @@ def build_parser() -> argparse.ArgumentParser:
         "--dry-run", action="store_true", help=_("Show planned renames without writing.")
     )
     proj_migrate.set_defaults(func=cmd_projects_migrate)
+
+    # project (singular: one project's data) --------------------------------
+    sp_project = sub.add_parser("project", help=_("One project's data"))
+    project_sub = sp_project.add_subparsers(dest="project_cmd", required=True)
+    proj_summary = project_sub.add_parser(
+        "summary", help=_("Show, set or regenerate the summary the inbox triage sees")
+    )
+    proj_summary.add_argument("name")
+    group = proj_summary.add_mutually_exclusive_group()
+    group.add_argument(
+        "--regenerate", action="store_true", help=_("Generate a new summary with Claude.")
+    )
+    group.add_argument("--set", metavar="TEXT", help=_("Store this text ('' deletes)."))
+    proj_summary.set_defaults(func=cmd_project_summary)
+
 
     # agent ---------------------------------------------------------------
     sp_agent = sub.add_parser(

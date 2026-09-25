@@ -75,7 +75,8 @@ def catalog() -> list[tuple[str, str | None]]:
     """``[(project, summary | None)]`` -- the projects the triage may choose from.
 
     Task-derived and discovered projects, minus hidden ones (the user's veto),
-    stale ones and names without an existing directory; sorted casefold so
+    stale ones, names without an existing directory and the scratch
+    directories that are never a project (home, temp); sorted casefold so
     the prompt is stable.
     """
     with get_conn() as conn:
@@ -86,14 +87,17 @@ def catalog() -> list[tuple[str, str | None]]:
             for r in conn.execute("SELECT project, summary FROM project_summaries")
         }
     stale = stale_claude_projects(discover_claude_project_dirs())
+    never = locks._never_project_dirs()
     keep = [
         n
         for n in names
         if n not in hidden
         and n not in stale
         and n not in SENTINELS
+        and locks.resolve_dir(n) not in never
         and os.path.isdir(locks.resolve_dir(n))
     ]
+
     return [(n, summaries.get(n)) for n in sorted(keep, key=str.casefold)]
 
 
@@ -239,25 +243,28 @@ def system_prompt(cat: list[tuple[str, str | None]], examples: list[tuple[str, s
 
 
 def _schema(names: list[str]) -> dict:
-    enum = [*names, None]
+    # An empty enum is not valid JSON Schema: with no catalog the project is
+    # always null and the candidate list stays empty.
+    candidate_project: dict = {"enum": names} if names else {"type": "string"}
     return {
         "type": "object",
         "properties": {
             "title": {"type": "string", "minLength": 1},
             "prompt": {"type": "string"},
-            "project": {"enum": enum},
+            "project": {"enum": [*names, None]},
             "candidates": {
                 "type": "array",
-                "maxItems": MAX_CANDIDATES,
+                "maxItems": MAX_CANDIDATES if names else 0,
                 "items": {
                     "type": "object",
                     "properties": {
-                        "project": {"enum": names},
+                        "project": candidate_project,
                         "reason": {"type": "string"},
                     },
                     "required": ["project", "reason"],
                 },
             },
+
             "priority": {"enum": list(PRIORITIES)},
             "tags": {"type": "array", "items": {"type": "string"}},
             "confidence": {"type": "number", "minimum": 0, "maximum": 1},

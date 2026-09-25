@@ -248,3 +248,10 @@ def test_end_to_end_fake_binary(db, monkeypatch, tmp_path):
     env = dict(line.split("=", 1) for line in (out / "env").read_text().splitlines() if "=" in line)
     assert "CLAUDECODE" not in env and env["NTASKER_TASK_ID"] == "inbox"
     assert Path(env["PWD"]).resolve() == Path(os.path.realpath(triage.tempfile.gettempdir()))
+
+
+def test_schema_with_empty_catalog_is_valid():
+    schema = triage._schema([])
+    assert schema["properties"]["project"]["enum"] == [None]
+    assert schema["properties"]["candidates"]["maxItems"] == 0
+    assert "enum" not in schema["properties"]["candidates"]["items"]["properties"]["project"]

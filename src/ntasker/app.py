@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import functools
+import json
 import re
 import sqlite3
 import subprocess
@@ -63,7 +64,7 @@ from ntasker.projects import (
     stale_claude_projects,
 )
 from ntasker.rundiff import changed_paths, parse_baselines, run_diff
-from ntasker import completion, locks, plugins, sessions, taskqueue
+from ntasker import completion, locks, plugins, sessions, taskqueue, triage
 from ntasker import db as _db_module
 from ntasker.db import (
     DepError,
@@ -1005,12 +1006,27 @@ UPDATE_POLL_INTERVAL = 24 * 60 * 60  # once a day
 
 _update_poll_task: asyncio.Task | None = None
 _queue_task: asyncio.Task | None = None
+_triage_task: asyncio.Task | None = None
 
 
 @app.on_event("startup")
 async def _start_queue_worker() -> None:
     global _queue_task
     _queue_task = asyncio.create_task(taskqueue.worker())
+
+
+@app.on_event("startup")
+async def _start_triage_worker() -> None:
+    global _triage_task
+    _triage_task = asyncio.create_task(triage.worker())
+
+
+@app.on_event("shutdown")
+async def _stop_triage_worker() -> None:
+    if _triage_task is not None:
+        _triage_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await _triage_task
 
 
 @app.on_event("shutdown")
@@ -2055,6 +2071,8 @@ def api_projects() -> JSONResponse:
             """
         ).fetchall()
         hidden_rows = conn.execute("SELECT project FROM hidden_projects").fetchall()
+        summary_rows = conn.execute("SELECT project, summary FROM project_summaries").fetchall()
+    summaries: dict[str, str] = {row["project"]: row["summary"] for row in summary_rows}
     counts: dict[str | None, int] = {row["project"]: int(row["c"]) for row in count_rows}
     totals: dict[str | None, int] = {row["project"]: int(row["total"]) for row in count_rows}
     hidden: set[str] = {row["project"] for row in hidden_rows}
@@ -2099,10 +2117,183 @@ def api_projects() -> JSONResponse:
                 "task_count": totals.get(name, 0),
                 "hidden": name in hidden,
                 "stale": name in stale,
+                "summary": summaries.get(name),
             }
         )
 
     return JSONResponse(out)
+
+
+class ProjectSummarySet(BaseModel):
+    """Store a project's summary for the inbox triage; empty deletes it."""
+
+    project: str
+    summary: str = ""
+
+
+class ProjectSummaryRegenerate(BaseModel):
+    project: str
+
+
+def _summary_project(name: str) -> str:
+    project = name.strip()
+    if not project or project == PROJECT_NONE_SENTINEL:
+        raise HTTPException(status_code=400, detail=_("Invalid project name"))
+    return project
+
+
+@app.put("/api/projects/summary")
+def api_set_project_summary(payload: ProjectSummarySet) -> JSONResponse:
+    """Edit the one-paragraph summary the inbox triage sees for a project.
+
+    An empty summary deletes the row -- the next triage generates a fresh one.
+    Body-based because project names may contain slashes. See
+    :mod:`ntasker.triage`.
+    """
+    project = _summary_project(payload.project)
+    triage.set_summary(project, payload.summary)
+    return JSONResponse({"project": project, "summary": payload.summary.strip() or None})
+
+
+@app.post("/api/projects/summary/regenerate")
+def api_regenerate_project_summary(payload: ProjectSummaryRegenerate) -> JSONResponse:
+    """Generate the project's summary anew with ``claude -p`` and store it.
+
+    400 when the project has no directory to read, 502 with the reason when
+    the call fails.
+    """
+    project = _summary_project(payload.project)
+    if not Path(locks.resolve_dir(project)).is_dir():
+        raise HTTPException(status_code=400, detail=_("Project has no directory"))
+    try:
+        summary = triage.summarize_project(project)
+    except triage.TriageError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return JSONResponse({"project": project, "summary": summary})
+
+
+# ---------------------------------------------------------------------------
+# Routes -- API: inbox (see ntasker.triage)
+# ---------------------------------------------------------------------------
+
+
+class InboxIn(BaseModel):
+    """A raw note for the inbox."""
+
+    text: str = Field(min_length=1, max_length=4000)
+    source: Literal["ui", "cli", "api"] = "api"
+
+
+class AcceptIn(BaseModel):
+    """Accept a proposal; ``project`` overrides the model's choice when set
+    (``null`` = cross-project, omitted = keep)."""
+
+    project: str | None = None
+
+
+def _inbox_row(row: sqlite3.Row) -> dict:
+    return {
+        "id": row["id"],
+        "text": row["text"],
+        "source": row["source"],
+        "created_at": row["created_at"],
+        "status": row["status"],
+        "error": row["error"],
+        "task_id": row["task_id"],
+    }
+
+
+@app.post("/api/inbox", status_code=201)
+def api_inbox_create(payload: InboxIn) -> JSONResponse:
+    """Drop a note into the inbox; the triage worker picks it up on its next tick."""
+    text = payload.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail=_("Empty note"))
+    with get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO inbox (text, source) VALUES (?, ?)", (text, payload.source)
+        )
+        row = conn.execute("SELECT * FROM inbox WHERE id = ?", (cur.lastrowid,)).fetchone()
+    return JSONResponse(_inbox_row(row), status_code=201)
+
+
+@app.get("/api/inbox")
+def api_inbox_list() -> JSONResponse:
+    """Everything the Inbox column shows: ``items`` = inbox rows still pending
+    or failed (oldest first), ``tasks`` = the proposals awaiting the user
+    (newest first). The only feed that serves proposed tasks."""
+    with get_conn() as conn:
+        item_rows = conn.execute(
+            "SELECT * FROM inbox WHERE status != 'triaged' ORDER BY id ASC"
+        ).fetchall()
+        task_rows = conn.execute(
+            "SELECT * FROM tasks WHERE proposed = 1 AND archived = 0 ORDER BY id DESC"
+        ).fetchall()
+        tasks = [
+            row_to_task(r, load_tags_for(conn, int(r["id"])), load_deps_for(conn, int(r["id"])))
+            for r in task_rows
+        ]
+    return JSONResponse({"items": [_inbox_row(r) for r in item_rows], "tasks": tasks})
+
+
+@app.post("/api/inbox/{item_id}/retry")
+def api_inbox_retry(item_id: int) -> JSONResponse:
+    """Put a failed inbox row back to ``pending``. 409 unless it is failed."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM inbox WHERE id = ?", (item_id,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail=_("Inbox item not found"))
+        if row["status"] != "failed":
+            raise HTTPException(status_code=409, detail=_("Only a failed note can be retried"))
+        conn.execute(
+            "UPDATE inbox SET status = 'pending', error = NULL WHERE id = ?", (item_id,)
+        )
+        row = conn.execute("SELECT * FROM inbox WHERE id = ?", (item_id,)).fetchone()
+    return JSONResponse(_inbox_row(row))
+
+
+@app.delete("/api/inbox/{item_id}", status_code=204)
+def api_inbox_delete(item_id: int) -> None:
+    with get_conn() as conn:
+        cur = conn.execute("DELETE FROM inbox WHERE id = ?", (item_id,))
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail=_("Inbox item not found"))
+
+
+@app.post("/api/tasks/{task_id}/accept")
+def api_accept_proposal(task_id: int, payload: AcceptIn) -> JSONResponse:
+    """Turn a proposal into a real task (``proposed = 0``).
+
+    ``project`` in the body overrides the model's choice (``null`` =
+    cross-project; omitted = keep). A project that differs from the model's
+    pick is recorded as a correction in ``triage_examples`` -- the next
+    triage sees it as an example. 409 unless the task is a proposal.
+    Discard = the ordinary ``DELETE /api/tasks/{id}``.
+    """
+    fields = payload.model_dump(exclude_unset=True)
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail=_("Task not found"))
+        if not row["proposed"]:
+            raise HTTPException(status_code=409, detail=_("Task is not an inbox proposal"))
+        project = row["project"]
+        if "project" in fields:
+            project = _normalize_project(fields["project"])
+        info = json.loads(row["triage"]) if row["triage"] else {}
+        if project != info.get("project") and info.get("raw"):
+            conn.execute(
+                "INSERT INTO triage_examples (text, project) VALUES (?, ?)",
+                (info["raw"], project),
+            )
+        conn.execute(
+            "UPDATE tasks SET proposed = 0, project = ? WHERE id = ?", (project, task_id)
+        )
+        row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        task = row_to_task(row, load_tags_for(conn, task_id), load_deps_for(conn, task_id))
+        plugins.apply_task_hooks(conn, [task])
+    return JSONResponse(task)
+
 
 
 class ProjectHiddenSet(BaseModel):

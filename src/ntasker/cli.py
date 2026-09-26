@@ -1465,7 +1465,8 @@ def cmd_finish(args: argparse.Namespace) -> int:
     """Report the run's outcome -- the agent's one hand-off call.
 
     Posts to ``/api/tasks/{id}/outcome``; the server decides what follows
-    (review hand-off, done, dequeue -- see the endpoint). The report comes from
+    (review hand-off, done, dequeue, releasing the task's extra directory locks
+    -- see the endpoint). The report comes from
     ``--file`` or, when stdin is not a terminal, from stdin. Server-only: an
     unreachable server is an error, not a fallback.
     """

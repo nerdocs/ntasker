@@ -194,6 +194,10 @@ editable next to the run rules) -- decide instead of asking, commit when everyth
 | fasttrack | `status=done`, session killed, lane continues | report stored; entry blocks its lane until you look |
 | fasttrack + **continue on failure** | as above | entry leaves the queue (task stays open in `wip`), session killed, lane continues |
 
+Whatever the status, `finish` also releases the task's extra
+[directory locks](directory-locks.md#releasing-locks) -- the run is over, so whatever waited for those repos starts on
+the next tick.
+
 *Continue on failure* is the second checkbox (`tasks.fail_continue`, `--fail-continue`), shown only with fasttrack on.
 
 ### The run log

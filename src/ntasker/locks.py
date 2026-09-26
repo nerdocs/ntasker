@@ -9,6 +9,10 @@ git-dirty. The Claude Code ``PreToolUse`` hook (``ntasker hook pretooluse``)
 asks :func:`project_for_path` via ``GET /api/locks/check`` whether an edit
 target lies in a directory the task does not hold.
 
+``ntasker finish`` gives the extra locks back: the run is over, so the column is
+cleared along with the status / phase transition and the next worker tick starts
+whatever was waiting for those directories.
+
 The lock key is the **resolved directory** (:func:`resolve_dir`), not the
 project name, so two names mapping to one path collide as they should.
 """

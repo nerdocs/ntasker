@@ -79,6 +79,27 @@ def test_patch_locks_on_running_task_conflicts(client):
     assert client.patch(f"/api/tasks/{c['id']}", json={"locks": ["x"]}).status_code == 200
 
 
+def test_finish_releases_extra_locks(client):
+    """``ntasker finish`` hands the extra directories back -- the run is over."""
+    a = client.post("/api/tasks", json={"title": "a", "project": "x", "locks": ["y"]}).json()
+    b = client.post("/api/tasks", json={"title": "b", "project": "z"}).json()
+    _live(a["id"])
+    _live(b["id"])
+    assert client.post(f"/api/tasks/{b['id']}/locks", json={"projects": ["y"]}).status_code == 409
+    r = client.post(f"/api/tasks/{a['id']}/outcome", json={"status": "ok", "report": "## done"})
+    # Released together with the phase transition; the own project stays implicit.
+    assert r.status_code == 200 and r.json()["locks"] == [] and r.json()["phase"] == "review"
+    assert client.post(f"/api/tasks/{b['id']}/locks", json={"projects": ["y"]}).json()["locks"] == ["y"]
+
+
+@pytest.mark.parametrize("status", ["failed", "blocked"])
+def test_finish_releases_extra_locks_on_failure(client, status):
+    a = client.post("/api/tasks", json={"title": "a", "project": "x", "locks": ["y"]}).json()
+    _live(a["id"])
+    r = client.post(f"/api/tasks/{a['id']}/outcome", json={"status": status, "report": "why"})
+    assert r.json()["locks"] == [] and r.json()["phase"] == "planned"
+
+
 def test_locks_check(client, tmp_path):
     a = client.post("/api/tasks", json={"title": "a", "project": "x", "locks": ["y"]}).json()
     holder = client.post("/api/tasks", json={"title": "h", "project": "z"}).json()

@@ -49,6 +49,21 @@ session it spawns, so an agent inside a run needs no flags.
 
 Board rows and kanban cards show a small lock badge with the count of extra locks; the tooltip lists the projects.
 
+## Releasing locks
+
+`ntasker finish <id>` (`POST /api/tasks/<id>/outcome`) clears the task's extra locks -- with any `--status`, since
+`finish` is the run's last command in every case. The release is part of the same `UPDATE` as the status / phase
+transition, so the two cannot drift apart, and the next worker tick (2s) starts whatever was waiting for one of those
+directories. Nothing is notified: the worker re-reads the queue from scratch each tick.
+
+The task's **own** project directory is not a lock but a property of the task, so it is never cleared this way. It
+stays held while the session lives -- which is what keeps the lane busy during your review -- and stops counting once
+the task is `done` or the session is gone (`held_dirs`).
+
+A resumed run that needs a released directory again takes it with `ntasker lock add <id> <project>`, and is refused if
+someone else holds it by then. Manual release stays available: `ntasker lock rm`, `DELETE /api/tasks/<id>/locks/<p>`,
+or the chip input in the edit dialog.
+
 ## Settings
 
 | Key | Default | Meaning |
@@ -103,7 +118,7 @@ have no settings flag and keep the heuristic.
 |---|---|
 | `src/ntasker/locks.py` | `parse`/`dump`/`normalize`, `resolve_dir`, `task_dirs`, `held_dirs`, `conflict`, `dirty_dir`, `project_for_path`. |
 | `src/ntasker/taskqueue.py` | `_lock_reason` (shared by the start step and `skipped`), the gate in `tick`. |
-| `src/ntasker/app.py` | `locks` on create/update, `/api/tasks/<id>/locks`, `/api/locks/check`, `skipped` in `/api/queue`. |
+| `src/ntasker/app.py` | `locks` on create/update, `/api/tasks/<id>/locks`, `/api/locks/check`, the release in `/api/tasks/<id>/outcome`, `skipped` in `/api/queue`. |
 | `src/ntasker/cli.py` | `ntasker lock add\|rm\|list`, `--locks` on `add`/`patch`, `ntasker hook waiting\|running\|pretooluse`. |
 | `src/ntasker/claude_assets/hooks/*.json`, `claude_assets.hooks_settings_path` | The two `--settings` files and which one a spawn gets. |
 | `src/ntasker/agents.py`, `plugins/claude` | `AgentSpec.settings_flag`, `build_spawn(settings_path=)`. |

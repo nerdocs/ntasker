@@ -3083,6 +3083,9 @@ def api_task_outcome(task_id: int, payload: OutcomeIn) -> JSONResponse:
     Every fasttrack run gets a ``run_outcomes`` row (the run log); a plain
     task's ``finish`` writes none. ``files`` defaults to the run's changed paths
     derived from its baselines (see :mod:`ntasker.rundiff`).
+
+    Whatever the status, the task's extra directory locks are released -- see
+    :mod:`ntasker.locks` and ``docs/directory-locks.md``.
     """
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
@@ -3115,6 +3118,14 @@ def api_task_outcome(task_id: int, payload: OutcomeIn) -> JSONResponse:
         fields["queue_order"] = None
         fields["session_ended_at"] = None
         kill = True
+    # The run is over in every branch -- ``finish`` is the agent's last command.
+    # So give the extra directory locks back: a queued task waiting for one of
+    # those repos starts on the next worker tick. Part of the same UPDATE as the
+    # status / phase transition, so the two can never drift apart. The own
+    # project's directory is not a lock but a property of the task; it stays held
+    # while the session lives (see ntasker.locks.held_dirs).
+    if locks.parse(row["locks"]):
+        fields["locks"] = locks.dump([])
     with get_conn() as conn:
         if fields:
             set_clause = ", ".join(f"{k} = ?" for k in fields)

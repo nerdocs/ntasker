@@ -5,8 +5,10 @@ from __future__ import annotations
 import subprocess
 
 import pytest
+from fastapi.testclient import TestClient
 
 from ntasker import locks, taskqueue
+from ntasker.app import app
 from ntasker.db import get_conn, init_db, set_db_path
 from ntasker.settings import set_setting
 
@@ -88,6 +90,21 @@ def test_locks_block_across_lanes(env):
     env["live"].discard(a)
     taskqueue.tick()
     assert env["started"] == [a, d, b]
+
+
+def test_finish_releases_locks_and_unblocks_waiting_task(env):
+    """A plain `finish` keeps A's own lane busy -- its session lives on for the
+    review -- but hands back the repo it only borrowed, so B starts."""
+    a = env["add"]("A", "x", ["y"])
+    b = env["add"]("B", "y")
+    taskqueue.set_queue([a, b])
+    taskqueue.tick()
+    assert env["started"] == [a]
+    client = TestClient(app, base_url="http://127.0.0.1:8766")
+    assert client.post(f"/api/tasks/{a}/outcome", json={"status": "ok"}).json()["locks"] == []
+    taskqueue.tick()
+    assert env["started"] == [a, b]
+    assert taskqueue.skipped(taskqueue.load_queue(), env["live"]) == {}
 
 
 def test_dir_locks_off_falls_back_to_lanes(env):

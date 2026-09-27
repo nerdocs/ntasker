@@ -704,6 +704,77 @@ body {
     margin-left: 0.5rem;
 }
 
+/* Conversation pane in the run view (replaces the terminal): one card per
+ * turn, prompt and answer each behind a clickable header. */
+.claude-conv-page {
+    min-height: 0;
+    min-width: 0;
+}
+.claude-conv-body {
+    min-height: 0;
+}
+.claude-conv-block {
+    border: 1px solid var(--tblr-border-color);
+    border-radius: var(--tblr-border-radius);
+    background-color: var(--tblr-bg-surface);
+}
+.claude-conv-prompt {
+    background-color: var(--tblr-bg-surface-secondary);
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+}
+.claude-conv-answer {
+    border-top: 0;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+}
+.claude-conv-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    min-width: 0;
+    padding: 0.5rem 0.75rem;
+    border: 0;
+    background: none;
+    color: inherit;
+    text-align: left;
+}
+.claude-conv-head > :not(.claude-conv-preview) {
+    flex-shrink: 0;
+}
+.claude-conv-head:hover {
+    background-color: var(--tblr-active-bg);
+}
+.claude-conv-preview {
+    min-width: 0;
+    flex: 1 1 auto;
+    color: var(--tblr-secondary);
+}
+.claude-conv-content {
+    padding: 0.25rem 0.75rem 0.75rem 2.25rem;
+    overflow-wrap: anywhere;
+}
+/* Prompts are Markdown too (the queue seed starts with an H1): keep headings
+ * at body scale so a turn does not shout. */
+.claude-conv-content h1,
+.claude-conv-content h2,
+.claude-conv-content h3 {
+    font-size: 1rem;
+    margin-top: 0.75rem;
+}
+.claude-conv-content pre {
+    white-space: pre-wrap;
+}
+.claude-conv-steps summary {
+    cursor: pointer;
+}
+.claude-conv-page textarea {
+    resize: vertical;
+    min-height: 2.4rem;
+    max-height: 12rem;
+}
+
 /* Diff page in the run view (replaces the terminal): file list left, the
  * selected file's patch right. Line colours come from renderDiff's classes. */
 .claude-diff-page {

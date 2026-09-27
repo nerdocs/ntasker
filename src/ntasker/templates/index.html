@@ -1956,6 +1956,15 @@
                             {# Split the tab: the task's report in a pane next to the terminal. #}
                             {# Diff: the run's changes in place of the terminal. #}
                             <div class="btn-group">
+                                {# Conversation <-> live terminal ("Show me what you do"). #}
+                                <template x-if="runConvSupported">
+                                    <button type="button" class="btn btn-outline-secondary"
+                                            :title="runChatShown ? $i18n('conv_show_terminal_hint') : $i18n('conv_show')"
+                                            @click="setRunMode(runChatShown ? 'terminal' : 'chat')">
+                                        <i class="ti me-1 fs-3" :class="runChatShown ? 'ti-terminal-2' : 'ti-messages'"></i>
+                                        <span x-text="runChatShown ? $i18n('conv_show_terminal') : $i18n('conv_title')"></span>
+                                    </button>
+                                </template>
                                 <template x-if="runReportAvailable">
                                     <button type="button" class="btn btn-outline-secondary" :class="runReportOpen && 'active'"
                                             :title="$i18n('report_open')" @click="toggleRunReport()">
@@ -1977,7 +1986,11 @@
                         <template x-for="tab in claudeTabs" :key="tab.taskId">
                             <div class="claude-terminal flex-fill"
                                  :id="`claude-term-${tab.taskId}`"
-                                 x-show="claudeView === tab.taskId && !runDiffOpen"></div>
+                                 x-show="claudeView === tab.taskId && !runDiffOpen && !runChatShown"></div>
+                        </template>
+                        {# Conversation pane in place of the terminal (see _conversation.html). #}
+                        <template x-if="runChatShown && !runDiffOpen">
+                            {% include '_conversation.html' %}
                         </template>
                         {# Diff page in place of the terminal (see _diff.html). #}
                         <template x-if="runDiffOpen">

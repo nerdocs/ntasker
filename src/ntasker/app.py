@@ -64,6 +64,7 @@ from ntasker.projects import (
     stale_claude_projects,
 )
 from ntasker.rundiff import changed_paths, parse_baselines, run_diff
+from ntasker.transcript import conversation_for
 from ntasker import completion, locks, plugins, sessions, taskqueue, triage
 from ntasker import db as _db_module
 from ntasker.db import (
@@ -116,10 +117,12 @@ from ntasker.settings import (
     get_default_agent,
     get_default_view,
     get_dir_locks,
+    get_fasttrack_rules,
     get_misc_project,
     get_quicktasks_bypass_lanes,
     get_queue_enabled,
     get_quick_prompts,
+    get_run_rules,
     get_session_discovery,
     get_sidebar_sections,
     get_triage_enabled,
@@ -608,6 +611,24 @@ def build_js_strings() -> dict[str, str]:
         "report_none": _("No report yet."),
         "report_written_at": _("Written {when}"),
         "report_resume": _("Resume session"),
+        # Conversation pane in the run view (prompt + answer per turn)
+        "conv_show_terminal": _("Show me what you do"),
+        "conv_show_terminal_hint": _("Open the live terminal of this run"),
+        "conv_title": _("Conversation"),
+        "conv_show": _("Show the conversation"),
+        "conv_prompt": _("Prompt"),
+        "conv_answer": _("Answer"),
+        "conv_steps": _("Steps: {n}"),
+        "conv_working": _("Working ..."),
+        "conv_waiting": _("Waiting for your input -- a question or permission prompt may only show in the terminal."),
+        "conv_exited": _("The session has ended."),
+        "conv_empty": _("No conversation yet -- the agent is starting up."),
+        "conv_unsupported": _("This agent has no readable transcript -- use the terminal."),
+        "conv_no_answer": _("No text answer yet."),
+        "conv_expand_all": _("Expand all"),
+        "conv_collapse_all": _("Collapse all"),
+        "conv_reply_placeholder": _("Reply to the agent ... (Enter sends, Shift+Enter new line)"),
+        "conv_send": _("Send"),
         # Diff page in the run view (what the session changed)
         "diff_title": _("Diff"),
         "diff_open": _("Show what this run changed"),
@@ -2861,6 +2882,30 @@ def api_task_diff(task_id: int) -> JSONResponse:
     if not baselines:
         raise HTTPException(status_code=404, detail=_("This task has not run yet"))
     return JSONResponse(run_diff(baselines))
+
+
+@app.get("/api/tasks/{task_id}/conversation")
+def api_task_conversation(task_id: int) -> JSONResponse:
+    """The run's conversation: the run view's Conversation pane.
+
+    ``{"supported": bool, "available": bool, "turns": [{prompt, prompt_at, answer, tools, answer_at}],
+    "updated": float|null}`` -- read from the agent's session transcript of the
+    task's stored session (see :mod:`ntasker.transcript`). ``supported`` is
+    ``False`` for an agent without a readable transcript (the UI then shows the
+    terminal); ``available`` is ``False`` until the session wrote its first prompt. 404 for an unknown task.
+    """
+    with get_conn() as conn:
+        row = conn.execute("SELECT agent, session_id FROM tasks WHERE id = ?", (task_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail=_("Task not found"))
+    spec = get_spec(resolve_agent_key(row["agent"]))
+    if not spec.transcript:
+        return JSONResponse({"supported": False, "available": False, "turns": [], "updated": None})
+    tid = str(task_id)
+    rules = (get_run_rules(spec.key).replace("{id}", tid),
+             get_fasttrack_rules(spec.key).replace("{id}", tid))
+    conv = conversation_for(resolve_home(spec), row["session_id"], rules)
+    return JSONResponse({"supported": True, **conv})
 
 
 def _dep_error_detail(e: DepError) -> str:

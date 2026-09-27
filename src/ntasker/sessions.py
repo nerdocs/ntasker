@@ -33,6 +33,7 @@ from pathlib import Path
 from ntasker.agents import AGENTS, resolve_home
 from ntasker.claude_runner import SESSION_ID_RE, _pid_alive
 from ntasker.projects import discover_claude_project_dirs, name_for_dir
+from ntasker.transcript import find_transcript
 
 #: Lines read from a transcript before giving up on its metadata. The working
 #: directory shows up within the first handful; the first user message follows
@@ -283,8 +284,7 @@ def _transcript_of(session_id: str, claude_home: str | os.PathLike | None = None
     by the one thing that is unambiguous: its name is the session id.
     """
     try:
-        root = resolve_home(AGENTS["claude"], claude_home) / "projects"
-        return next(root.glob(f"*/{session_id}.jsonl"), None)
+        return find_transcript(resolve_home(AGENTS["claude"], claude_home), session_id)
     except OSError:
         return None
 

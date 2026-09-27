@@ -165,6 +165,16 @@ function escapeHtml(text) {
     return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+// One-line preview of a collapsed prompt/answer: the first non-empty line,
+// Markdown markup (headings, list marks, emphasis, code ticks) dropped,
+// capped for the header row.
+function _convPreview(text) {
+    const line = (text || '').split('\n')
+        .map(l => l.replace(/^(#+|[-*>]|\d+\.)\s+/, '').replace(/[*_`]+/g, '').trim())
+        .find(Boolean) || '';
+    return line.length > 160 ? line.slice(0, 159) + '…' : line;
+}
+
 function renderMarkdown(text) {
     if (!window.marked) return '<pre>' + escapeHtml(text) + '</pre>';
     const raw = window.marked.parse(text);
@@ -377,6 +387,21 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         runReportHtml: '',
         runReportOpen: false,
         runReportWidth: clampRunReportWidth(localStorage.getItem(LS_KEY_RUN_REPORT_WIDTH)),
+
+        // ---- Conversation pane in the run view ----
+        // A run tab shows the conversation (prompt + answer per turn, read from
+        // the session transcript) instead of the raw terminal; "Show me what you
+        // do" swaps the terminal in. ``runModes`` = task id -> 'chat' | 'terminal'
+        // (default 'chat'). ``conv`` is the active tab's last response
+        // ({taskId, supported, available, updated}), ``convTurns`` its turns with
+        // rendered HTML, ``convOpen`` the user's collapse toggles keyed
+        // "<task>:<turn>:<p|a>" (untoggled blocks follow convIsOpen's default).
+        runModes: {},
+        conv: null,
+        convTurns: [],
+        convOpen: {},
+        convReply: '',
+        _convTimer: null,
 
         // ---- Diff view (run page + task card modal) ----
         // ``diff`` is a task's change set from /api/tasks/<id>/diff
@@ -3379,10 +3404,14 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // then fit + focus once the host is on screen.
         _showTab(id) {
             if (id !== this.claudeView) this.closeRunDiff();
+            const switched = id !== this.claudeView;
             this.claudeView = id;
             this.loadRunReport();
+            if (switched) this._loadConvFresh();
+            else this.loadConversation();
             this.$nextTick(() => {
                 this._ensureTabConnected(id);
+                if (this.runChatShown) return;
                 this._fitAndSync(id);
                 _claudeTerms.get(id)?.term.focus();
             });
@@ -3475,6 +3504,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             this._addTab(id, task.title || '', task.project || '');
             this.claudeView = id;
             location.hash = '#/run/' + id;
+            this._loadConvFresh();
             this.$nextTick(() => this._claudeConnect(id, true));
         },
 
@@ -3494,6 +3524,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             this.claudeView = id;
             this._syncTabsFromSessions();    // drop the exited tab we just left
             location.hash = '#/run/' + id;   // record in history (idempotent _applyRoute)
+            this._loadConvFresh();
             this.$nextTick(() => this._claudeConnect(id));
         },
 
@@ -3655,7 +3686,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             // Focus once the browser has painted the just-shown terminal, so
             // keystrokes land in the PTY immediately -- but only if this tab is
             // still the active one by then.
-            requestAnimationFrame(() => { if (this.claudeView === taskId) term.focus(); });
+            requestAnimationFrame(() => { if (this.claudeView === taskId && !this.runChatShown) term.focus(); });
         },
 
         // Wire the xterm host as a drag-drop file target. The browser's default
@@ -3767,12 +3798,136 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // Return" instead of one pasted block with a trailing newline.
         sendQuickPrompt(prompt) {
             const s = _claudeTerms.get(this.claudeView);
-            if (!s || s.ws.readyState !== WebSocket.OPEN) return;
-            s.ws.send(JSON.stringify({ type: 'input', data: prompt }));
+            if (!s || s.ws.readyState !== WebSocket.OPEN) return false;
+            // Multi-line text goes in as a bracketed paste, so its newlines land
+            // in the input line instead of each one submitting a fragment.
+            const data = prompt.includes('\n') ? `\x1b[200~${prompt}\x1b[201~` : prompt;
+            s.ws.send(JSON.stringify({ type: 'input', data }));
             setTimeout(() => {
                 if (s.ws.readyState === WebSocket.OPEN) s.ws.send(JSON.stringify({ type: 'input', data: '\r' }));
             }, 50);
-            s.term.focus();
+            if (!this.runChatShown) s.term.focus();
+            return true;
+        },
+
+        // ---- Conversation pane ----
+
+        // False only once the server said the active task's agent has no
+        // readable transcript -- until then the pane is assumed to work.
+        get runConvSupported() {
+            return !(this.conv && this.conv.taskId === this.claudeView && this.conv.supported === false);
+        },
+
+        // The active tab shows the conversation (not the terminal).
+        get runChatShown() {
+            if (this.claudeView === null || !this.runConvSupported) return false;
+            return (this.runModes[this.claudeView] || 'chat') === 'chat';
+        },
+
+        // Switch the active tab between conversation and terminal. The
+        // terminal was hidden (no size), so it refits once it is on screen.
+        setRunMode(mode) {
+            const id = this.claudeView;
+            if (id === null) return;
+            this.runModes[id] = mode;
+            this.closeRunDiff();   // the Diff page covers both -- the switch must show something
+            if (mode === 'chat') {
+                this.loadConversation(true);
+                return;
+            }
+            this.$nextTick(() => {
+                this._ensureTabConnected(id);
+                this._fitAndSync(id);
+                const s = _claudeTerms.get(id);
+                if (s) { s.term.refresh(0, s.term.rows - 1); s.term.focus(); }
+            });
+        },
+
+        // A tab was just opened / switched to: drop the previous tab's
+        // conversation and load this one's (and make sure the poll runs).
+        // The report pane follows the same tab, so its task is reloaded too.
+        _loadConvFresh() {
+            this.loadRunReport();
+            this.conv = null;
+            this.convTurns = [];
+            this.loadConversation(true);
+            this._ensureConvPoll();
+        },
+
+        // Poll the transcript while the pane is on screen. One timer for the
+        // page; a tick is a no-op while no conversation is shown.
+        _ensureConvPoll() {
+            if (this._convTimer) return;
+            this._convTimer = setInterval(() => {
+                if (this.runChatShown && !this.runDiffOpen && !document.hidden) this.loadConversation();
+            }, 2500);
+        },
+
+        // Fetch the active run's conversation. Skips the re-render when the
+        // transcript did not change; rendered HTML is reused per unchanged text
+        // (marked + DOMPurify are not free, and a live run grows every poll).
+        async loadConversation(force = false) {
+            const id = this.claudeView;
+            if (id === null) return;
+            let d;
+            try {
+                const r = await fetch(`/api/tasks/${id}/conversation`);
+                // No task behind the tab (the queue planner's session): the
+                // terminal is all there is.
+                d = r.ok ? await r.json() : { supported: false, available: false, turns: [], updated: null };
+            } catch (_e) { return; }
+            if (this.claudeView !== id) return;   // switched tabs meanwhile
+            const same = this.conv && this.conv.taskId === id && this.conv.updated === d.updated;
+            this.conv = { taskId: id, supported: d.supported, available: d.available, updated: d.updated };
+            if (same && !force) return;
+            const prev = this.convTurns;
+            const body = this.$refs.convBody;
+            const atBottom = !body || !prev.length
+                || body.scrollHeight - body.scrollTop - body.clientHeight < 80;
+            this.convTurns = (d.turns || []).map((t, i) => {
+                const old = prev[i];
+                return {
+                    ...t,
+                    preview: _convPreview(t.prompt),
+                    answerPreview: _convPreview(t.answer),
+                    promptHtml: old && old.prompt === t.prompt ? old.promptHtml : renderMarkdown(t.prompt),
+                    answerHtml: old && old.answer === t.answer ? old.answerHtml : renderMarkdown(t.answer || ''),
+                };
+            });
+            if (atBottom) {
+                this.$nextTick(() => {
+                    const el = this.$refs.convBody;
+                    if (el) el.scrollTop = el.scrollHeight;
+                });
+            }
+        },
+
+        // Whether a turn's prompt ('p') or answer ('a') is expanded. Default:
+        // the latest turn is open, and so is the very first prompt (the task);
+        // a user toggle wins.
+        convIsOpen(i, kind) {
+            const key = `${this.claudeView}:${i}:${kind}`;
+            if (key in this.convOpen) return this.convOpen[key];
+            const last = this.convTurns.length - 1;
+            return i === last || (kind === 'p' && i === 0);
+        },
+
+        toggleConv(i, kind) {
+            this.convOpen[`${this.claudeView}:${i}:${kind}`] = !this.convIsOpen(i, kind);
+        },
+
+        setAllConvOpen(open) {
+            this.convTurns.forEach((_t, i) => {
+                this.convOpen[`${this.claudeView}:${i}:p`] = open;
+                this.convOpen[`${this.claudeView}:${i}:a`] = open;
+            });
+        },
+
+        // The pane's reply box: typed into the live session like a quick prompt.
+        sendConvReply() {
+            const text = this.convReply.trim();
+            if (!text) return;
+            if (this.sendQuickPrompt(text)) this.convReply = '';
         },
 
         // Ask the server to terminate the active session (kills the process group).

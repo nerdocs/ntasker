@@ -1,0 +1,105 @@
+{# The Conversation pane of the run view: one card per turn -- the prompt and #}
+{# the agent's answer, each collapsible -- read from the session transcript #}
+{# (GET /api/tasks/<id>/conversation). Replaces the terminal while shown; #}
+{# "Show me what you do" swaps the live terminal back in. #}
+<div class="claude-conv-page card flex-fill d-flex flex-column">
+    <div class="d-flex align-items-center gap-2 px-3 py-2 border-bottom">
+        <i class="ti ti-messages fs-3 text-secondary"></i>
+        <span class="fw-medium flex-fill" x-text="$i18n('conv_title')"></span>
+        <button type="button" class="btn btn-sm btn-ghost-secondary" x-show="convTurns.length"
+                @click="setAllConvOpen(true)" x-text="$i18n('conv_expand_all')"></button>
+        <button type="button" class="btn btn-sm btn-ghost-secondary" x-show="convTurns.length"
+                @click="setAllConvOpen(false)" x-text="$i18n('conv_collapse_all')"></button>
+        <button type="button" class="btn btn-sm btn-primary" :title="$i18n('conv_show_terminal_hint')"
+                @click="setRunMode('terminal')">
+            <i class="ti ti-terminal-2 me-1"></i><span x-text="$i18n('conv_show_terminal')"></span>
+        </button>
+    </div>
+
+    <div class="claude-conv-body flex-fill overflow-auto px-3 py-3" x-ref="convBody">
+        <template x-if="!convTurns.length">
+            <div class="text-secondary text-center py-5" x-text="$i18n('conv_empty')"></div>
+        </template>
+        <template x-for="(turn, i) in convTurns" :key="i">
+            <div class="claude-conv-turn mb-3">
+                {# The prompt: what the agent was asked. #}
+                <div class="claude-conv-block claude-conv-prompt">
+                    <button type="button" class="claude-conv-head" @click="toggleConv(i, 'p')"
+                            :aria-expanded="convIsOpen(i, 'p')">
+                        <i class="ti" :class="convIsOpen(i, 'p') ? 'ti-chevron-down' : 'ti-chevron-right'"></i>
+                        <i class="ti ti-user"></i>
+                        <span class="fw-medium" x-text="$i18n('conv_prompt')"></span>
+                        <span class="claude-conv-preview text-truncate" x-show="!convIsOpen(i, 'p')"
+                              x-text="turn.preview"></span>
+                        <span class="ms-auto text-secondary small text-nowrap" x-show="turn.prompt_at"
+                              x-text="formatAbsolute(turn.prompt_at)"></span>
+                    </button>
+                    <div class="claude-conv-content markdown" x-show="convIsOpen(i, 'p')" x-html="turn.promptHtml"></div>
+                </div>
+                {# The answer: the agent's text replies, plus its steps folded away. #}
+                <div class="claude-conv-block claude-conv-answer">
+                    <button type="button" class="claude-conv-head" @click="toggleConv(i, 'a')"
+                            :aria-expanded="convIsOpen(i, 'a')">
+                        <i class="ti" :class="convIsOpen(i, 'a') ? 'ti-chevron-down' : 'ti-chevron-right'"></i>
+                        <i class="ti ti-sparkles"></i>
+                        <span class="fw-medium" x-text="$i18n('conv_answer')"></span>
+                        <span class="badge bg-secondary-lt" x-show="turn.tools.length && !convIsOpen(i, 'a')"
+                              x-text="$i18n('conv_steps', {n: turn.tools.length})"></span>
+                        <span class="claude-conv-preview text-truncate" x-show="!convIsOpen(i, 'a')"
+                              x-text="turn.answerPreview"></span>
+                        <span class="ms-auto text-secondary small text-nowrap" x-show="turn.answer_at"
+                              x-text="formatAbsolute(turn.answer_at)"></span>
+                    </button>
+                    <div class="claude-conv-content" x-show="convIsOpen(i, 'a')">
+                        <template x-if="turn.tools.length">
+                            <details class="claude-conv-steps mb-2">
+                                <summary class="text-secondary small" x-text="$i18n('conv_steps', {n: turn.tools.length})"></summary>
+                                <ol class="small mb-0 mt-1">
+                                    <template x-for="(tool, j) in turn.tools" :key="j">
+                                        <li><span class="font-monospace fw-medium" x-text="tool.name"></span>
+                                            <span class="text-secondary" x-text="tool.detail"></span></li>
+                                    </template>
+                                </ol>
+                            </details>
+                        </template>
+                        <div class="markdown" x-show="turn.answer" x-html="turn.answerHtml"></div>
+                        <div class="text-secondary small" x-show="!turn.answer" x-text="$i18n('conv_no_answer')"></div>
+                    </div>
+                </div>
+            </div>
+        </template>
+
+        {# Live state of the session under the last turn. #}
+        <template x-if="activeTab">
+            <div class="small">
+                {# x-if, not x-show: Tabler's d-flex is !important and beats display:none. #}
+                <template x-if="activeTab.status === 'running' || activeTab.status === 'connecting'">
+                    <div class="d-flex align-items-center gap-2 text-azure">
+                        <span class="spinner-border spinner-border-sm"></span><span x-text="$i18n('conv_working')"></span>
+                    </div>
+                </template>
+                <template x-if="activeTab.status === 'waiting'">
+                    <div class="d-flex align-items-center gap-2 text-orange flex-wrap">
+                        <i class="ti ti-hand-stop"></i><span x-text="$i18n('conv_waiting')"></span>
+                        <button type="button" class="btn btn-sm btn-outline-orange" @click="setRunMode('terminal')">
+                            <i class="ti ti-terminal-2 me-1"></i><span x-text="$i18n('conv_show_terminal')"></span>
+                        </button>
+                    </div>
+                </template>
+                <div class="text-secondary" x-show="activeTab.status === 'exited'" x-text="$i18n('conv_exited')"></div>
+            </div>
+        </template>
+    </div>
+
+    {# Reply: typed into the live session like a quick prompt. #}
+    <template x-if="activeTab && activeTab.status !== 'exited'">
+        <form class="d-flex gap-2 px-3 py-2 border-top" @submit.prevent="sendConvReply()">
+            <textarea class="form-control" rows="1" x-model="convReply"
+                      :placeholder="$i18n('conv_reply_placeholder')"
+                      @keydown.enter="if (!$event.shiftKey && !$event.isComposing) { $event.preventDefault(); sendConvReply(); }"></textarea>
+            <button type="submit" class="btn btn-primary" :disabled="!convReply.trim()">
+                <i class="ti ti-send me-1"></i><span x-text="$i18n('conv_send')"></span>
+            </button>
+        </form>
+    </template>
+</div>

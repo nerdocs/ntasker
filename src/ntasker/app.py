@@ -64,6 +64,7 @@ from ntasker.projects import (
     stale_claude_projects,
 )
 from ntasker.rundiff import changed_paths, parse_baselines, run_diff
+from ntasker.transcript import conversation_for, last_activity
 from ntasker import completion, locks, plugins, sessions, taskqueue, triage
 from ntasker import db as _db_module
 from ntasker.db import (
@@ -116,10 +117,12 @@ from ntasker.settings import (
     get_default_agent,
     get_default_view,
     get_dir_locks,
+    get_fasttrack_rules,
     get_misc_project,
     get_quicktasks_bypass_lanes,
     get_queue_enabled,
     get_quick_prompts,
+    get_run_rules,
     get_session_discovery,
     get_sidebar_sections,
     get_triage_enabled,
@@ -608,6 +611,58 @@ def build_js_strings() -> dict[str, str]:
         "report_none": _("No report yet."),
         "report_written_at": _("Written {when}"),
         "report_resume": _("Resume session"),
+        # Conversation pane in the run view (prompt + answer per turn)
+        "conv_show_terminal": _("Show me what you do"),
+        "conv_show_terminal_hint": _("Open the live terminal of this run"),
+        "conv_title": _("Conversation"),
+        "conv_show": _("Show the conversation"),
+        "conv_prompt": _("Prompt"),
+        "conv_answer": _("Answer"),
+        "conv_steps": _("Steps: {n}"),
+        "conv_working": _("Working ..."),
+        "conv_waiting": _("Waiting for your next instruction."),
+        "conv_exited": _("The session has ended."),
+        "conv_empty": _("No conversation yet -- the agent is starting up."),
+        "conv_no_answer": _("No text answer yet."),
+        "conv_expand_all": _("Expand all"),
+        "conv_collapse_all": _("Collapse all"),
+        "conv_reply_placeholder": _("Reply to the agent ... (Enter sends, Shift+Enter new line)"),
+        "conv_send": _("Send"),
+        "conv_views": _("Run views"),
+        "conv_terminal": _("Terminal"),
+        "conv_report_side": _("Show the report beside the current view"),
+        "conv_report": _("Report"),
+        "conv_task": _("Task"),
+        "conv_result": _("Result"),
+        "conv_current": _("Current state"),
+        "conv_progress": _("Progress notes: {n}"),
+        "conv_edited_files": _("Edited:"),
+        "conv_file_diff": _("Show the changes to {file}"),
+        "conv_tokens_total": _("{n} tokens"),
+        "conv_tokens_hint": _("Input {input} tokens ({cached} from cache) -- output {output} tokens"),
+        "conv_permission": _("The agent wants to use {tool}."),
+        "conv_permission_hint": _("Allow and Deny answer the dialog in the terminal. For more options open the terminal."),
+        "conv_allow": _("Allow"),
+        "conv_deny": _("Deny"),
+        "conv_answer_in_terminal": _("Answer in the terminal"),
+        "conv_kind_edit": _("Edited: {n}"),
+        "conv_kind_read": _("Read: {n}"),
+        "conv_kind_bash": _("Commands: {n}"),
+        "conv_kind_search": _("Searches: {n}"),
+        "conv_kind_web": _("Web: {n}"),
+        "conv_kind_agent": _("Subagents: {n}"),
+        "conv_kind_skill": _("Skills: {n}"),
+        "conv_kind_ask": _("Questions: {n}"),
+        "conv_kind_other": _("Other: {n}"),
+        "conv_doing_edit": _("Editing {what}"),
+        "conv_doing_read": _("Reading {what}"),
+        "conv_doing_bash": _("Running: {what}"),
+        "conv_doing_search": _("Searching: {what}"),
+        "conv_doing_web": _("Researching: {what}"),
+        "conv_doing_agent": _("Delegating: {what}"),
+        "conv_doing_skill": _("Loading skill {what}"),
+        "conv_doing_ask": _("Asking you a question"),
+        "conv_doing_other": _("Using {tool}"),
         # Diff page in the run view (what the session changed)
         "diff_title": _("Diff"),
         "diff_open": _("Show what this run changed"),
@@ -1607,22 +1662,34 @@ def api_claude_sessions() -> JSONResponse:
     name). ``external``: tasks worked on by a session ntasker did not start
     (``/task`` in a terminal, see :func:`ntasker.claude_runner.external_session_ids`)
     -- no tab for those, but they count as busy and their projects are listed.
+    ``activity``: what each active session did last (id -> ``{name, kind,
+    detail}`` or ``{text}``, see :func:`ntasker.transcript.last_activity`) --
+    the status line on a running task's card; only agents with a transcript.
     """
     states = session_states()
     active = list(states.keys())
     external = [tid for tid in external_session_ids() if tid not in states]
     projects: dict[int, str | None] = {}
     titles: dict[int, str] = {}
+    activity: dict[int, dict] = {}
     if active or external:
         ids = active + external
         placeholders = ",".join("?" * len(ids))
         with get_conn() as conn:
             rows = conn.execute(
-                f"SELECT id, title, project FROM tasks WHERE id IN ({placeholders})",
+                f"SELECT id, title, project, agent, session_id FROM tasks WHERE id IN ({placeholders})",
                 ids,
             ).fetchall()
         projects = {row["id"]: row["project"] for row in rows}
         titles = {row["id"]: row["title"] for row in rows if row["id"] in states}
+        for row in rows:
+            if row["id"] not in states or not row["session_id"]:
+                continue
+            spec = get_spec(resolve_agent_key(row["agent"]))
+            if spec.transcript:
+                act = last_activity(resolve_home(spec), row["session_id"])
+                if act:
+                    activity[row["id"]] = act
     # The planner session has no task row (see PLANNER_TASK_ID), so its tab
     # would go unlabelled -- name it here.
     if PLANNER_TASK_ID in states:
@@ -1634,6 +1701,7 @@ def api_claude_sessions() -> JSONResponse:
             "external": external,
             "projects": projects,
             "titles": titles,
+            "activity": activity,
         }
     )
 
@@ -2861,6 +2929,32 @@ def api_task_diff(task_id: int) -> JSONResponse:
     if not baselines:
         raise HTTPException(status_code=404, detail=_("This task has not run yet"))
     return JSONResponse(run_diff(baselines))
+
+
+@app.get("/api/tasks/{task_id}/conversation")
+def api_task_conversation(task_id: int) -> JSONResponse:
+    """The run's conversation: the run view's Conversation pane.
+
+    ``{"supported": bool, "available": bool, "turns": [...], "usage": {...},
+    "updated": float|null}`` -- read from the agent's session transcript of the
+    task's stored session; turn fields see
+    :func:`ntasker.transcript.parse_transcript`. ``supported`` is ``False`` for
+    an agent without a readable transcript (the UI then shows the terminal);
+    ``available`` is ``False`` until the session wrote its first prompt. 404
+    for an unknown task.
+    """
+    with get_conn() as conn:
+        row = conn.execute("SELECT agent, session_id FROM tasks WHERE id = ?", (task_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail=_("Task not found"))
+    spec = get_spec(resolve_agent_key(row["agent"]))
+    if not spec.transcript:
+        return JSONResponse({"supported": False, "available": False, "turns": [], "usage": None, "updated": None})
+    tid = str(task_id)
+    rules = (get_run_rules(spec.key).replace("{id}", tid),
+             get_fasttrack_rules(spec.key).replace("{id}", tid))
+    conv = conversation_for(resolve_home(spec), row["session_id"], rules)
+    return JSONResponse({"supported": True, **conv})
 
 
 def _dep_error_detail(e: DepError) -> str:

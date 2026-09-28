@@ -114,6 +114,11 @@ class AgentSpec:
     (``--settings``), or ``None``. ntasker passes its hooks file through it --
     see :func:`ntasker.claude_assets.hooks_settings_path`."""
 
+    transcript: bool = False
+    """Whether the agent writes a session transcript ntasker can read
+    (``<home>/projects/*/<session-id>.jsonl``, Claude Code's format). Drives the
+    run view's Conversation pane -- see :mod:`ntasker.transcript`."""
+
     extra_strip_env: tuple[str, ...] = field(default_factory=tuple)
     """Agent-specific nesting markers, merged with :data:`_BASE_STRIP_ENV`."""
 

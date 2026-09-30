@@ -621,6 +621,11 @@
                         <i class="ti ti-settings fs-3"></i>
                     </a>
                     <button type="button" class="btn btn-sm btn-ghost-secondary px-2 py-0"
+                            @click="cleanupTags()"
+                            :title="$i18n('cleanup_tags_title')">
+                        <i class="ti ti-sparkles fs-3"></i>
+                    </button>
+                    <button type="button" class="btn btn-sm btn-ghost-secondary px-2 py-0"
                             x-show="tagFilter.length > 0"
                             @click="clearTagFilter()"
                             :title="$i18n('clear_tag_filter')">

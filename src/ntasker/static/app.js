@@ -3142,6 +3142,33 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // ---- Tag cleanup (header action) ----
         // POSTs to /api/tags/cleanup, then refreshes the tag list and shows a toast.
         // Idempotent: clicking again on a clean DB just toasts "Keine ungenutzten Tags."
+        async cleanupTags() {
+            const r = await fetch('/api/tags/cleanup', { method: 'POST' });
+            if (!r.ok) {
+                this.showToast(_i('cleanup_failed'), 'danger');
+                return;
+            }
+            const data = await r.json();
+            const removed = data.removed || 0;
+            const names = Array.isArray(data.removed_names) ? data.removed_names : [];
+            if (removed === 0) {
+                this.showToast(_i('cleanup_none'), 'info');
+            } else {
+                // Render at most 5 names, append ", +N more" tail.
+                const head = names.slice(0, 5).join(', ');
+                const tail = names.length > 5
+                    ? _i('cleanup_more', {n: names.length - 5})
+                    : '';
+                this.showToast(
+                    _i('cleanup_removed', {n: removed, head: head, tail: tail}),
+                    'success'
+                );
+            }
+            // Tag-list may have shrunk -> refresh sidebar feed and prune stale filter.
+            await this.loadTags();
+            this.pruneStaleTagFilter();
+        },
+
         // ---- Claude run ("Run with Claude") ----
         // The run view embeds the *real* interactive `claude` TUI via xterm.js
         // over a WebSocket. The PTY process lives server-side and is persistent:

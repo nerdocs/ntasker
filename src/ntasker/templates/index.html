@@ -308,6 +308,12 @@
         {# Projects section #}
         <div class="d-flex align-items-center mb-2">
             {{ section_toggle('projects', 'ti-folders', t('Projects')) }}
+            {# New project: directory under the projects base + sidebar group. #}
+            <button type="button" class="btn btn-sm btn-ghost-secondary px-1 py-0"
+                    @click="openNewProject()"
+                    :title="$i18n('new_project_hint')" :aria-label="$i18n('new_project')">
+                <i class="ti ti-folder-plus fs-3"></i>
+            </button>
             <button type="button" class="btn btn-sm btn-ghost-secondary px-2 py-0"
                     @click="toggleAllProjects()"
                     :title="allProjectsActive ? $i18n('deselect_all') : $i18n('select_all')">
@@ -338,6 +344,17 @@
             </label>
         </div>
         </div>
+
+        {# Project search: narrows the tree by name or group, empty projects included. #}
+        <div class="input-icon mb-2 project-search">
+            <span class="input-icon-addon"><i class="ti ti-search"></i></span>
+            <input type="search" class="form-control form-control-sm" x-model="projectSearch"
+                   :placeholder="$i18n('project_search_placeholder')"
+                   :aria-label="$i18n('project_search_placeholder')"
+                   @keydown.escape.stop="projectSearch = ''">
+        </div>
+        <div class="text-muted small mb-2" x-show="projectSearch.trim() && !projectTree.length"
+             x-text="$i18n('project_search_none')"></div>
 
         <div class="text-muted small mb-2" x-show="projectFilter.length === 0 && tagFilter.length === 0">
             {{ t('No filter active -- all tasks visible.') }}
@@ -2501,6 +2518,9 @@
             </div>
         </div>
     </div>
+
+    {# New-project modal -- directory + group (see _new_project.html). #}
+    {% include '_new_project.html' %}
 
 </div>
 

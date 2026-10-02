@@ -273,6 +273,8 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         formProjectLocked: false,
         // Sidebar: hide projects with 0 open tasks by default; this switch
         // (persisted) flips them back into view.
+        // Sidebar project search (not persisted -- a reload starts clean).
+        projectSearch: '',
         showEmptyProjects: localStorage.getItem(LS_KEY_SHOW_EMPTY_PROJECTS) === '1',
         // Sidebar: project families are folded by default; the ones the user
         // opened stay open across reloads.
@@ -387,6 +389,13 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // Current title of each active session, keyed by task id (string keys).
         // Keeps the run-view tabs in sync when a task is renamed mid-session.
         claudeSessionTitles: {},
+
+        // ---- New-project modal ----
+        // Form state while the dialog is open (null = closed), and the
+        // server's base / sub-folders / known groups it offers.
+        newProject: null,
+        newProjectOptions: { base: null, folders: [], groups: [] },
+        newProjectBusy: false,
 
         // ---- Report modal ----
         // The task whose final report is open, and its rendered HTML.
@@ -583,6 +592,18 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // A project currently in the filter stays visible even when empty, so
         // the user can always un-check it.
         get visibleProjects() {
+            // A search looks past the "Empty" switch -- a fresh project has no
+            // open tasks yet and is exactly what one searches for. Hidden
+            // projects stay hidden; the sentinel row has no name to match.
+            const q = this.projectSearch.trim().toLocaleLowerCase();
+            if (q) {
+                return this.projects.filter(p =>
+                    p.name !== PROJECT_NONE &&
+                    (this.showHiddenProjects || !this.isProjectHidden(p.name)) &&
+                    (p.name.toLocaleLowerCase().includes(q) ||
+                     this.projectFamily(p.name).toLocaleLowerCase().includes(q))
+                );
+            }
             return this.projects.filter(p =>
                 p.misc || (
                     (this.showHiddenProjects || !this.isProjectHidden(p.name)) &&
@@ -705,7 +726,8 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                     name: family,
                     project: root ? { ...root, label: root.name } : null,
                     children,
-                    expanded: this.expandedProjectGroups.includes(family),
+                    // While searching, every family with a hit unfolds.
+                    expanded: !!this.projectSearch.trim() || this.expandedProjectGroups.includes(family),
                     // Open tasks across the whole family, shown while folded.
                     total: members.reduce((n, m) => n + m.open_count, 0),
                     // Any child in the filter -- surfaced on the folded header.
@@ -2478,6 +2500,79 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 return 0;
             }
             return (await r.json()).id;
+        },
+
+        // "New project": ask for name, sub-folder and group every time --
+        // nothing is prefilled from the last run on purpose.
+        async openNewProject() {
+            this.newProject = { name: '', folder: '', group: '', gitInit: true, startAgent: false, error: '' };
+            try {
+                const r = await fetch('/api/projects/folders');
+                if (r.ok) this.newProjectOptions = await r.json();
+            } catch (_e) { /* offline -- the form still opens, the server rejects */ }
+            // Groups also come from the sidebar's automatic families.
+            const groups = new Set([...(this.newProjectOptions.groups || []), ...this.familyNames]);
+            this.newProjectOptions.groups = [...groups].sort((a, b) => a.localeCompare(b));
+        },
+
+        closeNewProject() {
+            if (!this.newProjectBusy) this.newProject = null;
+        },
+
+        // Where the directory will land -- shown live under the form.
+        get newProjectPath() {
+            const np = this.newProject;
+            const base = this.newProjectOptions.base;
+            if (!np || !base) return '';
+            const parts = [np.folder.trim().replace(/^\/+|\/+$/g, ''), np.name.trim()].filter(Boolean);
+            return base.replace(/\/+$/, '') + '/' + parts.join('/');
+        },
+
+        get newProjectValid() {
+            const np = this.newProject;
+            return !!(np && this.newProjectOptions.base && np.name.trim() && np.folder.trim() && np.group.trim());
+        },
+
+        async submitNewProject() {
+            if (!this.newProjectValid || this.newProjectBusy) return;
+            const np = this.newProject;
+            this.newProjectBusy = true;
+            np.error = '';
+            try {
+                const r = await fetch('/api/projects/create', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: np.name, folder: np.folder, group: np.group, git_init: np.gitInit,
+                    }),
+                });
+                if (!r.ok) {
+                    np.error = await this._errorDetail(r, 'create_failed');
+                    return;
+                }
+                const created = await r.json();
+                this.newProjectBusy = false;
+                this.newProject = null;
+                await this.loadProjects();
+                // Filter to the new project: it has no open tasks yet and would
+                // otherwise hide behind the "Empty" switch.
+                this.projectFilter = [created.project];
+                this.persistProjectFilter();
+                this.syncFormProjectFromFilter();
+                await this.refreshAll();
+                if (created.git_error) {
+                    this.showToast(_i('new_project_git_failed', { error: created.git_error }), 'info');
+                } else {
+                    this.showToast(_i('new_project_created', { path: created.path }), 'success');
+                }
+                if (np.startAgent && this.agentAvailable(this.defaultAgent)) {
+                    await this.quickRunForProject(created.project);
+                }
+            } catch (_e) {
+                np.error = _i('create_failed');
+            } finally {
+                this.newProjectBusy = false;
+            }
         },
 
         // Escape / click-outside on the edit modal. A plugin modal opened from

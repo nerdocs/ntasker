@@ -66,6 +66,8 @@ from ntasker.projects import (
 from ntasker.rundiff import changed_paths, parse_baselines, run_diff
 from ntasker.transcript import conversation_for, last_activity
 from ntasker import completion, locks, plugins, sessions, taskqueue, triage
+from ntasker.newproject import created_projects
+from ntasker.newproject import router as newproject_router
 from ntasker import db as _db_module
 from ntasker.db import (
     DepError,
@@ -942,6 +944,26 @@ def build_js_strings() -> dict[str, str]:
         ),
         "quick_task_placeholder": _("Quick task: prompt for the agent\u2026"),
         "quick_task_go": _("Start the agent with this prompt"),
+        # Sidebar project search
+        "project_search_placeholder": _("Search projects ..."),
+        "project_search_none": _("No matching project."),
+        # New-project modal
+        "new_project": _("New project"),
+        "new_project_hint": _("Create a new project directory and put it into a group"),
+        "new_project_name": _("Project name"),
+        "new_project_name_placeholder": _("e.g. my-new-tool"),
+        "new_project_folder": _("Sub-folder"),
+        "new_project_folder_placeholder": _("e.g. CodingProjects"),
+        "new_project_group": _("Group"),
+        "new_project_group_placeholder": _("Group in the sidebar"),
+        "new_project_git_init": _("Initialise a git repository"),
+        "new_project_start_agent": _("Start an agent session right away"),
+        "new_project_create": _("Create project"),
+        "new_project_no_base": _(
+            "No projects directory configured -- set one in the settings first."
+        ),
+        "new_project_created": _("Project created: {path}"),
+        "new_project_git_failed": _("Project created, but git init failed: {error}"),
         # New-task / edit -- agent picker
         "agent_label": _("Agent"),
         "agent_not_installed_hint": _("not installed"),
@@ -1038,6 +1060,9 @@ for _ctx in plugins.REGISTRY.values():
         )
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+# "New project" dialog: /api/projects/folders + /api/projects/create.
+app.include_router(newproject_router)
 
 # Plugin routers: every route 404s while its plugin is disabled.
 for _ctx in plugins.REGISTRY.values():
@@ -2141,7 +2166,7 @@ def api_projects() -> JSONResponse:
     project and every project name already referenced by a task, each with its
     open-task count.
 
-    Projects are sourced from two places (since v2.1):
+    Projects are sourced from three places:
 
     * Claude Code's own project directories under ``~/.claude/projects`` --
       decoded to ``~``-relative, ``/``-separated names (``Projekte/medux``).
@@ -2149,6 +2174,9 @@ def api_projects() -> JSONResponse:
     * Any non-NULL ``tasks.project`` value -- so free-form names that do not
       correspond to a Claude project (and never vanish a project that still
       carries tasks) keep showing up.
+    * Directories made by the "New project" dialog that still exist
+      (:func:`ntasker.newproject.created_projects`) -- they have neither a
+      task nor a session yet.
 
     Each entry also carries ``hidden`` -- whether the project is on the
     ``hidden_projects`` veto list (see :func:`api_set_project_hidden`) --,
@@ -2193,7 +2221,7 @@ def api_projects() -> JSONResponse:
     # Union of Claude-discovered projects and names already on a task.
     # Defensively drop the reserved sentinels so a task that accidentally
     # stored one as its project value can never produce a duplicate row.
-    names = (set(dirs) | {row["project"] for row in names_rows}) - {
+    names = (set(dirs) | {row["project"] for row in names_rows} | created_projects()) - {
         PROJECT_NONE_SENTINEL,
         PROJECT_NULL_LEGACY,
     }

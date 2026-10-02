@@ -922,7 +922,11 @@ def build_js_strings() -> dict[str, str]:
         "session_adopt_failed": _("Could not attach that session"),
         "session_end_failed": _("That session did not end -- close it in its terminal"),
         "claude_back": _("Back"),
-        "claude_stop": _("Stop"),
+        "claude_stop": _("Pause"),
+        "claude_stop_title": _(
+            "End the session for now. The task stays in the queue -- resume the "
+            "session from there (Claude) or start it over."
+        ),
         "claude_mark_done": _("Mark done"),
         "claude_connect_failed": _("Could not connect to the agent session."),
         "claude_disconnected": _("Connection to the session lost."),

@@ -2039,8 +2039,8 @@
                                     <i class="ti ti-check me-1 fs-3"></i><span x-text="$i18n('claude_mark_done')"></span>
                                 </button>
                                 <template x-if="activeTab && activeTab?.status !== 'exited'">
-                                    <button type="button" class="btn btn-outline-danger" @click="stopClaudeRun()">
-                                        <i class="ti ti-player-stop me-1 fs-3"></i><span x-text="$i18n('claude_stop')"></span>
+                                    <button type="button" class="btn btn-outline-warning" :title="$i18n('claude_stop_title')" @click="stopClaudeRun()">
+                                        <i class="ti ti-player-pause me-1 fs-3"></i><span x-text="$i18n('claude_stop')"></span>
                                     </button>
                                 </template>
                             </div>

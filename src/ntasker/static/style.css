@@ -206,6 +206,14 @@ body {
 .inbox-capture {
     max-width: 32rem;
 }
+/* Compact header, matching the queue panel's label. */
+.inbox-header {
+    min-height: 0;
+    padding: 0.5rem 0.75rem;
+}
+.inbox-list {
+    padding: 0.5rem 0.75rem;
+}
 .inbox-list .kanban-card {
     cursor: default;
 }

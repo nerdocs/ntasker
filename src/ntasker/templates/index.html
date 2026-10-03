@@ -974,12 +974,11 @@
                 {# answer the triage's question or correct it right on the card, then accept. #}
                 {# Notes still being triaged (or failed) come first. Hidden while empty. #}
                 <div class="card mb-3" x-show="triageEnabled && (inboxNotes.length || inbox.tasks.length)" x-cloak>
-                    <div class="card-header">
-                        <h3 class="card-title mb-0">
-                            <i class="ti ti-inbox me-1"></i>
-                            {{ t('Inbox') }}
-                        </h3>
-                        <span class="badge bg-yellow-lt ms-2" x-text="inboxNotes.length + inbox.tasks.length"></span>
+                    <div class="card-header inbox-header gap-2">
+                        <span class="text-secondary text-uppercase small fw-bold d-flex align-items-center">
+                            <i class="ti ti-inbox me-1"></i>{{ t('Inbox') }}
+                        </span>
+                        <span class="badge bg-yellow-lt" x-text="inboxNotes.length + inbox.tasks.length"></span>
                     </div>
                     <div class="card-body inbox-list d-flex flex-column gap-2">
                         {# Background catch-up of the project summaries (ntasker.triage.summary_worker):

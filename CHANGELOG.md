@@ -4,6 +4,12 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [3.12.0] — 2026-10-03
+Inbox: shown as a list above the queue; a proposal can be answered to re-triage it.
+Inbox: compact header matching the queue.
+Sidebar: tag cleanup button in the project rail.
+Finish: `ntasker finish` releases the task's directory locks.
+
 ## [3.11.0] — 2026-09-25
 Voice: dictate into the inbox field too -- a mic button in its input group (new `inbox_capture` plugin slot).
 Inbox: project summaries are filled by their own background loop -- a note is no longer queued behind them.

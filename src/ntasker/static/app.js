@@ -1093,11 +1093,19 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // the task's project, the rest its directory locks; none = cross-project.
         // With ``run``, the accepted task goes straight into its project's
         // queue lane -- the inbox equivalent of "Create + Run".
+        // A typed but unsent answer goes through the triage first: the worker
+        // accepts afterwards unless a question is still open (see refineProposal).
         async acceptProposal(task, run = false) {
             const picked = this.proposalChoices(task)
                 .map(c => c.project)
                 .filter(p => (task._picked || []).includes(p));
             const body = picked.length ? { project: picked[0], locks: picked.slice(1) } : { project: null };
+            if ((task._answer || '').trim()) {
+                // Picks left at the model's choice follow the re-triage.
+                const untouched = picked.length === 1 && picked[0] === task.project;
+                await this.refineProposal(task, { accept: untouched ? {} : body, run });
+                return;
+            }
             const r = await fetch(`/api/tasks/${task.id}/accept`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1114,13 +1122,14 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
 
         // Answer the triage's question / correct the proposal: the triage
         // runs again over the note plus this text and rewrites the card.
-        async refineProposal(task) {
+        // ``extra`` = ``{accept, run}`` from acceptProposal.
+        async refineProposal(task, extra = {}) {
             const text = (task._answer || '').trim();
             if (!text) return;
             const r = await fetch(`/api/tasks/${task.id}/refine`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text }),
+                body: JSON.stringify({ text, ...extra }),
             });
             if (!r.ok) {
                 this.showToast(await this._errorDetail(r, 'inbox_send_failed'), 'danger');

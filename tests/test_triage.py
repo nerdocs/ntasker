@@ -168,6 +168,47 @@ def test_tick_follow_up_rewrites_the_proposal_in_place(db, monkeypatch):
         assert load_tags_for(conn, tid) == ["cli"]
 
 
+def _follow_up(monkeypatch, accept, result):
+    """A proposal plus a follow-up carrying ``accept``, re-triaged to ``result``."""
+    monkeypatch.setattr(triage, "_argv", lambda system, schema: ["claude", system])
+    monkeypatch.setattr(triage, "run_claude", lambda argv, stdin: dict(GOOD))
+    first = _inbox("ntasker: add a flag")
+    triage.tick()
+    tid = _row("inbox", first)["task_id"]
+    monkeypatch.setattr(triage, "run_claude", lambda argv, stdin: dict(result))
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO inbox (text, task_id, accept) VALUES ('n', ?, ?)", (tid, json.dumps(accept))
+        )
+    triage.tick()
+    return _row("tasks", tid)
+
+
+def test_tick_follow_up_with_accept_accepts_when_clear(db, monkeypatch):
+    task = _follow_up(monkeypatch, {"run": False}, dict(GOOD, project="Thrito"))
+    assert task["proposed"] == 0 and task["project"] == "Thrito"
+
+
+def test_tick_follow_up_with_accept_keeps_the_user_picks(db, monkeypatch):
+    task = _follow_up(monkeypatch, {"project": "mine", "locks": ["b"], "run": False}, GOOD)
+    assert task["proposed"] == 0 and task["project"] == "mine"
+    assert json.loads(task["locks"]) == ["b"]
+
+
+def test_tick_follow_up_with_accept_stays_on_open_question(db, monkeypatch):
+    task = _follow_up(monkeypatch, {"run": False}, dict(GOOD, question="Which flag?"))
+    assert task["proposed"] == 1
+
+
+def test_tick_follow_up_with_accept_and_run_queues(db, monkeypatch):
+    from ntasker import taskqueue
+
+    queued = []
+    monkeypatch.setattr(taskqueue, "enqueue", queued.append)
+    task = _follow_up(monkeypatch, {"run": True}, GOOD)
+    assert task["proposed"] == 0 and queued == [task["id"]]
+
+
 def test_tick_follow_up_on_accepted_task_makes_a_new_proposal(db, monkeypatch):
     monkeypatch.setattr(triage, "_argv", lambda system, schema: ["claude", system])
     monkeypatch.setattr(triage, "run_claude", lambda argv, stdin: dict(GOOD))

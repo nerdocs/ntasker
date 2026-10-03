@@ -248,6 +248,23 @@ def test_refine_queues_a_follow_up_row(client):
     assert [i["id"] for i in client.get("/api/inbox").json()["items"]] == [item["id"]]
 
 
+def test_refine_with_accept_stores_the_picks(client):
+    import json
+
+    pid = _propose_full("x")
+    client.post(f"/api/tasks/{pid}/refine", json={"text": "a"})
+    client.post(f"/api/tasks/{pid}/refine", json={"text": "b", "accept": {}})
+    client.post(
+        f"/api/tasks/{pid}/refine",
+        json={"text": "c", "accept": {"project": " ", "locks": ["y"]}, "run": True},
+    )
+    with get_conn() as conn:
+        rows = [r[0] for r in conn.execute("SELECT accept FROM inbox WHERE task_id = ? ORDER BY id", (pid,))]
+    assert rows[-3] is None
+    assert json.loads(rows[-2]) == {"run": False}
+    assert json.loads(rows[-1]) == {"project": None, "locks": ["y"], "run": True}
+
+
 def test_refine_guards(client):
     pid = _propose_full("x")
     assert client.post(f"/api/tasks/{pid}/refine", json={"text": "  "}).status_code == 400

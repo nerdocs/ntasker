@@ -542,16 +542,55 @@ def follow_up_note(raw: str, question: str | None, answer: str) -> str:
     return "\n".join(lines)
 
 
+def accept_proposal(conn, task_id: int, project: str | None, extra: list[str] | None) -> None:
+    """Turn proposal ``task_id`` into a real task under ``project`` + lock ``extra``.
+
+    A project that differs from the model's pick is recorded as a correction
+    in ``triage_examples`` -- the next triage sees it as an example. The
+    caller checks that the task is a proposal.
+    """
+    row = conn.execute("SELECT triage FROM tasks WHERE id = ?", (task_id,)).fetchone()
+    info = json.loads(row["triage"]) if row["triage"] else {}
+    if project != info.get("project") and info.get("raw"):
+        conn.execute(
+            "INSERT INTO triage_examples (text, project) VALUES (?, ?)", (info["raw"], project)
+        )
+    conn.execute(
+        "UPDATE tasks SET proposed = 0, project = ?, locks = ? WHERE id = ?",
+        (project, locks.dump(locks.normalize(extra, project)), task_id),
+    )
+
+
+def _accept_after_retriage(task_id: int, accept: dict, proposal: dict) -> None:
+    """The accept button pressed with a follow-up: accept once nothing is unclear.
+
+    ``accept`` holds the user's project picks (``project`` absent = take the
+    re-triaged one) and ``run``. A proposal that still asks a question stays
+    in the inbox.
+    """
+    if proposal.get("question"):
+        return
+    project = accept["project"] if "project" in accept else proposal["project"]
+    with get_conn() as conn:
+        accept_proposal(conn, task_id, project, accept.get("locks"))
+    if accept.get("run"):
+        from ntasker import taskqueue  # noqa: PLC0415 -- lazy: keep triage light
+
+        taskqueue.enqueue(task_id)
+
+
 def tick() -> None:
     """Triage the oldest pending inbox row: proposed task or ``failed``. Never raises.
 
     A row with ``task_id`` set is a follow-up on that proposal (see
     :func:`follow_up_note`): the proposal is rewritten in place. Accepted or
-    discarded meanwhile, the row yields a fresh proposal instead.
+    discarded meanwhile, the row yields a fresh proposal instead. A
+    follow-up carrying ``accept`` then accepts it (see
+    :func:`_accept_after_retriage`).
     """
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT id, text, task_id FROM inbox WHERE status = 'pending' ORDER BY id LIMIT 1"
+            "SELECT id, text, task_id, accept FROM inbox WHERE status = 'pending' ORDER BY id LIMIT 1"
         ).fetchone()
     if row is None:
         return
@@ -584,7 +623,14 @@ def tick() -> None:
             conn.execute(
                 "UPDATE inbox SET status = 'triaged', error = NULL WHERE id = ?", (row["id"],)
             )
-            return
+            rewritten = True
+        else:
+            rewritten = False
+    if rewritten:
+        if row["accept"]:
+            _accept_after_retriage(task_id, json.loads(row["accept"]), proposal)
+        return
+    with get_conn() as conn:
         cur = conn.execute(
             "INSERT INTO tasks (project, title, description, phase, priority, proposed, triage, "
             "sort_order) VALUES (?, ?, ?, 'planned', ?, 1, ?, "

@@ -2328,16 +2328,7 @@ def api_accept_proposal(task_id: int, payload: AcceptIn) -> JSONResponse:
         project = row["project"]
         if "project" in fields:
             project = _normalize_project(fields["project"])
-        info = json.loads(row["triage"]) if row["triage"] else {}
-        if project != info.get("project") and info.get("raw"):
-            conn.execute(
-                "INSERT INTO triage_examples (text, project) VALUES (?, ?)",
-                (info["raw"], project),
-            )
-        conn.execute(
-            "UPDATE tasks SET proposed = 0, project = ?, locks = ? WHERE id = ?",
-            (project, locks.dump(locks.normalize(payload.locks, project)), task_id),
-        )
+        triage.accept_proposal(conn, task_id, project, payload.locks)
         row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         task = row_to_task(row, load_tags_for(conn, task_id), load_deps_for(conn, task_id))
         plugins.apply_task_hooks(conn, [task])
@@ -2348,6 +2339,10 @@ class RefineIn(BaseModel):
     """The user's answer to a proposal's question, or a correction."""
 
     text: str = Field(min_length=1, max_length=4000)
+    # Sent by the accept button with a typed follow-up: accept the proposal
+    # once the re-triage leaves no question open (see ntasker.triage.tick).
+    accept: AcceptIn | None = None
+    run: bool = False
 
 
 @app.post("/api/tasks/{task_id}/refine", status_code=201)
@@ -2356,8 +2351,10 @@ def api_refine_proposal(task_id: int, payload: RefineIn) -> JSONResponse:
 
     Stores an inbox row (``task_id`` = the proposal) holding the proposal's
     note plus the answer; the triage worker then rewrites the proposal in
-    place (see :func:`ntasker.triage.tick`). Returns the inbox row. 409
-    unless the task is a proposal.
+    place (see :func:`ntasker.triage.tick`). With ``accept`` (the user's
+    project picks, as for ``/accept``), the worker then accepts the proposal
+    unless the re-triage still asks a question -- and with ``run`` queues it.
+    Returns the inbox row. 409 unless the task is a proposal.
     """
     text = payload.text.strip()
     if not text:
@@ -2372,8 +2369,15 @@ def api_refine_proposal(task_id: int, payload: RefineIn) -> JSONResponse:
         note = triage.follow_up_note(
             info.get("raw") or row["description"] or row["title"], info.get("question"), text
         )
+        accept = None
+        if payload.accept is not None:
+            fields = payload.accept.model_dump(exclude_unset=True)
+            if "project" in fields:
+                fields["project"] = _normalize_project(fields["project"])
+            accept = json.dumps({**fields, "run": payload.run})
         cur = conn.execute(
-            "INSERT INTO inbox (text, source, task_id) VALUES (?, 'ui', ?)", (note, task_id)
+            "INSERT INTO inbox (text, source, task_id, accept) VALUES (?, 'ui', ?, ?)",
+            (note, task_id, accept),
         )
         item = conn.execute("SELECT * FROM inbox WHERE id = ?", (cur.lastrowid,)).fetchone()
     return JSONResponse(_inbox_row(item), status_code=201)

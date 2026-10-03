@@ -29,6 +29,9 @@ not confirm ever becomes a task.
      cross-project.
    - **Accept + Run** (agent logo) does the same and appends the fresh task to its project's queue lane right away --
      the inbox counterpart of *Create + Run*. Only shown when the task's agent CLI is available.
+   - Text typed into the answer field but not sent with Enter is not lost on **Accept** / **Accept + Run**: it is
+     re-triaged first, and the proposal is accepted (and queued) only once no question is left open -- otherwise
+     it stays in the inbox with the new question.
    - **Discard** (cross) deletes the proposed task; the raw note stays in its inbox row. No confirmation -- there is
      nothing to lose.
 
@@ -45,6 +48,11 @@ Enter in a card's text field calls `POST /api/tasks/{id}/refine`. It stores a ne
 error with Retry / trash) meanwhile. The combined text becomes the proposal's new `raw`, so further answers pile up
 and the `## Original` section of the description keeps the whole trail. Was the proposal accepted or discarded in
 the meantime, the row yields a fresh proposal.
+
+The accept buttons send the same request with `accept` (the ticked projects, as for `/accept`; `{}` when the
+ticks were left at the model's choice, so the re-triaged project wins) and `run`. They are stored in the row's
+`accept` column; after rewriting the proposal the worker accepts it with them -- and queues it with `run` --
+unless the re-triage still asks a question.
 
 ## Naming the project yourself
 
@@ -129,7 +137,7 @@ Both live under *Settings -> Inbox*.
 | POST | `/api/inbox/{id}/retry` | Failed row back to `pending`; 409 unless failed |
 | DELETE | `/api/inbox/{id}` | 204 / 404 |
 | POST | `/api/tasks/{id}/accept` | `{project?, locks?}`: omitted = keep, `null` = cross-project; 409 unless proposed |
-| POST | `/api/tasks/{id}/refine` | `{text (1..4000)}` -> 201 follow-up inbox row (re-triage); 409 unless proposed |
+| POST | `/api/tasks/{id}/refine` | `{text, accept?, run?}` -> 201 follow-up row (re-triage); 409 unless proposed |
 
 | DELETE | `/api/tasks/{id}` | Discard a proposal (the ordinary delete) |
 | PUT | `/api/projects/summary` | `{project, summary}`; empty summary deletes the row |
@@ -148,9 +156,9 @@ Both live under *Settings -> Inbox*.
 ## Storage
 
 - `tasks.proposed` (0/1) and `tasks.triage` (JSON, NULL for hand-made tasks).
-- `inbox(id, text, source, created_at, status, error, task_id)` -- `status` is `pending` | `triaged` | `failed`;
-  `task_id` is nulled when the proposal is discarded; on a `pending` row it marks a follow-up (re-triage) of
-  that proposal.
+- `inbox(id, text, source, created_at, status, error, task_id, accept)` -- `status` is `pending` | `triaged` |
+  `failed`; `task_id` is nulled when the proposal is discarded; on a `pending` row it marks a follow-up (re-triage)
+  of that proposal. `accept` (JSON `{project?, locks?, run}`) = accept after the re-triage.
 - `project_summaries(project, summary, updated_at)`.
 - `triage_examples(id, text, project, created_at)` -- `project` NULL = cross-project.
 

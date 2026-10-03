@@ -196,7 +196,10 @@ CREATE TABLE IF NOT EXISTS inbox (
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     status TEXT NOT NULL DEFAULT 'pending',      -- pending | triaged | failed
     error TEXT,
-    task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL
+    task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+    -- A follow-up sent with the accept button: JSON ``{project?, locks, run}``.
+    -- Once re-triaged without a question, the proposal is accepted with it.
+    accept TEXT
 );
 
 -- One-paragraph summary per project, the triage's catalog. Generated lazily
@@ -332,6 +335,11 @@ def init_db(path: Path | None = None) -> None:
             pass
         try:
             conn.execute("ALTER TABLE tasks ADD COLUMN triage TEXT")
+        except sqlite3.OperationalError:
+            pass
+        # v3.12: accept-after-re-triage on inbox follow-ups.
+        try:
+            conn.execute("ALTER TABLE inbox ADD COLUMN accept TEXT")
         except sqlite3.OperationalError:
             pass
         # v3.2: the queue no longer acts on the agent's hand-off, so the

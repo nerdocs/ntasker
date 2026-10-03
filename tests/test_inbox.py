@@ -233,6 +233,30 @@ def test_accept_non_proposal_is_409(client):
     assert client.post("/api/tasks/999/accept", json={}).status_code == 404
 
 
+def test_refine_queues_a_follow_up_row(client):
+    pid = _propose_full("x")
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE tasks SET triage = ? WHERE id = ?",
+            ('{"raw": "the note", "question": "Which?"}', pid),
+        )
+    r = client.post(f"/api/tasks/{pid}/refine", json={"text": "  that one  "})
+    assert r.status_code == 201
+    item = r.json()
+    assert item["status"] == "pending" and item["task_id"] == pid
+    assert item["text"] == "the note\n\nFollow-up:\n(Q: Which?)\nthat one"
+    assert [i["id"] for i in client.get("/api/inbox").json()["items"]] == [item["id"]]
+
+
+def test_refine_guards(client):
+    pid = _propose_full("x")
+    assert client.post(f"/api/tasks/{pid}/refine", json={"text": "  "}).status_code == 400
+    assert client.post(f"/api/tasks/{pid}/refine", json={"text": ""}).status_code == 422
+    t = client.post("/api/tasks", json={"title": "t"}).json()
+    assert client.post(f"/api/tasks/{t['id']}/refine", json={"text": "x"}).status_code == 409
+    assert client.post("/api/tasks/999/refine", json={"text": "x"}).status_code == 404
+
+
 def test_discard_proposal_keeps_inbox_row(client):
     pid = _propose_full("x")
     assert client.delete(f"/api/tasks/{pid}").status_code == 204

@@ -9,17 +9,21 @@ not confirm ever becomes a task.
 ## The flow
 
 1. **Capture.** The note lands in the `inbox` table as `pending` -- from the topbar field, `ntasker in "..."`
-   (or piped in), or `POST /api/inbox`. The Inbox column shows it with a spinner at once. With the `voice` plugin on,
+   (or piped in), or `POST /api/inbox`. The Inbox list shows it with a spinner at once. With the `voice` plugin on,
    the field has a microphone button on its left and the note can be dictated (see [voice.md](voice.md)).
 2. **Triage.** The worker (`ntasker.triage.worker`, one tick every 2 s) takes the oldest pending row and calls
    `claude -p` with the catalog and the note. On success it inserts a task with `proposed = 1`, the model's title,
    priority and tags, the generated prompt as description (the raw note is appended under a `## Original` heading)
    and the whole model output in the task's `triage` column; the inbox row becomes `triaged`. On any failure the row
    becomes `failed` with the reason -- **Retry** puts it back, the trash icon drops it.
-3. **Confirm.** A proposal card shows the title, the model's candidate projects as checkboxes (its choice pre-ticked,
-   its reason as tooltip), priority, tags, the model's confidence and, when the note was too vague, its clarifying
-   question. Click the title to see the generated prompt.
-   The three actions are icon buttons -- the card is a kanban column wide, the labels live in their tooltips.
+3. **Confirm.** Proposals are listed in an **Inbox** card between *New task* and the queue, stacked one below the
+   other -- in both the list and the kanban view, hidden completely while the inbox is empty. A proposal card shows the
+   title, the model's candidate projects as checkboxes (its choice pre-ticked, its reason as tooltip), priority, tags,
+   the model's confidence and, when the note was too vague, its clarifying question. Click the title to see the
+   generated prompt. The three actions are icon buttons, their labels live in the tooltips.
+   - **Answer / correct** -- the text field under the question. Enter re-triages: the note, the question and your
+     text go through the triage again and the proposal is rewritten in place (see below). It stays in the inbox
+     until you accept it.
    - **Accept** (check) creates the task from the ticked projects: the first ticked is the task's project, every
      further one becomes a [directory lock](directory-locks.md) (a run that touches several repos). Nothing ticked =
      cross-project.
@@ -31,6 +35,16 @@ not confirm ever becomes a task.
 A proposal is invisible to everything else: it never shows in `GET /api/tasks` or `ntasker list`, does not count as
 open anywhere, cannot be queued, run or loaded via `/task` (the loader stops with `ENTWURF`, like a draft). Only
 `GET /api/inbox` serves proposals.
+
+## Answering and correcting a proposal
+
+Enter in a card's text field calls `POST /api/tasks/{id}/refine`. It stores a new `pending` inbox row whose
+`task_id` points at the proposal and whose text is the proposal's note, a `Follow-up:` line, the triage's question
+(quoted as `(Q: ...)`) and your answer. The worker treats such a row like any note, but **updates** the proposal
+(title, prompt, project, priority, tags, `triage`) instead of inserting a new one. The card shows a spinner (or the
+error with Retry / trash) meanwhile. The combined text becomes the proposal's new `raw`, so further answers pile up
+and the `## Original` section of the description keeps the whole trail. Was the proposal accepted or discarded in
+the meantime, the row yields a fresh proposal.
 
 ## Naming the project yourself
 
@@ -51,7 +65,7 @@ the rest of the server's run -- it would otherwise stay first in the queue and s
 or through **Regenerate**.
 
 The triage itself never waits for this: it runs against the catalog as it stands, and a project without a summary yet
-is simply offered by name. While the catalog is incomplete the Inbox column shows the progress
+is simply offered by name. While the catalog is incomplete the Inbox list shows the progress
 (*Learning the projects: 26 of 71 summarised*); `GET /api/inbox` carries it as `summaries: {done, total}`.
 
 To edit or regenerate a summary: project row menu -> **Summary...** (inline editor, Enter saves, **Regenerate** asks
@@ -101,7 +115,7 @@ Accepting a proposal with a project other than the model's choice (another candi
 
 | Key | Default | Meaning |
 |---|---|---|
-| `triage_enabled` | `on` | Off hides the field, column and tab; the worker pauses. `NTASKER_TRIAGE_ENABLED` |
+| `triage_enabled` | `on` | Off hides the field and the inbox list; the worker pauses. `NTASKER_TRIAGE_ENABLED` |
 | `triage_model` | `haiku` | Model alias/id for `claude -p --model`. `NTASKER_TRIAGE_MODEL` |
 
 Both live under *Settings -> Inbox*.
@@ -115,6 +129,7 @@ Both live under *Settings -> Inbox*.
 | POST | `/api/inbox/{id}/retry` | Failed row back to `pending`; 409 unless failed |
 | DELETE | `/api/inbox/{id}` | 204 / 404 |
 | POST | `/api/tasks/{id}/accept` | `{project?, locks?}`: omitted = keep, `null` = cross-project; 409 unless proposed |
+| POST | `/api/tasks/{id}/refine` | `{text (1..4000)}` -> 201 follow-up inbox row (re-triage); 409 unless proposed |
 
 | DELETE | `/api/tasks/{id}` | Discard a proposal (the ordinary delete) |
 | PUT | `/api/projects/summary` | `{project, summary}`; empty summary deletes the row |
@@ -134,7 +149,8 @@ Both live under *Settings -> Inbox*.
 
 - `tasks.proposed` (0/1) and `tasks.triage` (JSON, NULL for hand-made tasks).
 - `inbox(id, text, source, created_at, status, error, task_id)` -- `status` is `pending` | `triaged` | `failed`;
-  `task_id` is nulled when the proposal is discarded.
+  `task_id` is nulled when the proposal is discarded; on a `pending` row it marks a follow-up (re-triage) of
+  that proposal.
 - `project_summaries(project, summary, updated_at)`.
 - `triage_examples(id, text, project, created_at)` -- `project` NULL = cross-project.
 
@@ -144,7 +160,7 @@ Both live under *Settings -> Inbox*.
   `summary_tick`/`summary_worker`.
 - `src/ntasker/app.py` -- the endpoints and both workers' startup hook.
 - `src/ntasker/cli.py` -- `ntasker in`, `ntasker project summary`.
-- `src/ntasker/templates/index.html` (`inbox_column` macro, topbar field, project menu) and `static/app.js`.
+- `src/ntasker/templates/index.html` (Inbox card above the queue, topbar field, project menu) and `static/app.js`.
 
 ## Out of scope for now
 

@@ -40,7 +40,7 @@
         window.__sidebarSections = {{ sidebar_sections | tojson }};
         // Quick-prompt buttons of the run view (the `quick_prompts` setting).
         window.__quickPrompts = {{ quick_prompts | tojson }};
-        // The inbox (the `triage_enabled` setting): topbar field + Inbox column/tab.
+        // The inbox (the `triage_enabled` setting): topbar field + Inbox list.
         window.__triageEnabled = {{ triage_enabled | tojson }};
         // Names of the enabled plugins; plugin scripts register mixins on
         // window.ntaskerPlugins (merged into tracker() in app.js).
@@ -279,142 +279,6 @@
                                         <span x-text="row.live ? $i18n('session_pickup_end_take') : $i18n('session_pickup_take')"></span>
                                     </button>
                                 </div>
-                            </div>
-{% endmacro %}
-
-{# The Inbox column / tab body: notes still being triaged (or failed), then the #}
-{# proposals awaiting the user. Rendered once per view; `view` gates the data   #}
-{# so the hidden copy holds no rows (see inboxFor in app.js).                  #}
-{% macro inbox_column(view) %}
-                            <div class="inbox-column d-flex flex-column gap-2">
-                                {# Background catch-up of the project summaries (ntasker.triage.summary_worker):
-                                   visible only while the catalog is incomplete, so the wait has a number. #}
-                                <template x-if="summaryProgress('{{ view }}')">
-                                    <div class="text-secondary small p-2 d-flex align-items-center gap-2"
-                                         :title="$i18n('inbox_summaries_hint')">
-                                        <span class="spinner-border spinner-border-sm flex-shrink-0"></span>
-                                        <span x-text="$i18n('inbox_summaries', summaryProgress('{{ view }}'))"></span>
-                                    </div>
-                                </template>
-                                <template x-if="inboxFor('{{ view }}').items.length === 0 && inboxFor('{{ view }}').tasks.length === 0">
-                                    <div class="text-secondary small p-2" x-text="$i18n('inbox_empty')"></div>
-                                </template>
-                                <template x-for="item in inboxFor('{{ view }}').items" :key="'i' + item.id">
-                                    <div class="kanban-card inbox-item" :class="{ 'inbox-item-failed': item.status === 'failed' }">
-                                        <div class="d-flex align-items-start gap-2">
-                                            <template x-if="item.status === 'pending'">
-                                                <span class="spinner-border spinner-border-sm text-secondary mt-1 flex-shrink-0"
-                                                      :title="$i18n('inbox_pending')"></span>
-                                            </template>
-                                            <template x-if="item.status === 'failed'">
-                                                <i class="ti ti-alert-circle text-danger mt-1 flex-shrink-0" :title="$i18n('inbox_failed')"></i>
-                                            </template>
-                                            <div class="flex-fill min-w-0">
-                                                <div class="small" style="white-space: pre-wrap" x-text="item.text"></div>
-                                                <template x-if="item.error">
-                                                    <div class="text-danger small mt-1" x-text="item.error"></div>
-                                                </template>
-                                            </div>
-                                            <template x-if="item.status === 'failed'">
-                                                <button class="btn btn-sm btn-ghost-secondary px-1 py-0" @click="retryInbox(item)"
-                                                        :title="$i18n('inbox_retry')" :aria-label="$i18n('inbox_retry')">
-                                                    <i class="ti ti-refresh fs-3"></i>
-                                                </button>
-                                            </template>
-                                            <button class="btn btn-sm btn-ghost-danger px-1 py-0" @click="deleteInbox(item)"
-                                                    :title="$i18n('delete')" :aria-label="$i18n('delete')">
-                                                <i class="ti ti-trash fs-3"></i>
-                                            </button>
-                                        </div>
-                                    </div>
-                                </template>
-                                <template x-for="task in inboxFor('{{ view }}').tasks" :key="'t' + task.id">
-                                    <div class="kanban-card inbox-proposal">
-                                        {# Id and confidence on one row, title on the next -- see the #}
-                                        {# board card: side by side the title has no room in a column. #}
-                                        <div class="kanban-card-head">
-                                            <span class="task-id badge bg-secondary-lt text-secondary font-monospace"
-                                                  role="button"
-                                                  :title="$i18n('click_to_copy_id', {id: task.id})"
-                                                  @click.stop="copyId(task.id)"
-                                                  x-text="`#${task.id}`"></span>
-                                            <template x-if="task.triage">
-                                                <span class="text-secondary small text-nowrap ms-auto" :title="$i18n('inbox_confidence')"
-                                                      x-text="Math.round((task.triage.confidence || 0) * 100) + '%'"></span>
-                                            </template>
-                                        </div>
-                                        <strong class="kanban-card-title"
-                                                @click.stop="task._expanded = !task._expanded"
-                                                x-text="task.title"></strong>
-                                        <template x-if="task.triage && task.triage.question">
-                                            <div class="alert alert-warning py-1 px-2 small mb-1" x-text="task.triage.question"></div>
-                                        </template>
-                                        {# The generated prompt (the description minus its "Original" tail). #}
-                                        <div x-show="task._expanded" class="mb-1 text-muted small" style="white-space: pre-wrap"
-                                             :title="$i18n('inbox_prompt')"
-                                             x-text="task.triage ? task.triage.prompt : task.description" x-cloak></div>
-                                        {# Project picks: the model's candidates as checkboxes, its choice   #}
-                                        {# pre-ticked. First ticked = project, the rest = locks, none = cross. #}
-                                        <div class="d-flex flex-wrap align-items-center gap-2 small mb-1"
-                                             :title="$i18n('inbox_pick_hint')">
-                                            <template x-for="c in proposalChoices(task)" :key="c.project">
-                                                <label class="form-check form-check-inline mb-0 inbox-pick" :title="c.reason">
-                                                    <input type="checkbox" class="form-check-input"
-                                                           :checked="task._picked.includes(c.project)"
-                                                           @change="togglePick(task, c.project)">
-                                                    <span class="form-check-label" x-text="c.project"></span>
-                                                </label>
-                                            </template>
-                                            <span class="badge bg-secondary-lt" x-show="task._picked.length === 0">
-                                                <i class="ti ti-asterisk me-1"></i><span x-text="$i18n('cross_project')"></span>
-                                            </span>
-                                        </div>
-                                        <div class="d-flex flex-wrap gap-1 small mb-1">
-                                            <template x-if="task.priority === 'critical'">
-                                                <span class="badge bg-danger text-white">
-                                                    <i class="ti ti-alert-triangle-filled me-1"></i><span x-text="$i18n('priority_critical')"></span>
-                                                </span>
-                                            </template>
-                                            <template x-if="task.priority === 'high'">
-                                                <span class="badge bg-orange-lt">
-                                                    <i class="ti ti-arrow-up me-1"></i><span x-text="$i18n('priority_high')"></span>
-                                                </span>
-                                            </template>
-                                            <template x-if="task.priority === 'low'">
-                                                <span class="badge bg-azure-lt">
-                                                    <i class="ti ti-arrow-down me-1"></i><span x-text="$i18n('priority_low')"></span>
-                                                </span>
-                                            </template>
-                                            <template x-for="tag in task.tags" :key="tag">
-                                                <span class="badge bg-purple-lt">#<span x-text="tag"></span></span>
-                                            </template>
-                                        </div>
-                                        <div class="text-secondary small mb-2" style="white-space: pre-wrap"
-                                             x-text="task.triage ? task.triage.raw : ''"></div>
-                                        {# Icon-only actions -- a proposal card is narrow, the labels #}
-                                        {# lived in the tooltips anyway. #}
-                                        <div class="d-flex gap-1">
-                                            <button class="btn btn-primary btn-sm" @click="acceptProposal(task)"
-                                                    :aria-label="$i18n('inbox_accept')"
-                                                    :title="$i18n('inbox_accept') + ' — ' + $i18n('inbox_pick_hint')">
-                                                <i class="ti ti-check fs-3"></i>
-                                            </button>
-                                            {# Accept and hand the task straight to its agent -- only when #}
-                                            {# that agent's CLI is available (see the board's run button). #}
-                                            <button class="btn btn-claude btn-sm" x-show="taskRunnable(task)"
-                                                    @click="acceptProposal(task, true)"
-                                                    :aria-label="$i18n('inbox_accept_run')"
-                                                    :title="$i18n('inbox_accept_run') + ' (' + agentLabel(taskAgentKey(task)) + ')'">
-                                                <img :src="agentIconUrl(task)" class="claude-logo-icon" alt="">
-                                            </button>
-                                            <button class="btn btn-ghost-danger btn-sm" @click="discardProposal(task)"
-                                                    :aria-label="$i18n('inbox_discard')"
-                                                    :title="$i18n('inbox_discard')">
-                                                <i class="ti ti-x fs-3"></i>
-                                            </button>
-                                        </div>
-                                    </div>
-                                </template>
                             </div>
 {% endmacro %}
 
@@ -1105,6 +969,174 @@
                     </div>
                 </div>
 
+                {# ===== Inbox ===== #}
+                {# The triage's proposals (see ntasker.triage) stacked like the new-task form: #}
+                {# answer the triage's question or correct it right on the card, then accept. #}
+                {# Notes still being triaged (or failed) come first. Hidden while empty. #}
+                <div class="card mb-3" x-show="triageEnabled && (inboxNotes.length || inbox.tasks.length)" x-cloak>
+                    <div class="card-header">
+                        <h3 class="card-title mb-0">
+                            <i class="ti ti-inbox me-1"></i>
+                            {{ t('Inbox') }}
+                        </h3>
+                        <span class="badge bg-yellow-lt ms-2" x-text="inboxNotes.length + inbox.tasks.length"></span>
+                    </div>
+                    <div class="card-body inbox-list d-flex flex-column gap-2">
+                        {# Background catch-up of the project summaries (ntasker.triage.summary_worker):
+                           visible only while the catalog is incomplete, so the wait has a number. #}
+                        <template x-if="summaryProgress()">
+                            <div class="text-secondary small p-2 d-flex align-items-center gap-2"
+                                 :title="$i18n('inbox_summaries_hint')">
+                                <span class="spinner-border spinner-border-sm flex-shrink-0"></span>
+                                <span x-text="$i18n('inbox_summaries', summaryProgress())"></span>
+                            </div>
+                        </template>
+                        <template x-for="item in inboxNotes" :key="'i' + item.id">
+                            <div class="kanban-card inbox-item" :class="{ 'inbox-item-failed': item.status === 'failed' }">
+                                <div class="d-flex align-items-start gap-2">
+                                    <template x-if="item.status === 'pending'">
+                                        <span class="spinner-border spinner-border-sm text-secondary mt-1 flex-shrink-0"
+                                              :title="$i18n('inbox_pending')"></span>
+                                    </template>
+                                    <template x-if="item.status === 'failed'">
+                                        <i class="ti ti-alert-circle text-danger mt-1 flex-shrink-0" :title="$i18n('inbox_failed')"></i>
+                                    </template>
+                                    <div class="flex-fill min-w-0">
+                                        <div class="small" style="white-space: pre-wrap" x-text="item.text"></div>
+                                        <template x-if="item.error">
+                                            <div class="text-danger small mt-1" x-text="item.error"></div>
+                                        </template>
+                                    </div>
+                                    <template x-if="item.status === 'failed'">
+                                        <button class="btn btn-sm btn-ghost-secondary px-1 py-0" @click="retryInbox(item)"
+                                                :title="$i18n('inbox_retry')" :aria-label="$i18n('inbox_retry')">
+                                            <i class="ti ti-refresh fs-3"></i>
+                                        </button>
+                                    </template>
+                                    <button class="btn btn-sm btn-ghost-danger px-1 py-0" @click="deleteInbox(item)"
+                                            :title="$i18n('delete')" :aria-label="$i18n('delete')">
+                                        <i class="ti ti-trash fs-3"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </template>
+                        <template x-for="task in inbox.tasks" :key="'t' + task.id">
+                            <div class="kanban-card inbox-proposal">
+                                <div class="kanban-card-head">
+                                    <span class="task-id badge bg-secondary-lt text-secondary font-monospace"
+                                          role="button"
+                                          :title="$i18n('click_to_copy_id', {id: task.id})"
+                                          @click.stop="copyId(task.id)"
+                                          x-text="`#${task.id}`"></span>
+                                    <template x-if="task.triage">
+                                        <span class="text-secondary small text-nowrap ms-auto" :title="$i18n('inbox_confidence')"
+                                              x-text="Math.round((task.triage.confidence || 0) * 100) + '%'"></span>
+                                    </template>
+                                </div>
+                                <strong class="kanban-card-title"
+                                        @click.stop="task._expanded = !task._expanded"
+                                        x-text="task.title"></strong>
+                                <template x-if="task.triage && task.triage.question">
+                                    <div class="alert alert-warning py-1 px-2 small mb-1" x-text="task.triage.question"></div>
+                                </template>
+                                {# Answer / correction: Enter re-triages the proposal in place #}
+                                {# (POST /api/tasks/{id}/refine); its follow-up row shows here. #}
+                                <template x-if="followUp(task)">
+                                    <div class="d-flex align-items-start gap-2 small mb-1">
+                                        <template x-if="followUp(task).status === 'pending'">
+                                            <span class="spinner-border spinner-border-sm text-secondary flex-shrink-0"></span>
+                                        </template>
+                                        <template x-if="followUp(task).status === 'failed'">
+                                            <i class="ti ti-alert-circle text-danger flex-shrink-0" :title="$i18n('inbox_failed')"></i>
+                                        </template>
+                                        <span class="flex-fill min-w-0"
+                                              :class="followUp(task).status === 'failed' ? 'text-danger' : 'text-secondary'"
+                                              x-text="followUp(task).error || $i18n('inbox_refining')"></span>
+                                        <template x-if="followUp(task).status === 'failed'">
+                                            <button class="btn btn-sm btn-ghost-secondary px-1 py-0" @click="retryInbox(followUp(task))"
+                                                    :title="$i18n('inbox_retry')" :aria-label="$i18n('inbox_retry')">
+                                                <i class="ti ti-refresh fs-3"></i>
+                                            </button>
+                                        </template>
+                                        <template x-if="followUp(task).status === 'failed'">
+                                            <button class="btn btn-sm btn-ghost-danger px-1 py-0" @click="deleteInbox(followUp(task))"
+                                                    :title="$i18n('delete')" :aria-label="$i18n('delete')">
+                                                <i class="ti ti-trash fs-3"></i>
+                                            </button>
+                                        </template>
+                                    </div>
+                                </template>
+                                <input type="text" class="form-control form-control-sm mb-2" x-show="!followUp(task)"
+                                       x-model="task._answer"
+                                       :placeholder="$i18n('inbox_refine_placeholder')"
+                                       @keydown.enter.prevent="refineProposal(task)">
+                                {# The generated prompt (the description minus its "Original" tail). #}
+                                <div x-show="task._expanded" class="mb-1 text-muted small" style="white-space: pre-wrap"
+                                     :title="$i18n('inbox_prompt')"
+                                     x-text="task.triage ? task.triage.prompt : task.description" x-cloak></div>
+                                {# Project picks: the model's candidates as checkboxes, its choice   #}
+                                {# pre-ticked. First ticked = project, the rest = locks, none = cross. #}
+                                <div class="d-flex flex-wrap align-items-center gap-2 small mb-1"
+                                     :title="$i18n('inbox_pick_hint')">
+                                    <template x-for="c in proposalChoices(task)" :key="c.project">
+                                        <label class="form-check form-check-inline mb-0 inbox-pick" :title="c.reason">
+                                            <input type="checkbox" class="form-check-input"
+                                                   :checked="task._picked.includes(c.project)"
+                                                   @change="togglePick(task, c.project)">
+                                            <span class="form-check-label" x-text="c.project"></span>
+                                        </label>
+                                    </template>
+                                    <span class="badge bg-secondary-lt" x-show="task._picked.length === 0">
+                                        <i class="ti ti-asterisk me-1"></i><span x-text="$i18n('cross_project')"></span>
+                                    </span>
+                                </div>
+                                <div class="d-flex flex-wrap gap-1 small mb-1">
+                                    <template x-if="task.priority === 'critical'">
+                                        <span class="badge bg-danger text-white">
+                                            <i class="ti ti-alert-triangle-filled me-1"></i><span x-text="$i18n('priority_critical')"></span>
+                                        </span>
+                                    </template>
+                                    <template x-if="task.priority === 'high'">
+                                        <span class="badge bg-orange-lt">
+                                            <i class="ti ti-arrow-up me-1"></i><span x-text="$i18n('priority_high')"></span>
+                                        </span>
+                                    </template>
+                                    <template x-if="task.priority === 'low'">
+                                        <span class="badge bg-azure-lt">
+                                            <i class="ti ti-arrow-down me-1"></i><span x-text="$i18n('priority_low')"></span>
+                                        </span>
+                                    </template>
+                                    <template x-for="tag in task.tags" :key="tag">
+                                        <span class="badge bg-purple-lt">#<span x-text="tag"></span></span>
+                                    </template>
+                                </div>
+                                <div class="text-secondary small mb-2" style="white-space: pre-wrap"
+                                     x-text="task.triage ? task.triage.raw : ''"></div>
+                                <div class="d-flex gap-1">
+                                    <button class="btn btn-primary btn-sm" @click="acceptProposal(task)"
+                                            :aria-label="$i18n('inbox_accept')"
+                                            :title="$i18n('inbox_accept') + ' — ' + $i18n('inbox_pick_hint')">
+                                        <i class="ti ti-check fs-3"></i>
+                                    </button>
+                                    {# Accept and hand the task straight to its agent -- only when #}
+                                    {# that agent's CLI is available (see the board's run button). #}
+                                    <button class="btn btn-claude btn-sm" x-show="taskRunnable(task)"
+                                            @click="acceptProposal(task, true)"
+                                            :aria-label="$i18n('inbox_accept_run')"
+                                            :title="$i18n('inbox_accept_run') + ' (' + agentLabel(taskAgentKey(task)) + ')'">
+                                        <img :src="agentIconUrl(task)" class="claude-logo-icon" alt="">
+                                    </button>
+                                    <button class="btn btn-ghost-danger btn-sm" @click="discardProposal(task)"
+                                            :aria-label="$i18n('inbox_discard')"
+                                            :title="$i18n('inbox_discard')">
+                                        <i class="ti ti-x fs-3"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
                 {# ===== Task queue ===== #}
                 {# The auto-run worklist -- and the only way a session starts. #}
                 {# Every run button appends its task to this queue; #}
@@ -1343,24 +1375,10 @@
                             <span class="badge bg-secondary-lt ms-1" x-text="counts.archive"></span>
                         </button>
                     </li>
-                    <li class="nav-item" role="presentation" x-show="triageEnabled" x-cloak>
-                        <button class="nav-link" :class="tab === 'inbox' ? 'active' : ''" @click="setTab('inbox')">
-                            <i class="ti ti-inbox me-1"></i>
-                            {{ t('Inbox') }}
-                            <span class="badge bg-yellow-lt ms-1" x-text="counts.inbox"></span>
-                        </button>
-                    </li>
                 </ul>
 
-                {# Inbox tab: the same column body as on the board, in a card. #}
-                <div class="card" x-show="viewMode === 'list' && tab === 'inbox'" x-cloak>
-                    <div class="card-body">
-                        {{ inbox_column('list') }}
-                    </div>
-                </div>
-
                 {# Task list #}
-                <div class="card" x-show="viewMode === 'list' && tab !== 'inbox'" x-cloak>
+                <div class="card" x-show="viewMode === 'list'" x-cloak>
                     <div class="list-group list-group-flush" x-show="tasks.length > 0">
                         <template x-for="task in listTasks" :key="task.id">
                             <div class="list-group-item"
@@ -1673,7 +1691,7 @@
                 {# the kanban view just groups it by phase. #}
                 <div x-show="viewMode === 'kanban'" x-cloak>
                     <div class="kanban-board"
-                         :class="{ 'kanban-done-collapsed': doneCollapsed, 'kanban-has-inbox': triageEnabled }">
+                         :class="{ 'kanban-done-collapsed': doneCollapsed }">
                         <template x-for="col in kanbanColumns" :key="col.key">
                             <div class="kanban-column"
                                  :class="{
@@ -1689,7 +1707,7 @@
                                     <i class="ti me-2 fs-2" :class="col.icon"></i>
                                     <span class="fw-bold flex-fill text-truncate" x-text="col.label"></span>
                                     <span class="badge bg-secondary-lt ms-2"
-                                          x-text="col.key === 'inbox' ? inbox.items.length + inbox.tasks.length : kanbanTasksFor(col.key).length"></span>
+                                          x-text="kanbanTasksFor(col.key).length"></span>
                                     <template x-if="col.key === 'done'">
                                         <button type="button"
                                                 class="btn btn-sm btn-ghost-secondary ms-1 px-1 py-0"
@@ -1703,10 +1721,6 @@
 
                                 <div class="kanban-column-body"
                                      x-show="!(col.key === 'done' && doneCollapsed)">
-                                    {# Inbox column: not a phase -- fed by /api/inbox, cards not draggable. #}
-                                    <template x-if="col.key === 'inbox'">
-                                        {{ inbox_column('kanban') }}
-                                    </template>
                                     <template x-for="task in kanbanColumnTasks(col.key)" :key="task.id">
                                         <div class="kanban-card"
                                              :class="{'kanban-card-dragging': draggedTaskId === task.id,
@@ -1895,7 +1909,7 @@
                                     </template>
 
                                     <div class="kanban-column-empty text-muted small text-center py-2"
-                                         x-show="col.key !== 'inbox' && kanbanTasksFor(col.key).length === 0">
+                                         x-show="kanbanTasksFor(col.key).length === 0">
 
                                         <i class="ti ti-inbox me-1"></i>
                                         <span x-text="$i18n('kanban_empty_column')"></span>

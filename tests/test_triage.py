@@ -137,6 +137,51 @@ def test_tick_creates_proposed_task(db, monkeypatch):
     assert calls[0][1] == "add a --json flag" and "medux/online summary" in calls[0][0][1]
 
 
+def test_follow_up_note_quotes_the_question():
+    assert triage.follow_up_note("the note ", "Which one?", " the second ") == (
+        "the note\n\nFollow-up:\n(Q: Which one?)\nthe second"
+    )
+    assert triage.follow_up_note("n", None, "fix") == "n\n\nFollow-up:\nfix"
+
+
+def test_tick_follow_up_rewrites_the_proposal_in_place(db, monkeypatch):
+    monkeypatch.setattr(triage, "_argv", lambda system, schema: ["claude", system])
+    monkeypatch.setattr(triage, "run_claude", lambda argv, stdin: dict(GOOD))
+    first = _inbox("ntasker: add a flag")
+    triage.tick()
+    tid = _row("inbox", first)["task_id"]
+    better = dict(GOOD, title="Add --json to ntasker in", tags=["cli"], priority="high")
+    monkeypatch.setattr(triage, "run_claude", lambda argv, stdin: dict(better))
+    note = triage.follow_up_note("ntasker: add a flag", None, "it is --json")
+    with get_conn() as conn:
+        fid = int(conn.execute(
+            "INSERT INTO inbox (text, task_id) VALUES (?, ?)", (note, tid)
+        ).lastrowid)
+    triage.tick()
+    assert _row("inbox", fid)["status"] == "triaged"
+    task = _row("tasks", tid)
+    assert task["proposed"] == 1 and task["title"] == "Add --json to ntasker in"
+    assert task["priority"] == "high" and task["description"].endswith("it is --json")
+    assert json.loads(task["triage"])["raw"] == note
+    with get_conn() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 1
+        assert load_tags_for(conn, tid) == ["cli"]
+
+
+def test_tick_follow_up_on_accepted_task_makes_a_new_proposal(db, monkeypatch):
+    monkeypatch.setattr(triage, "_argv", lambda system, schema: ["claude", system])
+    monkeypatch.setattr(triage, "run_claude", lambda argv, stdin: dict(GOOD))
+    with get_conn() as conn:
+        tid = int(conn.execute("INSERT INTO tasks (title) VALUES ('accepted')").lastrowid)
+        fid = int(conn.execute(
+            "INSERT INTO inbox (text, task_id) VALUES ('n', ?)", (tid,)
+        ).lastrowid)
+    triage.tick()
+    new_id = _row("inbox", fid)["task_id"]
+    assert new_id != tid and _row("tasks", new_id)["proposed"] == 1
+    assert _row("tasks", tid)["title"] == "accepted"
+
+
 def test_tick_marks_failure_and_keeps_task_count(db, monkeypatch):
     def boom(argv, stdin):
         raise triage.TriageError("timeout after 120s")

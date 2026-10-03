@@ -71,6 +71,9 @@ DIR_ENTRIES = 40
 ORIGINAL_HEADING = "## Original"
 """Heading under which the raw note is appended to a proposal's description."""
 
+FOLLOW_UP_HEADING = "Follow-up:"
+"""Marks the user's answer/correction appended to a note by :func:`follow_up_note`."""
+
 SENTINELS = frozenset({"__none__", "__null__"})
 
 
@@ -188,7 +191,7 @@ def summarize_project(name: str) -> str:
 def summary_progress() -> dict[str, int]:
     """``{"done": n, "total": m}`` -- how complete the triage catalog is.
 
-    What the Inbox column shows while :func:`summary_worker` is still
+    What the Inbox list shows while :func:`summary_worker` is still
     catching up, so the wait has a number instead of a spinner.
     """
     cat = catalog()
@@ -286,6 +289,9 @@ def system_prompt(cat: list[tuple[str, str | None]], examples: list[tuple[str, s
         "- confidence: 0..1 for the project choice.",
         "- question: a single clarifying question when the note is too vague to act on,",
         "  else null.",
+        f'- A note may end with "{FOLLOW_UP_HEADING}" lines: the user\'s answer to your',
+        "  earlier question or a correction. They override the note above; do not ask",
+        "  again what they answer.",
         "",
         "Catalog",
     ]
@@ -522,11 +528,30 @@ def triage_text(text: str) -> dict:
     return obj
 
 
+def follow_up_note(raw: str, question: str | None, answer: str) -> str:
+    """The proposal's note plus the user's answer/correction, for a re-triage.
+
+    The earlier question is quoted so the model sees what the answer refers
+    to. The result becomes the new proposal's ``raw``, so further follow-ups
+    accumulate.
+    """
+    lines = [raw.rstrip(), "", FOLLOW_UP_HEADING]
+    if question:
+        lines.append(f"(Q: {question})")
+    lines.append(answer.strip())
+    return "\n".join(lines)
+
+
 def tick() -> None:
-    """Triage the oldest pending inbox row: proposed task or ``failed``. Never raises."""
+    """Triage the oldest pending inbox row: proposed task or ``failed``. Never raises.
+
+    A row with ``task_id`` set is a follow-up on that proposal (see
+    :func:`follow_up_note`): the proposal is rewritten in place. Accepted or
+    discarded meanwhile, the row yields a fresh proposal instead.
+    """
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT id, text FROM inbox WHERE status = 'pending' ORDER BY id LIMIT 1"
+            "SELECT id, text, task_id FROM inbox WHERE status = 'pending' ORDER BY id LIMIT 1"
         ).fetchone()
     if row is None:
         return
@@ -541,6 +566,25 @@ def tick() -> None:
         return
     description = f"{proposal['prompt']}\n\n{ORIGINAL_HEADING}\n\n{proposal['raw']}"
     with get_conn() as conn:
+        task_id = row["task_id"]
+        cur = conn.execute(
+            "UPDATE tasks SET project = ?, title = ?, description = ?, priority = ?, triage = ? "
+            "WHERE id = ? AND proposed = 1",
+            (
+                proposal["project"],
+                proposal["title"],
+                description,
+                proposal["priority"],
+                json.dumps(proposal, ensure_ascii=False),
+                task_id,
+            ),
+        )
+        if task_id is not None and cur.rowcount:
+            set_task_tags(conn, task_id, proposal["tags"])
+            conn.execute(
+                "UPDATE inbox SET status = 'triaged', error = NULL WHERE id = ?", (row["id"],)
+            )
+            return
         cur = conn.execute(
             "INSERT INTO tasks (project, title, description, phase, priority, proposed, triage, "
             "sort_order) VALUES (?, ?, ?, 'planned', ?, 1, ?, "

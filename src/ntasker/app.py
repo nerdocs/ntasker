@@ -576,9 +576,8 @@ def build_js_strings() -> dict[str, str]:
         "inbox_placeholder": _("Drop an idea -- Ctrl+K"),
         "inbox_stored": _("Stored -- the inbox triages it"),
         "inbox_send_failed": _("Could not store the note"),
-        "kanban_col_inbox": _("Inbox"),
-        "inbox_tab": _("Inbox"),
-        "inbox_empty": _("Nothing waiting. Type an idea into the field at the top."),
+        "inbox_refine_placeholder": _("Answer or correction -- Enter re-triages"),
+        "inbox_refining": _("Re-triaging with your answer..."),
         "inbox_pending": _("Triaging..."),
         "inbox_failed": _("Triage failed"),
         "inbox_retry": _("Retry"),
@@ -2258,10 +2257,11 @@ def api_inbox_create(payload: InboxIn) -> JSONResponse:
 
 @app.get("/api/inbox")
 def api_inbox_list() -> JSONResponse:
-    """Everything the Inbox column shows: ``items`` = inbox rows still pending
+    """Everything the Inbox list shows: ``items`` = inbox rows still pending
     or failed (oldest first), ``tasks`` = the proposals awaiting the user
     (newest first), ``summaries`` = the catalog's summary coverage so the
-    column can show the background worker's progress. The only feed that
+    list can show the background worker's progress. A row with ``task_id``
+    set is a follow-up (re-triage) of that proposal. The only feed that
     serves proposed tasks."""
     with get_conn() as conn:
         item_rows = conn.execute(
@@ -2343,6 +2343,40 @@ def api_accept_proposal(task_id: int, payload: AcceptIn) -> JSONResponse:
         plugins.apply_task_hooks(conn, [task])
     return JSONResponse(task)
 
+
+class RefineIn(BaseModel):
+    """The user's answer to a proposal's question, or a correction."""
+
+    text: str = Field(min_length=1, max_length=4000)
+
+
+@app.post("/api/tasks/{task_id}/refine", status_code=201)
+def api_refine_proposal(task_id: int, payload: RefineIn) -> JSONResponse:
+    """Queue a re-triage of a proposal with the user's answer/correction.
+
+    Stores an inbox row (``task_id`` = the proposal) holding the proposal's
+    note plus the answer; the triage worker then rewrites the proposal in
+    place (see :func:`ntasker.triage.tick`). Returns the inbox row. 409
+    unless the task is a proposal.
+    """
+    text = payload.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail=_("Empty note"))
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail=_("Task not found"))
+        if not row["proposed"]:
+            raise HTTPException(status_code=409, detail=_("Task is not an inbox proposal"))
+        info = json.loads(row["triage"]) if row["triage"] else {}
+        note = triage.follow_up_note(
+            info.get("raw") or row["description"] or row["title"], info.get("question"), text
+        )
+        cur = conn.execute(
+            "INSERT INTO inbox (text, source, task_id) VALUES (?, 'ui', ?)", (note, task_id)
+        )
+        item = conn.execute("SELECT * FROM inbox WHERE id = ?", (cur.lastrowid,)).fetchone()
+    return JSONResponse(_inbox_row(item), status_code=201)
 
 
 class ProjectHiddenSet(BaseModel):

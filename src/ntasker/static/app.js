@@ -449,7 +449,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         counts: { open: 0, done: 0, archive: 0, inbox: 0 },
         // The inbox (see ntasker.triage): the topbar field's draft and the
         // rows /api/inbox serves -- notes still being triaged (or failed) and
-        // the proposals awaiting the user. Off = no field, no column, no tab.
+        // the proposals awaiting the user. Off = no field, no inbox list.
         triageEnabled: !!window.__triageEnabled,
         inboxText: '',
         inbox: { items: [], tasks: [], summaries: { done: 0, total: 0 } },
@@ -1018,34 +1018,38 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 const r = await fetch('/api/inbox');
                 if (!r.ok) return;
                 const data = await r.json();
-                // Keep the expand state and the ticked projects of proposals
-                // still on the board; a new proposal starts with the model's pick.
+                // Keep the expand state, the ticked projects and a half-typed
+                // answer of proposals still listed; a new proposal starts with
+                // the model's pick. A re-triaged one (new triage) does too.
                 const prev = new Map(this.inbox.tasks.map(t => [t.id, t]));
                 data.tasks.forEach(t => {
                     const old = prev.get(t.id);
+                    const same = old && JSON.stringify(old.triage) === JSON.stringify(t.triage);
                     t._expanded = old ? old._expanded : false;
-                    t._picked = old ? old._picked : (t.project ? [t.project] : []);
+                    t._picked = same ? old._picked : (t.project ? [t.project] : []);
+                    t._answer = old ? old._answer : '';
                 });
                 this.inbox = data;
 
             } catch (_e) { /* server momentarily unreachable */ }
         },
 
-        // The rows the Inbox column of ``view`` ('kanban' | 'list') renders.
-        // Both copies live in the document; the one not on screen gets none
-        // (same reason as listTasks / kanbanColumnTasks).
-        inboxFor(view) {
-            const active = view === 'kanban'
-                ? this.viewMode === 'kanban'
-                : this.viewMode === 'list' && this.tab === 'inbox';
-            return active ? this.inbox : { items: [], tasks: [], summaries: { done: 0, total: 0 } };
+        // Inbox rows that are notes of their own; a follow-up on a proposal
+        // (``task_id`` set) shows on that proposal's card instead.
+        get inboxNotes() {
+            return this.inbox.items.filter(i => !i.task_id);
+        },
+
+        // The pending or failed re-triage of ``task`` (see refineProposal), if any.
+        followUp(task) {
+            return this.inbox.items.find(i => i.task_id === task.id) || null;
         },
 
         // Project summaries still being generated in the background (see
         // ntasker.triage.summary_worker). Null once the catalog is complete --
-        // the Inbox column then shows nothing.
-        summaryProgress(view) {
-            const s = this.inboxFor(view).summaries;
+        // the Inbox list then shows nothing about it.
+        summaryProgress() {
+            const s = this.inbox.summaries;
             return s && s.total > s.done ? s : null;
         },
 
@@ -1106,6 +1110,24 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             const accepted = await r.json();
             await this.refreshAll();
             if (run && this.taskRunnable(accepted)) this.runNext(accepted);
+        },
+
+        // Answer the triage's question / correct the proposal: the triage
+        // runs again over the note plus this text and rewrites the card.
+        async refineProposal(task) {
+            const text = (task._answer || '').trim();
+            if (!text) return;
+            const r = await fetch(`/api/tasks/${task.id}/refine`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text }),
+            });
+            if (!r.ok) {
+                this.showToast(await this._errorDetail(r, 'inbox_send_failed'), 'danger');
+                return;
+            }
+            task._answer = '';
+            await this.loadInbox();
         },
 
         // No confirmation: the raw note survives in its inbox row.
@@ -1270,10 +1292,6 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // tabler-icons subset (see comments in index.html).
         get kanbanColumns() {
             return [
-                // The Inbox is not a phase: fed by /api/inbox, no drop target.
-                ...(this.triageEnabled
-                    ? [{key: 'inbox', label: _i('kanban_col_inbox'), icon: 'ti-inbox'}]
-                    : []),
                 {key: 'planned', label: _i('phase_planned'),    icon: 'ti-clock'},
                 {key: 'wip',     label: _i('phase_wip'),        icon: 'ti-progress'},
                 {key: 'review',  label: _i('phase_review'),     icon: 'ti-eye'},
@@ -1285,7 +1303,6 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // phase columns only get status==='open' tasks (a done task in phase
         // 'wip' belongs in Done, not in WIP).
         kanbanTasksFor(colKey) {
-            if (colKey === 'inbox') return [];   // proposals come from /api/inbox
             if (colKey === 'done') {
                 return this.tasks.filter(t => t.status === 'done');
             }
@@ -1308,7 +1325,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // keeps a full set of rows in the DOM (and re-renders them on every
         // refresh) while the user looks at the other.
         get listTasks() {
-            return this.viewMode === 'list' && this.tab !== 'inbox' ? this.tasks : [];
+            return this.viewMode === 'list' ? this.tasks : [];
         },
 
         // ---- Drag & Drop (kanban) ----
@@ -1579,7 +1596,6 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
 
         // A blocked task (open dependencies) must not advance to Review or Done.
         canDropOn(task, colKey) {
-            if (colKey === 'inbox') return false;   // not a phase
             if ((colKey === 'review' || colKey === 'done') && this.isBlocked(task)) {
                 return false;
             }
@@ -2049,7 +2065,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             // the Done column has content; status tabs are irrelevant here.
             if (view === 'kanban') {
                 params.set('archived', 'false');
-            } else if (this.tab === 'open' || this.tab === 'inbox') {
+            } else if (this.tab === 'open') {
                 params.set('status', 'open');
                 params.set('archived', 'false');
             } else if (this.tab === 'done') {

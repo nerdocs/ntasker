@@ -1290,6 +1290,14 @@
                                             <span x-text="$i18n('queue_item_waiting')"></span>
                                         </a>
                                     </template>
+                                    {# Adopted terminal session: running, but nothing to attach to. #}
+                                    <template x-if="taskRunPhase(item.id) === 'external'">
+                                        <span class="d-flex align-items-center px-2" :title="$i18n('claude_external')">
+                                            <span class="spinner-border spinner-border-sm me-1"></span>
+                                            <i class="ti ti-terminal-2 me-1"></i>
+                                            <span x-text="$i18n('queue_item_running')"></span>
+                                        </span>
+                                    </template>
                                 </span>
 
                                 <button type="button" class="btn btn-sm btn-ghost-secondary px-1 py-0 flex-shrink-0"

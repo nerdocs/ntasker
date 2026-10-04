@@ -193,9 +193,12 @@ replaces the first). The loader skips this inside an ntasker-spawned session (`N
 
 An external task is **locked in the UI**: the card is greyed out with a *"Running in an external terminal"* stamp,
 the run button shows a spinner and is disabled -- starting a second agent on the same task is exactly what this
-prevents. The card stays editable. The queue treats the session like one of its own for the one-per-project rule
-and the directory locks (the lane and the held dirs are occupied), but it is no queue run: it never advances or
-ends a queue entry. There is no waiting/running distinction for external sessions -- they carry no hooks.
+prevents. The card stays editable. The session also **joins the queue** at the front, as that entry's run (the
+same for `ntasker adopt` from inside a running session): it occupies its lane and the held dirs, and the queue panel
+shows it as *Running* with a terminal glyph. When its process exits without the task being done, the entry is
+flagged `ended` and offers a resume, like any queued run. An ntasker restart drops the entry instead (the terminal
+outlives the server; resuming would open the conversation twice) -- the task stays `wip`. There is no
+waiting/running distinction for external sessions -- they carry no hooks.
 
 The loader also reports the session's **own id**. Claude Code exports it as `CLAUDE_CODE_SESSION_ID` -- the same
 canonical UUID that names its transcript and that `--resume` takes -- so the loader sends it along with the pid and

@@ -180,3 +180,54 @@ def test_laneless_quicktask_ignores_dir_locks(env):
     taskqueue.tick()
     assert env["started"] == [quick]
     assert quick not in taskqueue.skipped(taskqueue.load_queue(), env["live"])
+
+
+def _queue_ids():
+    return [int(r["id"]) for r in taskqueue.load_queue()]
+
+
+def test_adopted_external_run_joins_queue_at_front(env):
+    """A live terminal session attached to a task is queued at once, as its run."""
+    a = env["add"]("a", "p")
+    b = env["add"]("b", "p")
+    taskqueue.enqueue(a)
+    env["external"].add(b)
+    taskqueue.adopt_running(b)
+    assert _queue_ids() == [b, a]
+    with get_conn() as conn:
+        assert conn.execute("SELECT phase FROM tasks WHERE id = ?", (b,)).fetchone()[0] == "wip"
+    taskqueue.tick()
+    assert env["started"] == []   # neither re-spawned nor `a` started next to it
+
+
+def test_adopted_external_run_ending_flags_entry(env):
+    """Its process exiting without done blocks the lane like a queued run."""
+    a = env["add"]("a", "p")
+    b = env["add"]("b", "p")
+    taskqueue.enqueue(a)
+    env["external"].add(b)
+    taskqueue.adopt_running(b)
+    taskqueue.tick()
+    env["external"].discard(b)
+    taskqueue.tick()
+    with get_conn() as conn:
+        ended = conn.execute("SELECT session_ended_at FROM tasks WHERE id = ?", (b,)).fetchone()[0]
+    assert ended is not None
+    assert env["started"] == []
+
+
+def test_adopted_external_run_leaves_queue_on_shutdown(env):
+    """A restart must not resume a conversation its terminal still runs."""
+    b = env["add"]("b", "p")
+    env["external"].add(b)
+    taskqueue.adopt_running(b)
+    taskqueue.flag_running_ended()
+    assert _queue_ids() == []
+
+
+def test_adopt_running_skips_drafts(env):
+    d = env["add"]("d", "p")
+    with get_conn() as conn:
+        conn.execute("UPDATE tasks SET draft = 1 WHERE id = ?", (d,))
+    taskqueue.adopt_running(d)
+    assert _queue_ids() == []

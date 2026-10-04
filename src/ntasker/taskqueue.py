@@ -46,6 +46,11 @@ the lane keeps moving. Every fasttrack run leaves a ``run_outcomes`` row (the
 run log, see :func:`~ntasker.db.insert_outcome`); a session that ends without
 ``finish`` gets an ``ended`` row from :func:`tick`.
 
+A session started **outside** ntasker (``/task`` in a terminal, ``ntasker
+adopt``) that is attached to a task while it runs joins the queue at the front
+as that entry's run (:func:`adopt_running`): it ends and resumes like a queued
+run, but a server restart drops the entry instead of resuming it.
+
 The queue is the **only** way a session starts: every run button appends to
 the queue (:func:`enqueue`), and the worker picks the task up once its project
 lane is free. ``queue_enabled`` (default on) is a pause switch.
@@ -185,6 +190,25 @@ def enqueue(task_id: int) -> list[sqlite3.Row]:
     return set_queue([*ids, task_id])
 
 
+def adopt_running(task_id: int) -> None:
+    """Put a task whose session already runs outside ntasker into the queue.
+
+    Called when a live external session is attached to a task (the ``/task``
+    loader in a terminal, ``ntasker adopt`` with a pid). The run is already
+    under way, so the entry goes to the front and counts as a queue run from
+    the start: it occupies its lane, and when its process exits without the
+    task being done the entry is flagged ended and offers a resume of that
+    conversation -- like any queued run. Drafts and proposals stay out.
+    """
+    if is_draft(task_id):
+        return
+    clear_ended([task_id])
+    mark_wip(task_id)
+    rest = [int(r["id"]) for r in load_queue() if int(r["id"]) != task_id]
+    if any(int(r["id"]) == task_id for r in set_queue([task_id, *rest])):
+        _running.add(task_id)
+
+
 def is_draft(task_id: int) -> bool:
     """True when the task is a draft or an inbox proposal (never to be started); False when missing."""
     with get_conn() as conn:
@@ -232,16 +256,23 @@ def flag_running_ended() -> None:
     The server going down takes its sessions with it, and the worker will not
     tick again to notice -- so the flag is written here, and the first tick
     after the restart resumes the flagged entries (see :func:`tick`).
+
+    An adopted external run is the exception: its terminal process outlives
+    the server, so resuming it would open the same conversation twice. Its
+    entry leaves the queue instead -- the restarted server no longer knows the
+    process, and the task stays in ``wip`` as before it was adopted.
     """
-    ids = _running | ({int(r["id"]) for r in load_queue()} & set(active_session_ids()))
-    if not ids:
-        return
+    external = _running & set(external_session_ids())
+    ids = (_running | ({int(r["id"]) for r in load_queue()} & set(active_session_ids()))) - external
     with get_conn() as conn:
-        conn.execute(
-            f"UPDATE tasks SET session_ended_at = ? "
-            f"WHERE id IN ({','.join('?' * len(ids))}) AND session_ended_at IS NULL",
-            [_now(), *ids],
-        )
+        if external:
+            _dequeue(conn, list(external))
+        if ids:
+            conn.execute(
+                f"UPDATE tasks SET session_ended_at = ? "
+                f"WHERE id IN ({','.join('?' * len(ids))}) AND session_ended_at IS NULL",
+                [_now(), *ids],
+            )
 
 
 def _dequeue(conn: sqlite3.Connection, ids: list[int]) -> None:
@@ -392,17 +423,19 @@ def tick() -> None:
 
     enabled = get_queue_enabled()
     live = set(active_session_ids())
+    external = set(external_session_ids())
     _kill_done(live)
     rows = load_queue()
     queued_ids = {int(r["id"]) for r in rows}
 
-    # Adopt every queued task that has a session, so a run the user started by
-    # hand on a queued task advances the queue just like a queued one. Only
-    # while the queue is on -- a hand-started run on a paused queue is the
-    # user's own business and must not consume its queue entry. Ids that left
-    # the queue behind our back (removed, deleted) are forgotten.
+    # Adopt every queued task that has a session -- ours or an external one --
+    # so a run the user started by hand on a queued task advances the queue
+    # just like a queued one. Only while the queue is on -- a hand-started run
+    # on a paused queue is the user's own business and must not consume its
+    # queue entry. Ids that left the queue behind our back (removed, deleted)
+    # are forgotten.
     if enabled:
-        _running.update(queued_ids & live)
+        _running.update(queued_ids & (live | external))
     _running.intersection_update(queued_ids)
     LANELESS.intersection_update(queued_ids)
 
@@ -426,7 +459,9 @@ def tick() -> None:
     # Ended without a hand-off (stopped, crashed, blocker): flag the entry and
     # keep it -- it blocks its lane until the user has looked at it. A column,
     # not memory, so a server restart does not silently start it again.
-    ended_rows = [r for r in rows if int(r["id"]) in _running and int(r["id"]) not in live]
+    ended_rows = [
+        r for r in rows if int(r["id"]) in _running and int(r["id"]) not in live | external
+    ]
     if ended_rows:
         ended = [int(r["id"]) for r in ended_rows]
         # A fasttrack run that ends without ``ntasker finish`` still gets its
@@ -471,10 +506,10 @@ def tick() -> None:
     default_agent = resolve_agent_key(None)
     dir_locks = get_dir_locks()
     require_clean = dir_locks and get_require_clean()
-    # External sessions occupy their lane and directories like any other, but
-    # are no queue runs: they never advance or end an entry. Laneless
-    # Quicktasks occupy nothing (see :data:`LANELESS`).
-    occupied = (live | set(external_session_ids())) - LANELESS
+    # External sessions occupy their lane and directories like any other; a
+    # queued one counts as that entry's run (see :func:`adopt_running`).
+    # Laneless Quicktasks occupy nothing (see :data:`LANELESS`).
+    occupied = (live | external) - LANELESS
     starts: list[int] = []
     with get_conn() as conn:
         busy = _busy_buckets(occupied, conn)
@@ -489,7 +524,7 @@ def tick() -> None:
             # A live entry runs, an ended one waits for the user (or its
             # resume) -- for a laned task its busy bucket already says so, a
             # laneless one needs the explicit guard.
-            if task_id in live or (row["session_ended_at"] and task_id not in RESUME):
+            if task_id in live | external or (row["session_ended_at"] and task_id not in RESUME):
                 continue
             laneless = task_id in LANELESS
             bucket = _bucket(row["project"])

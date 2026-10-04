@@ -1649,7 +1649,9 @@ def api_claude_session_external(task_id: int, payload: ExternalSessionIn) -> JSO
 
     Called by the ``/task`` loader when it runs in a terminal Claude Code
     (``CLAUDE_PID`` set, ``NTASKER_TASK_ID`` not). The task then shows as busy
-    and its run button locks until that process exits. 404 for an unknown task.
+    and its run button locks until that process exits; it also joins the queue
+    as a running entry (:func:`ntasker.taskqueue.adopt_running`). 404 for an
+    unknown task.
 
     The loader also reports the session's own id (``CLAUDE_CODE_SESSION_ID``)
     and working directory, which get stored on the task -- so once the terminal
@@ -1663,6 +1665,7 @@ def api_claude_session_external(task_id: int, payload: ExternalSessionIn) -> JSO
     register_external(task_id, payload.pid)
     if payload.session_id:
         bind_session(task_id, payload.session_id, payload.cwd or None)
+    taskqueue.adopt_running(task_id)
     return JSONResponse({"ok": True, "session_id": payload.session_id})
 
 
@@ -1768,7 +1771,8 @@ def api_claude_session_adopt(task_id: int, payload: AdoptSessionIn) -> JSONRespo
     from inside the running session, or the board's session picker for one
     that has already ended. Unlike ``/external`` the process need not be alive
     -- what matters is the id and the directory, which is where a resume has
-    to spawn to find the transcript. 404 for an unknown task.
+    to spawn to find the transcript. With a ``pid`` (still running) the task
+    also joins the queue as a running entry. 404 for an unknown task.
     """
     with get_conn() as conn:
         if conn.execute("SELECT 1 FROM tasks WHERE id = ?", (task_id,)).fetchone() is None:
@@ -1776,6 +1780,7 @@ def api_claude_session_adopt(task_id: int, payload: AdoptSessionIn) -> JSONRespo
     bind_session(task_id, payload.session_id, payload.cwd or None)
     if payload.pid:
         register_external(task_id, payload.pid)
+        taskqueue.adopt_running(task_id)
     return JSONResponse({"ok": True, "id": task_id, "session_id": payload.session_id})
 
 

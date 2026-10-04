@@ -70,3 +70,18 @@ def test_project_name_prefers_a_known_project(client, tmp_path, monkeypatch):
     assert projects.name_for_dir(tmp_path / "repo" / "src" / "deep") == "repo"
     assert projects.name_for_dir(tmp_path / "other") == "other"
     assert projects.name_for_dir(tmp_path) is None
+
+
+def test_adopt_with_a_pid_queues_the_task(client):
+    t = client.post("/api/tasks", json={"title": "t"}).json()
+    client.post(
+        f"/api/claude/sessions/{t['id']}/adopt",
+        json={"session_id": SID, "pid": os.getpid()},
+    )
+    assert [i["id"] for i in client.get("/api/queue").json()["items"]] == [t["id"]]
+
+
+def test_adopt_without_a_pid_does_not_queue(client):
+    t = client.post("/api/tasks", json={"title": "t"}).json()
+    client.post(f"/api/claude/sessions/{t['id']}/adopt", json={"session_id": SID})
+    assert client.get("/api/queue").json()["items"] == []

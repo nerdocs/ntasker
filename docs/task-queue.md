@@ -151,7 +151,9 @@ resumed (as above) instead of starting it over. Entries whose agent cannot resum
 
 A session you start by hand also occupies its project: two agents in one working directory is exactly what the
 one-per-project rule exists to prevent. On a *running* queue, a hand-started session on a queued task is adopted -- it
-advances the queue like a queued run would. On a paused queue it is left alone.
+advances the queue like a queued run would. On a paused queue it is left alone. A live session started outside
+ntasker (`/task` in a terminal, `ntasker adopt`) joins the queue at the front as soon as it is attached -- see
+[claude-runs.md](claude-runs.md#external-sessions----task-in-a-terminal).
 
 ## Setting dependencies by drag
 

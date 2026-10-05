@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: ntasker 1.3.0\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-10-03 11:42+0200\n"
+"POT-Creation-Date: 2026-10-05 22:28+0200\n"
 "PO-Revision-Date: 2026-05-02 09:19+0200\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: de\n"
@@ -19,38 +19,38 @@ msgstr ""
 "Generated-By: Babel 2.18.0\n"
 
 #: src/ntasker/app.py:153 src/ntasker/app.py:637
-#: src/ntasker/templates/index.html:749 src/ntasker/templates/index.html:2087
+#: src/ntasker/templates/index.html:749 src/ntasker/templates/index.html:2094
 msgid "Planned"
 msgstr "Geplant"
 
 #: src/ntasker/app.py:154 src/ntasker/app.py:636
-#: src/ntasker/templates/index.html:750 src/ntasker/templates/index.html:2088
+#: src/ntasker/templates/index.html:750 src/ntasker/templates/index.html:2095
 msgid "In Progress"
 msgstr "In Arbeit"
 
 #: src/ntasker/app.py:155 src/ntasker/app.py:638
-#: src/ntasker/templates/index.html:751 src/ntasker/templates/index.html:2089
+#: src/ntasker/templates/index.html:751 src/ntasker/templates/index.html:2096
 msgid "Review"
 msgstr "Zu prüfen"
 
 #: src/ntasker/app.py:162 src/ntasker/app.py:639
-#: src/ntasker/templates/index.html:757 src/ntasker/templates/index.html:2095
+#: src/ntasker/templates/index.html:757 src/ntasker/templates/index.html:2102
 msgid "Critical"
 msgstr "Kritisch"
 
 #: src/ntasker/app.py:163 src/ntasker/app.py:640
-#: src/ntasker/templates/index.html:758 src/ntasker/templates/index.html:2096
+#: src/ntasker/templates/index.html:758 src/ntasker/templates/index.html:2103
 msgid "High"
 msgstr "Hoch"
 
 #: src/ntasker/app.py:164 src/ntasker/app.py:641
-#: src/ntasker/templates/index.html:759 src/ntasker/templates/index.html:2097
+#: src/ntasker/templates/index.html:759 src/ntasker/templates/index.html:2104
 #: src/ntasker/templates/settings.html:414
 msgid "Normal"
 msgstr "Normal"
 
 #: src/ntasker/app.py:165 src/ntasker/app.py:642
-#: src/ntasker/templates/index.html:760 src/ntasker/templates/index.html:2098
+#: src/ntasker/templates/index.html:760 src/ntasker/templates/index.html:2105
 msgid "Low"
 msgstr "Niedrig"
 
@@ -101,7 +101,7 @@ msgstr "Aufgaben ohne Projekt"
 
 #: src/ntasker/app.py:480 src/ntasker/cli.py:124
 #: src/ntasker/templates/index.html:414 src/ntasker/templates/index.html:755
-#: src/ntasker/templates/index.html:2093
+#: src/ntasker/templates/index.html:2100
 msgid "Priority"
 msgstr "Priorität"
 
@@ -111,7 +111,7 @@ msgstr "Prioritäts-Filter leeren"
 
 #: src/ntasker/app.py:483 src/ntasker/cli.py:127
 #: src/ntasker/templates/index.html:481 src/ntasker/templates/index.html:786
-#: src/ntasker/templates/index.html:2149 src/ntasker/templates/tags.html:47
+#: src/ntasker/templates/index.html:2156 src/ntasker/templates/tags.html:47
 msgid "Tags"
 msgstr "Tags"
 
@@ -235,7 +235,7 @@ msgstr ""
 "manuelle Reihenfolge)"
 
 #: src/ntasker/app.py:518 src/ntasker/app.py:689
-#: src/ntasker/templates/index.html:1367
+#: src/ntasker/templates/index.html:1374
 msgid "Done"
 msgstr "Erledigt"
 
@@ -372,7 +372,7 @@ msgid "Waiting -- a directory it holds has uncommitted changes."
 msgstr "Wartet -- ein gehaltenes Verzeichnis hat nicht committete Änderungen."
 
 #: src/ntasker/app.py:559 src/ntasker/templates/index.html:888
-#: src/ntasker/templates/index.html:2245
+#: src/ntasker/templates/index.html:2252
 msgid "Also locks"
 msgstr "Sperrt zusätzlich"
 
@@ -594,7 +594,7 @@ msgstr "#{a} wartet auf #{b}"
 msgid "#{a} now depends on #{b}."
 msgstr "#{a} hängt jetzt von #{b} ab."
 
-#: src/ntasker/app.py:620
+#: src/ntasker/app.py:620 src/ntasker/plugins/voice/__init__.py:90
 msgid "Undo"
 msgstr "Rückgängig"
 
@@ -610,13 +610,13 @@ msgstr ""
 msgid "Go to settings"
 msgstr "zu den Einstellungen"
 
-#: src/ntasker/app.py:627 src/ntasker/app.py:1938
+#: src/ntasker/app.py:627 src/ntasker/app.py:1943
 #: src/ntasker/templates/index.html:653
 msgid "New task"
 msgstr "Neue Aufgabe"
 
 #: src/ntasker/app.py:628 src/ntasker/app.py:847 src/ntasker/cli.py:121
-#: src/ntasker/templates/index.html:688 src/ntasker/templates/index.html:2045
+#: src/ntasker/templates/index.html:688 src/ntasker/templates/index.html:2052
 msgid "Project"
 msgstr "Projekt"
 
@@ -638,7 +638,7 @@ msgstr ""
 "damit es automatisch angelegt wird"
 
 #: src/ntasker/app.py:634 src/ntasker/cli.py:123
-#: src/ntasker/templates/index.html:747 src/ntasker/templates/index.html:2085
+#: src/ntasker/templates/index.html:747 src/ntasker/templates/index.html:2092
 msgid "Phase"
 msgstr "Phase"
 
@@ -647,7 +647,7 @@ msgid "--"
 msgstr "—"
 
 #: src/ntasker/app.py:643 src/ntasker/templates/index.html:667
-#: src/ntasker/templates/index.html:2139
+#: src/ntasker/templates/index.html:2146
 msgid "Title"
 msgstr "Titel"
 
@@ -656,7 +656,7 @@ msgid "What needs to be done?"
 msgstr "Was ist zu tun?"
 
 #: src/ntasker/app.py:645 src/ntasker/cli.py:150
-#: src/ntasker/templates/index.html:676 src/ntasker/templates/index.html:2143
+#: src/ntasker/templates/index.html:676 src/ntasker/templates/index.html:2150
 msgid "Description"
 msgstr "Beschreibung"
 
@@ -794,11 +794,11 @@ msgid "Could not change the completion setup -- try again."
 msgstr "Vervollständigung konnte nicht geändert werden -- bitte erneut versuchen."
 
 #: src/ntasker/app.py:688 src/ntasker/app.py:901
-#: src/ntasker/templates/index.html:1360 src/ntasker/templates/tags.html:77
+#: src/ntasker/templates/index.html:1367 src/ntasker/templates/tags.html:77
 msgid "Open"
 msgstr "Offen"
 
-#: src/ntasker/app.py:690 src/ntasker/templates/index.html:1374
+#: src/ntasker/app.py:690 src/ntasker/templates/index.html:1381
 #: src/ntasker/templates/settings.html:175
 msgid "Archive"
 msgstr "Archiv"
@@ -937,11 +937,12 @@ msgid "Delete permanently"
 msgstr "Endgültig löschen"
 
 #: src/ntasker/app.py:730 src/ntasker/app.py:923
-#: src/ntasker/templates/index.html:2297
+#: src/ntasker/plugins/voice/__init__.py:88
+#: src/ntasker/templates/index.html:2304
 msgid "Delete"
 msgstr "Löschen"
 
-#: src/ntasker/app.py:732 src/ntasker/templates/index.html:1681
+#: src/ntasker/app.py:732 src/ntasker/templates/index.html:1688
 msgid "No tasks"
 msgstr "Keine Aufgaben"
 
@@ -970,18 +971,18 @@ msgid "Task"
 msgstr "Aufgabe"
 
 #: src/ntasker/app.py:740 src/ntasker/plugins/workspace/__init__.py:97
-#: src/ntasker/templates/index.html:2407 src/ntasker/templates/index.html:2447
+#: src/ntasker/templates/index.html:2414 src/ntasker/templates/index.html:2454
 msgid "Close"
 msgstr "Schließen"
 
 #: src/ntasker/app.py:741 src/ntasker/plugins/workspace/__init__.py:117
-#: src/ntasker/templates/index.html:2300 src/ntasker/templates/tags.html:146
+#: src/ntasker/templates/index.html:2307 src/ntasker/templates/tags.html:146
 #: src/ntasker/templates/tags.html:197
 msgid "Cancel"
 msgstr "Abbrechen"
 
 #: src/ntasker/app.py:742 src/ntasker/plugins/workspace/__init__.py:116
-#: src/ntasker/templates/index.html:2304 src/ntasker/templates/tags.html:151
+#: src/ntasker/templates/index.html:2311 src/ntasker/templates/tags.html:151
 msgid "Save"
 msgstr "Speichern"
 
@@ -1347,7 +1348,7 @@ msgstr ""
 "ntasker sieht nur mit eingeschaltetem \"Terminal-Sessions übernehmen\", "
 "welche Sessions laufen."
 
-#: src/ntasker/app.py:861 src/ntasker/plugins/voice/__init__.py:61
+#: src/ntasker/app.py:861 src/ntasker/plugins/voice/__init__.py:62
 #: src/ntasker/plugins/workspace/__init__.py:68
 msgid "Open settings"
 msgstr "Einstellungen öffnen"
@@ -1627,114 +1628,114 @@ msgstr "Unbekanntes Plugin"
 msgid "Queue planner"
 msgstr "Queue-Planer"
 
-#: src/ntasker/app.py:1662 src/ntasker/app.py:1775 src/ntasker/app.py:2011
-#: src/ntasker/app.py:2024 src/ntasker/app.py:2043 src/ntasker/app.py:2325
-#: src/ntasker/app.py:2368 src/ntasker/app.py:2875 src/ntasker/app.py:3073
-#: src/ntasker/app.py:3077 src/ntasker/app.py:3127 src/ntasker/app.py:3212
+#: src/ntasker/app.py:1664 src/ntasker/app.py:1779 src/ntasker/app.py:2016
+#: src/ntasker/app.py:2029 src/ntasker/app.py:2048 src/ntasker/app.py:2330
+#: src/ntasker/app.py:2370 src/ntasker/app.py:2884 src/ntasker/app.py:3082
+#: src/ntasker/app.py:3086 src/ntasker/app.py:3136 src/ntasker/app.py:3221
 #: src/ntasker/plugins/task_context/routes.py:151
 msgid "Task not found"
 msgstr "Aufgabe nicht gefunden"
 
-#: src/ntasker/app.py:1749
+#: src/ntasker/app.py:1752
 msgid "Invalid session id"
 msgstr "Ungültige Session-ID"
 
-#: src/ntasker/app.py:1751
+#: src/ntasker/app.py:1754
 msgid "No running session with that id"
 msgstr "Zu dieser ID läuft keine Session"
 
-#: src/ntasker/app.py:1797
+#: src/ntasker/app.py:1802
 msgid "No live session for this task"
 msgstr "Keine laufende Session für diese Aufgabe"
 
-#: src/ntasker/app.py:1870
+#: src/ntasker/app.py:1875
 msgid "Drafts and proposals are never started"
 msgstr "Entwürfe und Vorschläge werden nie gestartet"
 
-#: src/ntasker/app.py:1885
+#: src/ntasker/app.py:1890
 msgid "Nothing to resume"
 msgstr "Nichts zum Fortsetzen"
 
-#: src/ntasker/app.py:1908
+#: src/ntasker/app.py:1913
 msgid "The queue planner is already running"
 msgstr "Der Queue-Planer läuft bereits"
 
-#: src/ntasker/app.py:1933
+#: src/ntasker/app.py:1938
 msgid "Invalid project"
 msgstr "Ungültiges Projekt"
 
-#: src/ntasker/app.py:1988
+#: src/ntasker/app.py:1993
 #, python-brace-format
 msgid "{project} is held by task #{holder}"
 msgstr "{project} wird von Task #{holder} gehalten"
 
-#: src/ntasker/app.py:2177 src/ntasker/app.py:2400
+#: src/ntasker/app.py:2182 src/ntasker/app.py:2409
 msgid "Invalid project name"
 msgstr "Ungültiger Projektname"
 
-#: src/ntasker/app.py:2203
+#: src/ntasker/app.py:2208
 msgid "Project has no directory"
 msgstr "Projekt hat kein Verzeichnis"
 
-#: src/ntasker/app.py:2249 src/ntasker/app.py:2364
+#: src/ntasker/app.py:2254 src/ntasker/app.py:2366
 msgid "Empty note"
 msgstr "Leere Notiz"
 
-#: src/ntasker/app.py:2292 src/ntasker/app.py:2307
+#: src/ntasker/app.py:2297 src/ntasker/app.py:2312
 msgid "Inbox item not found"
 msgstr "Inbox-Eintrag nicht gefunden"
 
-#: src/ntasker/app.py:2294
+#: src/ntasker/app.py:2299
 msgid "Only a failed note can be retried"
 msgstr "Nur eine fehlgeschlagene Notiz kann wiederholt werden"
 
-#: src/ntasker/app.py:2327 src/ntasker/app.py:2370
+#: src/ntasker/app.py:2332 src/ntasker/app.py:2372
 msgid "Task is not an inbox proposal"
 msgstr "Aufgabe ist kein Inbox-Vorschlag"
 
-#: src/ntasker/app.py:2430
+#: src/ntasker/app.py:2439
 msgid "Project is not stale"
 msgstr "Projekt ist nicht verwaist"
 
-#: src/ntasker/app.py:2520
+#: src/ntasker/app.py:2529
 msgid "Target tag is empty."
 msgstr "Ziel-Tag ist leer."
 
-#: src/ntasker/app.py:2896
+#: src/ntasker/app.py:2905
 msgid "This task has not run yet"
 msgstr "Dieser Task ist noch nicht gelaufen"
 
-#: src/ntasker/app.py:2903
+#: src/ntasker/app.py:2912
 msgid "A task cannot depend on itself."
 msgstr "Eine Aufgabe kann nicht von sich selbst abhängen."
 
-#: src/ntasker/app.py:2905
+#: src/ntasker/app.py:2914
 #, python-brace-format
 msgid "Dependency task #{id} does not exist."
 msgstr "Abhängigkeit: Aufgabe #{id} existiert nicht."
 
-#: src/ntasker/app.py:2907
+#: src/ntasker/app.py:2916
 #, python-brace-format
 msgid "That dependency would create a cycle (via task #{id})."
 msgstr "Diese Abhängigkeit würde einen Zyklus erzeugen (über Aufgabe #{id})."
 
-#: src/ntasker/app.py:2932 src/ntasker/app.py:2997
+#: src/ntasker/app.py:2941 src/ntasker/app.py:3006
 msgid "Invalid priority"
 msgstr "Ungültige Priorität"
 
-#: src/ntasker/app.py:2934 src/ntasker/app.py:3000
+#: src/ntasker/app.py:2943 src/ntasker/app.py:3009
 msgid "Invalid agent"
 msgstr "Ungültiger Agent"
 
-#: src/ntasker/app.py:2991
+#: src/ntasker/app.py:3000
 msgid "No fields to update"
 msgstr "Keine Felder zum Aktualisieren"
 
-#: src/ntasker/app.py:3013
+#: src/ntasker/app.py:3022
 msgid "Invalid phase"
 msgstr "Ungültige Phase"
 
-#: src/ntasker/app.py:3204
+#: src/ntasker/app.py:3213
 msgid "Outcome not found"
 msgstr "Eintrag nicht gefunden"
 
@@ -1787,7 +1788,7 @@ msgid "(agent default)"
 msgstr "(Agent-Standard)"
 
 #: src/ntasker/cli.py:130 src/ntasker/templates/index.html:842
-#: src/ntasker/templates/index.html:2203
+#: src/ntasker/templates/index.html:2210
 msgid "Depends on"
 msgstr "Hängt ab von"
 
@@ -1795,14 +1796,14 @@ msgstr "Hängt ab von"
 msgid "Archived"
 msgstr "Archiviert"
 
-#: src/ntasker/cli.py:132 src/ntasker/templates/index.html:1559
-#: src/ntasker/templates/index.html:1889
+#: src/ntasker/cli.py:132 src/ntasker/templates/index.html:1566
+#: src/ntasker/templates/index.html:1896
 msgid "Draft"
 msgstr "Entwurf"
 
 #: src/ntasker/cli.py:134 src/ntasker/templates/index.html:947
-#: src/ntasker/templates/index.html:1564 src/ntasker/templates/index.html:1894
-#: src/ntasker/templates/index.html:2131
+#: src/ntasker/templates/index.html:1571 src/ntasker/templates/index.html:1901
+#: src/ntasker/templates/index.html:2138
 msgid "Fasttrack"
 msgstr "Fasttrack"
 
@@ -3363,7 +3364,7 @@ msgstr ""
 msgid "UI libraries"
 msgstr "UI-Bibliotheken"
 
-#: src/ntasker/plugins/voice/__init__.py:77 src/ntasker/settings.py:722
+#: src/ntasker/plugins/voice/__init__.py:79 src/ntasker/settings.py:722
 msgid "Language"
 msgstr "Sprache"
 
@@ -3403,7 +3404,7 @@ msgstr "Erledigte Tasks archivieren nach (Tagen)"
 msgid "Queue starts tasks automatically"
 msgstr "Queue startet Aufgaben automatisch"
 
-#: src/ntasker/settings.py:733 src/ntasker/templates/index.html:980
+#: src/ntasker/settings.py:733 src/ntasker/templates/index.html:979
 #: src/ntasker/templates/settings.html:301
 msgid "Inbox"
 msgstr "Inbox"
@@ -3834,166 +3835,190 @@ msgstr "Ordner zum Anhängen wählen"
 msgid "Choose files to attach"
 msgstr "Dateien zum Anhängen wählen"
 
-#: src/ntasker/plugins/voice/__init__.py:27
+#: src/ntasker/plugins/voice/__init__.py:28
 msgid "Voice input"
 msgstr "Spracheingabe"
 
-#: src/ntasker/plugins/voice/__init__.py:29
+#: src/ntasker/plugins/voice/__init__.py:30
 msgid ""
-"Dictate task descriptions with local speech recognition (Vosk), fully "
-"offline. Needs the ntasker[voice] extra -- install it on this card or via"
-" `ntasker enable voice`."
+"Dictate task descriptions with local speech recognition (Vosk or "
+"Whisper), fully offline. Needs the ntasker[voice] extra -- install it on "
+"this card or via `ntasker enable voice`."
 msgstr ""
-"Aufgabenbeschreibungen mit lokaler Spracherkennung (Vosk) diktieren, "
-"komplett offline. Benötigt das Extra ntasker[voice] -- auf dieser Karte "
-"oder per `ntasker enable voice` installieren."
+"Aufgabenbeschreibungen mit lokaler Spracherkennung (Vosk oder Whisper) "
+"diktieren, komplett offline. Benötigt das Extra ntasker[voice] -- auf "
+"dieser Karte oder per `ntasker enable voice` installieren."
 
-#: src/ntasker/plugins/voice/__init__.py:45
+#: src/ntasker/plugins/voice/__init__.py:46
 #, python-brace-format
 msgid ""
 "voice_model must name an installed model or the path of an unpacked Vosk "
-"model directory; {value!r} is neither."
+"or faster-whisper model directory; {value!r} is neither."
 msgstr ""
 "voice_model muss ein installiertes Modell benennen oder der Pfad eines "
-"entpackten Vosk-Modellverzeichnisses sein; {value!r} ist keins von "
-"beiden."
+"entpackten Vosk- oder faster-whisper-Modellverzeichnisses sein; {value!r}"
+" ist keins von beiden."
 
-#: src/ntasker/plugins/voice/__init__.py:54
+#: src/ntasker/plugins/voice/__init__.py:55
 msgid "Dictate"
 msgstr "Diktieren"
 
-#: src/ntasker/plugins/voice/__init__.py:55
+#: src/ntasker/plugins/voice/__init__.py:56
 msgid "Hold to talk, click to toggle. Esc stops."
 msgstr "Halten zum Sprechen, Klick zum Umschalten. Esc beendet."
 
-#: src/ntasker/plugins/voice/__init__.py:56
+#: src/ntasker/plugins/voice/__init__.py:57
 msgid "Listening..."
 msgstr "Höre zu …"
 
-#: src/ntasker/plugins/voice/__init__.py:57
-#: src/ntasker/plugins/voice/routes.py:145
+#: src/ntasker/plugins/voice/__init__.py:58
+#: src/ntasker/plugins/voice/routes.py:291
 msgid "Loading the speech model..."
 msgstr "Sprachmodell wird geladen …"
 
-#: src/ntasker/plugins/voice/__init__.py:58
+#: src/ntasker/plugins/voice/__init__.py:59
 msgid "Stop dictating"
 msgstr "Diktat beenden"
 
-#: src/ntasker/plugins/voice/__init__.py:59
+#: src/ntasker/plugins/voice/__init__.py:60
 msgid "Microphone access was refused. Allow it in the browser and try again."
 msgstr ""
 "Mikrofonzugriff wurde verweigert. Im Browser erlauben und erneut "
 "versuchen."
 
-#: src/ntasker/plugins/voice/__init__.py:60
+#: src/ntasker/plugins/voice/__init__.py:61
 #, python-brace-format
 msgid "Voice input is not available: {detail}"
 msgstr "Spracheingabe nicht verfügbar: {detail}"
 
-#: src/ntasker/plugins/voice/__init__.py:64
+#: src/ntasker/plugins/voice/__init__.py:65
 msgid ""
-"The speech recognition package is not installed -- use the install button"
-" above."
+"A speech recognition package is not installed -- use the install button "
+"above."
 msgstr ""
-"Das Spracherkennungspaket ist nicht installiert -- Installieren-Button "
+"Ein Spracherkennungspaket ist nicht installiert -- Installieren-Button "
 "oben nutzen."
 
-#: src/ntasker/plugins/voice/__init__.py:66
+#: src/ntasker/plugins/voice/__init__.py:67
 msgid "Installed models"
 msgstr "Installierte Modelle"
 
-#: src/ntasker/plugins/voice/__init__.py:67
+#: src/ntasker/plugins/voice/__init__.py:68
 msgid "No model installed yet -- download one below."
 msgstr "Noch kein Modell installiert -- unten eines herunterladen."
 
-#: src/ntasker/plugins/voice/__init__.py:68
+#: src/ntasker/plugins/voice/__init__.py:69
 msgid "in use"
 msgstr "in Verwendung"
 
-#: src/ntasker/plugins/voice/__init__.py:69
+#: src/ntasker/plugins/voice/__init__.py:70
 msgid "Use"
 msgstr "Verwenden"
 
-#: src/ntasker/plugins/voice/__init__.py:70
+#: src/ntasker/plugins/voice/__init__.py:71
 msgid "Download a model"
 msgstr "Modell herunterladen"
 
-#: src/ntasker/plugins/voice/__init__.py:72
+#: src/ntasker/plugins/voice/__init__.py:73
 #, python-brace-format
 msgid ""
-"Models from the Vosk catalog. Small models (~50 MB) answer fastest; the "
-"big ones (1-2 GB) are noticeably more accurate. ntasker downloads in the "
-"background into {dir}."
+"Whisper models understand every language and punctuate by themselves, but"
+" need more CPU; Vosk models are per language and answer instantly. Small "
+"models answer fastest, the big ones are noticeably more accurate. ntasker"
+" downloads in the background into {dir}."
 msgstr ""
-"Modelle aus dem Vosk-Katalog. Kleine Modelle (~50 MB) antworten am "
-"schnellsten, die großen (1-2 GB) sind deutlich genauer. ntasker lädt im "
-"Hintergrund nach {dir} herunter."
+"Whisper-Modelle verstehen alle Sprachen und setzen Satzzeichen selbst, "
+"brauchen aber mehr CPU; Vosk-Modelle gibt es je Sprache, sie antworten "
+"sofort. Kleine Modelle antworten am schnellsten, die großen sind deutlich"
+" genauer. ntasker lädt im Hintergrund nach {dir} herunter."
 
-#: src/ntasker/plugins/voice/__init__.py:76
+#: src/ntasker/plugins/voice/__init__.py:78
 #, python-brace-format
 msgid "The catalog could not be loaded: {detail}"
 msgstr "Der Katalog konnte nicht geladen werden: {detail}"
 
-#: src/ntasker/plugins/voice/__init__.py:78
+#: src/ntasker/plugins/voice/__init__.py:80
 msgid "All languages"
 msgstr "Alle Sprachen"
 
-#: src/ntasker/plugins/voice/__init__.py:79
+#: src/ntasker/plugins/voice/__init__.py:81
 msgid "Download"
 msgstr "Herunterladen"
 
-#: src/ntasker/plugins/voice/__init__.py:80
+#: src/ntasker/plugins/voice/__init__.py:82
 #, python-brace-format
 msgid "Downloading {name}..."
 msgstr "Lade {name} herunter …"
 
-#: src/ntasker/plugins/voice/__init__.py:81
+#: src/ntasker/plugins/voice/__init__.py:83
 #, python-brace-format
 msgid "Unpacking {name}..."
 msgstr "Entpacke {name} …"
 
-#: src/ntasker/plugins/voice/__init__.py:82
+#: src/ntasker/plugins/voice/__init__.py:84
 #, python-brace-format
 msgid "{name} is ready."
 msgstr "{name} ist bereit."
 
-#: src/ntasker/plugins/voice/__init__.py:83
+#: src/ntasker/plugins/voice/__init__.py:85
 #, python-brace-format
 msgid "Download failed: {detail}"
 msgstr "Download fehlgeschlagen: {detail}"
 
-#: src/ntasker/plugins/voice/__init__.py:84
+#: src/ntasker/plugins/voice/__init__.py:86
 msgid "small"
 msgstr "klein"
 
-#: src/ntasker/plugins/voice/__init__.py:85
+#: src/ntasker/plugins/voice/__init__.py:87
 msgid "big"
 msgstr "groß"
 
-#: src/ntasker/plugins/voice/__init__.py:95
+#: src/ntasker/plugins/voice/__init__.py:89
+#, python-brace-format
+msgid "{name} deleted."
+msgstr "{name} gelöscht."
+
+#: src/ntasker/plugins/voice/__init__.py:100
 msgid ""
 "Speech model for dictation: the name of a model installed on the Voice "
-"input card below, or the path of an unpacked Vosk model directory from "
-"elsewhere. Unset uses an installed model, preferring the UI language's. "
-"ENV: NTASKER_VOICE_MODEL."
+"input card below, or the path of an unpacked Vosk or faster-whisper model"
+" directory from elsewhere. Unset uses an installed model, preferring the "
+"UI language's. ENV: NTASKER_VOICE_MODEL."
 msgstr ""
 "Sprachmodell fürs Diktieren: der Name eines auf der Spracheingabe-Karte "
-"unten installierten Modells oder der Pfad eines entpackten Vosk-"
-"Modellverzeichnisses. Nicht gesetzt verwendet ein installiertes Modell, "
-"bevorzugt das der UI-Sprache. ENV: NTASKER_VOICE_MODEL."
+"unten installierten Modells oder der Pfad eines entpackten Vosk- oder "
+"faster-whisper-Modellverzeichnisses. Nicht gesetzt verwendet ein "
+"installiertes Modell, bevorzugt das der UI-Sprache. ENV: "
+"NTASKER_VOICE_MODEL."
 
-#: src/ntasker/plugins/voice/routes.py:118
+#: src/ntasker/plugins/voice/models.py:90
+msgid "Multilingual"
+msgstr "Mehrsprachig"
+
+#: src/ntasker/plugins/voice/models.py:177
+#, python-brace-format
+msgid "{name} is still downloading."
+msgstr "{name} wird noch heruntergeladen."
+
+#: src/ntasker/plugins/voice/routes.py:237
+#: src/ntasker/plugins/voice/routes.py:250
 #, python-brace-format
 msgid "Unknown model {name!r}."
 msgstr "Unbekanntes Modell {name!r}."
 
-#: src/ntasker/plugins/voice/routes.py:138
-msgid "the vosk package is missing -- run `ntasker enable voice`"
-msgstr "das Paket vosk fehlt -- `ntasker enable voice` ausführen"
+#: src/ntasker/plugins/voice/routes.py:264
+#, python-brace-format
+msgid "{name} can no longer be restored."
+msgstr "{name} kann nicht mehr wiederhergestellt werden."
 
-#: src/ntasker/plugins/voice/routes.py:143
+#: src/ntasker/plugins/voice/routes.py:281
 msgid "no speech model installed -- pick one in the settings"
 msgstr "kein Sprachmodell installiert -- in den Einstellungen eines wählen"
+
+#: src/ntasker/plugins/voice/routes.py:288
+#, python-brace-format
+msgid "the {package} package is missing -- run `ntasker enable voice`"
+msgstr "das Paket {package} fehlt -- `ntasker enable voice` ausführen"
 
 #: src/ntasker/plugins/workspace/__init__.py:26
 #: src/ntasker/plugins/workspace/__init__.py:60
@@ -4584,7 +4609,7 @@ msgstr "Ausgeblendete"
 msgid "Park as a draft"
 msgstr "Als Entwurf parken"
 
-#: src/ntasker/templates/index.html:951 src/ntasker/templates/index.html:2135
+#: src/ntasker/templates/index.html:951 src/ntasker/templates/index.html:2142
 msgid "Continue on failure"
 msgstr "Bei Fehlschlag weiter"
 
@@ -4592,7 +4617,7 @@ msgstr "Bei Fehlschlag weiter"
 msgid "Create + Run"
 msgstr "Anlegen + Starten"
 
-#: src/ntasker/templates/index.html:2127
+#: src/ntasker/templates/index.html:2134
 msgid "This task is a draft"
 msgstr "Diese Aufgabe ist ein Entwurf"
 

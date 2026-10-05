@@ -3,7 +3,8 @@
 // A nested Alpine component inside settingsPage(). It talks to
 // /api/voice/models directly: picking a model writes the voice_model
 // setting, "Download" starts a server-side download and the card polls
-// the job until it is done, then refreshes the installed list.
+// the job until it is done, then refreshes the installed list. Deleting a
+// model offers an Undo while the server keeps it in its trash.
 
 function voiceSettings() {
     'use strict';
@@ -16,8 +17,10 @@ function voiceSettings() {
 
     return {
         loaded: false,
-        info: { vosk: true, models_dir: '', current: null, installed: [], catalog: [], catalog_error: null },
+        info: { engines: {}, dirs: {}, current: null, installed: [], catalog: [], catalog_error: null },
         job: null,
+        deleted: null,      // { name, was_current } while Undo is offered
+        _undoTimer: null,
         lang: '',
         error: '',
         _timer: null,
@@ -47,12 +50,13 @@ function voiceSettings() {
 
         languages() {
             const seen = new Map();
-            for (const m of this.info.catalog) if (!seen.has(m.lang)) seen.set(m.lang, m.lang_text);
+            for (const m of this.info.catalog) if (m.lang && !seen.has(m.lang)) seen.set(m.lang, m.lang_text);
             return [...seen].map(([code, text]) => ({ code, text })).sort((a, b) => a.text.localeCompare(b.text));
         },
 
         filtered() {
-            return this.info.catalog.filter(m => !this.lang || m.lang === this.lang);
+            // Multilingual (Whisper) entries carry no language and always show.
+            return this.info.catalog.filter(m => !this.lang || !m.lang || m.lang === this.lang);
         },
 
         isInstalled(name) {
@@ -83,6 +87,37 @@ function voiceSettings() {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ value: name }),
+            });
+            if (!r.ok) {
+                const body = await r.json().catch(() => ({}));
+                this.error = body.detail || r.statusText;
+            }
+            await this.refresh();
+        },
+
+        async remove(name) {
+            this.error = '';
+            const r = await fetch(`/api/voice/models/${encodeURIComponent(name)}`, { method: 'DELETE' });
+            const body = await r.json().catch(() => ({}));
+            if (!r.ok) {
+                this.error = body.detail || r.statusText;
+                return;
+            }
+            this.deleted = { name, was_current: body.was_current };
+            // The server purges its trash after a minute; offer Undo a bit shorter.
+            clearTimeout(this._undoTimer);
+            this._undoTimer = setTimeout(() => { this.deleted = null; }, 50000);
+            await this.refresh();
+        },
+
+        async restore() {
+            const d = this.deleted;
+            this.deleted = null;
+            clearTimeout(this._undoTimer);
+            const r = await fetch(`/api/voice/models/${encodeURIComponent(d.name)}/restore`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ use: d.was_current }),
             });
             if (!r.ok) {
                 const body = await r.json().catch(() => ({}));

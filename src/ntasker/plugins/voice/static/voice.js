@@ -91,7 +91,7 @@
                     v.partial = '';
                     if (msg.text) this.voiceAppend(msg.text);
                 } else if (msg.type === 'error') {
-                    const settings = msg.code === 'no_model' || msg.code === 'no_vosk'
+                    const settings = msg.code === 'no_model' || msg.code === 'no_engine'
                         ? { label: t('voice_open_settings'), run: () => { location.href = '/settings'; } }
                         : null;
                     this.showToast(t('voice_unavailable', { detail: msg.text }), 'danger', settings);
@@ -144,7 +144,8 @@
                             }
                         };
                         sock.send('final');
-                        setTimeout(() => { if (sock.readyState === 1) sock.close(); }, 3000);
+                        // Whisper transcribes the pending utterance only now -- give it time.
+                        setTimeout(() => { if (sock.readyState === 1) sock.close(); }, 15000);
                     } else {
                         sock.close();
                     }

@@ -3,14 +3,14 @@
 <div class="setting-row row gx-2 gx-md-4" x-data="voiceSettings()" x-init="init()">
     <div class="col-md-5">
         <div class="setting-label" x-text="$i18n('voice_installed')"></div>
-        <div class="text-secondary small mt-1" x-text="$i18n('voice_catalog_intro', { dir: info.models_dir })"></div>
+        <div class="text-secondary small mt-1" x-text="$i18n('voice_catalog_intro', { dir: Object.values(info.dirs).join(', ') })"></div>
         <code class="setting-key">voice_model</code>
     </div>
     <div class="col-md-7">
-        <template x-if="loaded && !info.vosk">
+        <template x-if="loaded && Object.values(info.engines).includes(false)">
             <div class="alert alert-warning mb-3">
                 <i class="ti ti-alert-triangle me-1"></i>
-                <span x-text="$i18n('voice_vosk_missing')"></span>
+                <span x-text="$i18n('voice_engine_missing')"></span>
             </div>
         </template>
 
@@ -18,16 +18,28 @@
              x-text="$i18n('voice_none_installed')"></div>
         <div class="mb-3">
             <template x-for="m in info.installed" :key="m.name">
-                <label class="form-check">
-                    <input class="form-check-input" type="radio" name="voice-model"
-                           :checked="m.name === info.current" @change="use(m.name)">
-                    <span class="form-check-label">
-                        <code x-text="m.name"></code>
-                        <span class="badge bg-green-lt ms-2" x-show="m.name === info.current"
-                              x-text="$i18n('voice_in_use')"></span>
-                    </span>
-                </label>
+                <div class="d-flex align-items-center">
+                    <label class="form-check mb-1">
+                        <input class="form-check-input" type="radio" name="voice-model"
+                               :checked="m.name === info.current" @change="use(m.name)">
+                        <span class="form-check-label">
+                            <code x-text="m.name"></code>
+                            <span class="badge bg-green-lt ms-2" x-show="m.name === info.current"
+                                  x-text="$i18n('voice_in_use')"></span>
+                        </span>
+                    </label>
+                    <button type="button" class="btn btn-sm btn-ghost-danger btn-icon ms-auto"
+                            :title="$i18n('voice_delete')" :aria-label="$i18n('voice_delete')"
+                            @click="remove(m.name)">
+                        <i class="ti ti-trash"></i>
+                    </button>
+                </div>
             </template>
+            <div class="small text-secondary mt-1" x-show="deleted" x-cloak>
+                <span x-text="deleted && $i18n('voice_deleted', { name: deleted.name })"></span>
+                <button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline" @click="restore()"
+                        x-text="$i18n('voice_undo')"></button>
+            </div>
         </div>
         <div class="invalid-feedback d-block mb-2" x-show="error" x-text="error"></div>
 
@@ -58,6 +70,7 @@
                         <tr>
                             <td x-text="m.lang_text"></td>
                             <td><code x-text="m.name"></code></td>
+                            <td><span class="badge bg-secondary-lt" x-text="m.engine === 'whisper' ? 'Whisper' : 'Vosk'"></span></td>
                             <td><span class="badge" :class="m.type === 'small' ? 'bg-blue-lt' : 'bg-purple-lt'"
                                       x-text="m.type === 'small' ? $i18n('voice_type_small') : $i18n('voice_type_big')"></span></td>
                             <td class="text-secondary" x-text="m.size_text"></td>

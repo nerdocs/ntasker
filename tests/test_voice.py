@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.machinery
 import json
 import sys
 import types
@@ -68,9 +69,10 @@ def test_cli_enable_disable(client, tmp_path, capsys):
 
 @pytest.fixture
 def store(tmp_path, monkeypatch):
-    """An empty model store in tmp; ``store.add(name)`` fakes an installed model."""
+    """Empty model stores in tmp; ``store.add(name)`` fakes an installed Vosk
+    model, ``store.add_whisper(name)`` a faster-whisper one."""
     base = tmp_path / "vosk-models"
-    monkeypatch.setattr(voice_models, "models_dir", lambda: base)
+    monkeypatch.setattr(voice_models, "data_dir", lambda: tmp_path)
     monkeypatch.setattr(voice_models, "_job", None)
     monkeypatch.setattr(voice_models, "_catalog", None)
 
@@ -81,6 +83,13 @@ def store(tmp_path, monkeypatch):
         def add(name):
             (base / name / "am").mkdir(parents=True)
             return base / name
+
+        @staticmethod
+        def add_whisper(name):
+            path = tmp_path / "whisper-models" / name
+            path.mkdir(parents=True)
+            (path / "model.bin").write_bytes(b"x")
+            return path
 
     return Store
 
@@ -139,6 +148,7 @@ def _fake_vosk(monkeypatch, results):
             return json.dumps({"text": results["flush"]})
 
     mod = types.ModuleType("vosk")
+    mod.__spec__ = importlib.machinery.ModuleSpec("vosk", None)  # find_spec() needs one
     mod.Model = Model
     mod.KaldiRecognizer = KaldiRecognizer
     mod.SetLogLevel = lambda level: None
@@ -164,12 +174,13 @@ def test_ws_streams_partial_and_final(client, store, monkeypatch):
     assert calls["loaded"] == [str(store.dir / "vosk-model-small-de-0.15")]
 
 
-def test_ws_reports_missing_vosk(client, monkeypatch):
+def test_ws_reports_missing_engine(client, store, monkeypatch):
     client.put("/api/settings/plugins_enabled", json={"value": '["voice"]'})
-    monkeypatch.setitem(sys.modules, "vosk", None)
+    store.add_whisper("whisper-tiny")
+    monkeypatch.setattr(voice_routes.importlib.util, "find_spec", lambda name: None)
     with client.websocket_connect("/api/voice/ws", headers=WS_HEADERS) as ws:
         msg = ws.receive_json()
-    assert msg["type"] == "error" and msg["code"] == "no_vosk"
+    assert msg["type"] == "error" and msg["code"] == "no_engine" and "faster_whisper" in msg["text"]
 
 
 def test_ws_reports_missing_model(client, store, monkeypatch):
@@ -289,7 +300,9 @@ def test_models_endpoint_and_download(client, store, monkeypatch):
     _fake_httpx(monkeypatch, payload)
     info = client.get("/api/voice/models").json()
     assert info["installed"] == [] and info["current"] is None and info["job"] is None
-    assert [m["name"] for m in info["catalog"]] == ["vosk-model-small-de-0.15"]  # obsolete dropped
+    vosk_names = [m["name"] for m in info["catalog"] if m["engine"] == "vosk"]
+    assert vosk_names == ["vosk-model-small-de-0.15"]  # obsolete dropped
+    assert "whisper-small" in [m["name"] for m in info["catalog"] if m["engine"] == "whisper"]
     assert client.post("/api/voice/models/nope").status_code == 404
     r = client.post("/api/voice/models/vosk-model-small-de-0.15")
     assert r.status_code == 202, r.text
@@ -400,3 +413,150 @@ def test_api_installs_missing_extra_in_background(client, monkeypatch):
             break
         time.sleep(0.05)
     assert job["state"] == "failed" and job["output"] == "boom"
+
+
+def test_installed_and_resolve_cover_both_engines(store):
+    store.add("vosk-model-small-de-0.15")
+    whisper = store.add_whisper("whisper-tiny")
+    assert [(m["name"], m["engine"]) for m in voice_models.installed()] == [
+        ("vosk-model-small-de-0.15", "vosk"),
+        ("whisper-tiny", "whisper"),
+    ]
+    assert voice_models.resolve("whisper-tiny") == whisper
+    assert validate_voice_model(str(whisper)) == str(whisper)
+
+
+def test_delete_and_restore_model(client, store):
+    client.put("/api/settings/plugins_enabled", json={"value": '["voice"]'})
+    store.add("vosk-model-small-de-0.15")
+    store.add_whisper("whisper-tiny")
+    client.put("/api/settings/voice_model", json={"value": "whisper-tiny"})
+    assert client.delete("/api/voice/models/nope").status_code == 404
+    assert client.delete("/api/voice/models/..").status_code == 404
+    r = client.delete("/api/voice/models/whisper-tiny")
+    assert r.status_code == 200 and r.json() == {"was_current": True}
+    info = client.get("/api/voice/models").json()
+    assert [m["name"] for m in info["installed"]] == ["vosk-model-small-de-0.15"]
+    assert client.get("/api/settings/voice_model").status_code == 404
+    # Undo brings the model back and selects it again
+    r = client.post("/api/voice/models/whisper-tiny/restore", json={"use": True})
+    assert r.status_code == 200, r.text
+    assert client.get("/api/settings/voice_model").json()["value"] == "whisper-tiny"
+    # once the trash is purged there is nothing to restore
+    client.delete("/api/voice/models/whisper-tiny")
+    voice_models.purge_trash()
+    assert client.post("/api/voice/models/whisper-tiny/restore", json={}).status_code == 404
+    assert voice_models.installed()[0]["name"] == "vosk-model-small-de-0.15"
+
+
+def _fake_hf(monkeypatch, files: dict[str, bytes], sha: dict[str, str] | None = None):
+    """Stand-in for Hugging Face: the repo tree (httpx.get) and file downloads (httpx.stream)."""
+    import contextlib
+    import hashlib
+
+    tree = [{"type": "file", "path": "README.md", "size": 3}]
+    for path, data in files.items():
+        entry = {"type": "file", "path": path, "size": len(data)}
+        if path == "model.bin":
+            entry["lfs"] = {"oid": (sha or {}).get(path) or hashlib.sha256(data).hexdigest()}
+        tree.append(entry)
+
+    class Resp:
+        def __init__(self, data=b""):
+            self.data = data
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return tree
+
+        def iter_bytes(self, n):
+            yield self.data
+
+    fetched = []
+
+    @contextlib.contextmanager
+    def stream(method, url, **kw):
+        fetched.append(url.rsplit("/", 1)[1])
+        yield Resp(files[url.rsplit("/", 1)[1]])
+
+    monkeypatch.setattr(voice_models, "httpx", types.SimpleNamespace(get=lambda *a, **k: Resp(), stream=stream))
+    return fetched
+
+
+def test_whisper_download(client, store, monkeypatch):
+    client.put("/api/settings/plugins_enabled", json={"value": '["voice"]'})
+    files = {"config.json": b"{}", "model.bin": b"weights", "vocabulary.txt": b"v"}
+    fetched = _fake_hf(monkeypatch, files)
+    assert client.post("/api/voice/models/whisper-tiny").status_code == 202
+    job = _wait_job()
+    assert job["state"] == "done", job
+    assert job["received"] == job["total"] == sum(len(v) for v in files.values())
+    assert sorted(fetched) == sorted(files)  # README.md skipped
+    assert [m["name"] for m in voice_models.installed()] == ["whisper-tiny"]
+    assert not list((store.dir.parent / "whisper-models").glob("*.part"))
+
+    _fake_hf(monkeypatch, files, sha={"model.bin": "0" * 64})
+    client.post("/api/voice/models/whisper-base")
+    job = _wait_job()
+    assert job["state"] == "error" and "checksum" in job["error"]
+    assert [m["name"] for m in voice_models.installed()] == ["whisper-tiny"]
+
+
+def _fake_whisper(monkeypatch, texts):
+    """Install a stand-in ``faster_whisper``; each transcribe() pops the next text."""
+    calls = {"loaded": [], "beams": []}
+
+    class Segment:
+        def __init__(self, text):
+            self.text = text
+
+    class WhisperModel:
+        def __init__(self, path, **kw):
+            calls["loaded"].append(path)
+
+        def transcribe(self, audio, language=None, beam_size=5, **kw):
+            calls["beams"].append(beam_size)
+            calls["language"] = language
+            return iter([Segment(" " + texts.pop(0))]), None
+
+    mod = types.ModuleType("faster_whisper")
+    mod.WhisperModel = WhisperModel
+    monkeypatch.setitem(sys.modules, "faster_whisper", mod)
+    monkeypatch.setattr(voice_routes.importlib.util, "find_spec", lambda name: True)
+    return calls
+
+
+def test_ws_whisper_partial_on_speech_final_on_pause(client, store, monkeypatch):
+    pytest.importorskip("numpy")
+    client.put("/api/settings/plugins_enabled", json={"value": '["voice"]'})
+    client.put("/api/settings/language", json={"value": "de"})
+    store.add_whisper("whisper-tiny")
+    calls = _fake_whisper(monkeypatch, ["Hallo", "Hallo Welt.", "Ende."])
+    loud = (b"\x00\x10" * 1600)  # 100 ms, int16 4096
+    quiet = b"\x00" * 3200
+    with client.websocket_connect("/api/voice/ws", headers=WS_HEADERS) as ws:
+        assert ws.receive_json()["type"] == "status"
+        assert ws.receive_json() == {"type": "status", "text": ""}
+        for _ in range(10):  # 1 s of speech -> a partial (greedy)
+            ws.send_bytes(loud)
+        assert ws.receive_json() == {"type": "partial", "text": "Hallo"}
+        for _ in range(7):  # 0.7 s of silence -> the final (beam search)
+            ws.send_bytes(quiet)
+        assert ws.receive_json() == {"type": "final", "text": "Hallo Welt."}
+        ws.send_bytes(loud)
+        ws.send_text("final")
+        assert ws.receive_json() == {"type": "final", "text": "Ende."}
+    assert calls["loaded"] == [str(store.dir.parent / "whisper-models" / "whisper-tiny")]
+    assert calls["beams"] == [1, 5, 5] and calls["language"] == "de"
+
+
+def test_whisper_recognizer_ignores_silence(monkeypatch):
+    pytest.importorskip("numpy")
+    calls = _fake_whisper(monkeypatch, [])
+    rec = voice_routes.WhisperRecognizer(sys.modules["faster_whisper"].WhisperModel("m"), None)
+    for _ in range(50):
+        assert rec.accept(b"\x00" * 3200) is None
+    assert len(rec.buf) <= int(rec.LEAD_IN * voice_routes.SAMPLE_RATE) * 2
+    assert rec.flush() == "" and calls["beams"] == []

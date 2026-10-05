@@ -53,9 +53,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# ``ntasker[voice]``: local speech recognition for the voice plugin.
+# ``ntasker[voice]``: local speech recognition for the voice plugin -- Vosk
+# (light, per language) and faster-whisper (multilingual, more accurate).
 # 0.3.44 is the last vosk release with a macOS wheel; 0.3.45 ships Linux/Windows only.
-voice = ["vosk>=0.3.44"]
+# The tokenizers floor keeps uv from trading a newer huggingface-hub for a
+# 2023 tokenizers that only ships as a Rust sdist.
+voice = ["vosk>=0.3.44", "faster-whisper>=1.1", "tokenizers>=0.20"]
 
 [project.scripts]
 ntasker = "ntasker.cli:main"

@@ -2074,10 +2074,31 @@
                         <template x-if="runReportShown && !runDiffOpen">
                             <div class="d-flex flex-shrink-0" style="min-height: 0" :style="`width: ${runReportWidth}px`">
                                 <div class="tracker-splitter claude-pane-splitter" @pointerdown="startRunReportResize($event)"></div>
-                                <div class="claude-report-pane card flex-fill">
-                                    <div class="card-body overflow-auto">
-                                        <div class="text-secondary small mb-2" x-show="runReportTask.report_at"
-                                             x-text="$i18n('report_written_at', {when: formatAbsolute(runReportTask.report_at)})"></div>
+                                <div class="claude-report-pane card flex-fill d-flex flex-column">
+                                    <div class="d-flex align-items-center gap-2 px-3 py-2 border-bottom flex-wrap">
+                                        <i class="ti ti-file-text fs-3 text-success"></i>
+                                        <span class="fw-medium" x-text="$i18n('conv_report')"></span>
+                                        <span class="text-secondary small" x-show="runReportWhen"
+                                              x-text="$i18n('report_written_at', {when: runReportWhen})"></span>
+                                        <span class="flex-fill"></span>
+                                        <template x-if="runReportTask?.status !== 'done'">
+                                            <button type="button" class="btn btn-sm" @click="markDoneFromClaudeRun()"
+                                                    :class="runReportTask?.phase === 'review' ? 'btn-success' : 'btn-outline-success'">
+                                                <i class="ti ti-check me-1"></i><span x-text="$i18n('claude_mark_done')"></span>
+                                            </button>
+                                        </template>
+                                        <button type="button" class="btn btn-sm btn-ghost-secondary btn-icon"
+                                                :title="$i18n('close')" :aria-label="$i18n('close')" @click="toggleRunReport()">
+                                            <i class="ti ti-x"></i>
+                                        </button>
+                                    </div>
+                                    {# The user asked for more after the report was written. #}
+                                    <template x-if="runReportStale">
+                                        <div class="claude-report-stale px-3 py-2 border-bottom small">
+                                            <i class="ti ti-history me-1"></i><span x-text="$i18n('conv_report_stale')"></span>
+                                        </div>
+                                    </template>
+                                    <div class="card-body overflow-auto" style="min-height: 0">
                                         <div class="markdown" x-html="runReportHtml"></div>
                                     </div>
                                 </div>

@@ -1472,3 +1472,9 @@ h3 + p + .setting-row {
         transition: none;
     }
 }
+
+/* Report pane: the conversation went on after the report was written. */
+.claude-report-stale {
+    background: var(--tblr-orange-lt);
+    color: var(--tblr-orange);
+}

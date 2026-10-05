@@ -428,7 +428,8 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // The active run's task (id, report, report_at), fetched on tab switch
         // and refreshed by the change poll so a report written mid-session
         // shows up. ``runReportOpen`` is the user's toggle; the pane is shown
-        // only while the active task actually has a report.
+        // only while the active task actually has a report. Beside the
+        // conversation it opens by itself for a new or rewritten report.
         runReportTask: null,
         runReportHtml: '',
         runReportOpen: false,
@@ -449,6 +450,9 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         convOpen: {},
         convReply: '',
         convUsage: null,
+        // What stops the session right now ({kind, text, at}: usage limit, not
+        // logged in, API unreachable ...) -- the last turn's blocker, or null.
+        convBlocker: null,
         // What each live session did last ({taskId: {name, kind, detail} | {text}}),
         // from the session poll -- the status line on a running task's card.
         claudeActivity: {},
@@ -4092,6 +4096,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             this.conv = null;
             this.convTurns = [];
             this.convUsage = null;
+            this.convBlocker = null;
             this.loadConversation(true);
             this._ensureConvPoll();
         },
@@ -4103,6 +4108,9 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             this._convTimer = setInterval(() => {
                 if (!this.runChatShown || this.runDiffOpen || document.hidden) return;
                 this.loadConversation();
+                // The report beside the conversation follows the agent: a
+                // rewritten report shows up without leaving the tab.
+                this.loadRunReport();
                 // A call without a result may be a permission prompt: poll the
                 // session state at this pace too, so its card shows up quickly
                 // (the board's own session poll runs every 5 s).
@@ -4133,6 +4141,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             const atBottom = !body || !prev.length
                 || body.scrollHeight - body.scrollTop - body.clientHeight < 80;
             this.convUsage = d.usage || null;
+            this.convBlocker = d.blocker || null;
             this.convTurns = (d.turns || []).map((t, i) => {
                 const old = prev[i];
                 const html = (text, oldText, oldHtml) => (old && oldText === text ? oldHtml : renderMarkdown(text || ''));
@@ -4200,6 +4209,16 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             if (call) return this.activityText(call);
             const note = last.progress[last.progress.length - 1];
             return note ? _convPreview(note) : '';
+        },
+
+        // The blocker card: what happened, and what gets the session going again.
+        blockerKind(b) {
+            return b && ['limit', 'auth', 'billing'].includes(b.kind) ? b.kind : 'error';
+        },
+
+        blockerIcon(b) {
+            return { limit: 'ti-hourglass-high', auth: 'ti-lock', billing: 'ti-credit-card-off' }[this.blockerKind(b)]
+                || 'ti-plug-connected-x';
         },
 
         // The unresolved tool call of the last turn while the session waits.
@@ -4341,6 +4360,32 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 tags: task.tags || [], phase: task.phase, status: task.status,
             };
             if (changed) this.runReportHtml = renderMarkdown(task.report || '');
+            // A new or rewritten report opens beside the conversation; closing
+            // the pane sticks until the report changes again.
+            if (changed && task.report && this.runChatShown) this.runReportOpen = true;
+        },
+
+        // ``report_at`` is the server's local wall clock without a zone
+        // (see db.report_fields) -- not UTC like the other timestamps.
+        _reportDate() {
+            const at = this.runReportTask && this.runReportTask.report_at;
+            if (!at) return null;
+            const d = new Date(at);
+            return isNaN(d) ? null : d;
+        },
+
+        get runReportWhen() {
+            const d = this._reportDate();
+            return d ? d.toLocaleString(_locale(), { dateStyle: 'medium', timeStyle: 'short' }) : '';
+        },
+
+        // The user asked for more after the report was written and the agent
+        // has not rewritten it since: the pane shows an outdated state.
+        get runReportStale() {
+            const written = this._reportDate();
+            const last = this.convTurns[this.convTurns.length - 1];
+            const asked = last && this._toDate(last.prompt_at);
+            return !!(written && asked && this.runReportAvailable && asked > written);
         },
 
         // The report button: split the tab (terminal left, report right).

@@ -635,6 +635,20 @@ def build_js_strings() -> dict[str, str]:
         "conv_terminal": _("Terminal"),
         "conv_report_side": _("Show the report beside the current view"),
         "conv_report": _("Report"),
+        "conv_report_stale": _(
+            "The conversation went on after this report -- it may be out of date until the agent rewrites it."
+        ),
+        # What stops the agent (the blocker card in the conversation)
+        "conv_blocker_limit": _("Usage limit reached"),
+        "conv_blocker_limit_hint": _(
+            "The agent cannot go on until the limit resets. Reply then to continue, or switch the model in the terminal."
+        ),
+        "conv_blocker_auth": _("Not logged in"),
+        "conv_blocker_auth_hint": _("Open the terminal and run /login, then send your instruction again."),
+        "conv_blocker_billing": _("Billing problem"),
+        "conv_blocker_billing_hint": _("Check the account's credit or plan, then send your instruction again."),
+        "conv_blocker_error": _("The agent cannot reach the model"),
+        "conv_blocker_error_hint": _("Check the network connection, then reply to try again."),
         "conv_task": _("Task"),
         "conv_result": _("Result"),
         "conv_current": _("Current state"),
@@ -3013,7 +3027,7 @@ def api_task_conversation(task_id: int) -> JSONResponse:
     """The run's conversation: the run view's Conversation pane.
 
     ``{"supported": bool, "available": bool, "turns": [...], "usage": {...},
-    "updated": float|null}`` -- read from the agent's session transcript of the
+    "blocker": {kind, text, at}|null, "updated": float|null}`` -- read from the agent's session transcript of the
     task's stored session; turn fields see
     :func:`ntasker.transcript.parse_transcript`. ``supported`` is ``False`` for
     an agent without a readable transcript (the UI then shows the terminal);
@@ -3026,7 +3040,9 @@ def api_task_conversation(task_id: int) -> JSONResponse:
         raise HTTPException(status_code=404, detail=_("Task not found"))
     spec = get_spec(resolve_agent_key(row["agent"]))
     if not spec.transcript:
-        return JSONResponse({"supported": False, "available": False, "turns": [], "usage": None, "updated": None})
+        return JSONResponse(
+            {"supported": False, "available": False, "turns": [], "usage": None, "blocker": None, "updated": None}
+        )
     tid = str(task_id)
     rules = (get_run_rules(spec.key).replace("{id}", tid),
              get_fasttrack_rules(spec.key).replace("{id}", tid))

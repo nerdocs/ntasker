@@ -59,6 +59,16 @@ _TOOL_KINDS = {
     "AskUserQuestion": "ask",
 }
 
+# Claude Code writes an API failure as a synthetic assistant event flagged
+# ``isApiErrorMessage`` whose ``error`` names the cause. Mapped to what the user
+# has to do about it; anything else is a plain "error" (network, server).
+_BLOCKER_KINDS = {
+    "rate_limit": "limit",
+    "authentication_failed": "auth",
+    "billing_error": "billing",
+    "invalid_request": "error",
+}
+
 # How much of the file end :func:`last_activity` reads -- a few events' worth.
 _TAIL_BYTES = 64 * 1024
 
@@ -186,6 +196,21 @@ def _tool_entry(block: dict) -> dict:
     return entry
 
 
+def _blocker(ev: dict, content) -> dict:
+    """What stopped the agent: ``{kind, text, at}`` of an API error event.
+
+    ``kind`` is ``limit`` (usage limit reached), ``auth`` (not logged in / login
+    expired), ``billing`` or ``error`` (network, server); ``text`` is the
+    agent's own message ("You've hit your session limit · resets 3pm").
+    """
+    parts = [b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"]
+    return {
+        "kind": _BLOCKER_KINDS.get(str(ev.get("error") or ""), "error"),
+        "text": " ".join(p.strip() for p in parts if p and p.strip()),
+        "at": ev.get("timestamp"),
+    }
+
+
 def _new_usage() -> dict:
     return {"input": 0, "cache_read": 0, "cache_write": 0, "output": 0}
 
@@ -223,7 +248,10 @@ def parse_transcript(lines, rules: Iterable[str] = ()) -> list[dict]:
       the last tool call without a result yet (awaiting permission, a question
       or just still running), or ``None``;
     * ``usage`` -- tokens, see :func:`_add_usage`; ``answer_at`` -- the last
-      agent event's timestamp.
+      agent event's timestamp;
+    * ``blocker`` -- what keeps the agent from working (usage limit, not logged
+      in, API unreachable ...), see :func:`_blocker`, or ``None``. It is the
+      turn's last word only: output after it means the work went on.
 
     Agent output before the first prompt is dropped. Malformed lines are
     skipped -- the file is being appended to while we read it. Claude Code
@@ -271,12 +299,19 @@ def parse_transcript(lines, rules: Iterable[str] = ()) -> list[dict]:
                 "pending": None,
                 "usage": _new_usage(),
                 "answer_at": None,
+                "blocker": None,
             })
             texts.append([])
         elif kind == "assistant" and turns:
             turn = turns[-1]
             if not isinstance(content, list):
                 continue
+            if ev.get("isApiErrorMessage"):
+                # Not an answer -- the agent could not reach the model at all.
+                turn["blocker"] = _blocker(ev, content)
+                turn["done"] = False
+                continue
+            turn["blocker"] = None
             mid = msg.get("id")
             if isinstance(msg.get("usage"), dict) and mid not in seen_msgs:
                 if mid:
@@ -310,15 +345,17 @@ def parse_transcript(lines, rules: Iterable[str] = ()) -> list[dict]:
 
 
 def conversation_for(home: Path, session_id: str | None, rules: Iterable[str] = ()) -> dict:
-    """``{"available", "turns", "usage", "updated"}`` for a stored session id.
+    """``{"available", "turns", "usage", "blocker", "updated"}`` for a stored session id.
 
     ``available`` is ``False`` when there is no id or no transcript (yet) -- a
     freshly spawned session writes its file only after the first prompt.
-    ``usage`` sums the turns' tokens. ``updated`` is the file's mtime so the
-    client can skip unchanged polls. An unchanged file (same mtime and size,
-    same rules) is served from :data:`_parsed` without parsing it again.
+    ``usage`` sums the turns' tokens. ``blocker`` is the last turn's (see
+    :func:`parse_transcript`) -- what stops the session right now, or ``None``.
+    ``updated`` is the file's mtime so the client can skip unchanged polls. An
+    unchanged file (same mtime and size, same rules) is served from
+    :data:`_parsed` without parsing it again.
     """
-    empty = {"available": False, "turns": [], "usage": _new_usage(), "updated": None}
+    empty = {"available": False, "turns": [], "usage": _new_usage(), "blocker": None, "updated": None}
     path = find_transcript(home, session_id or "")
     if path is None:
         return empty
@@ -337,7 +374,8 @@ def conversation_for(home: Path, session_id: str | None, rules: Iterable[str] = 
     for turn in turns:
         for k in total:
             total[k] += turn["usage"][k]
-    result = {"available": True, "turns": turns, "usage": total, "updated": st.st_mtime}
+    blocker = turns[-1]["blocker"] if turns else None
+    result = {"available": True, "turns": turns, "usage": total, "blocker": blocker, "updated": st.st_mtime}
     _parsed.pop(path, None)
     _parsed[path] = (key, result)
     while len(_parsed) > _PARSED_KEEP:

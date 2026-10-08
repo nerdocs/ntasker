@@ -5,10 +5,9 @@ All notable changes to ntasker.
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
 ## [Unreleased]
-Runs: conversation view -- a run tab shows the session as prompt/answer turns read from the Claude Code transcript,
-with a reply box, step summary, token usage and answerable permission prompts; the terminal stays one click away.
+Runs: conversation view -- a run tab shows prompt/answer turns from the transcript, with reply box, steps and tokens.
 Runs: the report sits in a pane beside the conversation, reloads live and says when the conversation went on after it.
-Runs: a blocker card in the conversation when the agent cannot work (usage limit, not logged in, billing, API unreachable).
+Runs: a blocker card in the conversation when the agent cannot work (usage limit, login, billing, API unreachable).
 Runs: *Stop* in the run view is *Pause* -- it always ended the session resumably.
 Sidebar: *New project* dialog (directory under the projects base, optional `git init` and agent start, sidebar group).
 Sidebar: project search by name or group, including empty projects.

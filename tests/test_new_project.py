@@ -117,3 +117,13 @@ def test_deleted_dir_leaves_sidebar(client):
     (base / "CodingProjects" / "tool").rmdir()
     names = [p["name"] for p in c.get("/api/projects").json()]
     assert "CodingProjects/tool" not in names
+
+
+def test_adopted_session_in_created_dir_is_filed_under_it(client):
+    """A session running in a created project (or below it) names that project,
+    not the folder right under the base."""
+    from ntasker.projects import name_for_dir
+
+    c, base = client
+    _create(c)
+    assert name_for_dir(base / "CodingProjects" / "tool" / "src") == "CodingProjects/tool"

@@ -4108,9 +4108,6 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             this._convTimer = setInterval(() => {
                 if (!this.runChatShown || this.runDiffOpen || document.hidden) return;
                 this.loadConversation();
-                // The report beside the conversation follows the agent: a
-                // rewritten report shows up without leaving the tab.
-                this.loadRunReport();
                 // A call without a result may be a permission prompt: poll the
                 // session state at this pace too, so its card shows up quickly
                 // (the board's own session poll runs every 5 s).
@@ -4352,40 +4349,33 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 task = await r.json();
             } catch (_e) { return; }
             if (this.claudeView !== id) return;   // switched tabs meanwhile
-            const changed = !this.runReportTask || this.runReportTask.id !== task.id
-                || this.runReportTask.report !== task.report;
+            const prev = this.runReportTask;
+            const changed = !prev || prev.id !== task.id || prev.report !== task.report;
+            const rewritten = !!(prev && prev.id === task.id && prev.report !== task.report && task.report);
             this.runReportTask = {
                 id: task.id, report: task.report, report_at: task.report_at,
                 title: task.title, project: task.project, priority: task.priority,
                 tags: task.tags || [], phase: task.phase, status: task.status,
             };
             if (changed) this.runReportHtml = renderMarkdown(task.report || '');
-            // A new or rewritten report opens beside the conversation; closing
-            // the pane sticks until the report changes again.
-            if (changed && task.report && this.runChatShown) this.runReportOpen = true;
-        },
-
-        // ``report_at`` is the server's local wall clock without a zone
-        // (see db.report_fields) -- not UTC like the other timestamps.
-        _reportDate() {
-            const at = this.runReportTask && this.runReportTask.report_at;
-            if (!at) return null;
-            const d = new Date(at);
-            return isNaN(d) ? null : d;
+            // A report written or rewritten while the tab is open opens beside
+            // the conversation; switching to a tab keeps the user's toggle, and
+            // closing the pane sticks until the report changes again.
+            if (rewritten && this.runChatShown) this.runReportOpen = true;
         },
 
         get runReportWhen() {
-            const d = this._reportDate();
-            return d ? d.toLocaleString(_locale(), { dateStyle: 'medium', timeStyle: 'short' }) : '';
+            return this.runReportAvailable ? this.formatAbsolute(this.runReportTask.report_at) : '';
         },
 
         // The user asked for more after the report was written and the agent
         // has not rewritten it since: the pane shows an outdated state.
         get runReportStale() {
-            const written = this._reportDate();
+            if (!this.runReportAvailable) return false;
+            const written = this._toDate(this.runReportTask.report_at);
             const last = this.convTurns[this.convTurns.length - 1];
             const asked = last && this._toDate(last.prompt_at);
-            return !!(written && asked && this.runReportAvailable && asked > written);
+            return !!(written && asked && asked > written);
         },
 
         // The report button: split the tab (terminal left, report right).

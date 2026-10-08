@@ -513,12 +513,15 @@ def report_fields(text: str | None) -> dict:
     Shared by the API (``PATCH report``) and the CLI (``ntasker report`` /
     ``patch --report``) so both spell "empty clears the report" the same way.
     """
-    from datetime import datetime  # noqa: PLC0415
+    from datetime import datetime, timezone  # noqa: PLC0415
 
     text = (text or "").strip()
     if not text:
         return {"report": None, "report_at": None}
-    return {"report": text, "report_at": datetime.now().isoformat(timespec="seconds")}
+    # Naive UTC like SQLite's datetime('now') on every other timestamp column;
+    # the UI reads a zone-less stamp as UTC.
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    return {"report": text, "report_at": now.isoformat(timespec="seconds")}
 
 
 def row_to_task(

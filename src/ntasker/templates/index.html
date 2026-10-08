@@ -1440,6 +1440,13 @@
                                                     style="cursor: pointer"
                                                     @click="task._expanded = !task._expanded"></strong>
 
+                                            {# What the agent is doing right now (running session). #}
+                                            <template x-if="taskActivity(task.id)">
+                                                <span class="task-activity small text-truncate" :title="taskActivity(task.id)">
+                                                    <span class="spinner-grow spinner-grow-sm me-1"></span><span x-text="taskActivity(task.id)"></span>
+                                                </span>
+                                            </template>
+
                                             {# Project badge -- click to toggle project filter #}
                                             <template x-if="task.project && !isMisc(task.project)">
                                                 <span class="badge bg-blue-lt"
@@ -1828,6 +1835,12 @@
                                                     :class="task.status === 'done' ? 'text-muted text-decoration-line-through' : ''"
                                                     @click.stop="task._expanded = !task._expanded"
                                                     x-text="task.title"></strong>
+                                            {# What the agent is doing right now (running session). #}
+                                            <template x-if="taskActivity(task.id)">
+                                                <div class="task-activity small text-truncate" :title="taskActivity(task.id)">
+                                                    <span class="spinner-grow spinner-grow-sm me-1"></span><span x-text="taskActivity(task.id)"></span>
+                                                </div>
+                                            </template>
 
                                             {# Description toggle: hidden by default, shown when the user #}
                                             {# clicked the title. Same pattern as in the list view. #}
@@ -1936,8 +1949,8 @@
         <div class="page-body claude-run-page" x-show="claudeView !== null" x-cloak>
             <div class="container-fluid d-flex flex-column h-100">
                 <div class="d-flex flex-column flex-fill" style="min-height: 0">
-                    {# Header: back, per-session tabs, live status + actions for the active tab. #}
-                    <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+                    {# Header row 1: back + one tab per open session. #}
+                    <div class="d-flex align-items-center gap-2 mb-2">
                         <button type="button" class="btn btn-ghost-secondary" @click="backFromClaudeRun()">
                             <i class="ti ti-arrow-left me-1 fs-2"></i><span x-text="$i18n('claude_back')"></span>
                         </button>
@@ -1961,41 +1974,56 @@
                                 </li>
                             </template>
                         </ul>
-                        <template x-if="activeTab">
-                        <span class="ms-auto d-flex align-items-center gap-2">
+                    </div>
+                    {# Header row 2: the view switch (conversation / terminal / diff, plus #}
+                    {# the report as a side pane) on the left, the run's actions on the right. #}
+                    <template x-if="activeTab">
+                    <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+                        <div class="btn-group claude-view-switch" role="group" :aria-label="$i18n('conv_views')">
+                            <template x-if="runConvSupported">
+                                <button type="button" class="btn" :class="runView === 'chat' ? 'btn-primary' : 'btn-outline-secondary'"
+                                        :title="$i18n('conv_show')" @click="showRunView('chat')">
+                                    <i class="ti ti-messages me-1 fs-3"></i><span x-text="$i18n('conv_title')"></span>
+                                </button>
+                            </template>
+                            <button type="button" class="btn" :class="runView === 'terminal' ? 'btn-primary' : 'btn-outline-secondary'"
+                                    :title="$i18n('conv_show_terminal_hint')" @click="showRunView('terminal')">
+                                <i class="ti ti-terminal-2 me-1 fs-3"></i><span x-text="$i18n('conv_terminal')"></span>
+                            </button>
+                            <button type="button" class="btn" :class="runView === 'diff' ? 'btn-primary' : 'btn-outline-secondary'"
+                                    :title="$i18n('diff_open')" @click="showRunView('diff')">
+                                <i class="ti ti-file-diff me-1 fs-3"></i><span x-text="$i18n('diff_title')"></span>
+                            </button>
+                        </div>
+                        {# The report beside the current view -- a split, not a view of its own. #}
+                        <template x-if="runReportAvailable">
+                            <button type="button" class="btn btn-outline-secondary" :class="runReportOpen && 'active'"
+                                    :title="$i18n('conv_report_side')" @click="toggleRunReport()">
+                                <i class="ti ti-layout-sidebar-right me-1 fs-3"></i><span x-text="$i18n('report_title')"></span>
+                            </button>
+                        </template>
+                        <span class="ms-auto d-flex align-items-center gap-2 flex-wrap">
                             <template x-for="p in quickPrompts" :key="p.label">
                                 <button type="button" class="btn btn-ghost-secondary" :title="p.prompt"
-                                        :disabled="activeTab.status === 'exited'" @click="sendQuickPrompt(p.prompt)">
+                                        :disabled="activeTab?.status === 'exited'" @click="sendQuickPrompt(p.prompt)">
                                     <i class="ti ti-message-forward me-1 fs-3"></i><span x-text="p.label"></span>
                                 </button>
                             </template>
                             <div class="btn-group">
-                                <button type="button" class="btn btn-outline-success" @click="markDoneFromClaudeRun()">
+                                {# Primary once the agent handed the task over for review. #}
+                                <button type="button" class="btn" @click="markDoneFromClaudeRun()"
+                                        :class="runTask && runTask.phase === 'review' ? 'btn-success' : 'btn-outline-success'">
                                     <i class="ti ti-check me-1 fs-3"></i><span x-text="$i18n('claude_mark_done')"></span>
                                 </button>
-                                <template x-if="activeTab && activeTab.status !== 'exited'">
+                                <template x-if="activeTab && activeTab?.status !== 'exited'">
                                     <button type="button" class="btn btn-outline-danger" @click="stopClaudeRun()">
                                         <i class="ti ti-player-stop me-1 fs-3"></i><span x-text="$i18n('claude_stop')"></span>
                                     </button>
                                 </template>
                             </div>
-                            {# Split the tab: the task's report in a pane next to the terminal. #}
-                            {# Diff: the run's changes in place of the terminal. #}
-                            <div class="btn-group">
-                                <template x-if="runReportAvailable">
-                                    <button type="button" class="btn btn-outline-secondary" :class="runReportOpen && 'active'"
-                                            :title="$i18n('report_open')" @click="toggleRunReport()">
-                                        <i class="ti ti-file-text me-1 fs-3"></i><span x-text="$i18n('report_title')"></span>
-                                    </button>
-                                </template>
-                                <button type="button" class="btn btn-outline-secondary" :class="runDiffOpen && 'active'"
-                                        :title="$i18n('diff_open')" @click="toggleRunDiff()">
-                                    <i class="ti ti-file-diff me-1 fs-3"></i><span x-text="$i18n('diff_title')"></span>
-                                </button>
-                            </div>
                         </span>
-                        </template>
                     </div>
+                    </template>
 
                     <div class="d-flex flex-fill mb-3" style="min-height: 0">
                         {# One xterm host per tab; only the active one is shown. Stable #}
@@ -2003,7 +2031,11 @@
                         <template x-for="tab in claudeTabs" :key="tab.taskId">
                             <div class="claude-terminal flex-fill"
                                  :id="`claude-term-${tab.taskId}`"
-                                 x-show="claudeView === tab.taskId && !runDiffOpen"></div>
+                                 x-show="claudeView === tab.taskId && !runDiffOpen && !runChatShown"></div>
+                        </template>
+                        {# Conversation pane in place of the terminal (see _conversation.html). #}
+                        <template x-if="runChatShown && !runDiffOpen">
+                            {% include '_conversation.html' %}
                         </template>
                         {# Diff page in place of the terminal (see _diff.html). #}
                         <template x-if="runDiffOpen">

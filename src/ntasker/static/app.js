@@ -42,6 +42,10 @@ function clampSidebarWidth(raw) {
 // Report pane in the run view (terminal left, the task's report right): its
 // width in px, set by dragging the splitter between the two.
 const LS_KEY_RUN_REPORT_WIDTH = 'ntasker.runReportWidth';
+// Conversation vs terminal per run tab ({taskId: 'chat'|'terminal'}), trimmed
+// to the RUN_MODES_KEEP most recent tasks.
+const LS_KEY_RUN_MODES = 'ntasker.runModes';
+const RUN_MODES_KEEP = 50;
 const RUN_REPORT_WIDTH_DEFAULT = 480;
 const RUN_REPORT_WIDTH_MIN = 260;
 const RUN_REPORT_WIDTH_MAX = 1400;
@@ -163,6 +167,44 @@ const DROP_CLASSES = ['drop-before', 'drop-after', 'drop-link'];
 // library the text is shown escaped rather than trusted.
 function escapeHtml(text) {
     return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// One-line preview of a collapsed prompt/answer: the first non-empty line,
+// Markdown markup (headings, list marks, emphasis, code ticks) dropped,
+// capped for the header row.
+// Step kinds of the conversation's step summary, in display order, and their
+// icons (keys match transcript._TOOL_KINDS).
+const CONV_KINDS = ['edit', 'read', 'bash', 'search', 'web', 'agent', 'skill', 'ask', 'other'];
+const CONV_KIND_ICONS = {
+    edit: 'ti-pencil', read: 'ti-file-text', bash: 'ti-terminal-2', search: 'ti-search',
+    web: 'ti-world', agent: 'ti-users', skill: 'ti-puzzle', ask: 'ti-help-circle', other: 'ti-tool',
+};
+
+// Token counts in the conversation: "950", "373 k", "1,2 M" -- decimals in the
+// page's locale. Intl's compact notation does not abbreviate thousands in
+// German, so the suffixes are fixed.
+const _tokenFmt = new Intl.NumberFormat(document.documentElement.lang || undefined, { maximumFractionDigits: 1 });
+function _fmtTokens(n) {
+    n = n || 0;
+    if (n >= 1e6) return _tokenFmt.format(n / 1e6) + ' M';
+    if (n >= 1e3) return _tokenFmt.format(Math.round(n / 1e2) / 10) + ' k';
+    return _tokenFmt.format(n);
+}
+const _pctFmt = new Intl.NumberFormat(document.documentElement.lang || undefined, { style: 'percent' });
+
+// Initial run modes: whatever the viewer picked last time (best-effort).
+function _loadRunModes() {
+    try {
+        const v = JSON.parse(localStorage.getItem(LS_KEY_RUN_MODES) || '{}');
+        return v && typeof v === 'object' ? v : {};
+    } catch (_e) { return {}; }
+}
+
+function _convPreview(text) {
+    const line = (text || '').split('\n')
+        .map(l => l.replace(/^(#+|[-*>]|\d+\.)\s+/, '').replace(/[*_`]+/g, '').trim())
+        .find(Boolean) || '';
+    return line.length > 160 ? line.slice(0, 159) + '…' : line;
 }
 
 function renderMarkdown(text) {
@@ -327,6 +369,8 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // Raw body of the last /api/claude/sessions response -- the poll
         // compares against it and skips the state update when nothing moved.
         _sessionsRaw: null,
+        _sessionsRestRaw: null,
+        _activityRaw: null,
         // Subset of claudeSessions that has gone silent long enough to look
         // blocked on a prompt -- drives the "waiting for input" highlight.
         claudeWaiting: [],
@@ -377,6 +421,25 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         runReportHtml: '',
         runReportOpen: false,
         runReportWidth: clampRunReportWidth(localStorage.getItem(LS_KEY_RUN_REPORT_WIDTH)),
+
+        // ---- Conversation pane in the run view ----
+        // A run tab shows the conversation (prompt + answer per turn, read from
+        // the session transcript) instead of the raw terminal; "Show me what you
+        // do" swaps the terminal in. ``runModes`` = task id -> 'chat' | 'terminal'
+        // (default 'chat'). ``conv`` is the active tab's last response
+        // ({taskId, supported, available, updated}), ``convTurns`` its turns with
+        // rendered HTML, ``convOpen`` the user's collapse toggles keyed
+        // "<task>:<turn>:<p|a>" (untoggled blocks follow convIsOpen's default).
+        runModes: _loadRunModes(),
+        conv: null,
+        convTurns: [],
+        convOpen: {},
+        convReply: '',
+        convUsage: null,
+        // What each live session did last ({taskId: {name, kind, detail} | {text}}),
+        // from the session poll -- the status line on a running task's card.
+        claudeActivity: {},
+        _convTimer: null,
 
         // ---- Diff view (run page + task card modal) ----
         // ``diff`` is a task's change set from /api/tasks/<id>/diff
@@ -3301,10 +3364,21 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                     // (taskRunPhase / taskProjectBusy sit on every row), so bail
                     // out on an unchanged payload instead of re-rendering the
                     // whole board for nothing.
+                    // ``activity`` moves on every step of a running agent but
+                    // only feeds the cards' status lines, so it is compared
+                    // (and reassigned) on its own.
                     const raw = await r.text();
                     if (raw === this._sessionsRaw) return;
                     this._sessionsRaw = raw;
-                    const d = JSON.parse(raw);
+                    const { activity, ...d } = JSON.parse(raw);
+                    const act = JSON.stringify(activity || {});
+                    if (act !== this._activityRaw) {
+                        this._activityRaw = act;
+                        this.claudeActivity = activity || {};
+                    }
+                    const rest = JSON.stringify(d);
+                    if (rest === this._sessionsRestRaw) return;
+                    this._sessionsRestRaw = rest;
                     this.claudeSessions = d.active || [];
                     this.claudeWaiting = d.waiting || [];
                     this.claudeExternal = d.external || [];
@@ -3431,10 +3505,14 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // then fit + focus once the host is on screen.
         _showTab(id) {
             if (id !== this.claudeView) this.closeRunDiff();
+            const switched = id !== this.claudeView;
             this.claudeView = id;
             this.loadRunReport();
+            if (switched) this._loadConvFresh();
+            else this.loadConversation();
             this.$nextTick(() => {
                 this._ensureTabConnected(id);
+                if (this.runChatShown) return;
                 this._fitAndSync(id);
                 _claudeTerms.get(id)?.term.focus();
             });
@@ -3527,6 +3605,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             this._addTab(id, task.title || '', task.project || '');
             this.claudeView = id;
             location.hash = '#/run/' + id;
+            this._loadConvFresh();
             this.$nextTick(() => this._claudeConnect(id, true));
         },
 
@@ -3546,6 +3625,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             this.claudeView = id;
             this._syncTabsFromSessions();    // drop the exited tab we just left
             location.hash = '#/run/' + id;   // record in history (idempotent _applyRoute)
+            this._loadConvFresh();
             this.$nextTick(() => this._claudeConnect(id));
         },
 
@@ -3707,7 +3787,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             // Focus once the browser has painted the just-shown terminal, so
             // keystrokes land in the PTY immediately -- but only if this tab is
             // still the active one by then.
-            requestAnimationFrame(() => { if (this.claudeView === taskId) term.focus(); });
+            requestAnimationFrame(() => { if (this.claudeView === taskId && !this.runChatShown) term.focus(); });
         },
 
         // Wire the xterm host as a drag-drop file target. The browser's default
@@ -3819,12 +3899,294 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // Return" instead of one pasted block with a trailing newline.
         sendQuickPrompt(prompt) {
             const s = _claudeTerms.get(this.claudeView);
-            if (!s || s.ws.readyState !== WebSocket.OPEN) return;
-            s.ws.send(JSON.stringify({ type: 'input', data: prompt }));
+            if (!s || s.ws.readyState !== WebSocket.OPEN) return false;
+            // Multi-line text goes in as a bracketed paste, so its newlines land
+            // in the input line instead of each one submitting a fragment.
+            const data = prompt.includes('\n') ? `\x1b[200~${prompt}\x1b[201~` : prompt;
+            s.ws.send(JSON.stringify({ type: 'input', data }));
             setTimeout(() => {
                 if (s.ws.readyState === WebSocket.OPEN) s.ws.send(JSON.stringify({ type: 'input', data: '\r' }));
             }, 50);
-            s.term.focus();
+            if (!this.runChatShown) s.term.focus();
+            return true;
+        },
+
+        // ---- Conversation pane ----
+
+        // False only once the server said the active task's agent has no
+        // readable transcript -- until then the pane is assumed to work.
+        get runConvSupported() {
+            return !(this.conv && this.conv.taskId === this.claudeView && this.conv.supported === false);
+        },
+
+        // The active tab shows the conversation (not the terminal).
+        get runChatShown() {
+            if (this.claudeView === null || !this.runConvSupported) return false;
+            return (this.runModes[this.claudeView] || 'chat') === 'chat';
+        },
+
+        // Which view the run page's segmented control marks active.
+        get runView() {
+            if (this.runDiffOpen) return 'diff';
+            return this.runChatShown ? 'chat' : 'terminal';
+        },
+
+        // Switch the active tab between conversation and terminal. The
+        // terminal was hidden (no size), so it refits once it is on screen.
+        // The choice is remembered per task across reloads (see _saveRunModes).
+        setRunMode(mode) {
+            const id = this.claudeView;
+            if (id === null) return;
+            this.runModes[id] = mode;
+            this._saveRunModes();
+            this.closeRunDiff();   // the Diff page covers both -- the switch must show something
+            if (mode === 'chat') {
+                this.loadConversation(true);
+                return;
+            }
+            this.$nextTick(() => {
+                this._ensureTabConnected(id);
+                this._fitAndSync(id);
+                const s = _claudeTerms.get(id);
+                if (s) { s.term.refresh(0, s.term.rows - 1); s.term.focus(); }
+            });
+        },
+
+        // The segmented control: conversation, terminal or diff.
+        showRunView(view) {
+            if (view === 'diff') {
+                if (!this.runDiffOpen) this.toggleRunDiff();
+                return;
+            }
+            this.setRunMode(view);
+        },
+
+        // Persist runModes, keeping only the most recent entries so the key
+        // does not grow with every task ever opened.
+        _saveRunModes() {
+            const entries = Object.entries(this.runModes).slice(-RUN_MODES_KEEP);
+            this.runModes = Object.fromEntries(entries);
+            try { localStorage.setItem(LS_KEY_RUN_MODES, JSON.stringify(this.runModes)); } catch (_e) { /* private mode */ }
+        },
+
+        // A tab was just opened / switched to: drop the previous tab's
+        // conversation and load this one's (and make sure the poll runs).
+        // The report pane follows the same tab, so its task is reloaded too.
+        _loadConvFresh() {
+            this.loadRunReport();
+            this.conv = null;
+            this.convTurns = [];
+            this.convUsage = null;
+            this.loadConversation(true);
+            this._ensureConvPoll();
+        },
+
+        // Poll the transcript while the pane is on screen. One timer for the
+        // page; a tick is a no-op while no conversation is shown.
+        _ensureConvPoll() {
+            if (this._convTimer) return;
+            this._convTimer = setInterval(() => {
+                if (!this.runChatShown || this.runDiffOpen || document.hidden) return;
+                this.loadConversation();
+                // A call without a result may be a permission prompt: poll the
+                // session state at this pace too, so its card shows up quickly
+                // (the board's own session poll runs every 5 s).
+                const last = this.convTurns[this.convTurns.length - 1];
+                if (last && last.pending) this.loadClaudeSessions();
+            }, 2500);
+        },
+
+        // Fetch the active run's conversation. Skips the re-render when the
+        // transcript did not change; rendered HTML is reused per unchanged text
+        // (marked + DOMPurify are not free, and a live run grows every poll).
+        async loadConversation(force = false) {
+            const id = this.claudeView;
+            if (id === null) return;
+            let d;
+            try {
+                const r = await fetch(`/api/tasks/${id}/conversation`);
+                // No task behind the tab (the queue planner's session): the
+                // terminal is all there is.
+                d = r.ok ? await r.json() : { supported: false, available: false, turns: [], usage: null, updated: null };
+            } catch (_e) { return; }
+            if (this.claudeView !== id) return;   // switched tabs meanwhile
+            const same = this.conv && this.conv.taskId === id && this.conv.updated === d.updated;
+            this.conv = { taskId: id, supported: d.supported, available: d.available, updated: d.updated };
+            if (same && !force) return;
+            const prev = this.convTurns;
+            const body = this.$refs.convBody;
+            const atBottom = !body || !prev.length
+                || body.scrollHeight - body.scrollTop - body.clientHeight < 80;
+            this.convUsage = d.usage || null;
+            this.convTurns = (d.turns || []).map((t, i) => {
+                const old = prev[i];
+                const html = (text, oldText, oldHtml) => (old && oldText === text ? oldHtml : renderMarkdown(text || ''));
+                const edited = [...new Set(t.tools.filter(x => x.kind === 'edit' && x.file).map(x => x.file))];
+                return {
+                    ...t,
+                    preview: _convPreview(t.prompt),
+                    answerPreview: _convPreview(t.answer || t.progress[t.progress.length - 1] || ''),
+                    promptHtml: html(t.prompt, old && old.prompt, old && old.promptHtml),
+                    answerHtml: html(t.answer, old && old.answer, old && old.answerHtml),
+                    progressHtml: t.progress.map((p, j) => (old && old.progress[j] === p ? old.progressHtml[j] : renderMarkdown(p))),
+                    kinds: this._stepKinds(t.tools),
+                    editedFiles: edited,
+                };
+            });
+            if (atBottom) {
+                this.$nextTick(() => {
+                    const el = this.$refs.convBody;
+                    if (el) el.scrollTop = el.scrollHeight;
+                });
+            }
+        },
+
+        // Step summary of one turn: ``[{kind, label, title}]`` in a fixed
+        // order, e.g. "12 read · 5 edited · 30 commands".
+        _stepKinds(tools) {
+            const counts = {};
+            for (const t of tools) counts[t.kind] = (counts[t.kind] || 0) + 1;
+            return CONV_KINDS.filter(k => counts[k]).map(k => ({
+                kind: k,
+                label: _i('conv_kind_' + k, { n: counts[k] }),
+                title: [...new Set(tools.filter(t => t.kind === k).map(t => this.toolName(t.name)))].join(', '),
+            }));
+        },
+
+        kindIcon(kind) {
+            return CONV_KIND_ICONS[kind] || 'ti-tool';
+        },
+
+        // "mcp__playwright__browser_click" -> "playwright · browser_click".
+        toolName(name) {
+            const m = /^mcp__(.+?)__(.+)$/.exec(name || '');
+            return m ? `${m[1]} · ${m[2]}` : (name || '?');
+        },
+
+        baseName(path) {
+            return (path || '').split('/').pop();
+        },
+
+        // One line about what an agent is doing -- the live status under the
+        // conversation and the status line on a running task's card.
+        activityText(a) {
+            if (!a) return '';
+            if (a.text) return a.text;
+            const what = a.kind === 'edit' || a.kind === 'read' ? this.baseName(a.file || a.detail) : a.detail;
+            const key = 'conv_doing_' + (CONV_KIND_ICONS[a.kind] ? a.kind : 'other');
+            return _i(key, { what: what || '', tool: this.toolName(a.name) }).replace(/:\s*$/, '');
+        },
+
+        // The live status line: the pending (running) call, else the last one.
+        get convActivity() {
+            const last = this.convTurns[this.convTurns.length - 1];
+            if (!last || last.done) return '';
+            const call = last.pending || last.tools[last.tools.length - 1];
+            if (call) return this.activityText(call);
+            const note = last.progress[last.progress.length - 1];
+            return note ? _convPreview(note) : '';
+        },
+
+        // The unresolved tool call of the last turn while the session waits.
+        get convPending() {
+            const tab = this.activeTab;
+            const last = this.convTurns[this.convTurns.length - 1];
+            if (!tab || tab.status !== 'waiting' || !last || !last.pending) return null;
+            return last.pending;
+        },
+
+        // What the waiting session asks for: 'ask' (a question), 'permission'
+        // (a tool call to approve) or null (just its turn is over).
+        get convPrompt() {
+            const p = this.convPending;
+            if (!p) return null;
+            return p.kind === 'ask' && p.questions && p.questions.length ? 'ask' : 'permission';
+        },
+
+        // Answer the permission dialog in the terminal: Enter picks the
+        // highlighted "Yes", Esc is Claude Code's "No".
+        answerPermission(allow) {
+            this._sendKeys(allow ? '\r' : '\x1b');
+        },
+
+        // Pick option ``index`` of a single-select question: arrow down to it,
+        // then Enter.
+        answerQuestion(index) {
+            this._sendKeys('\x1b[B'.repeat(index));
+            setTimeout(() => this._sendKeys('\r'), 80);
+        },
+
+        _sendKeys(data) {
+            const s = _claudeTerms.get(this.claudeView);
+            if (!s || s.ws.readyState !== WebSocket.OPEN) return;
+            if (data) s.ws.send(JSON.stringify({ type: 'input', data }));
+            setTimeout(() => this.loadClaudeSessions(), 400);
+        },
+
+        // An edited file's link in the step summary: open the Diff on it.
+        async openDiffFile(file) {
+            this.runDiffOpen = true;
+            await this.loadDiff(this.claudeView);
+            const f = this.diff && this.diff.files.find(x => file === x.path || file.endsWith('/' + x.path));
+            if (f) this.diffSelected = this.diffKey(f);
+        },
+
+        fmtTokens(n) {
+            return _fmtTokens(n);
+        },
+
+        tokensHint(u) {
+            if (!u) return '';
+            const share = u.input ? u.cache_read / u.input : 0;
+            return _i('conv_tokens_hint', { input: this.fmtTokens(u.input), cached: _pctFmt.format(share), output: this.fmtTokens(u.output) });
+        },
+
+        // The active run's task record (title, project, tags ...) -- the
+        // task card of the queue seed and the report card.
+        get runTask() {
+            return this.runReportTask && this.runReportTask.id === this.claudeView ? this.runReportTask : null;
+        },
+
+        priorityBadgeClass(p) {
+            return { critical: 'bg-danger text-white', high: 'bg-orange-lt', low: 'bg-azure-lt' }[p] || 'bg-secondary-lt';
+        },
+
+        priorityLabel(p) {
+            return p ? _i('priority_' + p) : '';
+        },
+
+        // The status line on a running task's card (board + list).
+        taskActivity(taskId) {
+            if (!this.claudeSessions.includes(taskId)) return '';
+            return this.activityText(this.claudeActivity[String(taskId)]);
+        },
+
+        // Whether a turn's prompt ('p') or answer ('a') is expanded. Default:
+        // the latest turn is open, and so is the very first prompt (the task);
+        // a user toggle wins.
+        convIsOpen(i, kind) {
+            const key = `${this.claudeView}:${i}:${kind}`;
+            if (key in this.convOpen) return this.convOpen[key];
+            const last = this.convTurns.length - 1;
+            return i === last || (kind === 'p' && i === 0);
+        },
+
+        toggleConv(i, kind) {
+            this.convOpen[`${this.claudeView}:${i}:${kind}`] = !this.convIsOpen(i, kind);
+        },
+
+        setAllConvOpen(open) {
+            this.convTurns.forEach((_t, i) => {
+                this.convOpen[`${this.claudeView}:${i}:p`] = open;
+                this.convOpen[`${this.claudeView}:${i}:a`] = open;
+            });
+        },
+
+        // The pane's reply box: typed into the live session like a quick prompt.
+        sendConvReply() {
+            const text = this.convReply.trim();
+            if (!text) return;
+            if (this.sendQuickPrompt(text)) this.convReply = '';
         },
 
         // Ask the server to terminate the active session (kills the process group).
@@ -3858,7 +4220,11 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             if (this.claudeView !== id) return;   // switched tabs meanwhile
             const changed = !this.runReportTask || this.runReportTask.id !== task.id
                 || this.runReportTask.report !== task.report;
-            this.runReportTask = { id: task.id, report: task.report, report_at: task.report_at };
+            this.runReportTask = {
+                id: task.id, report: task.report, report_at: task.report_at,
+                title: task.title, project: task.project, priority: task.priority,
+                tags: task.tags || [], phase: task.phase, status: task.status,
+            };
             if (changed) this.runReportHtml = renderMarkdown(task.report || '');
         },
 

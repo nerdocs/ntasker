@@ -144,6 +144,7 @@ def register(ctx: PluginContext) -> None:
             resume_flag="--resume",
             system_prompt_flag="--append-system-prompt",
             settings_flag="--settings",
+            transcript=True,
             permission_args_fn=_permission_args,
             model_flag="--model",
         )

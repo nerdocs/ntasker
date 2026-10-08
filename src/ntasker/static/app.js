@@ -39,21 +39,24 @@ function clampSidebarWidth(raw) {
     return Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, n));
 }
 
-// Report pane in the run view (terminal left, the task's report right): its
-// width in px, set by dragging the splitter between the two.
+// Side panes in the run view -- the task's report, and the terminal beside
+// the conversation in split mode: their widths in px, set by dragging the
+// splitter on the pane's left edge.
 const LS_KEY_RUN_REPORT_WIDTH = 'ntasker.runReportWidth';
-// Conversation vs terminal per run tab ({taskId: 'chat'|'terminal'}), trimmed
-// to the RUN_MODES_KEEP most recent tasks.
+const LS_KEY_RUN_TERM_WIDTH = 'ntasker.runTermWidth';
+// View per run tab ({taskId: 'chat'|'split'|'terminal'}), trimmed to the
+// RUN_MODES_KEEP most recent tasks.
 const LS_KEY_RUN_MODES = 'ntasker.runModes';
 const RUN_MODES_KEEP = 50;
-const RUN_REPORT_WIDTH_DEFAULT = 480;
-const RUN_REPORT_WIDTH_MIN = 260;
-const RUN_REPORT_WIDTH_MAX = 1400;
+const RUN_MODE_DEFAULT = 'split';
+const RUN_PANE_WIDTH_DEFAULT = 480;
+const RUN_PANE_WIDTH_MIN = 260;
+const RUN_PANE_WIDTH_MAX = 1400;
 
-function clampRunReportWidth(raw) {
+function clampRunPaneWidth(raw) {
     const n = Number.parseInt(raw, 10);
-    if (Number.isNaN(n)) return RUN_REPORT_WIDTH_DEFAULT;
-    return Math.min(RUN_REPORT_WIDTH_MAX, Math.max(RUN_REPORT_WIDTH_MIN, n));
+    if (Number.isNaN(n)) return RUN_PANE_WIDTH_DEFAULT;
+    return Math.min(RUN_PANE_WIDTH_MAX, Math.max(RUN_PANE_WIDTH_MIN, n));
 }
 
 // Legacy keys used pre-1.0. Migrated to the ntasker.* namespace once.
@@ -420,17 +423,18 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         runReportTask: null,
         runReportHtml: '',
         runReportOpen: false,
-        runReportWidth: clampRunReportWidth(localStorage.getItem(LS_KEY_RUN_REPORT_WIDTH)),
+        runReportWidth: clampRunPaneWidth(localStorage.getItem(LS_KEY_RUN_REPORT_WIDTH)),
 
         // ---- Conversation pane in the run view ----
         // A run tab shows the conversation (prompt + answer per turn, read from
-        // the session transcript) instead of the raw terminal; "Show me what you
-        // do" swaps the terminal in. ``runModes`` = task id -> 'chat' | 'terminal'
-        // (default 'chat'). ``conv`` is the active tab's last response
+        // the session transcript) beside the raw terminal ('split', the
+        // default), or either one alone. ``runModes`` = task id -> 'chat' |
+        // 'split' | 'terminal'. ``conv`` is the active tab's last response
         // ({taskId, supported, available, updated}), ``convTurns`` its turns with
         // rendered HTML, ``convOpen`` the user's collapse toggles keyed
         // "<task>:<turn>:<p|a>" (untoggled blocks follow convIsOpen's default).
         runModes: _loadRunModes(),
+        runTermWidth: clampRunPaneWidth(localStorage.getItem(LS_KEY_RUN_TERM_WIDTH)),
         conv: null,
         convTurns: [],
         convOpen: {},
@@ -3512,9 +3516,9 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             else this.loadConversation();
             this.$nextTick(() => {
                 this._ensureTabConnected(id);
-                if (this.runChatShown) return;
+                if (!this.runTermShown) return;
                 this._fitAndSync(id);
-                _claudeTerms.get(id)?.term.focus();
+                if (!this.runChatShown) _claudeTerms.get(id)?.term.focus();
             });
         },
 
@@ -3919,20 +3923,36 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             return !(this.conv && this.conv.taskId === this.claudeView && this.conv.supported === false);
         },
 
-        // The active tab shows the conversation (not the terminal).
+        // The active tab's view: 'chat', 'split' or 'terminal' -- the terminal
+        // alone when the agent has no transcript.
+        get runMode() {
+            if (!this.runConvSupported) return 'terminal';
+            return this.runModes[this.claudeView] || RUN_MODE_DEFAULT;
+        },
+
+        // The active tab shows the conversation (alone or beside the terminal).
         get runChatShown() {
-            if (this.claudeView === null || !this.runConvSupported) return false;
-            return (this.runModes[this.claudeView] || 'chat') === 'chat';
+            return this.claudeView !== null && this.runMode !== 'terminal';
+        },
+
+        // The terminal sits in a pane beside the conversation.
+        get runSplitShown() {
+            return this.claudeView !== null && this.runMode === 'split' && !this.runDiffOpen;
+        },
+
+        // The active tab's terminal is on screen (alone or in the split pane).
+        get runTermShown() {
+            return this.claudeView !== null && this.runMode !== 'chat' && !this.runDiffOpen;
         },
 
         // Which view the run page's segmented control marks active.
         get runView() {
-            if (this.runDiffOpen) return 'diff';
-            return this.runChatShown ? 'chat' : 'terminal';
+            return this.runDiffOpen ? 'diff' : this.runMode;
         },
 
-        // Switch the active tab between conversation and terminal. The
-        // terminal was hidden (no size), so it refits once it is on screen.
+        // Switch the active tab between conversation, split and terminal. A
+        // terminal that was hidden (no size) refits once it is on screen; it
+        // takes the focus only when shown alone (the pane has its reply box).
         // The choice is remembered per task across reloads (see _saveRunModes).
         setRunMode(mode) {
             const id = this.claudeView;
@@ -3940,15 +3960,15 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             this.runModes[id] = mode;
             this._saveRunModes();
             this.closeRunDiff();   // the Diff page covers both -- the switch must show something
-            if (mode === 'chat') {
-                this.loadConversation(true);
-                return;
-            }
+            if (mode !== 'terminal') this.loadConversation(true);
+            if (mode === 'chat') return;
             this.$nextTick(() => {
                 this._ensureTabConnected(id);
                 this._fitAndSync(id);
                 const s = _claudeTerms.get(id);
-                if (s) { s.term.refresh(0, s.term.rows - 1); s.term.focus(); }
+                if (!s) return;
+                s.term.refresh(0, s.term.rows - 1);
+                if (mode === 'terminal') s.term.focus();
             });
         },
 
@@ -4313,20 +4333,33 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             return f ? renderDiff(f.diff) : '';
         },
 
-        // Splitter between terminal and report pane -- same pointer-capture
-        // scheme as the sidebar splitter; the terminal refits on release.
+        // Splitters on the left edge of the report pane and of the terminal
+        // pane (split mode).
         startRunReportResize(ev) {
+            this._startPaneResize(ev, this.runReportWidth, (w) => { this.runReportWidth = w; }, LS_KEY_RUN_REPORT_WIDTH);
+        },
+
+        startRunTermResize(ev) {
+            this._startPaneResize(ev, this.runTermWidth, (w) => { this.runTermWidth = w; }, LS_KEY_RUN_TERM_WIDTH);
+        },
+
+        // Drag a side pane's left edge -- same pointer-capture scheme as the
+        // sidebar splitter. ``set`` stores the clamped width while dragging;
+        // it lands in localStorage under ``lsKey`` on release, and the
+        // terminal refits.
+        _startPaneResize(ev, startWidth, set, lsKey) {
             const handle = ev.currentTarget;
             const startX = ev.clientX;
-            const startWidth = this.runReportWidth;
+            let width = startWidth;
             const onMove = (e) => {
-                this.runReportWidth = clampRunReportWidth(startWidth - (e.clientX - startX));
+                width = clampRunPaneWidth(startWidth - (e.clientX - startX));
+                set(width);
             };
             const onUp = () => {
                 handle.removeEventListener('pointermove', onMove);
                 handle.removeEventListener('pointerup', onUp);
                 document.body.classList.remove('tracker-resizing');
-                localStorage.setItem(LS_KEY_RUN_REPORT_WIDTH, String(this.runReportWidth));
+                localStorage.setItem(lsKey, String(width));
                 this._fitAndSync(this.claudeView);
             };
             handle.setPointerCapture(ev.pointerId);

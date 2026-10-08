@@ -690,9 +690,9 @@ body {
     scrollbar-width: thin;
     scrollbar-color: #6c6c6c #161616;
 }
-/* Report pane next to the terminal (run view). The splitter reuses the
- * sidebar handle; it sits on the pane's left edge instead of the right. */
-.claude-report-splitter {
+/* Side panes in the run view (the report, the terminal in split mode). The
+ * splitter reuses the sidebar handle; it sits on the pane's left edge. */
+.claude-pane-splitter {
     margin-left: 0;
     margin-right: -3px;
 }

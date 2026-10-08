@@ -615,6 +615,8 @@ def build_js_strings() -> dict[str, str]:
         "conv_show_terminal_hint": _("Open the live terminal of this run"),
         "conv_title": _("Conversation"),
         "conv_show": _("Show the conversation"),
+        "conv_split": _("Split"),
+        "conv_show_split": _("Conversation and terminal side by side"),
         "conv_prompt": _("Prompt"),
         "conv_answer": _("Answer"),
         "conv_steps": _("Steps: {n}"),

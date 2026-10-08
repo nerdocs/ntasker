@@ -19,7 +19,7 @@
         <button type="button" class="btn btn-sm btn-ghost-secondary" x-show="convTurns.length"
                 @click="setAllConvOpen(false)" x-text="$i18n('conv_collapse_all')"></button>
         <button type="button" class="btn btn-sm btn-primary" :title="$i18n('conv_show_terminal_hint')"
-                @click="setRunMode('terminal')">
+                x-show="!runSplitShown" @click="setRunMode('terminal')">
             <i class="ti ti-terminal-2 me-1"></i><span x-text="$i18n('conv_show_terminal')"></span>
         </button>
     </div>
@@ -170,7 +170,7 @@
                                     </template>
                                 </div>
                             </template>
-                            <button type="button" class="btn btn-sm btn-ghost-secondary" @click="setRunMode('terminal')">
+                            <button type="button" class="btn btn-sm btn-ghost-secondary" x-show="!runSplitShown" @click="setRunMode('terminal')">
                                 <i class="ti ti-terminal-2 me-1"></i><span x-text="$i18n('conv_answer_in_terminal')"></span>
                             </button>
                         </div>
@@ -191,7 +191,7 @@
                                 <button type="button" class="btn btn-sm btn-outline-danger" @click="answerPermission(false)">
                                     <i class="ti ti-x me-1"></i><span x-text="$i18n('conv_deny')"></span>
                                 </button>
-                                <button type="button" class="btn btn-sm btn-ghost-secondary" @click="setRunMode('terminal')">
+                                <button type="button" class="btn btn-sm btn-ghost-secondary" x-show="!runSplitShown" @click="setRunMode('terminal')">
                                     <i class="ti ti-terminal-2 me-1"></i><span x-text="$i18n('conv_show_terminal')"></span>
                                 </button>
                             </div>
@@ -208,7 +208,7 @@
                 <template x-if="activeTab?.status === 'waiting' && !convPrompt">
                     <div class="d-flex align-items-center gap-2 text-orange flex-wrap small">
                         <i class="ti ti-hand-stop"></i><span x-text="$i18n('conv_waiting')"></span>
-                        <button type="button" class="btn btn-sm btn-outline-orange" @click="setRunMode('terminal')">
+                        <button type="button" class="btn btn-sm btn-outline-orange" x-show="!runSplitShown" @click="setRunMode('terminal')">
                             <i class="ti ti-terminal-2 me-1"></i><span x-text="$i18n('conv_show_terminal')"></span>
                         </button>
                     </div>

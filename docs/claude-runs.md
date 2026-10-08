@@ -263,6 +263,25 @@ Off by default, for the same reason as the setting above: it edits a file that b
 (every other rule stays, a timestamped `.bak` is kept) and switching it off removes exactly that one rule again.
 `ntasker agent install claude` notes when the rule is missing but never writes it by itself.
 
+## The run view -- conversation, terminal, split
+
+A run tab opens in **split** mode: the conversation on the left, the live terminal in a resizable pane on the right.
+The segmented control in the header switches to the conversation alone, the terminal alone, or the run's Diff; the
+choice is remembered per task in the browser (`ntasker.runModes`). Agents without a readable transcript (OpenCode,
+Pi) only get the terminal.
+
+The conversation is read from the agent's own session transcript (`<home>/projects/*/<session-id>.jsonl`, Claude
+Code's format; `AgentSpec.transcript` says whether an agent writes one) and folded into turns: the prompt, the
+agent's final answer, the progress notes and tool calls behind it, and the tokens it used. The queue seed shows as a
+task card with the tracker rules cut off; the report closes the conversation as its result card. While the session
+waits for you, the pane answers for the terminal: a permission dialog gets *Allow* / *Deny*, a single-choice question
+its options, and the reply box sends a prompt -- all of it typed into the PTY exactly as the terminal would. The
+board's running cards show the agent's current step from the same source.
+
+Parsing (`src/ntasker/transcript.py`) happens on the server per poll (`GET /api/tasks/<id>/conversation`, every
+2.5 s while the pane is on screen); an unchanged file is answered from a small in-process cache keyed on its mtime
+and size.
+
 ## Quick prompts
 
 The run view's toolbar can carry buttons that type a canned prompt into the live session and send it -- the same
@@ -316,7 +335,8 @@ included** -- gated solely by that loopback bind. Keep the bind local (never `0.
 * Frontend: xterm.js + the fit addon, vendored through the CDN/SRI asset manifest in `src/ntasker/assets.py` (no
   build step), driving the terminal in `static/app.js` (`runNext` queues, `_openWhenLive` waits for the session).
 * Endpoints: `GET /api/claude/status` (CLI + PTY available?), `GET /api/claude/sessions` (`{active, waiting, external,
-  projects, titles}`, for the busy / waiting indicators and the run tabs), `POST /api/projects/quick-run`,
+  projects, titles, activity}`, for the busy / waiting indicators, the run tabs and the cards' current-step line),
+  `GET /api/tasks/<id>/conversation` (the run view's conversation, see above), `POST /api/projects/quick-run`,
   `POST /api/claude/sessions/<id>/external` (the `/task` loader's registration, see above),
   `POST /api/claude/sessions/<id>/adopt` (point a task at a session ntasker did not start),
   `POST /api/claude/sessions/live` (a terminal session reporting itself, from `ntasker hook session`),

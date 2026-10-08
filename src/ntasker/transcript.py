@@ -62,6 +62,12 @@ _TOOL_KINDS = {
 # How much of the file end :func:`last_activity` reads -- a few events' worth.
 _TAIL_BYTES = 64 * 1024
 
+# Parsed transcripts by path, each with the (mtime_ns, size, rules) it was
+# parsed from: the pane polls every few seconds, but the file only changes
+# while the agent works. Bounded to the most recently stored entries.
+_parsed: dict[Path, tuple[tuple, dict]] = {}
+_PARSED_KEEP = 16
+
 
 def find_transcript(home: Path, session_id: str) -> Path | None:
     """The session's ``.jsonl`` under ``<home>/projects``, or ``None``.
@@ -309,23 +315,34 @@ def conversation_for(home: Path, session_id: str | None, rules: Iterable[str] = 
     ``available`` is ``False`` when there is no id or no transcript (yet) -- a
     freshly spawned session writes its file only after the first prompt.
     ``usage`` sums the turns' tokens. ``updated`` is the file's mtime so the
-    client can skip unchanged polls.
+    client can skip unchanged polls. An unchanged file (same mtime and size,
+    same rules) is served from :data:`_parsed` without parsing it again.
     """
     empty = {"available": False, "turns": [], "usage": _new_usage(), "updated": None}
     path = find_transcript(home, session_id or "")
     if path is None:
         return empty
+    rules = tuple(rules)
     try:
+        st = path.stat()
+        key = (st.st_mtime_ns, st.st_size, rules)
+        hit = _parsed.get(path)
+        if hit and hit[0] == key:
+            return hit[1]
         with path.open(encoding="utf-8", errors="replace") as fh:
             turns = parse_transcript(fh, rules)
-        updated = path.stat().st_mtime
     except OSError:
         return empty
     total = _new_usage()
     for turn in turns:
-        for key in total:
-            total[key] += turn["usage"][key]
-    return {"available": True, "turns": turns, "usage": total, "updated": updated}
+        for k in total:
+            total[k] += turn["usage"][k]
+    result = {"available": True, "turns": turns, "usage": total, "updated": st.st_mtime}
+    _parsed.pop(path, None)
+    _parsed[path] = (key, result)
+    while len(_parsed) > _PARSED_KEEP:
+        del _parsed[next(iter(_parsed))]
+    return result
 
 
 def last_activity(home: Path, session_id: str | None) -> dict | None:

@@ -40,6 +40,7 @@ Interactive OpenAPI docs: <http://127.0.0.1:8766/api/docs>
 | GET | `/api/plugins` | Built-in plugins + `enabled` flag; toggle via `PUT /api/settings/plugins_disabled` / `plugins_enabled` |
 | WS | `/api/voice/ws` | Voice plugin: 16 kHz PCM in, `partial` / `final` text out ([voice.md](voice.md)) |
 | GET/POST | `/api/voice/models[/{name}\|/job]` | Voice plugin: installed models + catalog, background model download |
+| GET | `/api/tasks/{id}/conversation` | `{supported, available, turns[], usage, updated}` -- the run's prompt/answer turns from the session transcript ([claude-runs.md](claude-runs.md#the-run-view----conversation-terminal-split)) |
 | GET/POST/DELETE | `/api/tasks/{id}/context[/{cid}]` | Attachments ([task-context.md](task-context.md)) |
 | GET/PUT/POST | `/api/workspace[/file\|browse\|entry\|rename\|delete\|reveal]` | Workspace ([workspace.md](workspace.md)) |
 | GET | `/api/claude-assets/status` | Read-only: `{installed, drift, package_version, claude_home, files[]}` |

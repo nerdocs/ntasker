@@ -114,6 +114,19 @@ def test_find_transcript_rejects_path_tricks(tmp_path):
     assert conv["usage"]["output"] == 150   # summed over the turns
 
 
+def test_conversation_is_cached_until_the_file_changes(tmp_path, monkeypatch):
+    proj = tmp_path / "projects" / "-cwd"
+    proj.mkdir(parents=True)
+    path = proj / f"{SID}.jsonl"
+    path.write_text("\n".join(EVENTS))
+    first = conversation_for(tmp_path, SID)
+    monkeypatch.setattr("ntasker.transcript.parse_transcript", lambda *a: pytest.fail("parsed again"))
+    assert conversation_for(tmp_path, SID) is first
+    monkeypatch.undo()
+    path.write_text("\n".join(EVENTS[:-1]))
+    assert conversation_for(tmp_path, SID)["turns"][-1]["pending"] is None
+
+
 def test_last_activity_reads_the_file_end(tmp_path):
     proj = tmp_path / "projects" / "-cwd"
     proj.mkdir(parents=True)

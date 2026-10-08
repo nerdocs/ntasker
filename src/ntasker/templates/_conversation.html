@@ -3,7 +3,8 @@
 {# (GET /api/tasks/<id>/conversation). Replaces the terminal while shown. A #}
 {# finished turn leads with its result; progress notes and the single steps #}
 {# are folded away. Pending permission prompts and questions can be answered #}
-{# here; the task's report closes the pane as a result card. #}
+{# here, and whatever stops the agent (usage limit, login, network) shows as a #}
+{# card. The task's report sits in the pane beside it (see index.html). #}
 <div class="claude-conv-page card flex-fill d-flex flex-column">
     <div class="d-flex align-items-center gap-2 px-3 py-2 border-bottom flex-wrap">
         <i class="ti ti-messages fs-3 text-secondary"></i>
@@ -199,13 +200,30 @@
                         </div>
                     </div>
                 </template>
-                <template x-if="activeTab?.status === 'running' || activeTab?.status === 'connecting'">
+                {# The agent cannot work: usage limit, not logged in, API unreachable ... #}
+                <template x-if="convBlocker">
+                    <div class="claude-conv-blocker card card-sm border-danger mb-2" role="alert">
+                        <div class="card-body">
+                            <div class="fw-medium mb-1"><i class="ti text-danger me-1" :class="blockerIcon(convBlocker)"></i><span
+                                    x-text="$i18n('conv_blocker_' + blockerKind(convBlocker))"></span></div>
+                            <div class="font-monospace small mb-2 text-break" x-show="convBlocker?.text" x-text="convBlocker?.text"></div>
+                            <div class="text-secondary small mb-2" x-text="$i18n('conv_blocker_' + blockerKind(convBlocker) + '_hint')"></div>
+                            <div class="d-flex align-items-center flex-wrap gap-2">
+                                <button type="button" class="btn btn-sm btn-outline-danger" @click="setRunMode('terminal')">
+                                    <i class="ti ti-terminal-2 me-1"></i><span x-text="$i18n('conv_show_terminal')"></span>
+                                </button>
+                                <span class="text-secondary small" x-show="convBlocker?.at" x-text="formatAbsolute(convBlocker?.at)"></span>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+                <template x-if="!convBlocker && (activeTab?.status === 'running' || activeTab?.status === 'connecting')">
                     <div class="d-flex align-items-center gap-2 text-azure small" style="min-width: 0">
                         <span class="spinner-border spinner-border-sm flex-shrink-0"></span>
                         <span class="text-truncate" x-text="convActivity || $i18n('conv_working')"></span>
                     </div>
                 </template>
-                <template x-if="activeTab?.status === 'waiting' && !convPrompt">
+                <template x-if="activeTab?.status === 'waiting' && !convPrompt && !convBlocker">
                     <div class="d-flex align-items-center gap-2 text-orange flex-wrap small">
                         <i class="ti ti-hand-stop"></i><span x-text="$i18n('conv_waiting')"></span>
                         <button type="button" class="btn btn-sm btn-outline-orange" x-show="!runSplitShown" @click="setRunMode('terminal')">
@@ -217,23 +235,15 @@
             </div>
         </template>
 
-        {# The agent's report closes the conversation as its result card. #}
-        <template x-if="runReportAvailable">
-            <div class="claude-conv-report card border-success mt-3">
-                <div class="card-header d-flex align-items-center gap-2 flex-wrap">
-                    <i class="ti ti-file-text text-success fs-3"></i>
-                    <span class="fw-medium" x-text="$i18n('conv_report')"></span>
-                    <span class="text-secondary small" x-show="runReportTask?.report_at"
-                          x-text="$i18n('report_written_at', {when: formatAbsolute(runReportTask?.report_at)})"></span>
-                    <span class="flex-fill"></span>
-                    <template x-if="runReportTask?.status !== 'done'">
-                        <button type="button" class="btn btn-sm" @click="markDoneFromClaudeRun()"
-                                :class="runReportTask?.phase === 'review' ? 'btn-success' : 'btn-outline-success'">
-                            <i class="ti ti-check me-1"></i><span x-text="$i18n('claude_mark_done')"></span>
-                        </button>
-                    </template>
-                </div>
-                <div class="card-body markdown" x-html="runReportHtml"></div>
+        {# The report lives in the pane beside the conversation; with the pane #}
+        {# closed, one line says there is one. #}
+        <template x-if="runReportAvailable && !runReportOpen">
+            <div class="d-flex align-items-center gap-2 flex-wrap small mt-3">
+                <i class="ti ti-file-text text-success"></i>
+                <span class="text-secondary" x-text="$i18n('report_written_at', {when: runReportWhen})"></span>
+                <button type="button" class="btn btn-sm btn-outline-success" @click="toggleRunReport()">
+                    <i class="ti ti-layout-sidebar-right me-1"></i><span x-text="$i18n('report_open')"></span>
+                </button>
             </div>
         </template>
     </div>

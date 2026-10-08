@@ -101,6 +101,50 @@ def test_parse_cuts_configured_run_rules():
     assert turns[0]["prompt"] == "## My rules\n\n- finish 7" and turns[0]["seed"] is False
 
 
+def _api_error(text, error):
+    return _ev("assistant", [{"type": "text", "text": text}], stop_reason="stop_sequence",
+               isApiErrorMessage=True, error=error)
+
+
+@pytest.mark.parametrize(("error", "text", "kind"), [
+    ("rate_limit", "You've hit your session limit · resets 3pm (Europe/Vienna)", "limit"),
+    ("authentication_failed", "Not logged in · Please run /login", "auth"),
+    ("server_error", "API Error: Can't reach the API server", "error"),
+    (None, "API Error: something new", "error"),
+])
+def test_parse_reports_what_blocks_the_agent(error, text, kind):
+    """An API error is not an answer -- it is what stops the turn."""
+    extra = {"error": error} if error else {}
+    lines = [_ev("user", "go"),
+             _ev("assistant", [{"type": "text", "text": text}], stop_reason="stop_sequence",
+                 isApiErrorMessage=True, **extra)]
+    turn = parse_transcript(lines)[-1]
+    assert turn["blocker"] == {"kind": kind, "text": text, "at": "2026-09-27T10:00:00Z"}
+    assert turn["answer"] == "" and turn["progress"] == [] and not turn["done"]
+
+
+def test_blocker_clears_once_the_agent_works_again():
+    lines = [_ev("user", "go"), _api_error("Login expired · Please run /login", "authentication_failed")]
+    # output after the error: the work went on
+    resumed = [*lines, _ev("assistant", [{"type": "text", "text": "Done."}], id="m9", stop_reason="end_turn")]
+    turn = parse_transcript(resumed)[-1]
+    assert turn["blocker"] is None and turn["answer"] == "Done."
+    # a new prompt starts clean -- the old turn keeps its blocker for the record
+    turns = parse_transcript([*lines, _ev("user", "again")])
+    assert turns[0]["blocker"]["kind"] == "auth" and turns[1]["blocker"] is None
+
+
+def test_conversation_carries_the_current_blocker(tmp_path):
+    folder = tmp_path / "projects" / "-some-cwd"
+    folder.mkdir(parents=True)
+    path = folder / f"{SID}.jsonl"
+    path.write_text("\n".join([_ev("user", "go"), _api_error("You've hit your session limit", "rate_limit")]))
+    assert conversation_for(tmp_path, SID)["blocker"]["kind"] == "limit"
+    path.write_text("\n".join([_ev("user", "go"), _api_error("x", "rate_limit"), _ev("user", "again")]))
+    assert conversation_for(tmp_path, SID)["blocker"] is None
+    assert conversation_for(tmp_path, None)["blocker"] is None
+
+
 def test_find_transcript_rejects_path_tricks(tmp_path):
     proj = tmp_path / "projects" / "-some-cwd"
     proj.mkdir(parents=True)

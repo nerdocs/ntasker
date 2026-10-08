@@ -308,6 +308,12 @@
         {# Projects section #}
         <div class="d-flex align-items-center mb-2">
             {{ section_toggle('projects', 'ti-folders', t('Projects')) }}
+            {# New project: directory under the projects base + sidebar group. #}
+            <button type="button" class="btn btn-sm btn-ghost-secondary px-1 py-0"
+                    @click="openNewProject()"
+                    :title="$i18n('new_project_hint')" :aria-label="$i18n('new_project')">
+                <i class="ti ti-folder-plus fs-3"></i>
+            </button>
             <button type="button" class="btn btn-sm btn-ghost-secondary px-2 py-0"
                     @click="toggleAllProjects()"
                     :title="allProjectsActive ? $i18n('deselect_all') : $i18n('select_all')">
@@ -338,6 +344,17 @@
             </label>
         </div>
         </div>
+
+        {# Project search: narrows the tree by name or group, empty projects included. #}
+        <div class="input-icon mb-2 project-search">
+            <span class="input-icon-addon"><i class="ti ti-search"></i></span>
+            <input type="search" class="form-control form-control-sm" x-model="projectSearch"
+                   :placeholder="$i18n('project_search_placeholder')"
+                   :aria-label="$i18n('project_search_placeholder')"
+                   @keydown.escape.stop="projectSearch = ''">
+        </div>
+        <div class="text-muted small mb-2" x-show="projectSearch.trim() && !projectTree.length"
+             x-text="$i18n('project_search_none')"></div>
 
         <div class="text-muted small mb-2" x-show="projectFilter.length === 0 && tagFilter.length === 0">
             {{ t('No filter active -- all tasks visible.') }}
@@ -2022,8 +2039,8 @@
                                     <i class="ti ti-check me-1 fs-3"></i><span x-text="$i18n('claude_mark_done')"></span>
                                 </button>
                                 <template x-if="activeTab && activeTab?.status !== 'exited'">
-                                    <button type="button" class="btn btn-outline-danger" @click="stopClaudeRun()">
-                                        <i class="ti ti-player-stop me-1 fs-3"></i><span x-text="$i18n('claude_stop')"></span>
+                                    <button type="button" class="btn btn-outline-warning" :title="$i18n('claude_stop_title')" @click="stopClaudeRun()">
+                                        <i class="ti ti-player-pause me-1 fs-3"></i><span x-text="$i18n('claude_stop')"></span>
                                     </button>
                                 </template>
                             </div>
@@ -2057,10 +2074,31 @@
                         <template x-if="runReportShown && !runDiffOpen">
                             <div class="d-flex flex-shrink-0" style="min-height: 0" :style="`width: ${runReportWidth}px`">
                                 <div class="tracker-splitter claude-pane-splitter" @pointerdown="startRunReportResize($event)"></div>
-                                <div class="claude-report-pane card flex-fill">
-                                    <div class="card-body overflow-auto">
-                                        <div class="text-secondary small mb-2" x-show="runReportTask.report_at"
-                                             x-text="$i18n('report_written_at', {when: formatAbsolute(runReportTask.report_at)})"></div>
+                                <div class="claude-report-pane card flex-fill d-flex flex-column">
+                                    <div class="d-flex align-items-center gap-2 px-3 py-2 border-bottom flex-wrap">
+                                        <i class="ti ti-file-text fs-3 text-success"></i>
+                                        <span class="fw-medium" x-text="$i18n('conv_report')"></span>
+                                        <span class="text-secondary small" x-show="runReportWhen"
+                                              x-text="$i18n('report_written_at', {when: runReportWhen})"></span>
+                                        <span class="flex-fill"></span>
+                                        <template x-if="runReportTask?.status !== 'done'">
+                                            <button type="button" class="btn btn-sm" @click="markDoneFromClaudeRun()"
+                                                    :class="runReportTask?.phase === 'review' ? 'btn-success' : 'btn-outline-success'">
+                                                <i class="ti ti-check me-1"></i><span x-text="$i18n('claude_mark_done')"></span>
+                                            </button>
+                                        </template>
+                                        <button type="button" class="btn btn-sm btn-ghost-secondary btn-icon"
+                                                :title="$i18n('close')" :aria-label="$i18n('close')" @click="toggleRunReport()">
+                                            <i class="ti ti-x"></i>
+                                        </button>
+                                    </div>
+                                    {# The user asked for more after the report was written. #}
+                                    <template x-if="runReportStale">
+                                        <div class="claude-report-stale px-3 py-2 border-bottom small">
+                                            <i class="ti ti-history me-1"></i><span x-text="$i18n('conv_report_stale')"></span>
+                                        </div>
+                                    </template>
+                                    <div class="card-body overflow-auto" style="min-height: 0">
                                         <div class="markdown" x-html="runReportHtml"></div>
                                     </div>
                                 </div>
@@ -2501,6 +2539,9 @@
             </div>
         </div>
     </div>
+
+    {# New-project modal -- directory + group (see _new_project.html). #}
+    {% include '_new_project.html' %}
 
 </div>
 

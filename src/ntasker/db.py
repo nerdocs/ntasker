@@ -179,6 +179,14 @@ CREATE TABLE IF NOT EXISTS hidden_projects (
     project TEXT PRIMARY KEY
 );
 
+-- Projects created from the "New project" dialog (see ntasker.newproject).
+-- Keeps a fresh directory in the sidebar until a task or session names it.
+CREATE TABLE IF NOT EXISTS created_projects (
+    project    TEXT PRIMARY KEY,
+    path       TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL,

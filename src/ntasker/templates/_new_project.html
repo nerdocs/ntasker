@@ -1,0 +1,75 @@
+{# New-project modal -- creates <projects_base>/<folder>/<name> and puts #}
+{# the project into a sidebar group. Folder and group are asked for every #}
+{# time; state lives in `newProject` (see openNewProject in app.js).      #}
+<div class="modal modal-blur fade" tabindex="-1" x-show="newProject" x-cloak
+     :class="newProject ? 'show d-block' : ''"
+     :style="newProject ? 'background-color: rgba(0,0,0,0.4)' : ''"
+     @keydown.escape.window="closeNewProject()">
+    <div class="modal-dialog" role="document" x-show="newProject" @click.outside="closeNewProject()">
+        <template x-if="newProject">
+        <form class="modal-content" @submit.prevent="submitNewProject()">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="ti ti-folder-plus me-1"></i>
+                    <span x-text="$i18n('new_project')"></span>
+                </h5>
+                <button type="button" class="btn-close" @click="closeNewProject()" :aria-label="$i18n('close')"></button>
+            </div>
+            <div class="modal-body">
+                <template x-if="!newProjectOptions.base">
+                    <div class="alert alert-warning mb-3" x-text="$i18n('new_project_no_base')"></div>
+                </template>
+                <div class="mb-3">
+                    <label class="form-label required" for="new-project-name" x-text="$i18n('new_project_name')"></label>
+                    <input type="text" id="new-project-name" class="form-control" x-model="newProject.name"
+                           x-init="$nextTick(() => $el.focus())" autocomplete="off"
+                           :placeholder="$i18n('new_project_name_placeholder')">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label required" for="new-project-folder" x-text="$i18n('new_project_folder')"></label>
+                    <input type="text" id="new-project-folder" class="form-control" x-model="newProject.folder"
+                           list="new-project-folders" autocomplete="off"
+                           :placeholder="$i18n('new_project_folder_placeholder')">
+                    <datalist id="new-project-folders">
+                        <template x-for="f in newProjectOptions.folders" :key="f">
+                            <option :value="f"></option>
+                        </template>
+                    </datalist>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label required" for="new-project-group" x-text="$i18n('new_project_group')"></label>
+                    <input type="text" id="new-project-group" class="form-control" x-model="newProject.group"
+                           list="new-project-groups" autocomplete="off"
+                           :placeholder="$i18n('new_project_group_placeholder')">
+                    <datalist id="new-project-groups">
+                        <template x-for="g in newProjectOptions.groups" :key="g">
+                            <option :value="g"></option>
+                        </template>
+                    </datalist>
+                </div>
+                <label class="form-check mb-2">
+                    <input type="checkbox" class="form-check-input" x-model="newProject.gitInit">
+                    <span class="form-check-label" x-text="$i18n('new_project_git_init')"></span>
+                </label>
+                <template x-if="agentAvailable(defaultAgent)">
+                    <label class="form-check mb-2">
+                        <input type="checkbox" class="form-check-input" x-model="newProject.startAgent">
+                        <span class="form-check-label" x-text="$i18n('new_project_start_agent')"></span>
+                    </label>
+                </template>
+                <div class="text-secondary small mt-3" x-show="newProjectPath">
+                    <i class="ti ti-folder me-1"></i><span class="font-monospace" x-text="newProjectPath"></span>
+                </div>
+                <div class="alert alert-danger mt-3 mb-0" x-show="newProject.error" x-text="newProject.error"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-ghost-secondary" @click="closeNewProject()" x-text="$i18n('cancel')"></button>
+                <button type="submit" class="btn btn-primary" :disabled="!newProjectValid || newProjectBusy">
+                    <i class="ti ti-folder-plus me-1"></i>
+                    <span x-text="$i18n('new_project_create')"></span>
+                </button>
+            </div>
+        </form>
+        </template>
+    </div>
+</div>

@@ -7,14 +7,15 @@ This page explains both layers and how they interact.
 
 ## Layer 1: project names
 
-A project name comes from one of two sources, and both are directory names:
+A project name comes from one of three sources, and all are directory names:
 
 | Source | Where the name comes from |
 |---|---|
 | Tasks | `tasks.project` -- whatever was typed or passed when the task was created. |
 | Claude projects | Folders under `~/.claude/projects`, i.e. every directory an agent session was started in. |
+| Created projects | Directories made by the [New-project dialog](#new-project), recorded in the `created_projects` table and shown while the directory still exists. |
 
-`GET /api/projects` returns the union of both, sorted case-insensitively, with
+`GET /api/projects` returns the union of all three, sorted case-insensitively, with
 the cross-project sentinel `__none__` first. Discovered folder names are
 relativized against the `projects_base` setting when set (`~/Projekte/thrito`
 becomes `thrito`), otherwise against the home directory. A task-derived name
@@ -24,6 +25,21 @@ the folder exists.
 The name is therefore *the* identity: it is what the `project=` filter matches,
 what a task stores, and what an agent session's working directory resolves to
 when a task is run. Nothing in the family layer ever changes it.
+
+A created project also counts as a known project when an adopted session's working directory is filed, so
+`<base>/Group/name/src` is filed under `Group/name`, not `Group`.
+
+## New project
+
+The folder-plus button in the Projects header opens a dialog that creates a project on disk. It asks for the project
+name, the sub-folder under the projects base (the `projects_base` setting, required) and the sidebar group; optionally
+it runs `git init` and starts an agent right away. The directory is `<projects_base>/<folder>/<name>`, the project is
+added to the `project_groups` setting, and afterwards the sidebar filters to the new project.
+
+## Project search
+
+The search field above the project tree filters by project name or family/group. It includes empty projects regardless
+of the "Empty" switch, hides hidden projects unless they are shown, and unfolds matching families. Escape clears it.
 
 ## Layer 2: families
 

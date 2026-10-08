@@ -13,6 +13,8 @@ Interactive OpenAPI docs: <http://127.0.0.1:8766/api/docs>
 | GET | `/settings` | The settings UI |
 | GET | `/api/changes` | Cheap change token (`{v}` = DB file mtime in ns). The UI polls it and refetches only when it changed, so CLI/API writes surface live. See [live-updates.md](live-updates.md). |
 | GET | `/api/projects` | `[{name, open_count}]`, `__none__` first; sets `X-Settings-Missing: projects_dir` if unconfigured |
+| GET | `/api/projects/folders` | `{base, folders, groups}` -- the feed for the New-project dialog ([projects.md](projects.md#new-project)) |
+| POST | `/api/projects/create` | `{name, folder, group, git_init}` -> 201 `{project, path, group, git, git_error}`; 400 on a missing projects base, unsafe name or folder, or empty group; 409 when the directory exists |
 | GET | `/api/tags` | `[{name, open_count}]`, sorted by `open_count DESC, name ASC` |
 | POST | `/api/tags/cleanup` | Delete dangling tags (no `task_tags` row). Returns `{removed, removed_names}`. Idempotent. |
 | GET | `/api/phases` | `[{value, label, open_count}]`, fixed workflow order: `wip`, `planned`, `later`, `__none__` |
@@ -40,7 +42,7 @@ Interactive OpenAPI docs: <http://127.0.0.1:8766/api/docs>
 | GET | `/api/plugins` | Built-in plugins + `enabled` flag; toggle via `PUT /api/settings/plugins_disabled` / `plugins_enabled` |
 | WS | `/api/voice/ws` | Voice plugin: 16 kHz PCM in, `partial` / `final` text out ([voice.md](voice.md)) |
 | GET/POST | `/api/voice/models[/{name}\|/job]` | Voice plugin: installed models + catalog, background model download |
-| GET | `/api/tasks/{id}/conversation` | `{supported, available, turns[], usage, updated}` -- the run's prompt/answer turns from the session transcript ([claude-runs.md](claude-runs.md#the-run-view----conversation-terminal-split)) |
+| GET | `/api/tasks/{id}/conversation` | `{supported, available, turns[], usage, blocker, updated}` -- the run's prompt/answer turns from the session transcript; `blocker` is `{kind, text, at}` (kind = `limit` \| `auth` \| `billing` \| `error`) or null ([claude-runs.md](claude-runs.md#the-run-view----conversation-terminal-split)) |
 | GET/POST/DELETE | `/api/tasks/{id}/context[/{cid}]` | Attachments ([task-context.md](task-context.md)) |
 | GET/PUT/POST | `/api/workspace[/file\|browse\|entry\|rename\|delete\|reveal]` | Workspace ([workspace.md](workspace.md)) |
 | GET | `/api/claude-assets/status` | Read-only: `{installed, drift, package_version, claude_home, files[]}` |

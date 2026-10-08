@@ -51,7 +51,8 @@ working in manual terminal sessions.
    middle-click paste the clipboard; `Ctrl-C` with a selection keeps it instead of interrupting. An image -- pasted
    with `Ctrl-V` or dragged onto the terminal -- is saved to a temp file and its path typed into the prompt, so the
    agent can read it.
-3. **Stop** terminates the session (kills the process group). **Back** returns to the list/kanban.
+3. **Pause** ends the session resumably (kills the process group); the task stays in the queue and the session can be
+   resumed from there (Claude) or started over. **Back** returns to the list/kanban.
 
 Another agent already live in the same project? The run simply waits in the queue behind it -- the worker runs one
 session per project. The board damps such tasks and their tooltip says so. Work spanning several repos takes
@@ -121,7 +122,7 @@ its own indicator.
 
 ntasker ends a session on its own in exactly one case: the task being set to `done`. Everything else -- the agent's
 review hand-off, moving a task around the board, deleting it -- leaves the session alone; it ends when its process
-exits or you press **Stop**. Before it hands off, the agent writes its **final report**
+exits or you press **Pause**. Before it hands off, the agent writes its **final report**
 (`ntasker report <id>`) -- read it via the report icon on the card, no need to reopen the session. See
 [task-queue.md](task-queue.md).
 
@@ -281,6 +282,15 @@ board's running cards show the agent's current step from the same source.
 Parsing (`src/ntasker/transcript.py`) happens on the server per poll (`GET /api/tasks/<id>/conversation`, every
 2.5 s while the pane is on screen); an unchanged file is answered from a small in-process cache keyed on its mtime
 and size.
+
+The report gets its own pane beside the conversation, with a header carrying **Mark done**, a close button and the
+time the report was written. It opens by itself when the report is written or rewritten while the tab is open;
+closing it sticks until the report changes. A stale hint appears when you sent a further prompt after the report was
+written.
+
+An API failure in the transcript (`isApiErrorMessage`) is shown as a blocker card instead of an answer. The kinds are
+usage limit, not logged in, billing and API unreachable; each card carries a hint on what to do and a button that
+opens the terminal.
 
 ## Quick prompts
 

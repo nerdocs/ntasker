@@ -49,8 +49,9 @@ working in manual terminal sessions.
 2. Work interactively, exactly as in a terminal: read Claude's output, answer its questions, approve or deny its
    permission prompts, type follow-ups, `Ctrl-C` to interrupt. Clipboard: selecting text copies it; `Ctrl-V` and
    middle-click paste the clipboard; `Ctrl-C` with a selection keeps it instead of interrupting. An image -- pasted
-   with `Ctrl-V` or dragged onto the terminal -- is saved to a temp file and its path typed into the prompt, so the
-   agent can read it.
+   with `Ctrl-V` or dragged onto the terminal -- is saved to a temp file and its path pasted into the prompt (as a
+   bracketed paste, like a real terminal's drag-drop), so the agent attaches it as an image: Claude Code and OpenCode
+   show `[Image #N]`; pi keeps the path as text and reads the file itself.
 3. **Pause** ends the session resumably (kills the process group); the task stays in the queue and the session can be
    resumed from there (Claude) or started over. **Back** returns to the list/kanban.
 
@@ -276,8 +277,10 @@ Code's format; `AgentSpec.transcript` says whether an agent writes one) and fold
 agent's final answer, the progress notes and tool calls behind it, and the tokens it used. The queue seed shows as a
 task card with the tracker rules cut off; the report closes the conversation as its result card. While the session
 waits for you, the pane answers for the terminal: a permission dialog gets *Allow* / *Deny*, a single-choice question
-its options, and the reply box sends a prompt -- all of it typed into the PTY exactly as the terminal would. The
-board's running cards show the agent's current step from the same source.
+its options, and the reply box sends a prompt -- all of it typed into the PTY exactly as the terminal would. Images
+pasted (`Ctrl-V`) or dropped onto the reply box wait there as removable thumbnails; *Send* / `Enter` ships them like a
+terminal drop (see above) ahead of the text. The board's running cards show the agent's current step from the same
+source.
 
 Parsing (`src/ntasker/transcript.py`) happens on the server per poll (`GET /api/tasks/<id>/conversation`, every
 2.5 s while the pane is on screen); an unchanged file is answered from a small in-process cache keyed on its mtime

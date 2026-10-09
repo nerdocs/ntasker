@@ -180,6 +180,9 @@ RUN_RULES_DEFAULT = """\
   Then stop and wait. This session stays open; the user reviews the
   task here and closes it. The next queued task in this project only
   starts once this task is done -- so never finish on a guess.
+- If the user asks for more after the hand-over, do it, then run the
+  same `ntasker finish {id}` command again with the report rewritten
+  to cover that work too -- the user reads the report, not the chat.
 - If you cannot finish (blocker, missing info, a decision only the
   user can make): `ntasker finish {id} --status failed` (or
   `--status blocked` when the blocker is outside this task) with the

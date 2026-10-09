@@ -248,15 +248,34 @@
         </template>
     </div>
 
-    {# Reply: typed into the live session like a quick prompt. #}
+    {# Reply: typed into the live session like a quick prompt. Images can be #}
+    {# pasted (Ctrl+V) or dropped onto it; they wait as thumbnails until sent. #}
     <template x-if="activeTab && activeTab?.status !== 'exited'">
-        <form class="d-flex gap-2 px-3 py-2 border-top" @submit.prevent="sendConvReply()">
-            <textarea class="form-control" rows="1" x-model="convReply"
-                      :placeholder="$i18n('conv_reply_placeholder')"
-                      @keydown.enter="if (!$event.shiftKey && !$event.isComposing) { $event.preventDefault(); sendConvReply(); }"></textarea>
-            <button type="submit" class="btn btn-primary" :disabled="!convReply.trim()">
-                <i class="ti ti-send me-1"></i><span x-text="$i18n('conv_send')"></span>
-            </button>
+        <form class="conv-reply px-3 py-2 border-top position-relative" :class="convDragOver && 'conv-drag-over'"
+              @submit.prevent="sendConvReply()"
+              @dragover.prevent="convDragOver = true" @dragleave.self="convDragOver = false"
+              @drop.prevent="onConvDrop($event)">
+            <div class="d-flex flex-wrap gap-2 mb-2" x-show="convImages.length">
+                <template x-for="(img, i) in convImages" :key="img.url">
+                    <div class="conv-thumb">
+                        <img :src="img.url" :alt="img.file.name">
+                        <button type="button" class="btn-close" :title="$i18n('conv_image_remove')"
+                                :aria-label="$i18n('conv_image_remove')" @click="removeConvImage(i)"></button>
+                    </div>
+                </template>
+            </div>
+            <div class="d-flex gap-2">
+                {# Plugin buttons left of the field (voice dictation; see ntasker/plugins). #}
+                {% for tpl in plugin_slots['conv_reply'] %}{% include tpl %}{% endfor %}
+                <textarea class="form-control" rows="1" x-model="convReply" x-ref="convReplyBox"
+                          x-effect="convReply; $nextTick(() => fitConvReply())"
+                          :placeholder="$i18n('conv_reply_placeholder')"
+                          @paste="onConvPaste($event)"
+                          @keydown.enter="if (!$event.shiftKey && !$event.isComposing) { $event.preventDefault(); sendConvReply(); }"></textarea>
+                <button type="submit" class="btn btn-primary" :disabled="!convReply.trim() && !convImages.length">
+                    <i class="ti ti-send me-1"></i><span x-text="$i18n('conv_send')"></span>
+                </button>
+            </div>
         </form>
     </template>
 </div>

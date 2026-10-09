@@ -146,6 +146,15 @@
     background: var(--tblr-bg-surface);
     font-size: 0.8125rem;
 }
+/* Conversation reply line: same popover, but above the line -- the reply
+   sits at the bottom of the pane. Inset to the form's padding. */
+.voice-inbox-live.voice-conv-live {
+    top: auto;
+    bottom: 100%;
+    left: 1rem;
+    right: 1rem;
+    margin: 0 0 0.25rem;
+}
 /* One line only -- the popover must not grow over the board below it. */
 .voice-inbox-live .voice-text {
     white-space: nowrap;

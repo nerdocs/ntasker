@@ -631,12 +631,19 @@ def build_js_strings() -> dict[str, str]:
         "conv_collapse_all": _("Collapse all"),
         "conv_reply_placeholder": _("Reply to the agent ... (Enter sends, Shift+Enter new line)"),
         "conv_send": _("Send"),
+        "conv_image_remove": _("Remove image"),
         "conv_views": _("Run views"),
         "conv_terminal": _("Terminal"),
         "conv_report_side": _("Show the report beside the current view"),
         "conv_report": _("Report"),
         "conv_report_stale": _(
             "The conversation went on after this report -- it may be out of date until the agent rewrites it."
+        ),
+        "conv_report_rewrite": _("Update report"),
+        "conv_report_rewrite_prompt": _(
+            "Rewrite the report for task #{id} so it covers everything done in this session up to now: "
+            "run `ntasker report {id}` with the full Markdown report on stdin. "
+            "Do not change the task's phase or status."
         ),
         # What stops the agent (the blocker card in the conversation)
         "conv_blocker_limit": _("Usage limit reached"),

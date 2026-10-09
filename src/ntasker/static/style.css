@@ -701,6 +701,17 @@ body {
     margin-left: 0.5rem;
 }
 
+/* The active run's project + task title above the view switch. */
+.claude-run-project {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--tblr-primary);
+}
+.claude-run-heading h2 {
+    font-size: 1.5rem;
+    min-width: 0;
+}
+
 /* Conversation pane in the run view (replaces the terminal): one card per
  * turn, prompt and answer each behind a clickable header. */
 .claude-conv-page {
@@ -889,6 +900,32 @@ span.task-activity {
 .claude-terminal.term-drag-over {
     outline: 2px dashed var(--tblr-primary);
     outline-offset: -4px;
+}
+
+/* Images pasted / dropped into the conversation's reply box (see
+ * addConvImages): small thumbnails with a remove button, plus the same
+ * drop highlight as the terminal. */
+.conv-reply.conv-drag-over {
+    outline: 2px dashed var(--tblr-primary);
+    outline-offset: -4px;
+}
+.conv-thumb {
+    position: relative;
+}
+.conv-thumb img {
+    height: 64px;
+    max-width: 128px;
+    object-fit: cover;
+    border: 1px solid var(--tblr-border-color);
+    border-radius: var(--tblr-border-radius);
+}
+.conv-thumb .btn-close {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    padding: 0.25rem;
+    background-color: var(--tblr-bg-surface);
+    border-radius: 50%;
 }
 
 /* Per-session tab strip in the run view (one tab per live session). Inactive

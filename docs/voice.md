@@ -87,6 +87,9 @@ The inbox field in the navbar (see [inbox.md](inbox.md)) has the same microphone
 left. The navbar has no room for a tray, so the button itself turns red while live and the meter plus hypothesis
 drop below the field; recognised text is appended to the field, Enter sends the note as usual.
 
+The reply line of a run's conversation view (see [claude-runs.md](claude-runs.md)) has the same button left of the field; the meter
+and hypothesis show above the line. Recognised text is appended to the reply, which is sent with Enter or *Send*.
+
 ### Spoken punctuation
 
 Applies to Vosk models only -- Whisper punctuates by itself. Vosk returns lowercase words without punctuation, so marks

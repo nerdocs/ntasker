@@ -1992,6 +1992,16 @@
                             </template>
                         </ul>
                     </div>
+                    {# The active run's project and task as the page heading. #}
+                    <template x-if="runTask">
+                        <div class="claude-run-heading d-flex align-items-baseline gap-2 mb-2 flex-wrap">
+                            <template x-if="runTask.project">
+                                <span class="claude-run-project" x-text="runTask.project"></span>
+                            </template>
+                            <h2 class="mb-0"><span class="font-monospace text-secondary me-2" x-text="`#${runTask.id}`"></span><span
+                                    x-text="runTask.title"></span></h2>
+                        </div>
+                    </template>
                     {# Header row 2: the view switch (conversation / terminal / diff, plus #}
                     {# the report as a side pane) on the left, the run's actions on the right. #}
                     <template x-if="activeTab">
@@ -2096,6 +2106,11 @@
                                     <template x-if="runReportStale">
                                         <div class="claude-report-stale px-3 py-2 border-bottom small">
                                             <i class="ti ti-history me-1"></i><span x-text="$i18n('conv_report_stale')"></span>
+                                            <template x-if="activeTab && activeTab?.status !== 'exited'">
+                                                <button type="button" class="btn btn-sm btn-outline-orange ms-1" @click="requestReportRewrite()">
+                                                    <i class="ti ti-refresh me-1"></i><span x-text="$i18n('conv_report_rewrite')"></span>
+                                                </button>
+                                            </template>
                                         </div>
                                     </template>
                                     <div class="card-body overflow-auto" style="min-height: 0">

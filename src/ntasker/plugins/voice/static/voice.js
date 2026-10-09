@@ -5,7 +5,7 @@
 // WebSocket to /api/voice/ws; the server answers with a grey, revisable
 // `partial` hypothesis and a `final` text at each pause, which is appended
 // to the target field ('form' = create form, 'edit' = modal, 'inbox' = the
-// idea capture in the navbar).
+// idea capture in the navbar, 'conv' = the reply line of the conversation).
 
 (function () {
     'use strict';
@@ -100,9 +100,11 @@
             },
 
             // The field the dictation writes into: the inbox capture in the
-            // navbar, or the description of the create form / edit modal.
+            // navbar, the conversation reply, or the description of the
+            // create form / edit modal.
             voiceField() {
                 if (this.voice.target === 'inbox') return { obj: this, key: 'inboxText' };
+                if (this.voice.target === 'conv') return { obj: this, key: 'convReply' };
                 const obj = this.voice.target === 'edit' ? this.editing : this.form;
                 return obj ? { obj, key: 'description' } : null;
             },

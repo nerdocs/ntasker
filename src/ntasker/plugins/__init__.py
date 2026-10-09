@@ -66,6 +66,7 @@ SLOTS: tuple[str, ...] = (
     "head",  # index.html <head>: extra <link>/<script>
     "topbar",  # index.html navbar: between the inbox field and the icon bar
     "inbox_capture",  # index.html navbar: inside the inbox field's input group, left of it
+    "conv_reply",  # _conversation.html: reply line of the run view, left of the field
     "sidebar",  # index.html: below the tags section
     "task_form",  # index.html: create form, after the description
     "task_edit",  # index.html: edit modal, after the description

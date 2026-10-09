@@ -1,0 +1,25 @@
+{# Dictation for the reply line of the conversation view. Like the inbox: no #}
+{# tray, a plain button left of the field; the live hypothesis floats above it. #}
+<button type="button" class="btn voice-mic-inbox"
+        :class="{ 'is-live': voice.active && voice.target === 'conv' }"
+        :title="voice.active && voice.target === 'conv' ? $i18n('voice_stop') : $i18n('voice_hint')"
+        :aria-label="$i18n('voice_dictate')"
+        :aria-pressed="voice.active && voice.target === 'conv'"
+        @pointerdown.prevent="voiceDown('conv')"
+        @pointerup="voiceUp()"
+        @pointercancel="voiceUp()"
+        @keydown.enter.prevent="voiceToggle('conv')"
+        @keydown.space.prevent="voiceToggle('conv')">
+    <i class="ti ti-microphone"></i>
+</button>
+<template x-if="voice.active && voice.target === 'conv'">
+    <div class="voice-inbox-live voice-conv-live">
+        <div class="voice-wave" aria-hidden="true">
+            <template x-for="(level, i) in voice.bars" :key="i">
+                <span :style="`height:${8 + Math.round(level * 92)}%`"></span>
+            </template>
+        </div>
+        <span class="voice-text" x-text="voice.status || voice.partial || $i18n('voice_listening')"
+              :class="{ 'is-status': voice.status }"></span>
+    </div>
+</template>

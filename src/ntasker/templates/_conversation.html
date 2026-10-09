@@ -250,7 +250,9 @@
 
     {# Reply: typed into the live session like a quick prompt. #}
     <template x-if="activeTab && activeTab?.status !== 'exited'">
-        <form class="d-flex gap-2 px-3 py-2 border-top" @submit.prevent="sendConvReply()">
+        <form class="d-flex gap-2 px-3 py-2 border-top position-relative" @submit.prevent="sendConvReply()">
+            {# Plugin buttons left of the field (voice dictation; see ntasker/plugins). #}
+            {% for tpl in plugin_slots['conv_reply'] %}{% include tpl %}{% endfor %}
             <textarea class="form-control" rows="1" x-model="convReply"
                       :placeholder="$i18n('conv_reply_placeholder')"
                       @keydown.enter="if (!$event.shiftKey && !$event.isComposing) { $event.preventDefault(); sendConvReply(); }"></textarea>

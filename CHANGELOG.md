@@ -4,7 +4,7 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
-## [Unreleased]
+## [3.13.0] — 2026-10-09
 Runs: conversation view -- a run tab shows prompt/answer turns from the transcript, with reply box, steps and tokens.
 Runs: the report sits in a pane beside the conversation, reloads live and says when the conversation went on after it.
 Runs: a blocker card in the conversation when the agent cannot work (usage limit, login, billing, API unreachable).

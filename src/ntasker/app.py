@@ -631,6 +631,7 @@ def build_js_strings() -> dict[str, str]:
         "conv_collapse_all": _("Collapse all"),
         "conv_reply_placeholder": _("Reply to the agent ... (Enter sends, Shift+Enter new line)"),
         "conv_send": _("Send"),
+        "conv_image_remove": _("Remove image"),
         "conv_views": _("Run views"),
         "conv_terminal": _("Terminal"),
         "conv_report_side": _("Show the report beside the current view"),

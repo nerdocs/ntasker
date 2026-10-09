@@ -53,6 +53,16 @@ const RUN_PANE_WIDTH_DEFAULT = 480;
 const RUN_PANE_WIDTH_MIN = 260;
 const RUN_PANE_WIDTH_MAX = 1400;
 
+// Read a File as base64 (no data: URL prefix), for a websocket `file` message.
+function _fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result).split(',', 2)[1] || '');
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+    });
+}
+
 function clampRunPaneWidth(raw) {
     const n = Number.parseInt(raw, 10);
     if (Number.isNaN(n)) return RUN_PANE_WIDTH_DEFAULT;
@@ -449,6 +459,10 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         convTurns: [],
         convOpen: {},
         convReply: '',
+        // Images pasted / dropped into the reply box, shown as thumbnails until
+        // the reply is sent ({file, url} -- url is an object URL for the <img>).
+        convImages: [],
+        convDragOver: false,
         convUsage: null,
         // What stops the session right now ({kind, text, at}: usage limit, not
         // logged in, API unreachable ...) -- the last turn's blocker, or null.
@@ -3933,7 +3947,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         },
 
         // Ship files to the PTY: base64 each one as a `file` message; the server
-        // saves it and types the saved path into the terminal. Oversized files
+        // saves it and pastes the saved path into the terminal. Oversized files
         // are refused with a toast (the server caps them too).
         _uploadToPty(files, ws) {
             const MAX = 25 * 1024 * 1024;   // keep in sync with MAX_UPLOAD_BYTES
@@ -4314,10 +4328,66 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         },
 
         // The pane's reply box: typed into the live session like a quick prompt.
-        sendConvReply() {
+        // Images go first: each is shipped like a file dropped onto the
+        // terminal (the server saves it and types its path into the input
+        // line), then the text follows and Enter submits both together.
+        async sendConvReply() {
             const text = this.convReply.trim();
-            if (!text) return;
-            if (this.sendQuickPrompt(text)) this.convReply = '';
+            const images = this.convImages;
+            if (!text && !images.length) return;
+            const s = _claudeTerms.get(this.claudeView);
+            if (!s || s.ws.readyState !== WebSocket.OPEN) return;
+            if (images.length) {
+                const payloads = await Promise.all(images.map(img => _fileToBase64(img.file)));
+                if (s.ws.readyState !== WebSocket.OPEN) return;
+                images.forEach((img, i) => {
+                    s.ws.send(JSON.stringify({ type: 'file', name: img.file.name || 'image.png', data: payloads[i] }));
+                });
+            }
+            if (this.sendQuickPrompt(text)) {
+                this.convReply = '';
+                this.clearConvImages();
+            }
+        },
+
+        // Queue pasted / dropped image files as thumbnails below the reply box.
+        // Non-images are ignored; oversized ones are refused with a toast.
+        addConvImages(files) {
+            const MAX = 25 * 1024 * 1024;   // keep in sync with MAX_UPLOAD_BYTES
+            for (const file of files) {
+                if (!file.type.startsWith('image/')) continue;
+                if (file.size > MAX) {
+                    this.showToast(_i('claude_file_too_large'), 'danger');
+                    continue;
+                }
+                this.convImages.push({ file, url: URL.createObjectURL(file) });
+            }
+        },
+
+        removeConvImage(i) {
+            URL.revokeObjectURL(this.convImages[i].url);
+            this.convImages.splice(i, 1);
+        },
+
+        clearConvImages() {
+            this.convImages.forEach(img => URL.revokeObjectURL(img.url));
+            this.convImages = [];
+        },
+
+        // Ctrl+V in the reply box: take the clipboard's images; a text paste
+        // is left to the textarea.
+        onConvPaste(e) {
+            const files = e.clipboardData
+                ? Array.from(e.clipboardData.files).filter(f => f.type.startsWith('image/'))
+                : [];
+            if (!files.length) return;
+            e.preventDefault();
+            this.addConvImages(files);
+        },
+
+        onConvDrop(e) {
+            this.convDragOver = false;
+            this.addConvImages(e.dataTransfer ? Array.from(e.dataTransfer.files) : []);
         },
 
         // Ask the server to terminate the active session (kills the process group).

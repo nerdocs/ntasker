@@ -896,7 +896,7 @@ def _b64(data: bytes) -> str:
 # screenshot/image, small enough to reject an accidental multi-GB drop.
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 
-# Where drag-dropped files land before their path is typed into the PTY. One
+# Where drag-dropped files land before their path is pasted into the PTY. One
 # dir for the whole app; unique names avoid collisions. Cleared by the OS on
 # reboot like any temp dir -- we don't own the files' lifecycle once the agent
 # has read them.
@@ -906,7 +906,7 @@ _UPLOAD_DIR = Path(tempfile.gettempdir()) / "ntasker-uploads"
 def _save_upload(name: str, data: bytes) -> str:
     """Write a drag-dropped file to a temp dir and return its absolute path.
 
-    The returned path is what gets typed into the PTY -- mirroring a real
+    The returned path is what gets pasted into the PTY -- mirroring a real
     terminal, where dragging a file inserts its path. The agent then reads the
     file (e.g. attaches an image) from that path. ``name`` is reduced to a bare
     basename so a crafted value cannot escape the upload dir.
@@ -934,7 +934,7 @@ async def serve(websocket: WebSocket, task_id: int) -> None:
       stored session id. No live session and no ``resume`` -> ``error``.
     * client -> ``{"type":"input", "data"}`` (keystrokes, written to the PTY)
     * client -> ``{"type":"file", "name", "data"}`` (base64 file bytes; saved to
-      a temp file whose path is typed into the PTY -- like a terminal drag-drop)
+      a temp file whose path is pasted into the PTY -- like a terminal drag-drop)
     * client -> ``{"type":"resize", "rows", "cols"}``
     * client -> ``{"type":"stop"}``
     * server -> ``{"type":"output", "data"}`` (base64 PTY bytes)
@@ -993,10 +993,13 @@ async def serve(websocket: WebSocket, task_id: int) -> None:
                 with contextlib.suppress(OSError):
                     os.write(sess.master_fd, str(msg.get("data", "")).encode("utf-8", "ignore"))
             elif kind == "file" and sess.alive:
-                # A file dropped onto the terminal: decode, cap, save, then type
-                # its quoted path (+ trailing space) into the PTY -- exactly what
-                # a real terminal does on drag-drop. Invalid/oversized payloads
-                # are dropped silently (the client guards size and toasts).
+                # A file dropped onto the terminal: decode, cap, save, then paste
+                # its quoted path (+ trailing space) into the PTY as a bracketed
+                # paste -- exactly what a real terminal does on drag-drop. The
+                # bracket matters: only a *pasted* image path is attached as an
+                # image by the agent (Claude Code shows "[Image #N]"); a typed
+                # one stays plain text. Invalid/oversized payloads are dropped
+                # silently (the client guards size and toasts).
                 try:
                     blob = base64.b64decode(str(msg.get("data", "")), validate=True)
                 except (ValueError, binascii.Error):
@@ -1005,7 +1008,7 @@ async def serve(websocket: WebSocket, task_id: int) -> None:
                     continue
                 path = _save_upload(str(msg.get("name", "")), blob)
                 with contextlib.suppress(OSError):
-                    os.write(sess.master_fd, (shlex.quote(path) + " ").encode("utf-8"))
+                    os.write(sess.master_fd, f"\x1b[200~{shlex.quote(path)} \x1b[201~".encode("utf-8"))
             elif kind == "resize":
                 _resize(sess, msg.get("rows", 24), msg.get("cols", 80))
             elif kind == "stop":

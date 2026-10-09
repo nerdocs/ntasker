@@ -923,6 +923,32 @@ def _save_upload(name: str, data: bytes) -> str:
 # ---------------------------------------------------------------------------
 
 
+PTY_WRITE_TIMEOUT_SECONDS = 10.0
+
+
+async def _write_pty(sess: TermSession, data: bytes) -> None:
+    """Write all of ``data`` to the session's PTY.
+
+    The master is non-blocking and a PTY's input queue is small (about 1 KB on
+    macOS), so one ``os.write`` takes only the head of a longer paste. Losing
+    the tail drops the bracketed-paste end marker: the agent then stays in
+    paste mode and swallows the Enter that follows. Wait for the agent to
+    drain the queue and write the rest; give up when it stops reading.
+    """
+    deadline = time.monotonic() + PTY_WRITE_TIMEOUT_SECONDS
+    view = memoryview(data)
+    while view and sess.alive and time.monotonic() < deadline:
+        try:
+            written = os.write(sess.master_fd, view)
+        except BlockingIOError:
+            written = 0
+        except OSError:
+            return
+        view = view[written:]
+        if view:
+            await asyncio.sleep(0.005)
+
+
 async def serve(websocket: WebSocket, task_id: int) -> None:
     """Bridge an accepted WebSocket to task ``task_id``'s PTY session.
 
@@ -990,8 +1016,7 @@ async def serve(websocket: WebSocket, task_id: int) -> None:
             msg = await websocket.receive_json()
             kind = msg.get("type")
             if kind == "input" and sess.alive:
-                with contextlib.suppress(OSError):
-                    os.write(sess.master_fd, str(msg.get("data", "")).encode("utf-8", "ignore"))
+                await _write_pty(sess, str(msg.get("data", "")).encode("utf-8", "ignore"))
             elif kind == "file" and sess.alive:
                 # A file dropped onto the terminal: decode, cap, save, then paste
                 # its quoted path (+ trailing space) into the PTY as a bracketed
@@ -1007,8 +1032,7 @@ async def serve(websocket: WebSocket, task_id: int) -> None:
                 if not blob or len(blob) > MAX_UPLOAD_BYTES:
                     continue
                 path = _save_upload(str(msg.get("name", "")), blob)
-                with contextlib.suppress(OSError):
-                    os.write(sess.master_fd, f"\x1b[200~{shlex.quote(path)} \x1b[201~".encode("utf-8"))
+                await _write_pty(sess, f"\x1b[200~{shlex.quote(path)} \x1b[201~".encode("utf-8"))
             elif kind == "resize":
                 _resize(sess, msg.get("rows", 24), msg.get("cols", 80))
             elif kind == "stop":

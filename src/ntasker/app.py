@@ -639,6 +639,12 @@ def build_js_strings() -> dict[str, str]:
         "conv_report_stale": _(
             "The conversation went on after this report -- it may be out of date until the agent rewrites it."
         ),
+        "conv_report_rewrite": _("Update report"),
+        "conv_report_rewrite_prompt": _(
+            "Rewrite the report for task #{id} so it covers everything done in this session up to now: "
+            "run `ntasker report {id}` with the full Markdown report on stdin. "
+            "Do not change the task's phase or status."
+        ),
         # What stops the agent (the blocker card in the conversation)
         "conv_blocker_limit": _("Usage limit reached"),
         "conv_blocker_limit_hint": _(

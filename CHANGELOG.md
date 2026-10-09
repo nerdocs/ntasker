@@ -4,6 +4,12 @@ All notable changes to ntasker.
 
 Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
+## [Unreleased]
+Runs: the run view shows the project and the task's id and title as a heading.
+Runs: the stale-report notice has an *Update report* button that asks the agent to rewrite the report; the run rules tell it to finish again after follow-up work.
+Runs: the reply box grows with its text.
+Fix: long input reaches the agent whole -- a paste beyond the PTY's input queue (about 1 KB on macOS) lost its tail, so the following Enter was swallowed.
+
 ## [3.13.0] — 2026-10-09
 Runs: conversation view -- a run tab shows prompt/answer turns from the transcript, with reply box, steps and tokens.
 Runs: the report sits in a pane beside the conversation, reloads live and says when the conversation went on after it.

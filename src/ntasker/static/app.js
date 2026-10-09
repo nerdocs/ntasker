@@ -4390,6 +4390,15 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             this.addConvImages(e.dataTransfer ? Array.from(e.dataTransfer.files) : []);
         },
 
+        // Grow the reply box with its text (up to the CSS max-height), so a
+        // pasted or dictated block shows instead of scrolling out of view.
+        fitConvReply() {
+            const el = this.$refs.convReplyBox;
+            if (!el) return;
+            el.style.height = 'auto';
+            if (this.convReply) el.style.height = `${el.scrollHeight + 2}px`;
+        },
+
         // Ask the server to terminate the active session (kills the process group).
         stopClaudeRun() {
             const s = _claudeTerms.get(this.claudeView);
@@ -4446,6 +4455,12 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             const last = this.convTurns[this.convTurns.length - 1];
             const asked = last && this._toDate(last.prompt_at);
             return !!(written && asked && asked > written);
+        },
+
+        // The stale banner's button: ask the agent in the live session to
+        // rewrite the report; the poll picks the new one up.
+        requestReportRewrite() {
+            this.sendQuickPrompt(_i('conv_report_rewrite_prompt', { id: this.claudeView }));
         },
 
         // The report button: split the tab (terminal left, report right).

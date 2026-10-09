@@ -703,6 +703,16 @@ body {
 
 /* Conversation pane in the run view (replaces the terminal): one card per
  * turn, prompt and answer each behind a clickable header. */
+/* The active run's project + task title above the view switch. */
+.claude-run-project {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--tblr-primary);
+}
+.claude-run-heading h2 {
+    font-size: 1.5rem;
+    min-width: 0;
+}
 .claude-conv-page {
     min-height: 0;
     min-width: 0;

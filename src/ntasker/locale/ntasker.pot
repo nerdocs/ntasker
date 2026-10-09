@@ -620,7 +620,18 @@ msgid ""
 " the agent rewrites it."
 msgstr ""
 
-#: src/ntasker/app.py:643
+#: src/ntasker/app.py
+msgid "Update report"
+msgstr ""
+
+#, python-brace-format
+msgid ""
+"Rewrite the report for task #{id} so it covers everything done in this "
+"session up to now: run `ntasker report {id}` with the full Markdown report "
+"on stdin. Do not change the task's phase or status."
+msgstr ""
+
+#: src/ntasker/app.py:642
 msgid "Usage limit reached"
 msgstr ""
 

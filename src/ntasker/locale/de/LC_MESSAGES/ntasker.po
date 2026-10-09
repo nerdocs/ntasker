@@ -651,7 +651,22 @@ msgstr ""
 "Das Gespräch ging nach diesem Bericht weiter -- er kann veraltet sein, "
 "bis der Agent ihn neu schreibt."
 
-#: src/ntasker/app.py:643
+#: src/ntasker/app.py
+msgid "Update report"
+msgstr "Bericht aktualisieren"
+
+#, python-brace-format
+msgid ""
+"Rewrite the report for task #{id} so it covers everything done in this "
+"session up to now: run `ntasker report {id}` with the full Markdown report "
+"on stdin. Do not change the task's phase or status."
+msgstr ""
+"Schreibe den Bericht für Task #{id} neu, sodass er alles abdeckt, was in "
+"dieser Session bisher erledigt wurde: Führe `ntasker report {id}` aus und "
+"übergib den vollständigen Markdown-Bericht über stdin. Ändere weder Phase "
+"noch Status des Tasks."
+
+#: src/ntasker/app.py:642
 msgid "Usage limit reached"
 msgstr "Nutzungslimit erreicht"
 

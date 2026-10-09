@@ -267,7 +267,8 @@
             <div class="d-flex gap-2">
                 {# Plugin buttons left of the field (voice dictation; see ntasker/plugins). #}
                 {% for tpl in plugin_slots['conv_reply'] %}{% include tpl %}{% endfor %}
-                <textarea class="form-control" rows="1" x-model="convReply"
+                <textarea class="form-control" rows="1" x-model="convReply" x-ref="convReplyBox"
+                          x-effect="convReply; $nextTick(() => fitConvReply())"
                           :placeholder="$i18n('conv_reply_placeholder')"
                           @paste="onConvPaste($event)"
                           @keydown.enter="if (!$event.shiftKey && !$event.isComposing) { $event.preventDefault(); sendConvReply(); }"></textarea>

@@ -1920,6 +1920,68 @@ def cmd_hook_clear(args: argparse.Namespace) -> int:
     return 0
 
 
+_STATUSLINE_COMMAND = "ntasker hook statusline"
+
+
+def _user_statusline(payload: dict) -> str | None:
+    """The statusline command the session would run without ntasker's, or ``None``.
+
+    ntasker's ``--settings`` file outranks the user's own settings, so its
+    ``statusLine`` hides theirs. Looked up like Claude Code does: local project
+    settings > project settings > user settings.
+    """
+    workspace = payload.get("workspace") if isinstance(payload.get("workspace"), dict) else {}
+    project = workspace.get("project_dir") or payload.get("cwd") or os.getcwd()
+    home = os.environ.get("CLAUDE_CONFIG_DIR") or resolve_home(AGENTS["claude"])
+    for path in (pathlib.Path(project) / ".claude" / "settings.local.json",
+                 pathlib.Path(project) / ".claude" / "settings.json",
+                 pathlib.Path(home) / "settings.json"):
+        try:
+            line = json.loads(path.read_text(encoding="utf-8")).get("statusLine")
+        except (OSError, ValueError, AttributeError):
+            continue
+        command = line.get("command") if isinstance(line, dict) else None
+        if command and _STATUSLINE_COMMAND not in command:
+            return command
+    return None
+
+
+def cmd_hook_statusline(args: argparse.Namespace) -> int:
+    """Statusline of a spawned session: report its context window size.
+
+    Claude Code hands the window size (``context_window.context_window_size``)
+    to the statusline only -- the transcript never holds it -- so ntasker
+    wires this as the session's statusline and tells the server, which sizes
+    the run view's context badge with it. Then the user's own statusline (see
+    :func:`_user_statusline`) runs on the same input and its output is passed
+    through, so the terminal looks as without ntasker.
+    """
+    import subprocess  # noqa: PLC0415
+
+    raw = sys.stdin.read()
+    try:
+        payload = json.loads(raw or "{}")
+    except ValueError:
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    window = payload.get("context_window")
+    size = window.get("context_window_size") if isinstance(window, dict) else None
+    task_id, base = os.environ.get("NTASKER_TASK_ID"), os.environ.get("NTASKER_URL")
+    if isinstance(size, int) and size > 0 and task_id and task_id.isdigit() and base:
+        with contextlib.suppress(Exception):
+            _api_call(base.rstrip("/"), "POST", f"/api/claude/sessions/{task_id}/context-window",
+                      {"size": size}, 2.0)
+    command = _user_statusline(payload)
+    if command:
+        cwd = payload.get("cwd")
+        with contextlib.suppress(Exception):
+            out = subprocess.run(command, shell=True, input=raw, capture_output=True, text=True, timeout=10,
+                                 cwd=cwd if cwd and os.path.isdir(cwd) else None)
+            sys.stdout.write(out.stdout)
+    return 0
+
+
 def _pretooluse_target(payload: dict) -> str | None:
     """The path a tool call is about to write to, or ``None`` when it has none.
 
@@ -3070,6 +3132,7 @@ def build_parser() -> argparse.ArgumentParser:
         ("clear", cmd_hook_clear),
         ("pretooluse", cmd_hook_pretooluse),
         ("session", cmd_hook_session),
+        ("statusline", cmd_hook_statusline),
     ):
         hook_sub.add_parser(name).set_defaults(func=func)
 

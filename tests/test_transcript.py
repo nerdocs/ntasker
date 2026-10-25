@@ -250,6 +250,13 @@ def test_api_conversation(client):
     assert d["context"] == {"used": 1152, "limit": 200_000}
     client.patch(f"/api/tasks/{tid}", json={"model": "opus[1m]"})
     assert client.get(f"/api/tasks/{tid}/conversation").json()["context"]["limit"] == 1_000_000
+    # The size the statusline reports beats the model id.
+    client.patch(f"/api/tasks/{tid}", json={"model": "opus"})
+    assert client.post(f"/api/claude/sessions/{tid}/context-window", json={"size": 1_000_000}).status_code == 200
+    assert client.get(f"/api/tasks/{tid}/conversation").json()["context"]["limit"] == 1_000_000
+    assert client.post(f"/api/claude/sessions/{tid}/context-window", json={"size": 1_000_000}).status_code == 200
+    assert client.post(f"/api/claude/sessions/{tid}/context-window", json={"size": 0}).status_code == 422
+    assert client.post("/api/claude/sessions/9999/context-window", json={"size": 1}).status_code == 404
     assert client.get("/api/tasks/9999/conversation").status_code == 404
 
 

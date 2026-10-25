@@ -82,7 +82,8 @@ _TAIL_BYTES = 64 * 1024
 _parsed: dict[Path, tuple[tuple, dict]] = {}
 _PARSED_KEEP = 16
 
-# Context window sizes, picked like the Claude Code statusline does: a model id
+# Context window sizes, guessed from the model id when the session's statusline
+# has not reported the real one (see ``ntasker hook statusline``): a model id
 # with the ``[1m]`` marker runs with the 1M-token window, anything else 200k.
 CONTEXT_WINDOW = 200_000
 CONTEXT_WINDOW_1M = 1_000_000
@@ -550,14 +551,14 @@ def parse_transcript(lines, rules: Iterable[str] = ()) -> list[dict]:
 
 
 def conversation_for(home: Path, session_id: str | None, rules: Iterable[str] = (),
-                     model: str | None = None) -> dict:
+                     window: int | None = None) -> dict:
     """``{"available", "turns", "usage", "context", "blocker", "updated"}`` for a stored session id.
 
     ``available`` is ``False`` when there is no id or no transcript (yet) -- a
     freshly spawned session writes its file only after the first prompt.
     ``usage`` sums the turns' tokens. ``context`` is the session's current
     context fill ``{used, limit}`` -- the last turn's ``context`` against the
-    window of ``model`` (see :func:`context_window`) -- or ``None`` before the
+    session's ``window`` size (default :data:`CONTEXT_WINDOW`) -- or ``None`` before the
     first response. ``blocker`` is the last turn's (see
     :func:`parse_transcript`) -- what stops the session right now, or ``None``.
     ``updated`` is the file's mtime so the client can skip unchanged polls. An
@@ -572,7 +573,7 @@ def conversation_for(home: Path, session_id: str | None, rules: Iterable[str] = 
     rules = tuple(rules)
     try:
         st = path.stat()
-        key = (st.st_mtime_ns, st.st_size, rules, model)
+        key = (st.st_mtime_ns, st.st_size, rules, window)
         hit = _parsed.get(path)
         if hit and hit[0] == key:
             return hit[1]
@@ -586,7 +587,7 @@ def conversation_for(home: Path, session_id: str | None, rules: Iterable[str] = 
             total[k] += turn["usage"][k]
     blocker = turns[-1]["blocker"] if turns else None
     used = next((t["context"] for t in reversed(turns) if t["context"]), 0)
-    context = {"used": used, "limit": context_window(model)} if used else None
+    context = {"used": used, "limit": window or CONTEXT_WINDOW} if used else None
     result = {"available": True, "turns": turns, "usage": total, "context": context, "blocker": blocker,
               "updated": st.st_mtime}
     _parsed.pop(path, None)

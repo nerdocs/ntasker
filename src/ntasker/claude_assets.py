@@ -93,7 +93,8 @@ def _asset_root():
 def hooks_settings_path(with_locks: bool) -> str:
     """Path of the Claude Code settings file ntasker passes via ``--settings``.
 
-    ``base.json`` carries the state hooks (waiting / running); ``locks.json``
+    ``base.json`` carries the state hooks (waiting / running) and the
+    statusline (``ntasker hook statusline``); ``locks.json``
     adds the ``PreToolUse`` directory-lock guard. Picked at spawn from the
     ``dir_locks`` setting. Package data, so a regular install yields a real
     file path (``--settings`` needs one).

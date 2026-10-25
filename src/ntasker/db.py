@@ -71,6 +71,10 @@ CREATE TABLE IF NOT EXISTS tasks (
     -- Model for this task's sessions, passed to the agent CLI as its model
     -- flag. NULL = the agent's ``<key>_model`` setting (then the CLI default).
     model TEXT,
+    -- Context window size (tokens) of the task's session, as Claude Code
+    -- hands it to the statusline (``ntasker hook statusline``). NULL = not
+    -- reported yet; the window is then guessed from the model id.
+    context_window INTEGER,
     -- Claude session id of the last web-terminal run (forced via
     -- ``--session-id`` at spawn). NULL until the task has been run once.
     -- Lets a finished task's conversation be reopened via ``--resume``.
@@ -397,6 +401,11 @@ def init_db(path: Path | None = None) -> None:
         # Usage-limit pause (see the schema comment).
         try:
             conn.execute("ALTER TABLE tasks ADD COLUMN limit_until TEXT")
+        except sqlite3.OperationalError:
+            pass
+        # v3.20: context window size reported by the session's statusline.
+        try:
+            conn.execute("ALTER TABLE tasks ADD COLUMN context_window INTEGER")
         except sqlite3.OperationalError:
             pass
         # v3.12: accept-after-re-triage on inbox follow-ups.

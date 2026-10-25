@@ -277,8 +277,13 @@ Code's format; `AgentSpec.transcript` says whether an agent writes one) and fold
 agent's final answer, the progress notes and tool calls behind it, and the tokens it used. The queue seed shows as a
 task card with the tracker rules cut off; the report closes the conversation as its result card. The pane's header
 shows the session's context fill like the Claude Code statusline: the last API response's prompt plus output tokens
-against the window (1M when the task's model, or the `claude_model` setting, carries `[1m]`, else 200k), green below
-50 %, yellow from 50 %, red from 80 %. While the session
+against the window, green below 50 %, yellow from 50 %, red from 80 %. The window size comes from the session itself:
+Claude Code hands it (`context_window.context_window_size`) only to the statusline, never to the transcript, so the
+spawn settings make `ntasker hook statusline` the session's statusline. It posts the size to
+`POST /api/claude/sessions/{task_id}/context-window` (stored in `tasks.context_window`), then runs the user's own
+statusline (local project > project > user settings) on the same input and passes its output through. A session
+without that report (an adopted terminal session, one that has not drawn its statusline yet) falls back to the model
+id: 1M when the task's model, or the `claude_model` setting, carries `[1m]`, else 200k. While the session
 waits for you, the pane answers for the terminal: a permission dialog gets *Allow* / *Deny*, a question
 (`AskUserQuestion`) its card, and the reply box sends a prompt -- all of it typed into the PTY exactly as the terminal
 would. The reply box holds the cursor: it takes the focus when the pane opens (also in split mode) and again after

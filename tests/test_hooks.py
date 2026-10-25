@@ -228,3 +228,43 @@ def test_clean_env_prefers_own_ntasker(monkeypatch, tmp_path):
     monkeypatch.setattr(claude_runner.sys, "executable", str(tmp_path / "python"))
     env = claude_runner._clean_env(get_spec("claude"), 1)
     assert env["PATH"].split(os.pathsep)[0] == str(tmp_path)
+
+
+def test_statusline_is_wired():
+    for with_locks in (False, True):
+        with open(hooks_settings_path(with_locks)) as f:
+            assert json.load(f)["statusLine"]["command"] == "ntasker hook statusline"
+
+
+def test_hook_statusline_reports_window_and_runs_the_users(fake_server, monkeypatch, tmp_path, capsys):
+    calls, _answers = fake_server
+    home, project = tmp_path / "claude", tmp_path / "proj"
+    home.mkdir()
+    (project / ".claude").mkdir(parents=True)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(home))
+    monkeypatch.setenv("NTASKER_TASK_ID", "7")
+    monkeypatch.setenv("NTASKER_URL", "http://127.0.0.1:8766")
+    (home / "settings.json").write_text(json.dumps({"statusLine": {"type": "command", "command": "echo user"}}))
+    payload = {"cwd": str(project), "workspace": {"project_dir": str(project)},
+               "context_window": {"context_window_size": 1_000_000}}
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(payload)))
+    assert cli.main(["hook", "statusline"]) == 0
+    assert calls == [("POST", "/api/claude/sessions/7/context-window", {"size": 1_000_000})]
+    assert capsys.readouterr().out == "user\n"
+    # Project settings outrank the user's; the user's statusline sees the same input.
+    (project / ".claude" / "settings.json").write_text(json.dumps({"statusLine": {"command": "cat"}}))
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(payload)))
+    assert cli.main(["hook", "statusline"]) == 0
+    assert json.loads(capsys.readouterr().out) == payload
+
+
+def test_hook_statusline_without_window_or_own_statusline(fake_server, monkeypatch, tmp_path, capsys):
+    calls, _answers = fake_server
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setenv("NTASKER_TASK_ID", "7")
+    monkeypatch.setenv("NTASKER_URL", "http://127.0.0.1:8766")
+    # ntasker's own statusline in the user's settings must not run itself again.
+    (tmp_path / "settings.json").write_text(json.dumps({"statusLine": {"command": "ntasker hook statusline"}}))
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps({"cwd": str(tmp_path)})))
+    assert cli.main(["hook", "statusline"]) == 0
+    assert calls == [] and capsys.readouterr().out == ""

@@ -1,4 +1,5 @@
 {
+  "statusLine": {"type": "command", "command": "ntasker hook statusline"},
   "hooks": {
     "SessionStart": [
       {"matcher": "clear", "hooks": [{"type": "command", "command": "ntasker hook clear"}]}

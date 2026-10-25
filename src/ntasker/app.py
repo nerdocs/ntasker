@@ -70,7 +70,7 @@ from ntasker.projects import (
     stale_claude_projects,
 )
 from ntasker.rundiff import changed_paths, parse_baselines, run_diff
-from ntasker.transcript import conversation_for, last_activity, question_entries
+from ntasker.transcript import context_window, conversation_for, last_activity, question_entries
 from ntasker import completion, lockqueue, locks, messages, plugins, sessions, taskqueue, triage, usagelimit, worktrees
 from ntasker.newproject import created_projects
 from ntasker.newproject import router as newproject_router
@@ -2090,6 +2090,29 @@ def api_claude_session_question(task_id: int, payload: SessionQuestionIn) -> JSO
     return JSONResponse({"ok": True})
 
 
+class SessionContextWindowIn(BaseModel):
+    size: int = Field(gt=0)
+
+
+@app.post("/api/claude/sessions/{task_id}/context-window")
+def api_claude_session_context_window(task_id: int, payload: SessionContextWindowIn) -> JSONResponse:
+    """The context window size the task's session runs with.
+
+    Called by ``ntasker hook statusline``: Claude Code hands the window size
+    only to the statusline, never to the transcript, so this is how the run
+    view's context badge learns it (see :func:`api_task_conversation`).
+    404 for an unknown task.
+    """
+    with get_conn() as conn:
+        cur = conn.execute(
+            "UPDATE tasks SET context_window = ? WHERE id = ? AND context_window IS NOT ?",
+            (payload.size, task_id, payload.size),
+        )
+        if not cur.rowcount and conn.execute("SELECT 1 FROM tasks WHERE id = ?", (task_id,)).fetchone() is None:
+            raise HTTPException(status_code=404, detail=_("Task not found"))
+    return JSONResponse({"ok": True})
+
+
 class SessionRebindIn(BaseModel):
     session_id: str = Field(pattern=SESSION_ID_RE)
     cwd: str | None = None
@@ -3526,7 +3549,9 @@ def api_task_conversation(task_id: int) -> JSONResponse:
     for an unknown task.
     """
     with get_conn() as conn:
-        row = conn.execute("SELECT agent, model, session_id FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        row = conn.execute(
+            "SELECT agent, model, session_id, context_window FROM tasks WHERE id = ?", (task_id,)
+        ).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail=_("Task not found"))
     spec = get_spec(resolve_agent_key(row["agent"]))
@@ -3539,9 +3564,11 @@ def api_task_conversation(task_id: int) -> JSONResponse:
     rules = (get_run_rules(spec.key).replace("{id}", tid),
              get_fasttrack_rules(spec.key).replace("{id}", tid),
              MESSAGING_RULES.replace("{id}", tid))
-    # The model the session was spawned with decides the context window size.
-    model = row["model"] or get_setting(spec.model_setting_key, env_var=spec.model_env_var)
-    conv = conversation_for(resolve_home(spec), row["session_id"], rules, model)
+    # The window size the session's statusline reported; without one, the
+    # model the session was spawned with decides it.
+    window = row["context_window"] or context_window(
+        row["model"] or get_setting(spec.model_setting_key, env_var=spec.model_env_var))
+    conv = conversation_for(resolve_home(spec), row["session_id"], rules, window)
     # A run a usage limit paused: say so, and when it goes on -- also when the
     # agent wrapped up in time and the transcript holds no error.
     resume_at = usagelimit.paused_until(task_id)

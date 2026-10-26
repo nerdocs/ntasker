@@ -248,6 +248,61 @@ function renderMarkdown(text) {
     return window.DOMPurify ? window.DOMPurify.sanitize(raw) : escapeHtml(text);
 }
 
+// Conversation Markdown: rendered like renderMarkdown, then every code block
+// gets a copy button -- and a run button when its code starts with "!",
+// Claude Code's prefix for a shell command typed into the session. Inline
+// code that starts with "!" gets both too (agents write "type `! gh auth
+// login`"). The buttons are added after sanitising, built via the DOM API;
+// clicks are handled in convLinkClick (delegated, data-conv-code).
+function renderConvMarkdown(text) {
+    const html = renderMarkdown(text);
+    if (!html.includes('<code')) return html;
+    const tpl = document.createElement('template');
+    tpl.innerHTML = html;
+    const button = (action, icon, title) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = `btn btn-sm btn-icon conv-code-btn conv-code-${action}`;
+        b.dataset.convCode = action;
+        b.title = title;
+        b.setAttribute('aria-label', title);
+        const i = document.createElement('i');
+        i.className = `ti ${icon}`;
+        b.appendChild(i);
+        return b;
+    };
+    const actions = (code) => {
+        const box = document.createElement('span');
+        box.className = 'conv-code-actions';
+        if (_isShellCommand(code)) box.appendChild(button('run', 'ti-player-play', _i('conv_code_run')));
+        box.appendChild(button('copy', 'ti-copy', _i('conv_code_copy')));
+        return box;
+    };
+    tpl.content.querySelectorAll('pre').forEach((pre) => {
+        const wrap = document.createElement('div');
+        wrap.className = 'conv-code';
+        pre.replaceWith(wrap);
+        wrap.appendChild(pre);
+        wrap.appendChild(actions(pre.textContent));
+    });
+    tpl.content.querySelectorAll('code').forEach((code) => {
+        if (code.closest('pre') || !_isShellCommand(code.textContent)) return;
+        const wrap = document.createElement('span');
+        wrap.className = 'conv-code conv-code-inline';
+        code.replaceWith(wrap);
+        wrap.appendChild(code);
+        wrap.appendChild(actions(code.textContent));
+    });
+    return tpl.innerHTML;
+}
+
+// Code the run button may send: one line that starts with "!" and has a
+// command after it. Multi-line blocks get no run button -- the "!" mode runs
+// without a permission prompt, so what runs must be what is plainly shown.
+function _isShellCommand(code) {
+    return /^!\s*\S[^\n]*$/.test((code || '').trim());
+}
+
 // Unified diff -> HTML for the run view's Diff page: one span per line,
 // classed by its first character so CSS can colour additions / deletions /
 // hunk headers. Escaped, never trusted.
@@ -4468,7 +4523,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             this.convContext = d.context || null;
             this.convTurns = (d.turns || []).map((t, i) => {
                 const old = prev[i];
-                const html = (text, oldText, oldHtml) => (old && oldText === text ? oldHtml : renderMarkdown(text || ''));
+                const html = (text, oldText, oldHtml) => (old && oldText === text ? oldHtml : renderConvMarkdown(text || ''));
                 const edited = [...new Set(t.tools.filter(x => x.kind === 'edit' && x.file).map(x => x.file))];
                 // The agent's questions with what was answered. An unanswered
                 // one in the running turn is the open question (its own card).
@@ -4480,7 +4535,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                     answerPreview: _convPreview(t.answer || t.progress[t.progress.length - 1] || ''),
                     promptHtml: html(t.prompt, old && old.prompt, old && old.promptHtml),
                     answerHtml: html(t.answer, old && old.answer, old && old.answerHtml),
-                    progressHtml: t.progress.map((p, j) => (old && old.progress[j] === p ? old.progressHtml[j] : renderMarkdown(p))),
+                    progressHtml: t.progress.map((p, j) => (old && old.progress[j] === p ? old.progressHtml[j] : renderConvMarkdown(p))),
                     kinds: this._stepKinds(t.tools),
                     editedFiles: edited,
                     decisions,
@@ -4736,6 +4791,15 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // (``/Users/…/report.md``, ``~/…``, ``file://…``) would navigate the
         // page to a 404 -- open it like an edited-file link instead.
         convLinkClick(event) {
+            const btn = event.target.closest && event.target.closest('[data-conv-code]');
+            if (btn) {
+                event.preventDefault();
+                const code = btn.closest('.conv-code')?.querySelector('code, pre');
+                const text = code ? code.textContent.replace(/\n$/, '') : '';
+                if (btn.dataset.convCode === 'run') this.runConvCommand(text);
+                else this.copyConvCode(text);
+                return;
+            }
             const a = event.target.closest && event.target.closest('a[href]');
             if (!a || a.classList.contains('claude-conv-file')) return;
             const path = _localFilePath(a.getAttribute('href'));
@@ -4814,6 +4878,51 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 this.convOpen[`${this.claudeView}:${i}:p`] = open;
                 this.convOpen[`${this.claudeView}:${i}:a`] = open;
             });
+        },
+
+        // Copy button on a code block in the conversation. The toast names no
+        // code: its message is HTML, and the code is the agent's text.
+        async copyConvCode(text) {
+            try {
+                await navigator.clipboard.writeText(text);
+                this.showToast(_i('conv_code_copied'), 'success');
+            } catch {
+                // Fallback for non-secure contexts (Clipboard API unavailable).
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                ta.style.position = 'fixed';
+                ta.style.opacity = '0';
+                document.body.appendChild(ta);
+                ta.select();
+                let ok = false;
+                try { ok = document.execCommand('copy'); } catch { /* ignore */ }
+                document.body.removeChild(ta);
+                this.showToast(_i(ok ? 'conv_code_copied' : 'copy_failed'), ok ? 'success' : 'danger');
+            }
+        },
+
+        // Run button on a "!" code block: types it into the live session.
+        // The "!" goes first on its own -- it switches Claude Code's input to
+        // shell mode -- then the command and Enter. Only at the end of a turn:
+        // mid-turn or in a dialog the keys would answer something else (an
+        // Enter would confirm a permission prompt).
+        runConvCommand(text) {
+            const id = this.claudeView;
+            const s = _claudeTerms.get(id);
+            const cmd = text.trim().replace(/^!\s*/, '');
+            if (!cmd) return;
+            if (!s || s.ws.readyState !== WebSocket.OPEN) {
+                this.showToast(_i('conv_code_run_offline'), 'danger');
+                return;
+            }
+            if (!this.claudeIdle.includes(id)) {
+                this.showToast(_i('conv_code_run_busy'), 'danger');
+                return;
+            }
+            s.ws.send(JSON.stringify({ type: 'input', data: '!' }));
+            setTimeout(() => {
+                if (this.sendQuickPrompt(cmd, id)) this.showToast(_i('conv_code_run_sent'), 'info');
+            }, 80);
         },
 
         // The pane's reply box: typed into the live session like a quick prompt.

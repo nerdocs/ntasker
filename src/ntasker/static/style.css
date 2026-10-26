@@ -768,6 +768,52 @@ body {
     max-height: 24rem;
     white-space: pre-wrap;
 }
+/* Code in the conversation: copy (and, for "!" commands, run) buttons.
+ * Blocks show them in the top-right corner on hover; inline code right
+ * after the code. */
+.conv-code {
+    position: relative;
+}
+.conv-code > .conv-code-actions {
+    position: absolute;
+    top: 0.25rem;
+    right: 0.25rem;
+    display: flex;
+    gap: 0.25rem;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+.conv-code:hover > .conv-code-actions,
+.conv-code:focus-within > .conv-code-actions,
+.conv-code > .conv-code-actions:has(.conv-code-run) {
+    opacity: 1;
+}
+.conv-code-inline {
+    white-space: nowrap;
+}
+.conv-code-inline > code {
+    white-space: normal;
+}
+.conv-code-inline > .conv-code-actions {
+    position: static;
+    display: inline-flex;
+    vertical-align: middle;
+    margin-left: 0.25rem;
+    opacity: 1;
+}
+.conv-code-btn {
+    --tblr-btn-padding-y: 0.1rem;
+    --tblr-btn-padding-x: 0.25rem;
+    background: var(--tblr-bg-surface);
+    border: 1px solid var(--tblr-border-color);
+    line-height: 1;
+}
+.conv-code-inline .conv-code-btn {
+    padding: 0 0.2rem;
+}
+.conv-code-run {
+    color: var(--tblr-success);
+}
 .claude-conv-steps summary {
     cursor: pointer;
 }

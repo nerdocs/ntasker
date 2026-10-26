@@ -4183,7 +4183,10 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 opened = true;
                 ws.send(JSON.stringify({ type: 'attach', resume }));
                 this._fitAndSync(taskId);
-                this._setTabStatus(taskId, 'running');
+                // Keep a known session's polled state: the poll below skips an
+                // unchanged payload, so a waiting tab forced to 'running' here
+                // would hide its open question until the session moves on.
+                this._setTabStatus(taskId, this.claudeWaiting.includes(taskId) ? 'waiting' : 'running');
                 this.loadClaudeSessions();
             };
             ws.onmessage = (ev) => {

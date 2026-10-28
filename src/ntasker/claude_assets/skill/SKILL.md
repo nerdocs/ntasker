@@ -212,7 +212,9 @@ does this on load (skipped for archived / `status=done` tasks, and on a
 loader emits a `WARNUNG -- Projekt-Mismatch` banner, defers `phase=wip`,
 and the agent must ask the user before starting; a **draft** task makes
 the loader stop with an `ENTWURF` message -- nothing is loaded or
-started). Second,
+started; if another live session already holds the task, the loader emits a
+`BELEGT` banner and changes nothing -- don't start, ask the user, optionally
+tell the holder via `SendMessage`). Second,
 the review-handoff (see section 6): when the user assigned `#<id>` and the
 agent has finished its part, it moves the task to `phase=review` so the
 user can validate and close it. Neither is "marking the task done" --

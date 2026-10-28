@@ -548,6 +548,23 @@ def register_external(task_id: int, pid: int, socket: str | None = None) -> None
         EXTERNAL_SOCKETS[task_id] = socket
 
 
+def task_holder(task_id: int, pid: int) -> dict | None:
+    """The live session holding ``task_id`` other than process ``pid``, else ``None``.
+
+    Covers both an ntasker-spawned session and an external one (``/task`` in
+    another terminal). The result carries that session's messaging ``socket``
+    (``None`` when unknown), so the newcomer can tell the holder it was turned
+    away. The same ``pid`` re-running ``/task`` is not a conflict.
+    """
+    sess = SESSIONS.get(task_id)
+    if sess is not None and sess.alive:
+        return {"socket": sess.socket}
+    other = EXTERNAL.get(task_id)
+    if other is not None and other != pid and _pid_alive(other):
+        return {"socket": EXTERNAL_SOCKETS.get(task_id)}
+    return None
+
+
 def _pid_alive(pid: int) -> bool:
     try:
         os.kill(pid, 0)

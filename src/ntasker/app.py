@@ -60,6 +60,7 @@ from ntasker.claude_runner import (
     set_question,
     steerable_session_ids,
     start_detached_session,
+    task_holder,
     stop_session,
     terminal_available,
 )
@@ -1895,10 +1896,16 @@ def api_claude_session_external(task_id: int, payload: ExternalSessionIn) -> JSO
     session ends, the board's resume button reopens *that* conversation instead
     of having nothing to offer. Both are optional: an older loader, or a Claude
     Code that does not export the id, still registers the busy state.
+
+    409 with ``held_by`` (the holder's messaging socket) when another live
+    session already holds the task -- the claim is never taken over silently.
     """
     with get_conn() as conn:
         if conn.execute("SELECT 1 FROM tasks WHERE id = ?", (task_id,)).fetchone() is None:
             raise HTTPException(status_code=404, detail=_("Task not found"))
+    holder = task_holder(task_id, payload.pid)
+    if holder is not None:
+        return JSONResponse({"ok": False, "held_by": holder}, status_code=409)
     register_external(task_id, payload.pid, payload.socket or None)
     if payload.session_id:
         bind_session(task_id, payload.session_id, payload.cwd or None)

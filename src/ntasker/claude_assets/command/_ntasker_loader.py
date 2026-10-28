@@ -16,6 +16,7 @@ import re
 import shutil
 import subprocess
 import sys
+import urllib.error
 import urllib.request
 
 BASE_URL = "http://127.0.0.1:8766"
@@ -45,7 +46,7 @@ def set_wip_via_server(tid: str) -> bool:
         return False
 
 
-def register_external_via_server(tid: str) -> bool:
+def register_external_via_server(tid: str) -> dict | None:
     """Tell the server this terminal session works on the task.
 
     Claude Code exports ``CLAUDE_PID`` to its subprocesses; the server keeps
@@ -58,15 +59,19 @@ def register_external_via_server(tid: str) -> bool:
     sessions reach this one there (``ntasker peers``). Skipped inside an
     ntasker-spawned session (``NTASKER_TASK_ID`` set) -- the server already
     tracks that one.
+
+    Returns the holder (``{"socket": ...}``) when another live session already
+    holds the task (server answers 409), else ``None`` -- registration is
+    best-effort, any other failure is ignored.
     """
     if os.environ.get("NTASKER_TASK_ID"):
-        return False
+        return None
     try:
         pid = int(os.environ.get("CLAUDE_PID") or 0)
     except ValueError:
-        return False
+        return None
     if pid <= 0:
-        return False
+        return None
     body = {"pid": pid}
     sid = (os.environ.get("CLAUDE_CODE_SESSION_ID") or "").strip()
     if re.fullmatch(r"[0-9a-fA-F-]{36}", sid):
@@ -84,9 +89,16 @@ def register_external_via_server(tid: str) -> bool:
             headers={"Content-Type": "application/json"},
         )
         with urllib.request.urlopen(req, timeout=2):
-            return True
+            return None
+    except urllib.error.HTTPError as e:
+        if e.code == 409:
+            try:
+                return json.load(e).get("held_by") or {}
+            except Exception:
+                return {}
+        return None
     except Exception:
-        return False
+        return None
 
 
 def set_wip_via_cli(tid: str) -> bool:
@@ -213,6 +225,22 @@ def render_warning(project: str, expected: str, cwd: str) -> str:
         f"> oder biete an, ins richtige Verzeichnis zu wechseln: schlage ihm\n"
         f"> vor, `/cd {expected}` einzugeben, damit die Session dort\n"
         f"> weiterläuft.\n"
+    )
+
+
+def render_held(holder: dict) -> str:
+    """Blockquote callout prepended to the loaded card when another live
+    session already holds the task -- the agent must not start in parallel."""
+    socket = holder.get("socket")
+    contact = (
+        f"> Du kannst die andere Session per `SendMessage` an `{socket}` informieren.\n"
+        if socket
+        else ""
+    )
+    return (
+        "> BELEGT -- dieser Task wird bereits von einer anderen laufenden Session\n"
+        "> bearbeitet. Nicht starten und nichts ändern: frage den User, wie es\n"
+        "> weitergehen soll.\n" + contact
     )
 
 
@@ -370,12 +398,26 @@ def main(argv: list[str]) -> int:
     if data.get("project"):
         mismatch = project_mismatch(data["project"], resolve_projects_base())
 
-    # Starting work via /task moves the task to "in progress" (phase=wip).
-    # Best-effort: skip archived/closed tasks (don't resurrect them), skip
-    # on a project mismatch (wait for the user's OK), no-op if already wip;
-    # a failed write must never break the load.
+    # Mark the task as held by this terminal session so the web UI locks its
+    # run button (see the server's ``/api/claude/sessions/{id}/external``).
+    # Skipped for archived/closed tasks and on a project mismatch. If another
+    # live session already holds it, the claim is refused: nothing is changed
+    # and the agent gets a BELEGT banner.
+    held = None
     if (
-        mismatch is None
+        via == "server"
+        and mismatch is None
+        and not data.get("archived")
+        and data.get("status") != "done"
+    ):
+        held = register_external_via_server(tid)
+
+    # Starting work via /task moves the task to "in progress" (phase=wip).
+    # Best-effort: same guards as above, no-op if already wip or held
+    # elsewhere; a failed write must never break the load.
+    if (
+        held is None
+        and mismatch is None
         and not data.get("archived")
         and data.get("status") != "done"
         and data.get("phase") != "wip"
@@ -383,18 +425,10 @@ def main(argv: list[str]) -> int:
         ok = set_wip_via_cli(tid) if via == "cli" else set_wip_via_server(tid)
         if ok:
             data["phase"] = "wip"
-    # Same guards, minus the "already wip" one: mark the task as held by this
-    # terminal session so the web UI locks its run button (see the server's
-    # ``/api/claude/sessions/{id}/external``).
-    if (
-        via == "server"
-        and mismatch is None
-        and not data.get("archived")
-        and data.get("status") != "done"
-    ):
-        register_external_via_server(tid)
 
     out = render(data)
+    if held is not None:
+        out = render_held(held) + "\n" + out
     if mismatch is not None:
         expected, cwd = mismatch
         out = render_warning(data["project"], expected, cwd) + "\n" + out

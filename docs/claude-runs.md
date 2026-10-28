@@ -193,6 +193,11 @@ session instead. Claude Code exports `CLAUDE_PID` to its subprocesses; the loade
 (a `kill(pid, 0)` probe on every poll -- no end-of-session hook needed; a second `/task` in the same session
 replaces the first). The loader skips this inside an ntasker-spawned session (`NTASKER_TASK_ID` set).
 
+The claim is never taken over silently: if another live session -- external or ntasker-spawned -- already holds the
+task, the server answers `409` with `held_by` (the holder's messaging socket). The loader then changes nothing (no
+`wip`, no registration) and prepends a `BELEGT` banner: the agent must not start, asks the user and may tell the
+holder via `SendMessage`. The holder re-running `/task` is not a conflict; a dead holder is taken over.
+
 An external task is **locked in the UI**: the card is greyed out with a *"Running in an external terminal"* stamp,
 the run button shows a spinner and is disabled -- starting a second agent on the same task is exactly what this
 prevents. The card stays editable. The session also **joins the queue** at the front, as that entry's run (the

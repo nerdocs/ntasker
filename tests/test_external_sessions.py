@@ -110,3 +110,55 @@ def test_rebind_points_the_task_at_the_cleared_session(client):
     assert (row["session_id"], row["session_cwd"]) == (sid, "/p/mine")
     assert client.post("/api/claude/sessions/9999/rebind", json={"session_id": sid}).status_code == 404
     assert client.post(f"/api/claude/sessions/{t['id']}/rebind", json={"session_id": "x y"}).status_code == 422
+
+
+def test_claim_held_by_another_live_session_is_refused(client):
+    """A second terminal ``/task`` on a held task gets 409, the holder stays."""
+    t = client.post("/api/tasks", json={"title": "t"}).json()["id"]
+    client.post(
+        f"/api/claude/sessions/{t}/external", json={"pid": os.getppid(), "socket": "uds:/a"}
+    )
+    r = client.post(f"/api/claude/sessions/{t}/external", json={"pid": os.getpid()})
+    assert r.status_code == 409 and r.json()["held_by"] == {"socket": "uds:/a"}
+    assert claude_runner.EXTERNAL[t] == os.getppid()
+    # The holder itself may re-run /task.
+    assert client.post(
+        f"/api/claude/sessions/{t}/external", json={"pid": os.getppid()}
+    ).status_code == 200
+
+
+def test_claim_of_a_dead_holder_is_taken_over(client, monkeypatch):
+    t = client.post("/api/tasks", json={"title": "t"}).json()["id"]
+    client.post(f"/api/claude/sessions/{t}/external", json={"pid": os.getppid()})
+    monkeypatch.setattr(claude_runner, "_pid_alive", lambda pid: False)
+    assert client.post(
+        f"/api/claude/sessions/{t}/external", json={"pid": os.getpid()}
+    ).status_code == 200
+
+
+def test_loader_shows_banner_and_skips_wip_when_held(monkeypatch, capsys):
+    """The /task loader turns a 409 into a BELEGT banner and leaves the task alone."""
+    import importlib.util
+    import io
+    import json
+    import urllib.error
+    from pathlib import Path
+
+    path = Path(claude_runner.__file__).parent / "claude_assets/command/_ntasker_loader.py"
+    spec = importlib.util.spec_from_file_location("_ntasker_loader", path)
+    loader = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(loader)
+
+    def held(req, timeout=2):
+        body = io.BytesIO(json.dumps({"held_by": {"socket": "uds:/a"}}).encode())
+        raise urllib.error.HTTPError(req.full_url, 409, "Conflict", {}, body)
+
+    monkeypatch.setenv("CLAUDE_PID", "4242")
+    monkeypatch.delenv("NTASKER_TASK_ID", raising=False)
+    monkeypatch.setattr(loader.urllib.request, "urlopen", held)
+    monkeypatch.setattr(loader, "load_via_server", lambda tid: {"id": 5, "title": "T", "status": "open"})
+    wip = []
+    monkeypatch.setattr(loader, "set_wip_via_server", wip.append)
+    assert loader.main(["_ntasker_loader.py", "5"]) == 0
+    out = capsys.readouterr().out
+    assert out.startswith("> BELEGT") and "uds:/a" in out and wip == []

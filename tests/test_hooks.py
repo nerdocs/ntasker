@@ -268,3 +268,45 @@ def test_hook_statusline_without_window_or_own_statusline(fake_server, monkeypat
     monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps({"cwd": str(tmp_path)})))
     assert cli.main(["hook", "statusline"]) == 0
     assert calls == [] and capsys.readouterr().out == ""
+
+
+# Claude Code's folder trust dialog as its TUI draws it: words placed by cursor moves.
+_TRUST_DIALOG = (
+    b"\x1b[2G\x1b[38;5;153m\xe2\x9d\xaf\x1b[4GNo,\x1b[8Gexit\x1b[39m\r\r\n"
+    b"\x1b[4GYes,\x1b[9GI\x1b[11Gtrust\x1b[17Gthis\x1b[22Gfolder\r\r\n\r\r\n"
+    b"\x1b[2G\x1b[38;5;246mEnter\x1b[8Gto\x1b[11Gconfirm"
+)
+
+
+def _feed(sess, data):
+    sess.buffer.extend(data)
+    claude_runner._note_trust_prompt(sess, len(data))
+
+
+def test_trust_dialog_is_detected_and_answered():
+    claude_runner.SESSIONS.clear()
+    sess = claude_runner.TermSession(task_id=1, proc=_Proc(), master_fd=-1, cwd="/p/x")  # type: ignore[arg-type]
+    claude_runner.SESSIONS[1] = sess
+    try:
+        sess.last_output = time.monotonic()
+        _feed(sess, _TRUST_DIALOG[:60])                          # split mid-phrase
+        assert claude_runner.trust_prompts() == {}
+        _feed(sess, _TRUST_DIALOG[60:])
+        assert claude_runner.trust_prompts() == {1: "/p/x"}
+        states = claude_runner.session_states()
+        assert states[1] == "waiting"                            # despite fresh output
+        assert claude_runner.idle_session_ids(states) == []      # no queued prompt into it
+        claude_runner._note_trust_answer(sess, "\x1b[B")         # moving the highlight
+        assert claude_runner.trust_prompts() == {1: "/p/x"}
+        _feed(sess, b"\x1b[2Gredraw")                             # old match is not re-read
+        claude_runner._note_trust_answer(sess, "\r")             # confirmed
+        assert claude_runner.trust_prompts() == {}
+        _feed(sess, b"\x1b[2Gmore output")
+        assert claude_runner.trust_prompts() == {}
+        _feed(sess, _TRUST_DIALOG)
+        claude_runner.set_hook_state(1, False)                   # the session runs: dialog gone
+        assert claude_runner.trust_prompts() == {}
+        _feed(sess, _TRUST_DIALOG)                               # after a hook: never again
+        assert claude_runner.trust_prompts() == {}
+    finally:
+        claude_runner.SESSIONS.clear()

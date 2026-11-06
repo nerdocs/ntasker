@@ -52,6 +52,7 @@ from ntasker.claude_runner import (
     external_session_ids,
     idle_session_ids,
     open_questions,
+    trust_prompts,
     planner_seed,
     projects_base_dir,
     register_external,
@@ -744,6 +745,12 @@ def build_js_strings() -> dict[str, str]:
         "conv_permission": _("The agent wants to use {tool}."),
         "conv_permission_hint": _("Allow and Deny answer the dialog in the terminal. For more options open the terminal."),
         "conv_allow": _("Allow"),
+        "conv_trust": _("Folder not trusted yet"),
+        "conv_trust_yes": _("Trust folder"),
+        "conv_trust_no": _("Exit"),
+        "conv_trust_hint": _(
+            "The agent may read, edit and run files in this folder. Only trust your own code or projects you know."
+        ),
         "conv_deny": _("Deny"),
         "conv_answer_in_terminal": _("Answer in the terminal"),
         # The agent's questions (AskUserQuestion): the open one and the answered ones
@@ -1825,7 +1832,10 @@ def api_claude_sessions() -> JSONResponse:
     the status line on a running task's card; only agents with a transcript.
     ``questions``: the question each waiting session asks right now (id ->
     ``{id, questions}``, see :func:`api_claude_session_question`) -- the
-    conversation pane's question card. ``idle``: the waiting sessions whose turn
+    conversation pane's question card. ``trust``: the sessions showing Claude
+    Code's folder trust dialog (id -> directory, see
+    :func:`ntasker.claude_runner.trust_prompts`) -- the conversation pane's
+    trust card. ``idle``: the waiting sessions whose turn
     is over (see :func:`ntasker.claude_runner.idle_session_ids`).
     ``steerable``: the working sessions that take a prompt mid-turn (see
     :func:`ntasker.claude_runner.steerable_session_ids`). The run view hands
@@ -1868,6 +1878,7 @@ def api_claude_sessions() -> JSONResponse:
             "titles": titles,
             "activity": activity,
             "questions": open_questions(),
+            "trust": trust_prompts(),
             "idle": idle_session_ids(states),
             "steerable": steerable_session_ids(),
         }

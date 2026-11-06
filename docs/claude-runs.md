@@ -317,6 +317,13 @@ next `running` hook (the answer, or a new prompt) clears it. Answered questions 
 with the picked options highlighted and a typed answer quoted (from the transcript's `toolUseResult.answers`); a
 cancelled dialog reads *Not answered*.
 
+**Folder trust.** Claude Code's folder trust dialog (*Yes, I trust this folder*) comes up before the session proper,
+when no hook and no transcript exist yet -- so the server reads it from the PTY output: the dialog's words (placed by
+cursor moves, not spaces) set `trust_prompt` on the session until `Enter` or `Esc` goes in or a hook reports. Such a
+session reads *waiting* and is never idle (a queued reply would answer the dialog); `GET /api/claude/sessions` lists it
+as `trust` (task id -> run directory). The pane shows a card with the directory, *Trust folder* (`Down` + `Enter`)
+and *Exit* (`Enter` on the highlighted *No, exit*).
+
 **Reply queue.** A reply sent while the agent works goes in at once, mid-turn: Claude Code hands it to the agent at its
 next step (see *Send now* below), so it arrives before the agent wraps the task up. The server lists such sessions as
 `steerable` in `GET /api/claude/sessions` -- their hooks report them working and no dialog is open. A reply sent while

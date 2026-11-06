@@ -31,6 +31,7 @@ class _FakeSession:
         self.alive = True
         self.hook_waiting = False
         self.question = None
+        self.trust_prompt = False
 
 
 @pytest.fixture

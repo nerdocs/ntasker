@@ -257,26 +257,26 @@
                         </div>
                     </div>
                 </template>
-                {# Claude Code's folder trust dialog, before the session starts. #}
-                <template x-if="convPrompt === 'trust'">
+                {# A dialog Claude Code asks before the session starts: folder trust or external imports. #}
+                <template x-if="convPrompt === 'startup'">
                     <div class="claude-conv-ask card card-sm border-orange mb-2">
                         <div class="card-body">
                             <div class="fw-medium mb-1"><i class="ti ti-folder-question text-orange me-1"></i><span
-                                    x-text="$i18n('conv_trust')"></span></div>
-                            <div class="font-monospace small text-secondary mb-2 text-break" x-show="convPending?.detail"
-                                 x-text="convPending?.detail"></div>
+                                    x-text="$i18n('conv_' + convPending?.kind)"></span></div>
+                            <div class="font-monospace small text-secondary mb-2 text-break claude-conv-startup-detail"
+                                 x-show="convPending?.detail" x-text="convPending?.detail"></div>
                             <div class="d-flex flex-wrap gap-2">
-                                <button type="button" class="btn btn-sm btn-success" @click="answerTrust(true)">
-                                    <i class="ti ti-check me-1"></i><span x-text="$i18n('conv_trust_yes')"></span>
+                                <button type="button" class="btn btn-sm btn-success" @click="answerStartup(true)">
+                                    <i class="ti ti-check me-1"></i><span x-text="$i18n('conv_' + convPending?.kind + '_yes')"></span>
                                 </button>
-                                <button type="button" class="btn btn-sm btn-outline-danger" @click="answerTrust(false)">
-                                    <i class="ti ti-x me-1"></i><span x-text="$i18n('conv_trust_no')"></span>
+                                <button type="button" class="btn btn-sm btn-outline-danger" @click="answerStartup(false)">
+                                    <i class="ti ti-x me-1"></i><span x-text="$i18n('conv_' + convPending?.kind + '_no')"></span>
                                 </button>
                                 <button type="button" class="btn btn-sm btn-ghost-secondary" x-show="!runSplitShown" @click="setRunMode('terminal')">
                                     <i class="ti ti-terminal-2 me-1"></i><span x-text="$i18n('conv_show_terminal')"></span>
                                 </button>
                             </div>
-                            <div class="text-secondary small mt-2" x-text="$i18n('conv_trust_hint')"></div>
+                            <div class="text-secondary small mt-2" x-text="$i18n('conv_' + convPending?.kind + '_hint')"></div>
                         </div>
                     </div>
                 </template>

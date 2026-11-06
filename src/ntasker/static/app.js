@@ -599,7 +599,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // questions}}), from the session poll -- reported by the agent's own
         // hook, because the transcript only gets the call once it is answered.
         claudeQuestions: {},
-        claudeTrust: {},
+        claudeStartup: {},
         // What has been picked / typed for the open question so far: one
         // picks list (option indexes) and one free text per question, keyed
         // so a new question starts blank.
@@ -3809,7 +3809,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                     this.claudeSessions = d.active || [];
                     this.claudeWaiting = d.waiting || [];
                     this.claudeQuestions = d.questions || {};
-                    this.claudeTrust = d.trust || {};
+                    this.claudeStartup = d.startup || {};
                     this.claudeIdle = d.idle || [];
                     this.claudeSteerable = d.steerable || [];
                     this.claudeExternal = d.external || [];
@@ -4613,28 +4613,28 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 || 'ti-plug-connected-x';
         },
 
-        // What the waiting session is blocked on: the folder trust dialog,
-        // the question its hook reported, else the unresolved tool call of
-        // the last turn.
+        // What the waiting session is blocked on: a startup dialog (folder
+        // trust, external imports), the question its hook reported, else the
+        // unresolved tool call of the last turn.
         get convPending() {
             const tab = this.activeTab;
             if (!tab || tab.status !== 'waiting') return null;
-            const key = String(tab.taskId);
-            if (key in this.claudeTrust) return { kind: 'trust', detail: this.claudeTrust[key] };
+            const startup = this.claudeStartup[String(tab.taskId)];
+            if (startup) return startup;
             const q = this.claudeQuestions[String(tab.taskId)];
             if (q) return { id: q.id, name: 'AskUserQuestion', kind: 'ask', questions: q.questions };
             const last = this.convTurns[this.convTurns.length - 1];
             return last && last.pending ? last.pending : null;
         },
 
-        // What the waiting session asks for: 'trust' (the folder trust
+        // What the waiting session asks for: 'trust' / 'imports' (a startup
         // dialog), 'ask' (a question), 'permission' (a tool call to approve)
         // or null (just its turn is over, or the question was just answered
         // here).
         get convPrompt() {
             const p = this.convPending;
             if (!p) return null;
-            if (p.kind === 'trust') return 'trust';
+            if (p.kind === 'trust' || p.kind === 'imports') return 'startup';
             if (p.kind === 'ask') {
                 if (!p.questions || !p.questions.length || (p.id && p.id === this.convAnswered)) return null;
                 return 'ask';
@@ -4648,11 +4648,10 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             this._sendKeys(allow ? '\r' : '\x1b');
         },
 
-        // Answer the folder trust dialog: "No, exit" is highlighted, so Enter
-        // declines and Down + Enter trusts. Keys go one at a time so the
-        // dialog keeps up.
-        async answerTrust(trust) {
-            if (trust) {
+        // Answer a startup dialog: "No" is highlighted, so Enter declines and
+        // Down + Enter accepts. Keys go one at a time so the dialog keeps up.
+        async answerStartup(yes) {
+            if (yes) {
                 if (!this._sendRaw('\x1b[B')) return;
                 await new Promise(resolve => setTimeout(resolve, 150));
             }

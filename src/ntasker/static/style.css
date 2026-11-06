@@ -911,6 +911,10 @@ body {
 .claude-conv-option-text {
     min-width: 0;
 }
+/* A startup dialog's detail: one imported file per line. */
+.claude-conv-startup-detail {
+    white-space: pre-line;
+}
 .claude-conv-option:not(.is-static):hover {
     border-color: var(--tblr-orange);
 }

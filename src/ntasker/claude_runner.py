@@ -497,11 +497,12 @@ class TermSession:
     # nothing is asked; cleared by the next ``running`` hook (the tool call
     # finished, or a new prompt went in).
     question: dict | None = None
-    # Claude Code's folder trust dialog is on screen ("Yes, I trust this
-    # folder"): it comes before any hook can fire, so it is read from the PTY
-    # output (see :func:`_note_trust_prompt`). Cleared by Enter / Esc (the
-    # dialog's only ways out) and by any hook report.
-    trust_prompt: bool = False
+    # A dialog Claude Code shows before the session proper is on screen:
+    # ``{"kind": "trust"|"imports", "detail": str|None}`` (see
+    # :data:`_STARTUP_DIALOGS`). No hook fires that early, so it is read from
+    # the PTY output (see :func:`_note_startup_prompt`). Cleared by Enter / Esc
+    # (the dialogs' only ways out) and by any hook report.
+    startup_prompt: dict | None = None
     # The directory the agent runs in -- what the trust dialog asks about.
     cwd: str | None = None
     # Claude Code's cross-session messaging socket (``CLAUDE_CODE_MESSAGING_SOCKET``),
@@ -606,7 +607,7 @@ def set_hook_state(
         sess.socket = socket
     sess.hook_waiting = waiting
     sess.turn_over = waiting and turn_over
-    sess.trust_prompt = False
+    sess.startup_prompt = None
     if not waiting:
         sess.question = None
     return True
@@ -622,7 +623,7 @@ def set_question(task_id: int, question: dict | None) -> bool:
     if sess is None or not sess.alive:
         return False
     sess.question = question
-    sess.trust_prompt = False
+    sess.startup_prompt = None
     if question is not None:
         sess.hook_waiting = True
         sess.turn_over = False
@@ -634,9 +635,9 @@ def open_questions() -> dict[int, dict]:
     return {tid: s.question for tid, s in SESSIONS.items() if s.alive and s.question}
 
 
-def trust_prompts() -> dict[int, str | None]:
-    """The directory each live session's folder trust dialog asks about, by task id."""
-    return {tid: s.cwd for tid, s in SESSIONS.items() if s.alive and s.trust_prompt}
+def startup_prompts() -> dict[int, dict]:
+    """The startup dialog each live session shows right now, by task id."""
+    return {tid: s.startup_prompt for tid, s in SESSIONS.items() if s.alive and s.startup_prompt}
 
 
 def session_states() -> dict[int, str]:
@@ -663,7 +664,7 @@ def session_states() -> dict[int, str]:
     now = time.monotonic()
 
     def state(s: TermSession) -> str:
-        if s.trust_prompt:
+        if s.startup_prompt:
             return "waiting"
         if s.hook_waiting is not None:
             return "waiting" if s.hook_waiting else "running"
@@ -685,10 +686,10 @@ def _note_interrupt(sess: TermSession, data: str) -> None:
         sess.turn_over = True
 
 
-def _note_trust_answer(sess: TermSession, data: str) -> None:
-    """Enter or Esc closes the folder trust dialog (arrow keys only move in it)."""
-    if sess.trust_prompt and data in ("\r", "\x1b"):
-        sess.trust_prompt = False
+def _note_startup_answer(sess: TermSession, data: str) -> None:
+    """Enter or Esc closes a startup dialog (arrow keys only move in it)."""
+    if sess.startup_prompt and data in ("\r", "\x1b"):
+        sess.startup_prompt = None
 
 
 def idle_session_ids(states: dict[int, str]) -> list[int]:
@@ -697,15 +698,15 @@ def idle_session_ids(states: dict[int, str]) -> list[int]:
     ``states`` is :func:`session_states`' answer. A session with hooks counts
     once its ``Stop`` hook reported the turn over -- a permission dialog or a
     question is "waiting" too, but a prompt typed into it would answer it.
-    Without hooks (OpenCode / Pi) the silence heuristic is all there is. The
-    folder trust dialog is never idle: Enter would answer it.
+    Without hooks (OpenCode / Pi) the silence heuristic is all there is. A
+    startup dialog is never idle: Enter would answer it.
     """
     return [
         tid
         for tid, st in states.items()
         if st == "waiting"
         and (s := SESSIONS.get(tid)) is not None
-        and not s.trust_prompt
+        and not s.startup_prompt
         and (s.turn_over or s.hook_waiting is None)
     ]
 
@@ -1022,7 +1023,7 @@ def _attach_reader(sess: TermSession) -> None:
         sess.buffer.extend(data)
         if len(sess.buffer) > BUFFER_LIMIT:
             del sess.buffer[: len(sess.buffer) - BUFFER_LIMIT]
-        _note_trust_prompt(sess, len(data))
+        _note_startup_prompt(sess, len(data))
         for q in list(sess.subscribers):
             with contextlib.suppress(asyncio.QueueFull):
                 q.put_nowait(("output", data))
@@ -1030,26 +1031,48 @@ def _attach_reader(sess: TermSession) -> None:
     loop.add_reader(sess.master_fd, on_readable)
 
 
-# The folder trust dialog's "Yes" option. Claude Code positions each word with
-# a cursor move instead of a space, so anything escape-like may sit between them.
-_TRUST_RE = re.compile(rb"Yes,(?:\x1b\[[0-9;]*[A-Za-z]| )+I(?:\x1b\[[0-9;]*[A-Za-z]| )+trust"
-                       rb"(?:\x1b\[[0-9;]*[A-Za-z]| )+this(?:\x1b\[[0-9;]*[A-Za-z]| )+folder")
+# Claude Code positions each word with a cursor move instead of a space, so
+# anything escape-like may sit between the words of a dialog line.
+_WORD_GAP = rb"(?:\x1b\[[0-9;]*[A-Za-z]| )+"
+
+# The dialogs Claude Code may show before the session proper, by the words of
+# their "Yes" option. Both put "No" first (highlighted) and "Yes" below it.
+_STARTUP_DIALOGS = {
+    "trust": re.compile(_WORD_GAP.join([rb"Yes,", rb"I", rb"trust", rb"this", rb"folder"])),
+    "imports": re.compile(_WORD_GAP.join([rb"Yes,", rb"allow", rb"external", rb"imports"])),
+}
+
+# The file list of the external-imports dialog, between its two headings.
+_IMPORTS_RE = re.compile(rb"External(?:\x1b\[[0-9;]*[A-Za-z]| )+imports:(.*?)Important:", re.S)
 
 
-def _note_trust_prompt(sess: TermSession, n: int) -> None:
-    """Flag the folder trust dialog when the last ``n`` buffered bytes draw it.
+def _startup_detail(sess: TermSession, kind: str) -> str | None:
+    """What a startup dialog asks about: the run directory, or the imported files (one per line)."""
+    if kind == "trust":
+        return sess.cwd
+    found = _IMPORTS_RE.findall(bytes(sess.buffer[-8192:]))
+    if not found:
+        return None
+    text = _ANSI_RE.sub(b" ", found[-1]).decode("utf-8", "replace")
+    return "\n".join(line.strip() for line in text.splitlines() if line.strip()) or None
 
-    Only before the first hook report: the dialog precedes the session
+
+def _note_startup_prompt(sess: TermSession, n: int) -> None:
+    """Flag a startup dialog when the last ``n`` buffered bytes draw it.
+
+    Only before the first hook report: the dialogs precede the session
     proper, and later output (e.g. this very text in a transcript) must not
-    raise it. The search reaches back a little so a chunk split mid-phrase
+    raise one. The search reaches back a little so a chunk split mid-phrase
     still matches, but only a match ending in the new bytes counts.
     """
-    if sess.hook_waiting is not None or sess.trust_prompt:
+    if sess.hook_waiting is not None or sess.startup_prompt:
         return
     window = bytes(sess.buffer[-(n + 80):])
-    m = _TRUST_RE.search(window)
-    if m and m.end() > len(window) - n:
-        sess.trust_prompt = True
+    for kind, rx in _STARTUP_DIALOGS.items():
+        m = rx.search(window)
+        if m and m.end() > len(window) - n:
+            sess.startup_prompt = {"kind": kind, "detail": _startup_detail(sess, kind)}
+            return
 
 
 def _reap(sess: TermSession) -> None:
@@ -1325,7 +1348,7 @@ async def serve(websocket: WebSocket, task_id: int) -> None:
                     images_attached.set()
                 await _write_pty(sess, data.encode("utf-8", "ignore"))
                 _note_interrupt(sess, data)
-                _note_trust_answer(sess, data)
+                _note_startup_answer(sess, data)
             elif kind == "file" and sess.alive:
                 # A file dropped onto the terminal: decode, cap, save, then paste
                 # its quoted path (+ trailing space) into the PTY as a bracketed

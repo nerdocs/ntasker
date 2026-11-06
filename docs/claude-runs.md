@@ -317,12 +317,14 @@ next `running` hook (the answer, or a new prompt) clears it. Answered questions 
 with the picked options highlighted and a typed answer quoted (from the transcript's `toolUseResult.answers`); a
 cancelled dialog reads *Not answered*.
 
-**Folder trust.** Claude Code's folder trust dialog (*Yes, I trust this folder*) comes up before the session proper,
-when no hook and no transcript exist yet -- so the server reads it from the PTY output: the dialog's words (placed by
-cursor moves, not spaces) set `trust_prompt` on the session until `Enter` or `Esc` goes in or a hook reports. Such a
-session reads *waiting* and is never idle (a queued reply would answer the dialog); `GET /api/claude/sessions` lists it
-as `trust` (task id -> run directory). The pane shows a card with the directory, *Trust folder* (`Down` + `Enter`)
-and *Exit* (`Enter` on the highlighted *No, exit*).
+**Startup dialogs.** Claude Code may ask two things before the session proper, when no hook and no transcript exist
+yet: whether to trust the folder (*Yes, I trust this folder*) and whether to load CLAUDE.md imports from outside the
+project (*Yes, allow external imports*). The server reads them from the PTY output: a dialog's "Yes" line (words placed
+by cursor moves, not spaces) sets `startup_prompt` (`{kind: trust|imports, detail}`) on the session until `Enter` or
+`Esc` goes in or a hook reports. Such a session reads *waiting* and is never idle (a queued reply would answer the
+dialog); `GET /api/claude/sessions` lists it as `startup` (task id -> `{kind, detail}`). The pane shows a card with the
+detail -- the run directory, or the imported files one per line -- and *Trust folder* / *Allow* (`Down` + `Enter`) or
+*Exit* / *Ignore* (`Enter` on the highlighted "No" option).
 
 **Reply queue.** A reply sent while the agent works goes in at once, mid-turn: Claude Code hands it to the agent at its
 next step (see *Send now* below), so it arrives before the agent wraps the task up. The server lists such sessions as

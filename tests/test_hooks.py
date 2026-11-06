@@ -278,35 +278,47 @@ _TRUST_DIALOG = (
 )
 
 
+# The external CLAUDE.md imports dialog, the same way.
+_IMPORTS_DIALOG = (
+    b"\x1b[2GExternal\x1b[11Gimports:\r\r\n\x1b[4G/p/other/doc.md\r\r\n\x1b[4G/p/other/b\x1b[13Gc.md\r\r\n\r\r\n"
+    b"\x1b[2GImportant:\x1b[13GOnly\x1b[18Guse\r\r\n\r\r\n"
+    b"\x1b[2G\x1b[38;5;153m\xe2\x9d\xaf\x1b[4GNo,\x1b[8Gdisable\x1b[16Gexternal\x1b[25Gimports\x1b[39m\r\r\n"
+    b"\x1b[4GYes,\x1b[9Gallow\x1b[15Gexternal\x1b[24Gimports\r\r\n"
+)
+
+
 def _feed(sess, data):
     sess.buffer.extend(data)
-    claude_runner._note_trust_prompt(sess, len(data))
+    claude_runner._note_startup_prompt(sess, len(data))
 
 
 def test_trust_dialog_is_detected_and_answered():
     claude_runner.SESSIONS.clear()
     sess = claude_runner.TermSession(task_id=1, proc=_Proc(), master_fd=-1, cwd="/p/x")  # type: ignore[arg-type]
     claude_runner.SESSIONS[1] = sess
+    trust = {1: {"kind": "trust", "detail": "/p/x"}}
     try:
         sess.last_output = time.monotonic()
         _feed(sess, _TRUST_DIALOG[:60])                          # split mid-phrase
-        assert claude_runner.trust_prompts() == {}
+        assert claude_runner.startup_prompts() == {}
         _feed(sess, _TRUST_DIALOG[60:])
-        assert claude_runner.trust_prompts() == {1: "/p/x"}
+        assert claude_runner.startup_prompts() == trust
         states = claude_runner.session_states()
         assert states[1] == "waiting"                            # despite fresh output
         assert claude_runner.idle_session_ids(states) == []      # no queued prompt into it
-        claude_runner._note_trust_answer(sess, "\x1b[B")         # moving the highlight
-        assert claude_runner.trust_prompts() == {1: "/p/x"}
+        claude_runner._note_startup_answer(sess, "\x1b[B")       # moving the highlight
+        assert claude_runner.startup_prompts() == trust
         _feed(sess, b"\x1b[2Gredraw")                             # old match is not re-read
-        claude_runner._note_trust_answer(sess, "\r")             # confirmed
-        assert claude_runner.trust_prompts() == {}
+        claude_runner._note_startup_answer(sess, "\r")           # confirmed
+        assert claude_runner.startup_prompts() == {}
         _feed(sess, b"\x1b[2Gmore output")
-        assert claude_runner.trust_prompts() == {}
-        _feed(sess, _TRUST_DIALOG)
+        assert claude_runner.startup_prompts() == {}
+        _feed(sess, _IMPORTS_DIALOG)                             # the next dialog
+        assert claude_runner.startup_prompts() == {
+            1: {"kind": "imports", "detail": "/p/other/doc.md\n/p/other/b c.md"}}
         claude_runner.set_hook_state(1, False)                   # the session runs: dialog gone
-        assert claude_runner.trust_prompts() == {}
+        assert claude_runner.startup_prompts() == {}
         _feed(sess, _TRUST_DIALOG)                               # after a hook: never again
-        assert claude_runner.trust_prompts() == {}
+        assert claude_runner.startup_prompts() == {}
     finally:
         claude_runner.SESSIONS.clear()

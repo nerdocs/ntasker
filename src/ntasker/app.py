@@ -52,7 +52,7 @@ from ntasker.claude_runner import (
     external_session_ids,
     idle_session_ids,
     open_questions,
-    trust_prompts,
+    startup_prompts,
     planner_seed,
     projects_base_dir,
     register_external,
@@ -750,6 +750,13 @@ def build_js_strings() -> dict[str, str]:
         "conv_trust_no": _("Exit"),
         "conv_trust_hint": _(
             "The agent may read, edit and run files in this folder. Only trust your own code or projects you know."
+        ),
+        "conv_imports": _("Instructions from outside the project"),
+        "conv_imports_yes": _("Allow"),
+        "conv_imports_no": _("Ignore"),
+        "conv_imports_hint": _(
+            "The project's CLAUDE.md links these files outside the project folder. Never allow this for projects "
+            "from third parties."
         ),
         "conv_deny": _("Deny"),
         "conv_answer_in_terminal": _("Answer in the terminal"),
@@ -1832,10 +1839,11 @@ def api_claude_sessions() -> JSONResponse:
     the status line on a running task's card; only agents with a transcript.
     ``questions``: the question each waiting session asks right now (id ->
     ``{id, questions}``, see :func:`api_claude_session_question`) -- the
-    conversation pane's question card. ``trust``: the sessions showing Claude
-    Code's folder trust dialog (id -> directory, see
-    :func:`ntasker.claude_runner.trust_prompts`) -- the conversation pane's
-    trust card. ``idle``: the waiting sessions whose turn
+    conversation pane's question card. ``startup``: the sessions showing a dialog
+    Claude Code asks before the session proper -- folder trust or external
+    CLAUDE.md imports (id -> ``{kind, detail}``, see
+    :func:`ntasker.claude_runner.startup_prompts`) -- the conversation pane's
+    startup card. ``idle``: the waiting sessions whose turn
     is over (see :func:`ntasker.claude_runner.idle_session_ids`).
     ``steerable``: the working sessions that take a prompt mid-turn (see
     :func:`ntasker.claude_runner.steerable_session_ids`). The run view hands
@@ -1878,7 +1886,7 @@ def api_claude_sessions() -> JSONResponse:
             "titles": titles,
             "activity": activity,
             "questions": open_questions(),
-            "trust": trust_prompts(),
+            "startup": startup_prompts(),
             "idle": idle_session_ids(states),
             "steerable": steerable_session_ids(),
         }

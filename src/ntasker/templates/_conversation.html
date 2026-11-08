@@ -420,8 +420,9 @@
                 {% for tpl in plugin_slots['conv_reply'] %}{% include tpl %}{% endfor %}
                 <textarea class="form-control" rows="1" x-model="convReply" x-ref="convReplyBox" x-init="focusConvReply()"
                           x-effect="convReply; $nextTick(() => fitConvReply())"
-                          :placeholder="$i18n('conv_reply_placeholder')"
+                          :placeholder="convSuggestion ? $i18n('conv_reply_suggestion', {text: convSuggestion}) : $i18n('conv_reply_placeholder')"
                           @paste="onConvPaste($event)"
+                          @keydown.tab="acceptConvSuggestion($event)"
                           @keydown.enter="if (!$event.shiftKey && !$event.isComposing) { $event.preventDefault(); sendConvReply(); }"></textarea>
                 {# Split button: plain Send, or (caret) a /clear first. Never remembered. #}
                 <div class="btn-group dropup" x-data="{ sendMenu: false }" @click.outside="sendMenu = false">

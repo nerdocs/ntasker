@@ -172,6 +172,48 @@ const VIEW_MODES = ['list', 'kanban'];
 // server-side PTY sessions persist in the background.
 const _claudeTerms = new Map();
 
+// Claude Code's suggested next prompt: after a turn it prints a guess at the
+// next reply as dim ("grey") text in its empty input line, and Tab accepts
+// it. Not in the transcript -- only on screen -- so it is read off the xterm
+// buffer: the last line starting with the prompt mark "\u276f" plus a no-break
+// space, every non-blank cell after it dim. A wrapped suggestion continues on
+// the lines below up to the box's bottom border. The startup placeholder
+// ('Try "..."') is dim too and is skipped. Returns '' when there is none.
+const _PROMPT_MARK = '\u276f\u00a0';
+function _termSuggestion(term) {
+    const buf = term.buffer.active;
+    const cell = buf.getNullCell();
+    const lineText = (y) => buf.getLine(y)?.translateToString(true) || '';
+    // Text of one line from column x on, or null as soon as a cell is not dim
+    // (typed input, or not the input box at all).
+    const dimText = (y, x) => {
+        const line = buf.getLine(y);
+        if (!line) return null;
+        let out = '';
+        for (let i = x; i < line.length; i++) {
+            line.getCell(i, cell);
+            const ch = cell.getChars();
+            if (!ch || ch === ' ') { out += ' '; continue; }
+            if (!cell.isDim()) return null;
+            out += ch;
+        }
+        return out.trimEnd();
+    };
+    const last = buf.length - 1;
+    for (let y = last; y >= Math.max(0, last - 20); y--) {
+        const text = lineText(y);
+        if (!text.startsWith(_PROMPT_MARK)) continue;
+        const parts = [dimText(y, _PROMPT_MARK.length)];
+        for (let n = y + 1; n <= last && !lineText(n).startsWith('\u2500'); n++) {
+            parts.push(dimText(n, 0));
+        }
+        if (parts.some(p => p === null)) return '';
+        const suggestion = parts.map(p => p.trim()).filter(Boolean).join(' ');
+        return /^Try "/.test(suggestion) ? '' : suggestion;
+    }
+    return '';
+}
+
 // Board card / list row currently carrying the drop indicator (insertion line
 // or dependency hint). Kept out of Alpine state on purpose: the indicator is
 // painted straight onto the element, so a dragover -- which fires on every
@@ -575,6 +617,10 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         convTurns: [],
         convOpen: {},
         convReply: '',
+        // Claude Code's suggested next prompt per live session ({taskId: text}),
+        // read off its terminal (see _termSuggestion); Tab in the empty reply
+        // box takes it.
+        convSuggestions: {},
         // Files pasted / dropped into the reply box, shown until the reply is
         // sent ({file, url} -- url is an object URL for an image's thumbnail,
         // null for any other file).
@@ -4194,7 +4240,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             ws.onmessage = (ev) => {
                 const msg = JSON.parse(ev.data);
                 if (msg.type === 'output') {
-                    term.write(_b64ToBytes(msg.data));
+                    term.write(_b64ToBytes(msg.data), () => this._watchSuggestion(taskId));
                 } else if (msg.type === 'exit') {
                     ended = true;
                     this._setTabStatus(taskId, 'exited');
@@ -4352,6 +4398,8 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             const s = _claudeTerms.get(id);
             if (!s) return;
             s.ro.disconnect();
+            clearTimeout(s.suggestTimer);
+            delete this.convSuggestions[id];
             try { s.ws.close(); } catch (_e) { /* already closing */ }
             try { s.term.dispose(); } catch (_e) { /* already disposed */ }
             _claudeTerms.delete(id);
@@ -4945,6 +4993,34 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             }, 80);
         },
 
+        // Re-read a session's suggested prompt once its output settles: the TUI
+        // repaints in many small writes (spinner, status line), so the screen
+        // is read only after a short quiet spell.
+        _watchSuggestion(taskId) {
+            const s = _claudeTerms.get(taskId);
+            if (!s) return;
+            clearTimeout(s.suggestTimer);
+            s.suggestTimer = setTimeout(() => {
+                if (_claudeTerms.get(taskId) !== s) return;
+                let text = '';
+                try { text = _termSuggestion(s.term); } catch (_e) { /* disposed */ }
+                if ((this.convSuggestions[taskId] || '') !== text) this.convSuggestions[taskId] = text;
+            }, 250);
+        },
+
+        // The active session's suggested next prompt, or ''.
+        get convSuggestion() {
+            return (this.claudeView !== null && this.convSuggestions[this.claudeView]) || '';
+        },
+
+        // Tab in the empty reply box takes the suggestion, like Tab in the
+        // terminal. Otherwise Tab keeps moving the focus.
+        acceptConvSuggestion(ev) {
+            if (this.convReply || !this.convSuggestion || ev.shiftKey) return;
+            ev.preventDefault();
+            this.convReply = this.convSuggestion;
+        },
+
         // The pane's reply box: typed into the live session like a quick prompt.
         // Unless the turn is over (agent working, a dialog open, replies
         // already waiting) it joins the task's queue instead -- typed in
@@ -4959,6 +5035,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 ? await this.convRefsBrief(id, refs) : '';
             if (brief === null || this.claudeView !== id) return;   // brief failed (toasted) / tab switched
             const text = [this.convReply.trim(), brief].filter(Boolean).join('\n\n');
+            this.convSuggestions[id] = '';   // answered -- the next turn brings a new one
             const queue = this.convQueue[id] || [];
             if (queue.some(e => !e.sent) || !this._takesReply(id, fresh)) {
                 this.convQueue[id] = [...queue, { key: ++_convQueueSeq, text, files, fresh, sent: false }];

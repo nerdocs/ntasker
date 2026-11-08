@@ -683,6 +683,7 @@ def build_js_strings() -> dict[str, str]:
         "conv_expand_all": _("Expand all"),
         "conv_collapse_all": _("Collapse all"),
         "conv_reply_placeholder": _("Reply to the agent ... (Enter sends, Shift+Enter new line)"),
+        "conv_reply_suggestion": _("{text}   (Tab accepts)"),
         "conv_send": _("Send"),
         "conv_code_copy": _("Copy code"),
         "conv_code_copied": _("Code copied"),

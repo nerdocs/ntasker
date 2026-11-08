@@ -6,6 +6,9 @@ Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
 ## [Unreleased]
 
+## [3.22.0] — 2026-11-08
+Conversation: Tab takes Claude's suggested next prompt; trust and import prompts answered in the pane.
+
 ## [3.21.0] — 2026-10-26
 Conversation: copy button on code, run button for one-line "!" commands; context size read from statusline.
 

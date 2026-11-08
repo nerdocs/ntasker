@@ -2809,7 +2809,9 @@ def cmd_service_install(args: argparse.Namespace) -> int:
     # the daemon resolve the platform default at runtime (cleaner unit file).
     db_path = args.db or os.environ.get("NTASKER_DB")
     try:
-        log = service.install(args.host, args.port, db_path, args.auto_update, args.worker)
+        log = service.install(
+            args.host, args.port, db_path, args.auto_update, args.worker, args.allowed_host
+        )
     except RuntimeError as exc:
         print(f"nTasker: {exc}", file=sys.stderr)
         return 2
@@ -3578,7 +3580,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     svc_install.add_argument(
         "--worker", action="store_true",
-        help=_("Run `ntasker worker` for a team server instead of a local server."),
+        help=_("Install the `ntasker worker` service for a team server (beside or instead of the server)."),
+    )
+    svc_install.add_argument(
+        "--allowed-host", metavar="NAME",
+        help=_("Public host name a reverse proxy forwards to the server, e.g. tasks.example.org."),
     )
     svc_install.set_defaults(func=cmd_service_install)
 

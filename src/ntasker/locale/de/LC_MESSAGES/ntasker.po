@@ -1437,7 +1437,7 @@ msgstr "Entfernen"
 msgid "Completion installed -- open a new shell to use it."
 msgstr "Vervollständigung installiert -- zum Verwenden eine neue Shell öffnen."
 
-#: src/ntasker/app.py:872 src/ntasker/cli.py:2934
+#: src/ntasker/app.py:872 src/ntasker/cli.py:2936
 msgid "Completion removed."
 msgstr "Vervollständigung entfernt."
 
@@ -2316,7 +2316,7 @@ msgstr "Projekt angelegt, aber git init ist fehlgeschlagen: {error}"
 msgid "Agent"
 msgstr "Agent"
 
-#: src/ntasker/app.py:1138 src/ntasker/service.py:545
+#: src/ntasker/app.py:1138 src/ntasker/service.py:564
 msgid "not installed"
 msgstr "nicht installiert"
 
@@ -3510,25 +3510,25 @@ msgstr "nTasker: Update-Befehl fehlgeschlagen (Exit {rc})"
 msgid "nTasker: now at {ver} (was {old})"
 msgstr "nTasker: jetzt {ver} (vorher {old})"
 
-#: src/ntasker/cli.py:2798 src/ntasker/cli.py:2905
+#: src/ntasker/cli.py:2798 src/ntasker/cli.py:2907
 msgid "nTasker: service restarted."
 msgstr "nTasker: Dienst neu gestartet."
 
-#: src/ntasker/cli.py:2849
+#: src/ntasker/cli.py:2851
 msgid "nTasker: service started."
 msgstr "nTasker: Dienst gestartet."
 
-#: src/ntasker/cli.py:2852 src/ntasker/cli.py:2866 src/ntasker/cli.py:2886
+#: src/ntasker/cli.py:2854 src/ntasker/cli.py:2868 src/ntasker/cli.py:2888
 msgid "nTasker: no service installed -- run `ntasker service install` first."
 msgstr ""
 "nTasker: Kein Dienst installiert -- zuerst `ntasker service install` "
 "ausführen."
 
-#: src/ntasker/cli.py:2863
+#: src/ntasker/cli.py:2865
 msgid "nTasker: service stopped."
 msgstr "nTasker: Dienst gestoppt."
 
-#: src/ntasker/cli.py:2897
+#: src/ntasker/cli.py:2899
 #, python-brace-format
 msgid ""
 "nTasker: restart deferred -- {n} task session(s) still running ({ids}); a"
@@ -3538,30 +3538,30 @@ msgstr ""
 "({ids}); ein Neustart würde sie beenden. Später erneut versuchen oder "
 "--force angeben."
 
-#: src/ntasker/cli.py:2931
+#: src/ntasker/cli.py:2933
 #, python-brace-format
 msgid "Completion installed -- open a new shell or run: source {rc}"
 msgstr ""
 "Vervollständigung installiert -- neue Shell öffnen oder ausführen: source"
 " {rc}"
 
-#: src/ntasker/cli.py:2936
+#: src/ntasker/cli.py:2938
 msgid "Completion was not installed."
 msgstr "Vervollständigung war nicht installiert."
 
-#: src/ntasker/cli.py:2945
+#: src/ntasker/cli.py:2947
 msgid "Lightweight local task tracker. Single-user, FastAPI + SQLite."
 msgstr "Leichter lokaler Aufgaben-Tracker. Einzelnutzer, FastAPI + SQLite."
 
-#: src/ntasker/cli.py:2951
+#: src/ntasker/cli.py:2953
 msgid "DB path (overrides NTASKER_DB and the default)."
 msgstr "DB-Pfad (überschreibt NTASKER_DB und Default)."
 
-#: src/ntasker/cli.py:2960
+#: src/ntasker/cli.py:2962
 msgid "Create / migrate the schema"
 msgstr "Schema anlegen / migrieren"
 
-#: src/ntasker/cli.py:2963
+#: src/ntasker/cli.py:2965
 msgid ""
 "Start the server as a detached background process. Idempotent: returns 0 "
 "if a server is already answering /healthz."
@@ -3569,23 +3569,23 @@ msgstr ""
 "Server als detached Hintergrundprozess starten. Idempotent: liefert 0, "
 "wenn bereits ein Server auf /healthz antwortet."
 
-#: src/ntasker/cli.py:2968
+#: src/ntasker/cli.py:2970
 msgid "Run the FastAPI server"
 msgstr "FastAPI-Server starten"
 
-#: src/ntasker/cli.py:2976
+#: src/ntasker/cli.py:2978
 msgid "Listen on a non-loopback --host even though sign-in is off"
 msgstr "Auch ohne Anmeldung auf einem --host außerhalb dieses Rechners lauschen"
 
-#: src/ntasker/cli.py:2983
+#: src/ntasker/cli.py:2985
 msgid "Ask a running nTasker server to shut down (POST /shutdown)."
 msgstr "Laufenden nTasker-Server beenden (POST /shutdown)."
 
-#: src/ntasker/cli.py:2992
+#: src/ntasker/cli.py:2994
 msgid "Stop a running nTasker server, then start it again."
 msgstr "Laufenden nTasker-Server beenden und wieder starten."
 
-#: src/ntasker/cli.py:3004
+#: src/ntasker/cli.py:3006
 msgid ""
 "Bypass the service manager and run the new server in this terminal "
 "instead of detaching it. Implied by --reload."
@@ -3593,27 +3593,27 @@ msgstr ""
 "Den Service-Manager umgehen und den neuen Server in diesem Terminal "
 "laufen lassen statt ihn abzukoppeln. Von --reload impliziert."
 
-#: src/ntasker/cli.py:3014
+#: src/ntasker/cli.py:3016
 msgid "List tasks"
 msgstr "Tasks listen"
 
-#: src/ntasker/cli.py:3030
+#: src/ntasker/cli.py:3032
 msgid "Show task detail"
 msgstr "Task-Detail anzeigen"
 
-#: src/ntasker/cli.py:3036
+#: src/ntasker/cli.py:3038
 msgid "Create a task"
 msgstr "Task anlegen"
 
-#: src/ntasker/cli.py:3037
+#: src/ntasker/cli.py:3039
 msgid "Optional; defaults to the start of --description"
 msgstr "Optional; Standard ist der Anfang von --description"
 
-#: src/ntasker/cli.py:3045
+#: src/ntasker/cli.py:3047
 msgid "AI coding agent for this task (default: the default_agent setting)."
 msgstr "KI-Coding-Agent für diesen Task (Standard: die Einstellung default_agent)."
 
-#: src/ntasker/cli.py:3049
+#: src/ntasker/cli.py:3051
 msgid ""
 "Model for this task's sessions, e.g. opus (default: the agent's model "
 "setting)."
@@ -3621,29 +3621,29 @@ msgstr ""
 "Model für die Sessions dieses Tasks, z.B. opus (Standard: die Model-"
 "Einstellung des Agenten)."
 
-#: src/ntasker/cli.py:3054
+#: src/ntasker/cli.py:3056
 msgid "Comma-separated task ids this task depends on, e.g. 12,15."
 msgstr "Kommagetrennte Aufgaben-IDs, von denen diese Aufgabe abhängt, z.B. 12,15."
 
-#: src/ntasker/cli.py:3058
+#: src/ntasker/cli.py:3060
 msgid "Comma-separated extra projects whose directories the run holds."
 msgstr "Kommagetrennte weitere Projekte, deren Verzeichnisse der Run hält."
 
-#: src/ntasker/cli.py:3061
+#: src/ntasker/cli.py:3063
 msgid "Park as a draft: never started by anyone."
 msgstr "Als Entwurf parken: wird von niemandem gestartet."
 
-#: src/ntasker/cli.py:3065 src/ntasker/cli.py:3134
+#: src/ntasker/cli.py:3067 src/ntasker/cli.py:3136
 msgid "Fasttrack: the agent commits and finishes the task itself."
 msgstr "Fasttrack: der Agent committet und schließt die Aufgabe selbst ab."
 
-#: src/ntasker/cli.py:3069
+#: src/ntasker/cli.py:3071
 msgid "With --fasttrack: a failed run leaves the queue instead of blocking it."
 msgstr ""
 "Mit --fasttrack: ein fehlgeschlagener Lauf verlässt die Queue, statt sie "
 "zu blockieren."
 
-#: src/ntasker/cli.py:3073
+#: src/ntasker/cli.py:3075
 msgid ""
 "Run in a git worktree: 'new' creates one, an id joins an open one of the "
 "project."
@@ -3651,47 +3651,47 @@ msgstr ""
 "In einem Git-Worktree ausführen: 'new' legt einen an, eine ID tritt einem"
 " offenen des Projekts bei."
 
-#: src/ntasker/cli.py:3075
+#: src/ntasker/cli.py:3077
 msgid "User name the task is assigned to (default: you)."
 msgstr "Benutzername, dem die Aufgabe zugewiesen wird (Standard: du)."
 
-#: src/ntasker/cli.py:3079
+#: src/ntasker/cli.py:3081
 msgid "Drop a raw note into the inbox; the server triages it"
 msgstr "Eine Notiz in die Inbox legen; der Server sortiert sie ein"
 
-#: src/ntasker/cli.py:3080
+#: src/ntasker/cli.py:3082
 msgid "The note; omitted or '-' reads stdin."
 msgstr "Die Notiz; ohne Angabe oder '-' wird stdin gelesen."
 
-#: src/ntasker/cli.py:3084
+#: src/ntasker/cli.py:3086
 msgid "Mark a task as done"
 msgstr "Task auf done setzen"
 
-#: src/ntasker/cli.py:3094
+#: src/ntasker/cli.py:3096
 msgid "Delete a task permanently (use with care)."
 msgstr "Task endgültig löschen (mit Bedacht verwenden)."
 
-#: src/ntasker/cli.py:3100
+#: src/ntasker/cli.py:3102
 msgid "Skip the confirmation prompt (for scripts)."
 msgstr "Bestätigungs-Prompt überspringen (für Skripte)."
 
-#: src/ntasker/cli.py:3105
+#: src/ntasker/cli.py:3107
 msgid "Edit task fields"
 msgstr "Task-Felder ändern"
 
-#: src/ntasker/cli.py:3114
+#: src/ntasker/cli.py:3116
 msgid "Set the task's agent (claude/opencode/pi; '' clears to default)."
 msgstr ""
 "Agent des Tasks setzen (claude/opencode/pi; '' setzt auf den Standard "
 "zurück)."
 
-#: src/ntasker/cli.py:3118
+#: src/ntasker/cli.py:3120
 msgid "Set the task's model, e.g. opus ('' clears to the agent's model setting)."
 msgstr ""
 "Model des Tasks setzen, z.B. opus ('' löscht -> Model-Einstellung des "
 "Agenten)."
 
-#: src/ntasker/cli.py:3130
+#: src/ntasker/cli.py:3132
 msgid ""
 "true parks the task as a draft (and drops it from the queue); false "
 "releases it."
@@ -3699,13 +3699,13 @@ msgstr ""
 "true parkt den Task als Entwurf (und entfernt ihn aus der Queue); false "
 "gibt ihn frei."
 
-#: src/ntasker/cli.py:3138
+#: src/ntasker/cli.py:3140
 msgid "With fasttrack: a failed run leaves the queue instead of blocking it."
 msgstr ""
 "Mit Fasttrack: ein fehlgeschlagener Lauf verlässt die Queue, statt sie zu"
 " blockieren."
 
-#: src/ntasker/cli.py:3142
+#: src/ntasker/cli.py:3144
 msgid ""
 "Run in a git worktree: 'new' creates one, an id joins one, 'none' leaves "
 "it."
@@ -3713,479 +3713,489 @@ msgstr ""
 "In einem Git-Worktree ausführen: 'new' legt einen an, eine ID tritt bei, "
 "'none' verlässt ihn."
 
-#: src/ntasker/cli.py:3146
+#: src/ntasker/cli.py:3148
 msgid "Comma-separated task ids to depend on (replaces the set; '' clears)."
 msgstr ""
 "Kommagetrennte Aufgaben-IDs als Abhängigkeiten (ersetzt die Menge; '' "
 "löscht)."
 
-#: src/ntasker/cli.py:3150
+#: src/ntasker/cli.py:3152
 msgid "Comma-separated extra projects to lock (replaces the set; '' clears)."
 msgstr ""
 "Kommagetrennte weitere Projekte zum Sperren (ersetzt die Menge; '' "
 "löscht)."
 
-#: src/ntasker/cli.py:3152
+#: src/ntasker/cli.py:3154
 msgid "The agent's final report, Markdown ('' clears)."
 msgstr "Abschlussbericht des Agenten, Markdown ('' löscht)."
 
-#: src/ntasker/cli.py:3153
+#: src/ntasker/cli.py:3155
 msgid "User name to assign the task to."
 msgstr "Benutzername, dem die Aufgabe zugewiesen wird."
 
-#: src/ntasker/cli.py:3157
+#: src/ntasker/cli.py:3159
 msgid "Store the agent's final report for a task"
 msgstr "Abschlussbericht des Agenten zu einer Aufgabe speichern"
 
-#: src/ntasker/cli.py:3159
+#: src/ntasker/cli.py:3161
 msgid "Read the Markdown from this file instead of stdin."
 msgstr "Markdown aus dieser Datei statt von stdin lesen."
 
-#: src/ntasker/cli.py:3163
+#: src/ntasker/cli.py:3165
 msgid "Report the run's outcome to the server"
 msgstr "Das Ergebnis des Laufs an den Server melden"
 
-#: src/ntasker/cli.py:3166
+#: src/ntasker/cli.py:3168
 msgid "One line; defaults to the report's first line."
 msgstr "Eine Zeile; Standard ist die erste Zeile des Reports."
 
-#: src/ntasker/cli.py:3167
+#: src/ntasker/cli.py:3169
 msgid "The commit's sha, if you committed."
 msgstr "Der SHA des Commits, falls committet wurde."
 
-#: src/ntasker/cli.py:3168
+#: src/ntasker/cli.py:3170
 msgid "Read the report from this file instead of stdin."
 msgstr "Report aus dieser Datei statt von stdin lesen."
 
-#: src/ntasker/cli.py:3170
+#: src/ntasker/cli.py:3172
 msgid "Comma-separated changed paths (default: derived from the run's diff)."
 msgstr ""
 "Kommagetrennte geänderte Pfade (Standard: aus dem Diff des Laufs "
 "abgeleitet)."
 
-#: src/ntasker/cli.py:3174
+#: src/ntasker/cli.py:3176
 msgid "A follow-up suggestion for the user (repeatable); never creates a task."
 msgstr ""
 "Ein Folgevorschlag für den Benutzer (wiederholbar); legt nie eine Aufgabe"
 " an."
 
-#: src/ntasker/cli.py:3183
+#: src/ntasker/cli.py:3185
 msgid "Attach the session you are in to a task, so it can be resumed"
 msgstr ""
 "Die Session, in der du bist, an eine Aufgabe hängen, damit sie "
 "fortsetzbar wird"
 
-#: src/ntasker/cli.py:3186
+#: src/ntasker/cli.py:3188
 msgid "Create a task with this title instead."
 msgstr "Stattdessen eine Aufgabe mit diesem Titel anlegen."
 
-#: src/ntasker/cli.py:3188
+#: src/ntasker/cli.py:3190
 msgid "Project for --title (default: derived from the directory)."
 msgstr "Projekt für --title (Vorgabe: aus dem Verzeichnis abgeleitet)."
 
-#: src/ntasker/cli.py:3190
+#: src/ntasker/cli.py:3192
 msgid "Session id (default: the session you are in)."
 msgstr "Session-ID (Vorgabe: die Session, in der du bist)."
 
-#: src/ntasker/cli.py:3191
+#: src/ntasker/cli.py:3193
 msgid "Directory the session runs in (default: here)."
 msgstr "Verzeichnis, in dem die Session läuft (Vorgabe: hier)."
 
-#: src/ntasker/cli.py:3197
+#: src/ntasker/cli.py:3199
 msgid "Add a tag"
 msgstr "Tag hinzufügen"
 
-#: src/ntasker/cli.py:3202
+#: src/ntasker/cli.py:3204
 msgid "Remove a tag"
 msgstr "Tag entfernen"
 
-#: src/ntasker/cli.py:3208
+#: src/ntasker/cli.py:3210
 msgid "Counts (open/done/archive)"
 msgstr "Zähler (offen/erledigt/archiviert)"
 
-#: src/ntasker/cli.py:3218
+#: src/ntasker/cli.py:3220
 msgid "Users of a team server"
 msgstr "Benutzer eines Team-Servers"
 
-#: src/ntasker/cli.py:3220
+#: src/ntasker/cli.py:3222
 msgid "Create a user (asks for the password)"
 msgstr "Benutzer anlegen (fragt nach dem Passwort)"
 
-#: src/ntasker/cli.py:3225
+#: src/ntasker/cli.py:3227
 msgid "Set a user's password"
 msgstr "Passwort eines Benutzers setzen"
 
-#: src/ntasker/cli.py:3228
+#: src/ntasker/cli.py:3230
 msgid "List users"
 msgstr "Benutzer auflisten"
 
-#: src/ntasker/cli.py:3231
+#: src/ntasker/cli.py:3233
 msgid "Block a user from signing in"
 msgstr "Anmeldung eines Benutzers sperren"
 
-#: src/ntasker/cli.py:3234
+#: src/ntasker/cli.py:3236
 msgid "Allow a disabled user again"
 msgstr "Gesperrten Benutzer wieder zulassen"
 
-#: src/ntasker/cli.py:3238
+#: src/ntasker/cli.py:3240
 msgid "Access tokens for workers and the CLI"
 msgstr "Zugangsschlüssel für Worker und Kommandozeile"
 
-#: src/ntasker/cli.py:3240
+#: src/ntasker/cli.py:3242
 msgid "Create a token for a user (printed once)"
 msgstr "Zugangsschlüssel für einen Benutzer anlegen (einmalig angezeigt)"
 
-#: src/ntasker/cli.py:3242
+#: src/ntasker/cli.py:3244
 msgid "What the token is for, e.g. laptop"
 msgstr "Wofür der Schlüssel ist, z.B. laptop"
 
-#: src/ntasker/cli.py:3244
+#: src/ntasker/cli.py:3246
 msgid "List tokens"
 msgstr "Zugangsschlüssel auflisten"
 
-#: src/ntasker/cli.py:3248
+#: src/ntasker/cli.py:3250
 msgid "Revoke a token"
 msgstr "Zugangsschlüssel widerrufen"
 
-#: src/ntasker/cli.py:3252
+#: src/ntasker/cli.py:3254
 msgid "Run a team server's tasks on this computer"
 msgstr "Aufgaben eines Team-Servers auf diesem Rechner ausführen"
 
-#: src/ntasker/cli.py:3253
+#: src/ntasker/cli.py:3255
 msgid "Server URL (default: the server_url setting)"
 msgstr "Server-URL (Standard: Einstellung server_url)"
 
-#: src/ntasker/cli.py:3254
+#: src/ntasker/cli.py:3256
 msgid "Access key (default: NTASKER_TOKEN, then the server_token setting)"
 msgstr "Zugangsschlüssel (Standard: NTASKER_TOKEN, dann Einstellung server_token)"
 
-#: src/ntasker/cli.py:3255
+#: src/ntasker/cli.py:3257
 msgid "Name of this computer (default: worker_name setting, then host name)"
 msgstr "Name dieses Rechners (Standard: Einstellung worker_name, dann Hostname)"
 
-#: src/ntasker/cli.py:3256
+#: src/ntasker/cli.py:3258
 msgid "Do not reconnect after the connection ends"
 msgstr "Nach dem Ende der Verbindung nicht neu verbinden"
 
-#: src/ntasker/cli.py:3259
+#: src/ntasker/cli.py:3261
 msgid "Settings (KV store)"
 msgstr "Settings (KV-Store)"
 
-#: src/ntasker/cli.py:3262
+#: src/ntasker/cli.py:3264
 msgid "List all settings"
 msgstr "Alle Settings"
 
-#: src/ntasker/cli.py:3266
+#: src/ntasker/cli.py:3268
 msgid "Read one key"
 msgstr "Einen Key lesen"
 
-#: src/ntasker/cli.py:3271
+#: src/ntasker/cli.py:3273
 msgid "Write one key (validated)"
 msgstr "Einen Key setzen (mit Validator)"
 
-#: src/ntasker/cli.py:3276
+#: src/ntasker/cli.py:3278
 msgid "Remove one key"
 msgstr "Einen Key entfernen"
 
-#: src/ntasker/cli.py:3281
+#: src/ntasker/cli.py:3283
 msgid "Switch a plugin on (e.g. voice)"
 msgstr "Ein Plugin einschalten (z. B. voice)"
 
-#: src/ntasker/cli.py:3285
+#: src/ntasker/cli.py:3287
 msgid "Switch a plugin off"
 msgstr "Ein Plugin ausschalten"
 
-#: src/ntasker/cli.py:3290
+#: src/ntasker/cli.py:3292
 msgid "Auto-run task queue"
 msgstr "Automatische Task-Queue"
 
-#: src/ntasker/cli.py:3293
+#: src/ntasker/cli.py:3295
 msgid "Show the queue in run order"
 msgstr "Die Queue in Ausführungsreihenfolge anzeigen"
 
-#: src/ntasker/cli.py:3297
+#: src/ntasker/cli.py:3299
 msgid "Put tasks in the queue"
 msgstr "Aufgaben in die Queue stellen"
 
-#: src/ntasker/cli.py:3300
+#: src/ntasker/cli.py:3302
 msgid "Insert at the front instead of the end"
 msgstr "Vorne einfügen statt hinten"
 
-#: src/ntasker/cli.py:3304
+#: src/ntasker/cli.py:3306
 msgid "Take tasks out of the queue"
 msgstr "Aufgaben aus der Queue nehmen"
 
-#: src/ntasker/cli.py:3308
+#: src/ntasker/cli.py:3310
 msgid "Empty the queue"
 msgstr "Die Queue leeren"
 
-#: src/ntasker/cli.py:3311
+#: src/ntasker/cli.py:3313
 msgid "Let the queue work through its tasks"
 msgstr "Die Queue ihre Aufgaben abarbeiten lassen"
 
-#: src/ntasker/cli.py:3318
+#: src/ntasker/cli.py:3320
 msgid "Stop starting new tasks"
 msgstr "Keine neuen Aufgaben mehr starten"
 
-#: src/ntasker/cli.py:3322
+#: src/ntasker/cli.py:3324
 msgid "Let an agent plan the given tasks and start the queue"
 msgstr "Einen Agenten die angegebenen Tasks planen und die Queue starten lassen"
 
-#: src/ntasker/cli.py:3332
+#: src/ntasker/cli.py:3334
 msgid "Start a task in the UI -- the board's run button, from a terminal"
 msgstr ""
 "Eine Aufgabe in der UI starten -- der Run-Button des Boards, vom Terminal"
 " aus"
 
-#: src/ntasker/cli.py:3336
+#: src/ntasker/cli.py:3338
 msgid "Open the run view in a browser"
 msgstr "Die Run-Ansicht im Browser öffnen"
 
-#: src/ntasker/cli.py:3341
+#: src/ntasker/cli.py:3343
 msgid "Start at once, even while another run holds the project or a directory"
 msgstr ""
 "Sofort starten, auch wenn ein anderer Run das Projekt oder ein "
 "Verzeichnis hält"
 
-#: src/ntasker/cli.py:3349
+#: src/ntasker/cli.py:3351
 msgid "Running agent sessions to talk to"
 msgstr "Laufende Agent-Sessions zum Anschreiben"
 
-#: src/ntasker/cli.py:3351
+#: src/ntasker/cli.py:3353
 msgid "Send a message to a task's session"
 msgstr "Der Session einer Aufgabe eine Nachricht schicken"
 
-#: src/ntasker/cli.py:3353
+#: src/ntasker/cli.py:3355
 msgid "The message; read from stdin when left out."
 msgstr "Die Nachricht; ohne Angabe von stdin gelesen."
 
-#: src/ntasker/cli.py:3354
+#: src/ntasker/cli.py:3356
 msgid "Read the messages sent to your task"
 msgstr "Die Nachrichten an deine Aufgabe lesen"
 
-#: src/ntasker/cli.py:3356
+#: src/ntasker/cli.py:3358
 msgid "Wait for another task to finish; it is told so"
 msgstr "Auf eine andere Aufgabe warten; sie erfährt davon"
 
-#: src/ntasker/cli.py:3358
+#: src/ntasker/cli.py:3360
 msgid "Why you wait -- shown to the other session."
 msgstr "Warum du wartest -- die andere Session sieht es."
 
-#: src/ntasker/cli.py:3363
+#: src/ntasker/cli.py:3365
 msgid "Your task (default: NTASKER_TASK_ID)."
 msgstr "Deine Aufgabe (Standard: NTASKER_TASK_ID)."
 
-#: src/ntasker/cli.py:3371
+#: src/ntasker/cli.py:3373
 msgid "Claude Code hook handlers (used by spawned sessions)"
 msgstr "Claude-Code-Hook-Handler (von gestarteten Sessions verwendet)"
 
-#: src/ntasker/cli.py:3386
+#: src/ntasker/cli.py:3388
 msgid "Directory locks a task's run holds"
 msgstr "Verzeichnissperren, die der Run einer Aufgabe hält"
 
-#: src/ntasker/cli.py:3389
+#: src/ntasker/cli.py:3391
 msgid "Lock more projects' directories for a task"
 msgstr "Weitere Projektverzeichnisse für eine Aufgabe sperren"
 
-#: src/ntasker/cli.py:3390
+#: src/ntasker/cli.py:3392
 msgid "Release directory locks"
 msgstr "Verzeichnissperren freigeben"
 
-#: src/ntasker/cli.py:3391
+#: src/ntasker/cli.py:3393
 msgid "Show the directories a task holds"
 msgstr "Die Verzeichnisse einer Aufgabe anzeigen"
 
-#: src/ntasker/cli.py:3400
+#: src/ntasker/cli.py:3402
 msgid "Held by another running task: queue for it instead of failing."
 msgstr ""
 "Von einem anderen laufenden Task gehalten: dafür einreihen statt "
 "abzubrechen."
 
-#: src/ntasker/cli.py:3408
+#: src/ntasker/cli.py:3410
 msgid "Git worktrees tasks run in, and their end decision"
 msgstr "Git-Worktrees, in denen Aufgaben laufen, und die Entscheidung am Ende"
 
-#: src/ntasker/cli.py:3410
+#: src/ntasker/cli.py:3412
 msgid "List worktrees, pending decisions first"
 msgstr "Worktrees auflisten, offene Entscheidungen zuerst"
 
-#: src/ntasker/cli.py:3411
+#: src/ntasker/cli.py:3413
 msgid "Include merged and discarded ones."
 msgstr "Auch gemergte und verworfene."
 
-#: src/ntasker/cli.py:3417
+#: src/ntasker/cli.py:3419
 msgid "Merge into the main checkout and remove it (an agent run if not clean)"
 msgstr ""
 "Ins Haupt-Checkout mergen und entfernen (ein Agent-Lauf, falls nicht "
 "sauber)"
 
-#: src/ntasker/cli.py:3418
+#: src/ntasker/cli.py:3420
 msgid "Keep it for rework or a follow-up task"
 msgstr "Für Nacharbeit oder eine Folgeaufgabe behalten"
 
-#: src/ntasker/cli.py:3419
+#: src/ntasker/cli.py:3421
 msgid "Remove checkout and branch after a short undo window"
 msgstr "Checkout und Branch nach kurzer Rückgängig-Frist entfernen"
 
-#: src/ntasker/cli.py:3420
+#: src/ntasker/cli.py:3422
 msgid "Take a pending discard back"
 msgstr "Ein laufendes Verwerfen zurücknehmen"
 
-#: src/ntasker/cli.py:3429
+#: src/ntasker/cli.py:3431
 msgid "Claude Code projects"
 msgstr "Claude-Code-Projekte"
 
-#: src/ntasker/cli.py:3432
+#: src/ntasker/cli.py:3434
 msgid "List discovered Claude projects"
 msgstr "Erkannte Claude-Projekte auflisten"
 
-#: src/ntasker/cli.py:3437
+#: src/ntasker/cli.py:3439
 msgid "Rename task projects to their Claude-project path form"
 msgstr "Task-Projekte in die Claude-Projekt-Pfadform umbenennen"
 
-#: src/ntasker/cli.py:3440
+#: src/ntasker/cli.py:3442
 msgid "Show planned renames without writing."
 msgstr "Geplante Umbenennungen anzeigen ohne zu schreiben."
 
-#: src/ntasker/cli.py:3445
+#: src/ntasker/cli.py:3447
 msgid "One project's data"
 msgstr "Daten eines Projekts"
 
-#: src/ntasker/cli.py:3448
+#: src/ntasker/cli.py:3450
 msgid "Show, set or regenerate the summary the inbox triage sees"
 msgstr "Zusammenfassung für die Inbox anzeigen, setzen oder neu erzeugen"
 
-#: src/ntasker/cli.py:3453
+#: src/ntasker/cli.py:3455
 msgid "Generate a new summary with Claude."
 msgstr "Eine neue Zusammenfassung mit Claude erzeugen."
 
-#: src/ntasker/cli.py:3455
+#: src/ntasker/cli.py:3457
 msgid "Store this text ('' deletes)."
 msgstr "Diesen Text speichern ('' löscht)."
 
-#: src/ntasker/cli.py:3462
+#: src/ntasker/cli.py:3464
 msgid "Manage AI coding agents (list, install /task integration)."
 msgstr "KI-Coding-Agenten verwalten (auflisten, /task-Integration installieren)."
 
-#: src/ntasker/cli.py:3467
+#: src/ntasker/cli.py:3469
 msgid "List agents with CLI availability + integration status."
 msgstr "Agenten mit CLI-Verfügbarkeit und Integrationsstatus auflisten."
 
-#: src/ntasker/cli.py:3474
+#: src/ntasker/cli.py:3476
 msgid "Install / check an agent's skill + /task slash command."
 msgstr "Skill + /task-Slash-Command eines Agenten installieren / prüfen."
 
-#: src/ntasker/cli.py:3480 src/ntasker/cli.py:3510
+#: src/ntasker/cli.py:3482 src/ntasker/cli.py:3512
 msgid "Slash command file name (default: task -> /task <id>)."
 msgstr "Slash-Command-Dateiname (Default: task -> /task <id>)."
 
-#: src/ntasker/cli.py:3485 src/ntasker/cli.py:3515
+#: src/ntasker/cli.py:3487 src/ntasker/cli.py:3517
 msgid "Overwrite divergent files (timestamped backup is created)."
 msgstr "Abweichende Dateien überschreiben (Zeitstempel-Backup wird angelegt)."
 
-#: src/ntasker/cli.py:3488 src/ntasker/cli.py:3520
+#: src/ntasker/cli.py:3490 src/ntasker/cli.py:3522
 msgid "Show planned actions without writing."
 msgstr "Geplante Aktionen anzeigen ohne zu schreiben."
 
-#: src/ntasker/cli.py:3493 src/ntasker/cli.py:3525
+#: src/ntasker/cli.py:3495 src/ntasker/cli.py:3527
 msgid "Read-only status check. Exit 0=identical, 1=drift, 2=not installed."
 msgstr "Read-only-Status-Check. Exit 0=identisch, 1=Drift, 2=nicht installiert."
 
-#: src/ntasker/cli.py:3498
+#: src/ntasker/cli.py:3500
 msgid "Override the agent's config home (also via its *_DIR/*_HOME env var)."
 msgstr ""
 "Config-Verzeichnis des Agenten überschreiben (auch via seiner *_DIR"
 "/*_HOME-Umgebungsvariable)."
 
-#: src/ntasker/cli.py:3505
+#: src/ntasker/cli.py:3507
 msgid "Deprecated: use `ntasker agent install claude`."
 msgstr "Veraltet: `ntasker agent install claude` verwenden."
 
-#: src/ntasker/cli.py:3530
+#: src/ntasker/cli.py:3532
 msgid "Override ~/.claude (also via NTASKER_CLAUDE_HOME env var)."
 msgstr "~/.claude überschreiben (auch via NTASKER_CLAUDE_HOME)."
 
-#: src/ntasker/cli.py:3537
+#: src/ntasker/cli.py:3539
 msgid "Manage vendor assets (CDN by default, opt-in local cache)."
 msgstr "Vendor-Assets verwalten (CDN-Default, opt-in lokal)."
 
-#: src/ntasker/cli.py:3543
+#: src/ntasker/cli.py:3545
 msgid "Fetch vendor assets via HTTP into the user-data cache (SRI-verified)."
 msgstr "Vendor-Assets via HTTP in den User-Data-Cache laden (mit SRI-Verify)."
 
-#: src/ntasker/cli.py:3548
+#: src/ntasker/cli.py:3550
 msgid "Re-fetch existing files even when their SRI already matches."
 msgstr "Vorhandene Files neu laden, auch wenn SRI bereits passt."
 
-#: src/ntasker/cli.py:3552
+#: src/ntasker/cli.py:3554
 msgid "Delete the user-data asset cache."
 msgstr "User-Data-Asset-Cache löschen."
 
-#: src/ntasker/cli.py:3556
+#: src/ntasker/cli.py:3558
 msgid "Skip the confirmation prompt."
 msgstr "Bestätigungs-Prompt überspringen."
 
-#: src/ntasker/cli.py:3560
+#: src/ntasker/cli.py:3562
 msgid "Show cache state + active mode."
 msgstr "Cache-Zustand + Modus anzeigen."
 
-#: src/ntasker/cli.py:3567
+#: src/ntasker/cli.py:3569
 msgid "Install nTasker as an OS service (systemd / launchd)."
 msgstr "nTasker als Systemdienst einrichten (systemd / launchd)."
 
-#: src/ntasker/cli.py:3571
+#: src/ntasker/cli.py:3573
 msgid "Install + enable the service."
 msgstr "Dienst installieren + aktivieren."
 
-#: src/ntasker/cli.py:3577
+#: src/ntasker/cli.py:3579
 msgid "Also install a daily timer that runs `ntasker self-update`."
 msgstr ""
 "Zusätzlich einen täglichen Timer einrichten, der `ntasker self-update` "
 "ausführt."
 
-#: src/ntasker/cli.py:3581
-msgid "Run `ntasker worker` for a team server instead of a local server."
+#: src/ntasker/cli.py:3583
+msgid ""
+"Install the `ntasker worker` service for a team server (beside or instead"
+" of the server)."
 msgstr ""
-"`ntasker worker` für einen Team-Server statt eines lokalen Servers "
-"ausführen."
+"Den Dienst `ntasker worker` für einen Team-Server installieren (neben "
+"oder statt des Servers)."
 
-#: src/ntasker/cli.py:3585
+#: src/ntasker/cli.py:3587
+msgid ""
+"Public host name a reverse proxy forwards to the server, e.g. "
+"tasks.example.org."
+msgstr ""
+"Öffentlicher Hostname, den ein Reverse-Proxy an den Server weiterreicht, "
+"z.B. tasks.example.org."
+
+#: src/ntasker/cli.py:3591
 msgid "Disable + remove the service."
 msgstr "Dienst deaktivieren + entfernen."
 
-#: src/ntasker/cli.py:3588
+#: src/ntasker/cli.py:3594
 msgid "Show service install / active state."
 msgstr "Installations- / Aktiv-Status des Dienstes anzeigen."
 
-#: src/ntasker/cli.py:3591
+#: src/ntasker/cli.py:3597
 msgid "Start the installed service."
 msgstr "Den installierten Dienst starten."
 
-#: src/ntasker/cli.py:3594
+#: src/ntasker/cli.py:3600
 msgid "Stop the running service."
 msgstr "Den laufenden Dienst stoppen."
 
-#: src/ntasker/cli.py:3599
+#: src/ntasker/cli.py:3605
 msgid "Restart the service to pick up a deployed version (deploy hook)."
 msgstr "Dienst neu starten, um eine deployte Version zu übernehmen (Deploy-Hook)."
 
-#: src/ntasker/cli.py:3606
+#: src/ntasker/cli.py:3612
 msgid "Restart even while task sessions run (they get killed)."
 msgstr "Auch dann neu starten, wenn Task-Sitzungen laufen (sie werden beendet)."
 
-#: src/ntasker/cli.py:3613
+#: src/ntasker/cli.py:3619
 msgid "Upgrade nTasker from PyPI, then restart the service."
 msgstr "nTasker von PyPI aktualisieren, dann den Dienst neu starten."
 
-#: src/ntasker/cli.py:3618
+#: src/ntasker/cli.py:3624
 msgid "Upgrade only; do not restart the running service."
 msgstr "Nur aktualisieren; den laufenden Dienst nicht neu starten."
 
-#: src/ntasker/cli.py:3625
+#: src/ntasker/cli.py:3631
 msgid "Print or install the shell completion script (bash, zsh)."
 msgstr "Shell-Vervollständigung ausgeben oder installieren (bash, zsh)."
 
-#: src/ntasker/cli.py:3632
+#: src/ntasker/cli.py:3638
 msgid ""
 "Write the script to the user-data dir and source it from the shell's rc "
 "file."
@@ -4193,11 +4203,11 @@ msgstr ""
 "Skript ins Benutzerdaten-Verzeichnis schreiben und aus der rc-Datei der "
 "Shell laden."
 
-#: src/ntasker/cli.py:3635
+#: src/ntasker/cli.py:3641
 msgid "Remove the script and the rc-file line."
 msgstr "Skript und die Zeile in der rc-Datei entfernen."
 
-#: src/ntasker/cli.py:3711
+#: src/ntasker/cli.py:3717
 #, python-brace-format
 msgid "nTasker: creating DB at {path}"
 msgstr "nTasker: erstelle DB bei {path}"
@@ -4227,26 +4237,26 @@ msgstr "Bitte wähle eine Gruppe"
 msgid "{path} already exists"
 msgstr "{path} existiert bereits"
 
-#: src/ntasker/service.py:395
+#: src/ntasker/service.py:412
 msgid "Unsupported platform: only systemd (Linux) and launchd (macOS)."
 msgstr "Nicht unterstützte Plattform: nur systemd (Linux) und launchd (macOS)."
 
-#: src/ntasker/service.py:402 src/ntasker/service.py:421
+#: src/ntasker/service.py:419 src/ntasker/service.py:439
 #, python-brace-format
 msgid "wrote {path}"
 msgstr "{path} geschrieben"
 
-#: src/ntasker/service.py:405
+#: src/ntasker/service.py:423
 #, python-brace-format
 msgid "enabled + started {unit}"
 msgstr "{unit} aktiviert + gestartet"
 
-#: src/ntasker/service.py:408
+#: src/ntasker/service.py:426
 #, python-brace-format
 msgid "enabled auto-update timer {unit}"
 msgstr "Auto-Update-Timer {unit} aktiviert"
 
-#: src/ntasker/service.py:412
+#: src/ntasker/service.py:430
 msgid ""
 "note: lingering is OFF -- the service stops at logout. Enable with: "
 "loginctl enable-linger $USER"
@@ -4254,39 +4264,39 @@ msgstr ""
 "Hinweis: Lingering ist AUS -- der Dienst stoppt beim Logout. Aktivieren "
 "mit: loginctl enable-linger $USER"
 
-#: src/ntasker/service.py:424
+#: src/ntasker/service.py:442
 msgid "loaded launchd agents"
 msgstr "launchd-Agenten geladen"
 
-#: src/ntasker/service.py:432 src/ntasker/service.py:529
+#: src/ntasker/service.py:450 src/ntasker/service.py:548
 msgid "Unsupported platform."
 msgstr "Nicht unterstützte Plattform."
 
-#: src/ntasker/service.py:441 src/ntasker/service.py:449
+#: src/ntasker/service.py:460 src/ntasker/service.py:468
 #, python-brace-format
 msgid "removed {path}"
 msgstr "{path} entfernt"
 
-#: src/ntasker/service.py:451
+#: src/ntasker/service.py:470
 msgid "nothing to remove -- no nTasker units installed."
 msgstr "nichts zu entfernen -- keine nTasker-Units installiert."
 
-#: src/ntasker/service.py:530
+#: src/ntasker/service.py:549
 #, python-brace-format
 msgid "manager: {mgr}"
 msgstr "Manager: {mgr}"
 
-#: src/ntasker/service.py:535
+#: src/ntasker/service.py:554
 #, python-brace-format
 msgid "{name}: not installed"
 msgstr "{name}: nicht installiert"
 
-#: src/ntasker/service.py:540
+#: src/ntasker/service.py:559
 #, python-brace-format
 msgid "{name}: {active} ({enabled})"
 msgstr "{name}: {active} ({enabled})"
 
-#: src/ntasker/service.py:545
+#: src/ntasker/service.py:564
 msgid "installed"
 msgstr "installiert"
 

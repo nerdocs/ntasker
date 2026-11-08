@@ -122,11 +122,25 @@ def test_transcript_and_diff_mirror_round_trip(db, tmp_path, monkeypatch):
     assert workers.stored_diff(task_id)["git"] is True
 
 
-def test_service_unit_for_a_worker():
+def test_service_unit_for_a_worker_lives_beside_the_server():
     from ntasker import service  # noqa: PLC0415
 
-    unit = service._systemd_units("127.0.0.1", 8766, None, False, worker=True)[0].content
-    assert "-m ntasker worker" in unit and "--port" not in unit
+    worker = service._systemd_units("127.0.0.1", 8766, None, False, worker=True)[0]
+    server = service._systemd_units("127.0.0.1", 8766, None, False)[0]
+    assert worker.path.name == "ntasker-worker.service" and server.path.name == "ntasker.service"
+    assert "-m ntasker worker" in worker.content and "--port" not in worker.content
+    plist = service._launchd_units("127.0.0.1", 8766, None, False, worker=True)[0]
+    assert plist.path.name == "at.nerdocs.ntasker-worker.plist"
+
+
+def test_service_unit_carries_the_allowed_host():
+    from ntasker import service  # noqa: PLC0415
+
+    unit = service._systemd_units("127.0.0.1", 8766, None, False, allowed_host="tasks.example.org")[0]
+    assert "Environment=NTASKER_ALLOWED_HOSTS=tasks.example.org\nExecStart=" in unit.content
+    assert "Environment=" not in service._systemd_units("127.0.0.1", 8766, None, False)[0].content
+    plist = service._launchd_units("127.0.0.1", 8766, None, False, allowed_host="tasks.example.org")[0]
+    assert "NTASKER_ALLOWED_HOSTS" in plist.content
 
 
 def test_flagged_run_that_is_live_again_is_not_resumed(db, monkeypatch):

@@ -14,6 +14,10 @@ browser ──https──> reverse proxy (TLS) ──> nTasker server (127.0.0.1
 The server never runs an agent itself. It decides what to start (the [queue](task-queue.md)), keeps every run's
 terminal buffer and state, and relays the browser terminal to the worker that runs it.
 
+Working alone on one computer, you need none of this: keep the default local mode, where the server runs the agents
+itself. Server and worker side by side on one host only make sense when that host is a team server *and* runs your
+own tasks.
+
 ## Modes
 
 | | local (default) | team server |
@@ -36,6 +40,8 @@ ntasker user add alice --admin           # asks for the password
 ntasker user add bob
 ntasker config set auth_mode password
 NTASKER_ALLOWED_HOSTS=tasks.example.org ntasker serve --port 8766   # behind the proxy, still on loopback
+# or as a service:
+ntasker service install --allowed-host tasks.example.org
 ```
 
 Terminate TLS in a reverse proxy and forward to `127.0.0.1:8766`, websockets included. A minimal Caddy site:
@@ -74,6 +80,12 @@ ntasker config set server_url https://tasks.example.org
 ntasker config set server_token <access key>      # Settings -> Team -> Access keys
 ntasker worker                                    # or: ntasker service install --worker
 ```
+
+On the server host itself, give the worker a database of its own (`NTASKER_DB=.../worker.db`, or `--db`), so its
+settings (`server_url`, `projects_base` ...) stay apart from the server's. `service install --worker` installs a unit
+of its own (`ntasker-worker.service`, launchd `at.nerdocs.ntasker-worker`) that runs beside the server's.
+`self-update` restarts only the server: restarting the worker ends the sessions it runs, so restart it by hand when
+nothing is running.
 
 `worker_name` (default: the host name) tells two computers of the same person apart. The worker connects *out*
 (`wss://<server>/ws/worker`), so it works from behind NAT or a firewall; nothing connects to it. It reconnects with

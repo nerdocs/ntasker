@@ -25,8 +25,8 @@ description: >
 | Package | `ntasker` (PyPI) |
 | DB (default) | `~/.local/share/nTasker/tasks.db` (`platformdirs.user_data_dir`) |
 | DB precedence | `--db <path>` > `NTASKER_DB` env > platformdirs default |
-| API | `http://127.0.0.1:8766` (when server is running) |
-| Bind | `127.0.0.1` only -- never expose externally |
+| API | `http://127.0.0.1:8766` (when server is running); on a team server `$NTASKER_URL`, see 1.2 |
+| Bind | `127.0.0.1` only -- never expose externally (a team server sits behind a TLS proxy, see 1.2) |
 | Layout | PyPA src-layout, package `src/ntasker/`; CLI = `ntasker` |
 
 Legacy package name `nerdocs-tracker` was renamed to `ntasker` in v1.0.0.
@@ -57,6 +57,32 @@ exits 0. Idempotent -- stopping an already-stopped server is a no-op.
 
 The `/task <id>` slash command handles this transparently via its loader
 -- only direct `curl` calls in this skill need the pre-probe.
+
+### 1.2 Team server (since the multi-user release)
+
+nTasker may run as a shared **team server** (`auth_mode = password`): several
+people sign in, and each one's tasks run on their own computer through
+`ntasker worker`. You are in such a setup when `NTASKER_TOKEN` is set in your
+environment (a session a worker started) or `ntasker config get server_token`
+answers (a computer connected with `ntasker connect`). Then:
+
+* **Never start a local server** (`ntasker serve --detach` above) -- the
+  tracker is the remote one.
+* **The CLI already talks to the server**: `ntasker list/show/add/patch/done/
+  delete/report/in/tag-add/tag-rm`, `ntasker finish`, `ntasker lock ...` and
+  the hooks use `NTASKER_URL` + `NTASKER_TOKEN` (or the `server_url` /
+  `server_token` settings). Prefer the CLI over `curl`.
+* **Direct HTTP calls** go to `$NTASKER_URL` (not `127.0.0.1:8766`) and must
+  carry the key: `curl -H "Authorization: Bearer $NTASKER_TOKEN" "$NTASKER_URL/api/..."`.
+  Without it the server answers 401.
+* You only see tasks of projects your user is a member of (plus tasks without
+  a project); another task's id answers 404 -- report that to the user rather
+  than guessing.
+* Every task has an `assignee_id` (its runs execute on that user's computer)
+  and comments (`GET /api/tasks/{id}/comments`). Leave a comment only when the
+  user asks for one -- like every other write (section 5).
+* Not available there: worktree runs, `ntasker adopt` / terminal `/task`
+  pick-up, the queue planner.
 
 ## 2. #ID Resolution (read -- always allowed)
 
@@ -461,6 +487,9 @@ agent's own idea -- and never on the task you are currently working on.
 | `report_at` | TEXT NULL | when the report was written |
 | `session_id` | TEXT NULL | the task's last agent session (`claude --resume`); NULL = never ran |
 | `session_cwd` | TEXT NULL | directory that session ran in -- a resume spawns there, see 7.1 |
+| `created_by` | INT | user who created the task (1 = the implicit local user) |
+| `assignee_id` | INT | user the task is assigned to; on a team server its runs execute on their worker (1.2) |
+| `version` | INT | bumped by every `PATCH`; a `PATCH` carrying a stale `version` gets 409 |
 | settings | KV | `key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT` |
 
 Workflow phases read left-to-right in the kanban view:

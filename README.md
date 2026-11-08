@@ -112,6 +112,33 @@ ntasker agent list                             # CLI availability + integration 
 
 Full reference incl. per-agent binary paths: [docs/agents.md](docs/agents.md).
 
+## Work as a team
+
+By default nTasker is yours alone: no sign-in, agents run on your computer. For a small team, one nTasker becomes a
+**team server** -- everyone signs in, shares projects, assigns and comments tasks and gets notified -- while every
+member's tasks still run on **their own computer**, with their own agent subscription and checkouts.
+
+On the server (behind a TLS reverse proxy, e.g. Caddy or nginx):
+
+```bash
+ntasker user add alice --admin                              # asks for the password
+ntasker config set auth_mode password
+ntasker service install --allowed-host tasks.example.org    # the public name the proxy forwards
+```
+
+On each member's computer: sign in, open *Settings -> Team*, press **Connect a computer** and run the command it
+shows (a one-time code, valid 5 minutes):
+
+```bash
+uv tool install ntasker
+ntasker connect ntc1-...          # connects, installs + starts the worker service
+ntasker agent install claude      # so the agent knows how to talk to the team server
+```
+
+From then on the queue starts a task on its assignee's computer; the browser terminal, conversation and diff work as
+usual, and the `ntasker` CLI on that computer talks to the server. Users, project members, access keys and the
+protocol: [docs/team-server.md](docs/team-server.md).
+
 ## Plugins
 
 Optional features ship as plugins you can switch off individually (`/settings` -> *Plugins*):

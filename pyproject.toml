@@ -50,6 +50,8 @@ dependencies = [
     # assets into the user-data dir. Runtime dep (not dev-only) since
     # the CLI ships in every install.
     "httpx>=0.28",
+    # ``ntasker worker`` connects out to a team server's websocket.
+    "websockets>=13.0",
 ]
 
 [project.optional-dependencies]

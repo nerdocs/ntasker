@@ -455,8 +455,12 @@ would hit the limit too). If you carry on by hand and the turn ends without a li
 
 ## Security
 
-ntasker has no authentication and binds to `127.0.0.1` only. A session is your **full interactive Claude Code, shell
-included** -- gated solely by that loopback bind. Keep the bind local (never `0.0.0.0`).
+In local mode ntasker has no authentication and binds to `127.0.0.1` only. A session is your **full interactive
+Claude Code, shell included** -- gated solely by that loopback bind. Keep the bind local (never `0.0.0.0`); `serve`
+refuses another address unless you pass `--allow-no-auth`.
+
+On a [team server](team-server.md) the sessions run on the members' own computers (`ntasker worker`); the terminal
+websocket requires sign-in and project membership, and only the run's owner can type -- other members watch.
 
 ## Implementation
 

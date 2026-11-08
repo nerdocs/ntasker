@@ -1252,6 +1252,30 @@ def cmd_token_revoke(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_worker(args: argparse.Namespace) -> int:
+    """Run a team server's tasks on this machine (see :mod:`ntasker.worker`)."""
+    import asyncio  # noqa: PLC0415
+    import socket  # noqa: PLC0415
+
+    from ntasker.worker import Worker  # noqa: PLC0415 -- lazy: keeps plain CLI calls light
+
+    url = args.server or get_setting("server_url")
+    token = args.token or os.environ.get("NTASKER_TOKEN") or get_setting("server_token")
+    if not url or not token:
+        print(
+            _("nTasker: the worker needs a server and a key: `ntasker config set server_url <url>` "
+              "and `ntasker config set server_token <key>`"),
+            file=sys.stderr,
+        )
+        return 2
+    name = args.name or get_setting("worker_name") or socket.gethostname()
+    try:
+        asyncio.run(Worker(url, token, name).run(once=args.once))
+    except KeyboardInterrupt:
+        pass
+    return 0
+
+
 # Settings subcommands -------------------------------------------------------
 
 
@@ -2197,7 +2221,9 @@ def cmd_hook_session(args: argparse.Namespace) -> int:
     task, the server answers with that task's pending messages, which go back
     to Claude Code as ``additionalContext`` (see :mod:`ntasker.messages`).
     """
-    if os.environ.get("NTASKER_TASK_ID"):
+    # Sessions ntasker started are tracked already; and a team server cannot
+    # see the processes of a team member's machine -- discovery is local only.
+    if os.environ.get("NTASKER_TASK_ID") or _api_token():
         return 0
     try:
         payload = json.loads(sys.stdin.read() or "{}")
@@ -2783,7 +2809,7 @@ def cmd_service_install(args: argparse.Namespace) -> int:
     # the daemon resolve the platform default at runtime (cleaner unit file).
     db_path = args.db or os.environ.get("NTASKER_DB")
     try:
-        log = service.install(args.host, args.port, db_path, args.auto_update)
+        log = service.install(args.host, args.port, db_path, args.auto_update, args.worker)
     except RuntimeError as exc:
         print(f"nTasker: {exc}", file=sys.stderr)
         return 2
@@ -3223,6 +3249,13 @@ def build_parser() -> argparse.ArgumentParser:
     t_rev.add_argument("id", type=int)
     t_rev.set_defaults(func=cmd_token_revoke)
 
+    sp_worker = sub.add_parser("worker", help=_("Run a team server's tasks on this computer"))
+    sp_worker.add_argument("--server", help=_("Server URL (default: the server_url setting)"))
+    sp_worker.add_argument("--token", help=_("Access key (default: NTASKER_TOKEN, then the server_token setting)"))
+    sp_worker.add_argument("--name", help=_("Name of this computer (default: worker_name setting, then host name)"))
+    sp_worker.add_argument("--once", action="store_true", help=_("Do not reconnect after the connection ends"))
+    sp_worker.set_defaults(func=cmd_worker)
+
     sp_cfg = sub.add_parser("config", help=_("Settings (KV store)"))
     cfg_sub = sp_cfg.add_subparsers(dest="config_cmd", required=True)
 
@@ -3542,6 +3575,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--auto-update",
         action="store_true",
         help=_("Also install a daily timer that runs `ntasker self-update`."),
+    )
+    svc_install.add_argument(
+        "--worker", action="store_true",
+        help=_("Run `ntasker worker` for a team server instead of a local server."),
     )
     svc_install.set_defaults(func=cmd_service_install)
 

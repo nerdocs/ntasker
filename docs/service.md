@@ -15,6 +15,7 @@ No third-party tooling, no root: everything is user-scoped.
 ntasker service install                 # service only
 ntasker service install --auto-update   # service + daily auto-update
 ntasker service install --host 127.0.0.1 --port 8766
+ntasker service install --worker        # a team member's computer: run `ntasker worker` instead
 ```
 
 `install` writes the unit file(s), reloads the manager, and enables + starts the service. With `--auto-update` it also

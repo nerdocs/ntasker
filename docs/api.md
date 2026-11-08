@@ -1,7 +1,10 @@
 # HTTP API and schema
 
-The server speaks plain JSON over HTTP on `127.0.0.1:8766`. There is **no authentication** -- see
-[Bind and exposure](configuration.md#bind-and-exposure).
+The server speaks plain JSON over HTTP on `127.0.0.1:8766`. In local mode there is **no authentication** -- see
+[Bind and exposure](configuration.md#bind-and-exposure). On a [team server](team-server.md) every request carries
+the `ntasker_session` cookie (browser, from `POST /login`) or `Authorization: Bearer <access key>`; without one the
+API answers 401, a page redirects to `/login`. Admin-only routes answer 403, a task outside your projects 404, and a
+`PATCH /api/tasks/{id}` with a stale `version` 409 (body: `{detail, task}` with the current task).
 
 Interactive OpenAPI docs: <http://127.0.0.1:8766/api/docs>
 
@@ -35,6 +38,19 @@ Interactive OpenAPI docs: <http://127.0.0.1:8766/api/docs>
 | POST | `/api/tasks/{id}/worktree` | Put the task into a new git worktree; `worktree_id` on create/patch joins one ([worktrees.md](worktrees.md)) |
 | GET | `/api/worktrees[/{id}]` | Open git worktrees, pending decisions first; one with `facts` ([worktrees.md](worktrees.md#api)) |
 | POST | `/api/worktrees/{id}/merge\|keep\|discard\|undo` | The end decision of a worktree ([worktrees.md](worktrees.md#the-end-decision)) |
+| GET / POST | `/login` | Sign-in form / check credentials, set the `ntasker_session` cookie (team server; 429 after 10 tries a minute) |
+| POST | `/logout` | End this browser's session |
+| GET | `/api/me` | The acting user `{id, username, display_name, is_admin, disabled}` |
+| GET | `/api/users` | Enabled users (assignee picker); `?all=1` adds disabled ones for admins |
+| POST / PATCH | `/api/users[/{id}]` | Create (admin) / change a user; a user may change their own name and password |
+| GET / POST / DELETE | `/api/tokens[/{id}]` | Your access keys; `POST {name}` -> `{id, token}` (shown once) |
+| GET / PUT | `/api/project-members` | Admin: `[{project, user_ids}]` / replace one project's members |
+| GET / POST | `/api/tasks/{id}/comments` | A task's comments / add one `{body}` (Markdown) |
+| PATCH / DELETE | `/api/comments/{id}` | Edit / delete a comment (author or admin) |
+| GET | `/api/notifications` | `{items, unread}`, newest first; `?unread=1` |
+| POST | `/api/notifications/read` | `{ids}` or `{}` (all) -> `{unread}` |
+| GET | `/api/workers` | Connected `ntasker worker`s with their runs (admins: all) |
+| WS | `/ws/worker` | A worker's link (team server only), see [team-server.md](team-server.md#protocol) |
 | GET | `/api/settings` | List all settings rows |
 | GET | `/api/settings/{key}` | Single setting or 404 |
 | PUT | `/api/settings/{key}` | `{value: "..."}` -- 200 on accept, 400 if a registered validator rejects |
@@ -67,8 +83,18 @@ CREATE TABLE tasks (
     archived INTEGER NOT NULL DEFAULT 0,
     agent TEXT,                      -- AI agent for this task; NULL = default_agent setting (then claude)
     proposed INTEGER NOT NULL DEFAULT 0,  -- inbox proposal awaiting the user; never listed, queued or run
-    triage TEXT                      -- JSON: the triage output + the raw note; NULL for hand-made tasks
+    triage TEXT,                     -- JSON: the triage output + the raw note; NULL for hand-made tasks
+    created_by INTEGER DEFAULT 1,    -- users(id); 1 = the implicit local user
+    assignee_id INTEGER DEFAULT 1,   -- users(id); runs execute on this user's worker
+    version INTEGER NOT NULL DEFAULT 0  -- bumped by every PATCH; a stale one is refused with 409
 );
+CREATE TABLE users (id, username UNIQUE COLLATE NOCASE, display_name, password_hash, is_admin, disabled, created_at);
+CREATE TABLE auth_sessions (id /* sha256 of the cookie */, user_id, created_at, last_seen_at);
+CREATE TABLE api_tokens (id, user_id, name, token_hash /* sha256 */, created_at, last_used_at, revoked_at);
+CREATE TABLE project_members (project, user_id, PRIMARY KEY (project, user_id));
+CREATE TABLE comments (id, task_id, user_id, body, created_at, edited_at);
+CREATE TABLE notifications (id, user_id, task_id, actor_id, kind, created_at, read_at);
+CREATE TABLE run_snapshots (task_id PRIMARY KEY, diff /* JSON from a worker */, updated_at);
 CREATE TABLE tags (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE COLLATE NOCASE

@@ -2305,6 +2305,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             const ended = (this.queueSkipped[item.id] || {}).reason === 'ended';
             if (ended) return _i('queue_ended');   // the one the user has to act on
             if ((this.queueSkipped[item.id] || {}).reason === 'limit') return this.queueLimitNote(item);
+            if ((this.queueSkipped[item.id] || {}).reason === 'no_worker') return _i('queue_no_worker');
             if (this.isBlocked(item)) return _i('queue_blocked');
             if (!this.taskRunnable(item)) return _i('queue_agent_missing');
             const skip = this.queueSkipped[item.id];
@@ -2332,6 +2333,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 return this._toDate(this.queueSkipped[item.id].until)
                     .toLocaleTimeString(_locale(), { timeStyle: 'short' });
             }
+            if ((this.queueSkipped[item.id] || {}).reason === 'no_worker') return _i('queue_no_worker_badge');
             if (this.isBlocked(item)) return this.blockingDeps(item).map(d => `#${d.id}`).join(', ');
             if (!this.taskRunnable(item)) return '';
             const skip = this.queueSkipped[item.id];
@@ -2346,6 +2348,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         blockerDetail(item) {
             if ((this.queueSkipped[item.id] || {}).reason === 'ended') return _i('queue_ended');
             if ((this.queueSkipped[item.id] || {}).reason === 'limit') return this.queueLimitNote(item);
+            if ((this.queueSkipped[item.id] || {}).reason === 'no_worker') return _i('queue_no_worker');
             if (!this.isBlocked(item)) {
                 if (!this.taskRunnable(item)) return _i('queue_agent_missing');
                 const skip = this.queueSkipped[item.id] || {};

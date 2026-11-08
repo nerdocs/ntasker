@@ -707,6 +707,18 @@
                                                 </template>
                                             </tbody>
                                         </table>
+                                        <div class="mb-2" x-show="workers.length">
+                                            <div class="small text-secondary mb-1">{{ t('Connected computers') }}</div>
+                                            <template x-for="w in workers" :key="w.user_id + '/' + w.name">
+                                                <div class="d-flex align-items-center small mb-1">
+                                                    <span class="status-dot status-dot-animated status-green me-2"></span>
+                                                    <span x-text="w.name"></span>
+                                                    <span class="text-secondary ms-2" x-show="me && me.is_admin" x-text="userName(w.user_id)"></span>
+                                                    <span class="text-secondary ms-auto" x-show="w.runs.length"
+                                                          x-text="w.runs.map(id => '#' + id).join(', ')"></span>
+                                                </div>
+                                            </template>
+                                        </div>
                                         <form class="input-group input-group-sm" @submit.prevent="createToken()">
                                             <input class="form-control" x-model="newTokenName" autocomplete="off"
                                                    placeholder="{{ t('Computer, e.g. laptop') }}" required>

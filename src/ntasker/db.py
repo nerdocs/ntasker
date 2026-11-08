@@ -110,6 +110,14 @@ CREATE TABLE IF NOT EXISTS notifications (
 );
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, read_at);
 
+-- What a worker reported about a remote run that the server cannot compute
+-- itself: the Diff view (JSON, see ntasker.rundiff). See ntasker.workers.
+CREATE TABLE IF NOT EXISTS run_snapshots (
+    task_id INTEGER PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
+    diff TEXT,
+    updated_at TEXT
+);
+
 -- Bearer tokens for workers, the CLI and agent hooks (SHA-256 only; the
 -- plaintext is shown once at creation). Revoked rows stay for the record.
 CREATE TABLE IF NOT EXISTS api_tokens (

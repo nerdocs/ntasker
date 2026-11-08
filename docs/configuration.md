@@ -14,8 +14,17 @@ The same values are editable in the browser under `/settings`.
 
 ## Bind and exposure
 
-Default `127.0.0.1:8766`. **Do not expose this on a network -- there is no authentication.** Override via
-`ntasker serve --host <h> --port <p>` if you really need to. This is a personal local tool, not a multi-user service.
+Default `127.0.0.1:8766`, without sign-in (`auth_mode = off`): a personal local tool. **Do not expose it on a
+network in that mode** -- `ntasker serve --host <address>` refuses a non-loopback address unless you pass
+`--allow-no-auth`. To share nTasker with a team, switch on sign-in and put it behind a TLS reverse proxy -- see
+[Team server](team-server.md).
+
+| Key | Values | Meaning |
+|---|---|---|
+| `auth_mode` | `off` (default), `password` | Sign-in; `password` turns the server into a [team server](team-server.md). ENV `NTASKER_AUTH_MODE` |
+| `server_url` | URL | A worker / team member's machine: the team server to talk to |
+| `server_token` | access key | ... and the key to sign in with (`NTASKER_TOKEN` overrides) |
+| `worker_name` | text | Name of this computer for `ntasker worker` (default: host name) |
 
 ## DB path resolution
 

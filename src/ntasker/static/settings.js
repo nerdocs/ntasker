@@ -87,6 +87,7 @@ function settingsPage() {
         users: [],
         tokens: [],
         projectMembers: [],          // [{project, user_ids}] (admins)
+        workers: [],                 // connected `ntasker worker`s (GET /api/workers)
         newUser: {username: '', display_name: '', password: '', is_admin: false},
         newTokenName: '',
         // Plaintext of a just-created token -- shown once, gone on reload.
@@ -515,6 +516,8 @@ function settingsPage() {
                 ]);
                 if (users.ok) this.users = await users.json();
                 if (tokens.ok) this.tokens = await tokens.json();
+                const wk = await fetch('/api/workers');
+                if (wk.ok) this.workers = await wk.json();
                 if (this.me.is_admin) {
                     const pm = await fetch('/api/project-members');
                     if (pm.ok) this.projectMembers = await pm.json();
@@ -535,6 +538,11 @@ function settingsPage() {
                 return null;
             }
             return r.status === 204 ? {} : r.json();
+        },
+
+        userName(id) {
+            const u = this.users.find(u => u.id === id);
+            return u ? u.display_name : '#' + id;
         },
 
         async addUser() {

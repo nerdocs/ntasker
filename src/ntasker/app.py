@@ -73,7 +73,7 @@ from ntasker.projects import (
 )
 from ntasker.rundiff import changed_paths, parse_baselines, run_diff
 from ntasker.transcript import context_window, conversation_for, last_activity, question_entries
-from ntasker import auth, collab, completion, lockqueue, locks, messages, plugins, sessions, taskqueue, triage, usagelimit, worktrees
+from ntasker import auth, collab, completion, lockqueue, locks, messages, plugins, sessions, taskqueue, triage, usagelimit, workers, worktrees
 from ntasker.newproject import created_projects
 from ntasker.newproject import router as newproject_router
 from ntasker import db as _db_module
@@ -942,6 +942,8 @@ def build_js_strings() -> dict[str, str]:
         "delete_comment": _("Delete comment"),
         "comment_deleted": _("Comment deleted."),
         "task_not_found": _("Task not found"),
+        "queue_no_worker": _("Waits until the assignee's computer is connected (ntasker worker)."),
+        "queue_no_worker_badge": _("offline"),
         "notifications": _("Notifications"),
         "no_notifications": _("Nothing new."),
         "mark_all_read": _("Mark all as read"),
@@ -2031,9 +2033,12 @@ def api_agents() -> JSONResponse:
     whose plugin is enabled; ``icon`` is a ready URL path.
     """
     default = get_default_agent()
+    team = auth.auth_enabled()
     out: list[dict] = []
     for spec in enabled_agents():
-        available, reason = terminal_available(spec)
+        # On a team server the agents run on the workers, which check their
+        # own CLIs -- the server's installation says nothing.
+        available, reason = (True, None) if team else terminal_available(spec)
         try:
             home = resolve_home(spec)
             status = scan_status(spec, home, command_name="task")
@@ -2172,7 +2177,7 @@ def api_claude_sessions() -> JSONResponse:
                 continue
             spec = get_spec(resolve_agent_key(row["agent"]))
             if spec.transcript:
-                act = last_activity(resolve_home(spec), row["session_id"])
+                act = last_activity(_transcript_home(row["id"], spec), row["session_id"])
                 if act:
                     activity[row["id"]] = act
     # The planner session has no task row (see PLANNER_TASK_ID), so its tab
@@ -2463,15 +2468,34 @@ def api_claude_session_rebind(task_id: int, payload: SessionRebindIn) -> JSONRes
 
 
 @app.websocket("/ws/claude/{task_id}")
-async def ws_claude_run(websocket: WebSocket, task_id: int) -> None:
+async def ws_claude_run(
+    websocket: WebSocket, task_id: int, user: dict = Depends(auth.current_user)
+) -> None:
     """Bridge the browser terminal to task ``task_id``'s interactive ``claude``.
 
-    Bound to 127.0.0.1 like the rest of ntasker; there is no auth layer, so the
-    session is the local user's full interactive Claude Code -- shell included.
+    In local mode the session is the local user's full interactive Claude
+    Code -- shell included -- guarded by the origin check. On a team server
+    sign-in and project membership gate it, and only the run's owner types.
     See :mod:`ntasker.claude_runner`.
     """
     await websocket.accept()
-    await claude_serve(websocket, task_id)
+    await claude_serve(websocket, task_id, user)
+
+
+@app.websocket("/ws/worker")
+async def ws_worker(websocket: WebSocket, user: dict = Depends(auth.current_user)) -> None:
+    """A team member's ``ntasker worker`` connects here (see :mod:`ntasker.workers`).
+    Only on a team server -- a local server runs its sessions itself."""
+    if not auth.auth_enabled():
+        await websocket.close(code=1008)
+        return
+    await workers.serve_worker(websocket, user)
+
+
+@app.get("/api/workers")
+def api_workers(user: dict = Depends(auth.current_user)) -> JSONResponse:
+    """Connected workers (admins: all; others: their own)."""
+    return JSONResponse([w for w in workers.connected() if user["is_admin"] or w["user_id"] == user["id"]])
 
 
 # ---------------------------------------------------------------------------
@@ -2605,6 +2629,10 @@ async def api_queue_plan(payload: QueueIn, user: dict = Depends(auth.current_use
     running, or when the default agent's CLI is not installed. Async on
     purpose: the spawn registers a PTY reader on the running event loop.
     """
+    if auth.auth_enabled():
+        # The planner is a session on the server's own machine -- a team
+        # server runs nothing itself.
+        raise HTTPException(status_code=409, detail=_("The queue planner is not available on a team server yet"))
     ids = list(dict.fromkeys(payload.ids))
     if not ids:
         raise HTTPException(status_code=400, detail=_("Pick at least one task to plan"))
@@ -3770,6 +3798,9 @@ def api_task_diff(task_id: int) -> JSONResponse:
     baselines = parse_baselines(row["run_baselines"]) if row else {}
     if not baselines:
         raise HTTPException(status_code=404, detail=_("This task has not run yet"))
+    if auth.auth_enabled():
+        # The run was on a worker: its directories are there, not here.
+        return JSONResponse(workers.stored_diff(task_id) or {"git": True, "files": []})
     # A merged / discarded tree's checkout is gone; its commits are still in
     # the main repo, up to the recorded branch tip.
     gone = None
@@ -3945,7 +3976,7 @@ def api_task_conversation(task_id: int) -> JSONResponse:
     # model the session was spawned with decides it.
     window = row["context_window"] or context_window(
         row["model"] or get_setting(spec.model_setting_key, env_var=spec.model_env_var))
-    conv = conversation_for(resolve_home(spec), row["session_id"], rules, window)
+    conv = conversation_for(_transcript_home(task_id, spec), row["session_id"], rules, window)
     # A run a usage limit paused: say so, and when it goes on -- also when the
     # agent wrapped up in time and the transcript holds no error.
     resume_at = usagelimit.paused_until(task_id)
@@ -3984,6 +4015,12 @@ def _normalize_project(value: str | None) -> str | None:
 def _normalize_model(value: str | None) -> str | None:
     """Trim whitespace; empty -> NULL (= the agent's ``<key>_model`` setting)."""
     return (value or "").strip() or None
+
+
+def _transcript_home(task_id: int, spec) -> Path:
+    """Where the task's session transcript is read: the agent's own home, or
+    -- on a team server, where runs live on workers -- the server's mirror."""
+    return workers.mirror_home(task_id) if auth.auth_enabled() else resolve_home(spec)
 
 
 def _check_assignee(conn: sqlite3.Connection, user_id: int) -> None:
@@ -4305,9 +4342,12 @@ def api_task_outcome(task_id: int, payload: OutcomeIn) -> JSONResponse:
             task = row_to_task(row, load_tags_for(conn, task_id), load_deps_for(conn, task_id))
             plugins.apply_task_hooks(conn, [task])
         return JSONResponse({**task, "outcome_id": None})
-    files = payload.files if payload.files is not None else changed_paths(
-        parse_baselines(row["run_baselines"])
-    )
+    if payload.files is not None:
+        files = payload.files
+    elif auth.auth_enabled():  # the run's directories are on the worker
+        files = [f["path"] for f in (workers.stored_diff(task_id) or {}).get("files", [])]
+    else:
+        files = changed_paths(parse_baselines(row["run_baselines"]))
     fasttrack = bool(row["fasttrack"])
     kill = False
     outcome_id: int | None = None

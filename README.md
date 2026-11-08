@@ -129,7 +129,7 @@ slots: [docs/plugins.md](docs/plugins.md).
 
 | Topic | |
 |---|---|
-| [Configuration](docs/configuration.md) | Settings, DB path, `projects_dir`, language, vendor assets, **why you must not expose the port** |
+| [Configuration](docs/configuration.md) | Settings, DB path, `projects_dir`, language, vendor assets, when the port may be exposed |
 | [CLI reference](docs/cli.md) | Every subcommand and flag |
 | [HTTP API](docs/api.md) | Endpoints, SQLite schema, design notes |
 | [Agents](docs/agents.md) | The agent registry, per-task model, skill installation |
@@ -142,6 +142,7 @@ slots: [docs/plugins.md](docs/plugins.md).
 | [Inbox](docs/inbox.md) | Raw notes triaged into task proposals by a stateless `claude -p` call |
 | [Projects](docs/projects.md) | Sidebar tree, project families, search, new-project dialog, misc project |
 | [Service](docs/service.md) | systemd / launchd, auto-update, uninstall |
+| [Team server](docs/team-server.md) | Sign-in, users, project members, comments, `ntasker worker` on each member's computer |
 | [Development](docs/development.md) | Repo setup, smoke test, translations |
 
 Coming from the drfoehn fork? See [docs/migrating-from-fork.md](docs/migrating-from-fork.md).
@@ -152,7 +153,9 @@ FastAPI + uvicorn on the Python stdlib `sqlite3` -- no ORM, no migration files. 
 Tabler.io loaded from jsDelivr with pinned SRI hashes, so the wheel stays under 100 KB and there is no build step; an
 offline mode is one command away. Requires Python 3.12+.
 
-Binds to `127.0.0.1:8766` and has **no authentication** -- it is a personal local tool, not a multi-user service.
+Binds to `127.0.0.1:8766` and has **no authentication** by default -- a personal local tool. For a small team, switch
+on sign-in: one shared server, and every member's tasks run on their own computer
+([docs/team-server.md](docs/team-server.md)).
 
 ## License
 

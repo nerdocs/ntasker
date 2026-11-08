@@ -61,11 +61,15 @@ def detect_manager() -> str | None:
     return None
 
 
-def serve_command(host: str, port: int, db_path: str | None) -> list[str]:
-    """Argv for the supervised server. Absolute interpreter, no shell."""
+def serve_command(host: str, port: int, db_path: str | None, worker: bool = False) -> list[str]:
+    """Argv for the supervised daemon -- the server, or with ``worker`` a team
+    member's ``ntasker worker`` (server URL and key from its settings).
+    Absolute interpreter, no shell."""
     cmd = [sys.executable, "-m", "ntasker"]
     if db_path:
         cmd += ["--db", db_path]
+    if worker:
+        return [*cmd, "worker"]
     cmd += ["serve", "--host", host, "--port", str(port)]
     return cmd
 
@@ -271,15 +275,18 @@ class UnitFile:
 # ---------------------------------------------------------------------------
 
 
-def _systemd_units(host: str, port: int, db_path: str | None, auto_update: bool) -> list[UnitFile]:
+def _systemd_units(
+    host: str, port: int, db_path: str | None, auto_update: bool, worker: bool = False
+) -> list[UnitFile]:
     d = systemd_user_dir()
-    exec_serve = " ".join(shlex.quote(a) for a in serve_command(host, port, db_path))
+    exec_serve = " ".join(shlex.quote(a) for a in serve_command(host, port, db_path, worker))
+    what = "worker for a team server" if worker else "local task tracker"
     units = [
         UnitFile(
             d / SYSTEMD_SERVICE,
             f"""\
 [Unit]
-Description=nTasker -- local task tracker
+Description=nTasker -- {what}
 After=network.target
 
 [Service]
@@ -338,11 +345,13 @@ def _systemctl(*args: str) -> subprocess.CompletedProcess:
 # ---------------------------------------------------------------------------
 
 
-def _launchd_units(host: str, port: int, db_path: str | None, auto_update: bool) -> list[UnitFile]:
+def _launchd_units(
+    host: str, port: int, db_path: str | None, auto_update: bool, worker: bool = False
+) -> list[UnitFile]:
     d = launchd_dir()
     serve_plist = {
         "Label": LAUNCHD_LABEL,
-        "ProgramArguments": serve_command(host, port, db_path),
+        "ProgramArguments": serve_command(host, port, db_path, worker),
         "RunAtLoad": True,
         "KeepAlive": True,
     }
@@ -376,14 +385,17 @@ def _launchctl(*args: str) -> subprocess.CompletedProcess:
 # ---------------------------------------------------------------------------
 
 
-def install(host: str, port: int, db_path: str | None, auto_update: bool) -> list[str]:
-    """Write + enable the units. Returns human-readable log lines."""
+def install(
+    host: str, port: int, db_path: str | None, auto_update: bool, worker: bool = False
+) -> list[str]:
+    """Write + enable the units (``worker``: run ``ntasker worker`` instead of
+    the server). Returns human-readable log lines."""
     mgr = detect_manager()
     if mgr is None:
         raise RuntimeError(_("Unsupported platform: only systemd (Linux) and launchd (macOS)."))
     log: list[str] = []
     if mgr == "systemd":
-        units = _systemd_units(host, port, db_path, auto_update)
+        units = _systemd_units(host, port, db_path, auto_update, worker)
         systemd_user_dir().mkdir(parents=True, exist_ok=True)
         for u in units:
             u.path.write_text(u.content)
@@ -402,7 +414,7 @@ def install(host: str, port: int, db_path: str | None, auto_update: bool) -> lis
                 )
             )
     else:  # launchd
-        units = _launchd_units(host, port, db_path, auto_update)
+        units = _launchd_units(host, port, db_path, auto_update, worker)
         launchd_dir().mkdir(parents=True, exist_ok=True)
         for u in units:
             u.path.write_text(u.content)

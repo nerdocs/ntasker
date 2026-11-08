@@ -33,6 +33,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
 
@@ -96,19 +97,29 @@ class DraftTaskError(RuntimeError):
 
 
 def _task_row(task_id: int):
-    """The task's ``agent``/``model``/``project``/``draft``/``proposed``/``worktree_id``
-    columns, or ``None`` (missing / DB hiccup)."""
+    """The task's ``agent``/``model``/``project``/``draft``/``proposed``/``worktree_id``/
+    ``locks``/``run_baselines`` columns, or ``None`` (missing / DB hiccup)."""
 
     from ntasker.db import get_conn  # noqa: PLC0415
 
     try:
         with get_conn() as conn:
             return conn.execute(
-                "SELECT agent, model, project, draft, proposed, worktree_id FROM tasks WHERE id = ?",
+                "SELECT agent, model, project, draft, proposed, worktree_id, locks, run_baselines "
+                "FROM tasks WHERE id = ?",
                 (task_id,),
             ).fetchone()
     except Exception:  # noqa: BLE001 -- a DB hiccup must not crash the spawn path
         return None
+
+
+def _assignee(task_id: int) -> int | None:
+    """The task's assignee id, or ``None``."""
+    from ntasker.db import get_conn  # noqa: PLC0415
+
+    with get_conn() as conn:
+        row = conn.execute("SELECT assignee_id FROM tasks WHERE id = ?", (task_id,)).fetchone()
+    return row["assignee_id"] if row else None
 
 
 def _spec_for_task(task_id: int) -> AgentSpec:
@@ -467,11 +478,19 @@ def quick_run_system_prompt(task_id: int) -> str:
 
 @dataclass
 class TermSession:
-    """One persistent ``claude`` PTY process plus its attached subscribers."""
+    """One persistent agent session plus its attached subscribers.
+
+    The session's I/O has two backends. A *local* session owns its PTY
+    (``proc`` / ``master_fd``). A *remote* one runs on a team member's machine
+    (``ntasker worker``): ``worker`` is the :class:`ntasker.workers.WorkerConn`
+    its keystrokes go out through and its output comes in through. Everything
+    else -- buffer, hook state, subscribers -- is the same for both.
+    """
 
     task_id: int
-    proc: subprocess.Popen
-    master_fd: int
+    proc: subprocess.Popen | None = None
+    master_fd: int = -1
+    worker: Any = None
     buffer: bytearray = field(default_factory=bytearray)
     subscribers: set = field(default_factory=set)  # set[asyncio.Queue]
     alive: bool = True
@@ -513,6 +532,9 @@ class TermSession:
     # :func:`_stop` may run off-loop (a sync route in the threadpool) and needs
     # it to hand the final teardown back to the loop thread.
     loop: asyncio.AbstractEventLoop | None = None
+    # The Diff view's baselines of a fresh local spawn (see
+    # :func:`compute_baselines`), until :func:`record_start` stores them.
+    baselines: str | None = None
 
 
 SESSIONS: dict[int, TermSession] = {}
@@ -727,7 +749,9 @@ def steerable_session_ids() -> list[int]:
     ]
 
 
-def _clean_env(spec: AgentSpec, task_id: int, project: str | None = None) -> dict:
+def _clean_env(
+    spec: AgentSpec, task_id: int, project: str | None = None, extra: dict | None = None
+) -> dict:
     """Child environment: nesting markers stripped, ntasker's own markers added.
 
     ``NTASKER_TASK_ID`` / ``NTASKER_URL`` let ``ntasker hook ...`` (and
@@ -758,6 +782,8 @@ def _clean_env(spec: AgentSpec, task_id: int, project: str | None = None) -> dic
         and get_misc_no_memory()
     ):
         env["CLAUDE_CODE_DISABLE_AUTO_MEMORY"] = "1"
+    # A worker's sessions report to the team server: NTASKER_URL / NTASKER_TOKEN.
+    env.update(extra or {})
     return env
 
 
@@ -814,39 +840,50 @@ def _store_session_id(task_id: int, session_id: str, cwd: str | None = None) -> 
         bind_session(task_id, session_id, cwd)
 
 
-def _store_run_baselines(task_id: int, cwd: str) -> None:
-    """Persist the Diff view's baselines for a fresh run.
+def compute_baselines(cwd: str, lock_names: list[str]) -> str | None:
+    """The Diff view's baselines for a fresh run, as JSON.
 
     One HEAD sha per directory the run holds -- ``cwd`` plus the task's
     directory locks (see :mod:`ntasker.locks`) -- so the agent's own commits
-    still show and the diff outlives the session. A resume keeps the previous
-    baselines. Best-effort, like :func:`_store_session_id`.
+    still show and the diff outlives the session. Runs where the agent runs
+    (the directories are there). Best-effort: ``None`` on any failure.
     """
     from ntasker import locks  # noqa: PLC0415 -- lazy: avoid cycle
-    from ntasker.db import get_conn  # noqa: PLC0415 -- lazy: avoid cycle
     from ntasker.rundiff import baselines_for  # noqa: PLC0415 -- lazy: avoid cycle
 
-    with contextlib.suppress(Exception):
-        with get_conn() as conn:
-            row = conn.execute("SELECT locks FROM tasks WHERE id = ?", (task_id,)).fetchone()
-            dirs = [os.path.realpath(cwd)]
-            for name in locks.parse(row["locks"] if row else None):
-                d = locks.resolve_dir(name)
-                if d not in dirs and os.path.isdir(d):
-                    dirs.append(d)
-            conn.execute(
-                "UPDATE tasks SET run_baselines = ? WHERE id = ?",
-                (baselines_for(dirs), task_id),
-            )
+    try:
+        dirs = [os.path.realpath(cwd)]
+        for name in lock_names:
+            d = locks.resolve_dir(name)
+            if d not in dirs and os.path.isdir(d):
+                dirs.append(d)
+        return baselines_for(dirs)
+    except Exception:  # noqa: BLE001 -- a git hiccup must never block a starting session
+        return None
 
 
-def _stored_session(task_id: int) -> tuple[str | None, str | None]:
+def record_start(task_id: int, spec: dict, cwd: str | None, baselines: str | None) -> None:
+    """Persist what a started run reported: its forced session id + directory,
+    and (fresh runs) the Diff view's baselines. A resume keeps the previous
+    baselines. Best-effort, like :func:`mark_wip`."""
+    from ntasker.db import get_conn  # noqa: PLC0415 -- lazy: avoid cycle
+
+    if spec.get("session_id"):
+        _store_session_id(task_id, spec["session_id"], cwd)
+    if baselines is not None and not spec.get("resume_id"):
+        with contextlib.suppress(Exception):
+            with get_conn() as conn:
+                conn.execute("UPDATE tasks SET run_baselines = ? WHERE id = ?", (baselines, task_id))
+
+
+def _stored_session(task_id: int, check_dir: bool = True) -> tuple[str | None, str | None]:
     """The task's persisted session id and the directory it ran in.
 
     ``(None, None)`` if the task never ran. The directory is only returned
     when it still exists -- a resume spawned somewhere else would not find
     the transcript, so a stale path falls back to the project directory
-    (which at least starts a session rather than none).
+    (which at least starts a session rather than none). ``check_dir=False``
+    for a run on a worker: the directory lives on that machine, which checks.
     """
     from ntasker.db import get_conn  # noqa: PLC0415 -- lazy: avoid cycle
 
@@ -860,30 +897,33 @@ def _stored_session(task_id: int) -> tuple[str | None, str | None]:
     if row is None:
         return None, None
     cwd = row["session_cwd"]
-    return row["session_id"], cwd if cwd and os.path.isdir(cwd) else None
+    if check_dir and not (cwd and os.path.isdir(cwd)):
+        cwd = None
+    return row["session_id"], cwd
 
 
-def _start_session(
+def spawn_spec(
     task_id: int,
     *,
     seed: str | None = None,
     resume: bool = False,
     quick: bool = False,
-) -> TermSession:
-    """Spawn a fresh agent session in a PTY and register it with a live reader.
+    remote: bool = False,
+) -> dict:
+    """Everything a machine needs to start the task's agent session, as plain JSON.
 
-    The agent (Claude / OpenCode / Pi) is resolved from the task's ``agent``
-    field; its :class:`~ntasker.agents.AgentSpec` builds the full argv --
-    including permission/auto flags and how the seed is attached (positional
-    vs ``--prompt``) -- and which env markers get stripped. The cwd is derived
-    from the task's project (see :func:`default_cwd_for_project`) and always
-    set on the subprocess (uniform across agents).
+    The server half of a spawn: it reads the DB (task row, stored session,
+    briefings) and decides the session id. :func:`spawn_local` -- in this
+    process, or in a team member's ``ntasker worker`` -- turns it into a
+    running PTY. ``remote`` leaves checks of local directories to that machine
+    and switches the directory-lock guard off (its paths are not ours).
 
-    ``quick`` marks a session started from the sidebar quick run: it has no seed
-    at all, and gets the "name this task once you know what it is" briefing via
-    the system prompt (see :func:`quick_run_system_prompt`).
+    ``quick`` marks a session started from the sidebar quick run: it has no
+    seed at all, and gets the "name this task once you know what it is"
+    briefing via the system prompt (see :func:`quick_run_system_prompt`).
+    Raises :class:`DraftTaskError` for a draft or inbox proposal.
     """
-    from ntasker.claude_assets import hooks_settings_path  # noqa: PLC0415 -- lazy: avoid cycle
+    from ntasker import locks  # noqa: PLC0415 -- lazy: avoid cycle
     from ntasker.settings import get_dir_locks  # noqa: PLC0415 -- lazy: avoid cycle
 
     row = _task_row(task_id)
@@ -892,51 +932,83 @@ def _start_session(
     # all. Refuse here so no caller can slip past.
     if row is not None and (row["draft"] or row["proposed"]):
         raise DraftTaskError(f"task #{task_id} is a draft or inbox proposal")
-
     spec = get_spec(resolve_agent_key(row["agent"] if row else None))
-    cwd = default_cwd_for_project(row["project"] if row else None)
-    if row is not None and row["worktree_id"]:
+    # Resume: reopen the stored session (conversation replays; a seed goes in as
+    # its next prompt). Only when the agent supports it and an id was captured on
+    # a previous run -- otherwise fall through to a fresh session.
+    resume_id, resume_cwd = (
+        _stored_session(task_id, check_dir=not remote) if (resume and spec.resume_flag) else (None, None)
+    )
+    project = row["project"] if row else None
+    return {
+        "task_id": task_id,
+        "agent": spec.key,
+        "model": row["model"] if row else None,
+        "project": project,
+        "worktree_id": row["worktree_id"] if row else None,
+        "locks": locks.parse(row["locks"]) if row else [],
+        "seed": seed,
+        "system_prompt": quick_run_system_prompt(task_id) if quick else None,
+        "resume_id": resume_id,
+        "resume_cwd": resume_cwd,
+        # Fresh run: force a known session id so it can be resumed later.
+        # uuid4 is what --session-id expects (a canonical UUID).
+        "session_id": str(uuid.uuid4()) if not resume_id and spec.session_flag else None,
+        "dir_locks": get_dir_locks() and not remote,
+        # A resume keeps the previous run's baselines -- a worker needs them
+        # to compute the Diff view (see ntasker.worker).
+        "baselines": row["run_baselines"] if row and resume_id else None,
+    }
+
+
+def spawn_local(spec: dict, env: dict | None = None, register: bool = True) -> TermSession:
+    """Start the agent session ``spec`` describes in a PTY on this machine.
+
+    The machine half of a spawn (see :func:`spawn_spec`): the agent's
+    :class:`~ntasker.agents.AgentSpec` builds the full argv -- including
+    permission/auto flags and how the seed is attached (positional vs
+    ``--prompt``) -- and which env markers get stripped. The cwd is derived
+    from the task's project (see :func:`default_cwd_for_project`) and always
+    set on the subprocess (uniform across agents). ``env`` adds variables to
+    the child's environment (a worker's server URL and token). Attaches a live
+    reader and registers the session in :data:`SESSIONS` (a worker keeps its
+    own registry: ``register=False``); the caller persists the result
+    (:func:`record_start`).
+    """
+    from ntasker.claude_assets import hooks_settings_path  # noqa: PLC0415 -- lazy: avoid cycle
+
+    task_id = spec["task_id"]
+    agent = get_spec(spec["agent"])
+    cwd = default_cwd_for_project(spec["project"])
+    if spec.get("worktree_id"):
         # The tree's checkout. A failure raises WorktreeError: running in the
         # shared project directory instead would break the isolation the queue
         # relied on when it started this task.
         from ntasker.db import get_conn  # noqa: PLC0415 -- lazy: avoid cycle
 
         with get_conn() as conn:
-            tree = worktrees.get(conn, row["worktree_id"])
+            tree = worktrees.get(conn, spec["worktree_id"])
         if tree is None:
-            raise worktrees.WorktreeError(f"worktree {row['worktree_id']} not found")
+            raise worktrees.WorktreeError(f"worktree {spec['worktree_id']} not found")
         cwd = worktrees.ensure(tree)
     # ntasker's Claude Code hooks (explicit waiting/running state, and the
     # directory-lock guard when dir_locks is on). Only agents with a settings
     # flag get the file; build_spawn ignores it otherwise.
-    settings_path = hooks_settings_path(get_dir_locks()) if spec.settings_flag else None
-    master, slave = os.openpty()
-    # Resume: reopen the stored session (conversation replays; a seed goes in as
-    # its next prompt). Only when the agent supports it and an id was captured on
-    # a previous run -- otherwise fall through to a fresh session.
-    resume_id, resume_cwd = (
-        _stored_session(task_id) if (resume and spec.resume_flag) else (None, None)
-    )
-    sys_prompt = quick_run_system_prompt(task_id) if quick else None
-    model = row["model"] if row else None
-    if resume_id:
-        args = spec.build_spawn(
-            seed, resume_id=resume_id, settings_path=settings_path, model=model
-        )
-    elif spec.session_flag:
-        # Fresh run: force a known session id so it can be resumed later, and
-        # persist it. uuid4 is what --session-id expects (a canonical UUID).
-        forced_id = str(uuid.uuid4())
-        args = spec.build_spawn(
+    settings_path = hooks_settings_path(spec["dir_locks"]) if agent.settings_flag else None
+    seed, model = spec["seed"], spec["model"]
+    if spec["resume_id"]:
+        args = agent.build_spawn(seed, resume_id=spec["resume_id"], settings_path=settings_path, model=model)
+    elif spec["session_id"]:
+        args = agent.build_spawn(
             seed,
-            session_id=forced_id,
-            system_prompt=sys_prompt,
+            session_id=spec["session_id"],
+            system_prompt=spec["system_prompt"],
             settings_path=settings_path,
             model=model,
         )
     else:
-        args = spec.build_spawn(
-            seed, system_prompt=sys_prompt, settings_path=settings_path, model=model
+        args = agent.build_spawn(
+            seed, system_prompt=spec["system_prompt"], settings_path=settings_path, model=model
         )
     # The cwd is a best-effort guess from the task's project name (see
     # default_cwd_for_project). A new project's directory may not exist yet:
@@ -947,31 +1019,45 @@ def _start_session(
     # A resume must spawn where the transcript was recorded -- Claude Code
     # looks for a session id under the *current* directory only. Everything
     # else starts in the task's project directory.
+    resume_cwd = spec["resume_cwd"] if spec["resume_cwd"] and os.path.isdir(spec["resume_cwd"]) else None
     run_cwd = resume_cwd or resolve_run_cwd(cwd)
-    if not resume_id and spec.session_flag:
-        _store_session_id(task_id, forced_id, run_cwd)
+    master, slave = os.openpty()
     proc = subprocess.Popen(
         args,
         stdin=slave,
         stdout=slave,
         stderr=slave,
         cwd=run_cwd,
-        env=_clean_env(spec, task_id, row["project"] if row else None),
+        env=_clean_env(agent, task_id, spec["project"], env),
         preexec_fn=_child_setup,
         close_fds=True,
     )
     os.close(slave)
     os.set_blocking(master, False)
-    if not resume_id:
-        _store_run_baselines(task_id, run_cwd)
-    sess = TermSession(task_id=task_id, proc=proc, master_fd=master, cwd=run_cwd)
-    SESSIONS[task_id] = sess
+    baselines = None if spec["resume_id"] else compute_baselines(run_cwd, spec["locks"])
+    sess = TermSession(task_id=task_id, proc=proc, master_fd=master, cwd=run_cwd, baselines=baselines)
+    if register:
+        SESSIONS[task_id] = sess
     _attach_reader(sess)
     return sess
 
 
+def _start_session(
+    task_id: int,
+    *,
+    seed: str | None = None,
+    resume: bool = False,
+    quick: bool = False,
+) -> TermSession:
+    """Spawn a task's agent session in a PTY in this process (local mode)."""
+    spec = spawn_spec(task_id, seed=seed, resume=resume, quick=quick)
+    sess = spawn_local(spec)
+    record_start(task_id, spec, sess.cwd, sess.baselines)
+    return sess
+
+
 def start_detached_session(
-    task_id: int, seed: str | None, quick: bool = False, resume: bool = False
+    task_id: int, seed: str | None, quick: bool = False, resume: bool = False, worker: Any = None
 ) -> bool:
     """Start a session with no browser attached. The task queue's spawn path.
 
@@ -985,6 +1071,9 @@ def start_detached_session(
     Raises :class:`~ntasker.worktrees.WorktreeError` when the checkout of the
     task's worktree cannot be provided.
 
+    With ``worker`` (a :class:`ntasker.workers.WorkerConn`) the session runs on
+    that team member's machine instead of in this process.
+
     Must be called from the event loop: the PTY reader is registered on the
     running loop (see :func:`_attach_reader`).
     """
@@ -993,7 +1082,10 @@ def start_detached_session(
         return False
     SESSIONS.pop(task_id, None)   # drop a stale dead session before replacing it
     try:
-        _start_session(task_id, seed=seed, quick=quick, resume=resume)
+        if worker is None:
+            _start_session(task_id, seed=seed, quick=quick, resume=resume)
+        else:
+            worker.start(spawn_spec(task_id, seed=seed, quick=quick, resume=resume, remote=True))
     except DraftTaskError:
         return False
     if not resume:
@@ -1014,21 +1106,40 @@ def _attach_reader(sess: TermSession) -> None:
         if not data:  # EOF / EIO -> the process exited
             _reap(sess)
             return
-        # Output inside the post-resize grace window is just the SIGWINCH redraw,
-        # not progress -- forward it but keep the "waiting" clock running so a
-        # quick peek doesn't reset the heuristic.
-        now = time.monotonic()
-        if now >= sess.resize_grace_until:
-            sess.last_output = now
-        sess.buffer.extend(data)
-        if len(sess.buffer) > BUFFER_LIMIT:
-            del sess.buffer[: len(sess.buffer) - BUFFER_LIMIT]
-        _note_startup_prompt(sess, len(data))
-        for q in list(sess.subscribers):
-            with contextlib.suppress(asyncio.QueueFull):
-                q.put_nowait(("output", data))
+        feed_output(sess, data)
 
     loop.add_reader(sess.master_fd, on_readable)
+
+
+def feed_output(sess: TermSession, data: bytes) -> None:
+    """New output of a session -- read from its PTY, or relayed by its worker:
+    into the replay buffer and every subscriber's queue."""
+    # Output inside the post-resize grace window is just the SIGWINCH redraw,
+    # not progress -- forward it but keep the "waiting" clock running so a
+    # quick peek doesn't reset the heuristic.
+    now = time.monotonic()
+    if now >= sess.resize_grace_until:
+        sess.last_output = now
+    sess.buffer.extend(data)
+    if len(sess.buffer) > BUFFER_LIMIT:
+        del sess.buffer[: len(sess.buffer) - BUFFER_LIMIT]
+    _note_startup_prompt(sess, len(data))
+    for q in list(sess.subscribers):
+        with contextlib.suppress(asyncio.QueueFull):
+            q.put_nowait(("output", data))
+
+
+def feed_exit(sess: TermSession, rc: int | None) -> None:
+    """The session's process is gone: mark it dead and tell the subscribers."""
+    sess.alive = False
+    sess.exit_code = rc
+    for q in list(sess.subscribers):
+        with contextlib.suppress(asyncio.QueueFull):
+            q.put_nowait(("exit", rc))
+    # A finished session with nobody attached can't be reattached usefully --
+    # drop it so it doesn't linger in the registry (and the busy indicator).
+    if not sess.subscribers and SESSIONS.get(sess.task_id) is sess:
+        SESSIONS.pop(sess.task_id, None)
 
 
 # Claude Code positions each word with a cursor move instead of a space, so
@@ -1082,24 +1193,20 @@ def _reap(sess: TermSession) -> None:
     with contextlib.suppress(OSError):
         os.close(sess.master_fd)
     sess.alive = False
-    rc = sess.proc.poll()
-    if rc is None:
+    rc = sess.proc.poll() if sess.proc is not None else None
+    if rc is None and sess.proc is not None:
         with contextlib.suppress(Exception):
             rc = sess.proc.wait(timeout=1)
-    sess.exit_code = rc
-    for q in list(sess.subscribers):
-        with contextlib.suppress(asyncio.QueueFull):
-            q.put_nowait(("exit", rc))
-    # A finished session with nobody attached can't be reattached usefully --
-    # drop it so it doesn't linger in the registry (and the busy indicator).
-    if not sess.subscribers:
-        SESSIONS.pop(sess.task_id, None)
+    feed_exit(sess, rc)
 
 
 def _resize(sess: TermSession, rows: int, cols: int) -> None:
     rows = max(1, min(int(rows), 1000))
     cols = max(1, min(int(cols), 1000))
     sess.resize_grace_until = time.monotonic() + RESIZE_REDRAW_GRACE
+    if sess.worker is not None:
+        sess.worker.send({"type": "resize", "task_id": sess.task_id, "rows": rows, "cols": cols})
+        return
     with contextlib.suppress(OSError):
         fcntl.ioctl(sess.master_fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
 
@@ -1128,6 +1235,9 @@ def _stop(sess: TermSession) -> None:
     twice.
     """
     if not sess.alive:
+        return
+    if sess.worker is not None:  # the worker escalates on its side the same way
+        sess.worker.send({"type": "stop", "task_id": sess.task_id})
         return
     try:
         pgid: int | None = os.getpgid(sess.proc.pid)
@@ -1242,6 +1352,10 @@ async def _write_pty(sess: TermSession, data: bytes) -> None:
     paste mode and swallows the Enter that follows. Wait for the agent to
     drain the queue and write the rest; give up when it stops reading.
     """
+    if sess.worker is not None:  # the worker writes it with this same function
+        if sess.alive:
+            sess.worker.send({"type": "input", "task_id": sess.task_id, "data": _b64(data)})
+        return
     deadline = time.monotonic() + PTY_WRITE_TIMEOUT_SECONDS
     view = memoryview(data)
     while view and sess.alive and time.monotonic() < deadline:
@@ -1256,7 +1370,7 @@ async def _write_pty(sess: TermSession, data: bytes) -> None:
             await asyncio.sleep(0.005)
 
 
-async def serve(websocket: WebSocket, task_id: int) -> None:
+async def serve(websocket: WebSocket, task_id: int, user: dict | None = None) -> None:
     """Bridge an accepted WebSocket to task ``task_id``'s PTY session.
 
     Protocol (JSON):
@@ -1273,11 +1387,21 @@ async def serve(websocket: WebSocket, task_id: int) -> None:
     * client -> ``{"type":"stop"}``
     * server -> ``{"type":"output", "data"}`` (base64 PTY bytes)
     * server -> ``{"type":"exit", "code"}``
+
+    On a team server the run lives on a worker (see :mod:`ntasker.workers`):
+    only the user whose worker runs it may type; everyone else who can see
+    the task watches read-only (``input``/``file``/``resize``/``stop`` are
+    dropped). A ``resume`` goes to the assignee's worker -- only they can
+    reopen their session.
     """
-    available, reason = terminal_available(_spec_for_task(task_id))
-    if not available:
-        await websocket.send_json({"type": "error", "error": reason})
-        return
+    from ntasker import auth, workers  # noqa: PLC0415 -- lazy: avoid cycle
+
+    team = auth.auth_enabled()
+    if not team:
+        available, reason = terminal_available(_spec_for_task(task_id))
+        if not available:
+            await websocket.send_json({"type": "error", "error": reason})
+            return
     try:
         first = await websocket.receive_json()
     except (WebSocketDisconnect, ValueError):
@@ -1296,10 +1420,21 @@ async def serve(websocket: WebSocket, task_id: int) -> None:
         if sess is not None:  # stale dead session -> replace
             SESSIONS.pop(task_id, None)
         try:
-            sess = _start_session(task_id, resume=True)
+            if team:
+                worker = workers.pick(user["id"]) if user else None
+                if worker is None or _assignee(task_id) != user["id"]:
+                    await websocket.send_json(
+                        {"type": "error", "error": "only the assignee's connected worker can resume this run"}
+                    )
+                    return
+                start_detached_session(task_id, None, resume=True, worker=worker)
+                sess = SESSIONS[task_id]
+            else:
+                sess = _start_session(task_id, resume=True)
         except DraftTaskError:
             await websocket.send_json({"type": "error", "error": "draft tasks are never started"})
             return
+    read_only = sess.worker is not None and user is not None and sess.worker.user_id != user["id"]
 
     queue: asyncio.Queue = asyncio.Queue(maxsize=2000)
     sess.subscribers.add(queue)
@@ -1339,6 +1474,8 @@ async def serve(websocket: WebSocket, task_id: int) -> None:
         while True:
             msg = await websocket.receive_json()
             kind = msg.get("type")
+            if read_only:
+                continue
             if kind == "input" and sess.alive:
                 data = str(msg.get("data", ""))
                 if data == "\r" and not images_attached.is_set():
@@ -1366,10 +1503,14 @@ async def serve(websocket: WebSocket, task_id: int) -> None:
                 from ntasker import plugins  # noqa: PLC0415 -- lazy: avoid cycle
 
                 name = str(msg.get("name", ""))
-                path = plugins.store_upload(task_id, name, blob) or _save_upload(name, blob)
-                if Path(path).suffix.lower() in _IMAGE_SUFFIXES:
+                if Path(name).suffix.lower() in _IMAGE_SUFFIXES:
                     pending_images += 1
                     images_attached.clear()
+                if sess.worker is not None:
+                    # The file must be on the machine the agent runs on.
+                    sess.worker.send({"type": "upload", "task_id": task_id, "name": name, "data": _b64(blob)})
+                    continue
+                path = plugins.store_upload(task_id, name, blob) or _save_upload(name, blob)
                 await _write_pty(sess, f"\x1b[200~{shlex.quote(path)} \x1b[201~".encode("utf-8"))
             elif kind == "resize":
                 _resize(sess, msg.get("rows", 24), msg.get("cols", 80))

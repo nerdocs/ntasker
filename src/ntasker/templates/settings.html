@@ -682,6 +682,31 @@
                                     </div>
                                 </template>
 
+                                <div class="setting-row row gx-2 gx-md-4" x-show="known.auth_mode === 'password'">
+                                    <div class="col-md-5">
+                                        <div class="setting-label">{{ t('Connect a computer') }}</div>
+                                        <div class="text-secondary small mt-1">{{ t('Creates a one-time code. Run the command on the computer that should work on your tasks: it connects and starts the worker there. The code works once and only for 5 minutes.') }}</div>
+                                    </div>
+                                    <div class="col-md-7">
+                                        <template x-if="connectCommand">
+                                            <div>
+                                                <div class="input-group input-group-sm">
+                                                    <input class="form-control font-monospace" readonly :value="connectCommand"
+                                                           @focus="$el.select()">
+                                                    <button type="button" class="btn" @click="copyConnectCommand()" title="{{ t('Copy') }}">
+                                                        <i class="ti ti-copy"></i></button>
+                                                </div>
+                                                <div class="small text-secondary mt-1">
+                                                    {{ t('Valid for') }} <span x-text="connectLeftLabel()"></span>
+                                                </div>
+                                            </div>
+                                        </template>
+                                        <button type="button" class="btn btn-sm" x-show="!connectCommand" @click="createConnectCode()">
+                                            <i class="ti ti-plug-connected me-1"></i>{{ t('Connect a computer') }}
+                                        </button>
+                                    </div>
+                                </div>
+
                                 <div class="setting-row row gx-2 gx-md-4">
                                     <div class="col-md-5">
                                         <div class="setting-label">{{ t('Access keys') }}</div>

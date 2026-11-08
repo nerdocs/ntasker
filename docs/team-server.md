@@ -73,13 +73,32 @@ Server-wide settings (directory locks, reports, run rules, plugins ...) are admi
 
 ## Workers
 
-On each member's computer:
+On each member's computer, the short way: in *Settings -> Team* press **Connect a computer**, copy the command and
+run it there:
+
+```bash
+ntasker connect ntc1-eyJ1Ijoi...      # stores the connection, installs + starts the worker service
+```
+
+The code holds the server address (as your browser sees it) and a one-time secret. It works **once** and only for
+**5 minutes**; redeeming it creates an access key named after the computer (`--name`, default: host name), which you
+can revoke under *Access keys*. `connect` refuses a server without `https` (the key would travel unencrypted) unless
+it is this computer or you pass `--insecure`; `--no-service` only stores the connection.
+
+Security of the code: 32 random bytes from `secrets`, stored only as SHA-256; checking and spending it is a single
+`UPDATE`, so it cannot be redeemed twice even concurrently; redemption is rate-limited like the sign-in, and an
+expired, spent or unknown code all get the same answer.
+
+The same by hand:
 
 ```bash
 ntasker config set server_url https://tasks.example.org
 ntasker config set server_token <access key>      # Settings -> Team -> Access keys
 ntasker worker                                    # or: ntasker service install --worker
 ```
+
+A connected computer's CLI talks to the team server. To keep a local tracker on the same computer as well, give one
+of the two its own database (`--db` / `NTASKER_DB`).
 
 On the server host itself, give the worker a database of its own (`NTASKER_DB=.../worker.db`, or `--db`), so its
 settings (`server_url`, `projects_base` ...) stay apart from the server's. `service install --worker` installs a unit

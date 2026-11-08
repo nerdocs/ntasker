@@ -49,6 +49,8 @@ Interactive OpenAPI docs: <http://127.0.0.1:8766/api/docs>
 | PATCH / DELETE | `/api/comments/{id}` | Edit / delete a comment (author or admin) |
 | GET | `/api/notifications` | `{items, unread}`, newest first; `?unread=1` |
 | POST | `/api/notifications/read` | `{ids}` or `{}` (all) -> `{unread}` |
+| POST | `/api/pairing-codes` | A one-time `ntasker connect` secret for you `{secret, expires_in}` (team server) |
+| POST | `/api/pair` | `{code, name}` -> `{token, username}`; no sign-in, rate-limited, the code works once within 5 min |
 | GET | `/api/workers` | Connected `ntasker worker`s with their runs (admins: all) |
 | WS | `/ws/worker` | A worker's link (team server only), see [team-server.md](team-server.md#protocol) |
 | GET | `/api/settings` | List all settings rows |

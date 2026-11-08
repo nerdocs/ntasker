@@ -1252,6 +1252,76 @@ def cmd_token_revoke(args: argparse.Namespace) -> int:
     return 0
 
 
+#: Prefix of a connect code (``ntasker connect``): version 1 = base64url JSON
+#: ``{"u": server URL, "c": one-time secret}``.
+CONNECT_CODE_PREFIX = "ntc1-"
+
+
+def parse_connect_code(code: str) -> tuple[str, str]:
+    """``(server URL, secret)`` from a connect code; ``ValueError`` if it is none."""
+    import base64  # noqa: PLC0415
+
+    code = code.strip()
+    if not code.startswith(CONNECT_CODE_PREFIX):
+        raise ValueError(code)
+    raw = code[len(CONNECT_CODE_PREFIX):]
+    data = json.loads(base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4)))
+    url, secret = str(data["u"]).rstrip("/"), str(data["c"])
+    if not url.startswith(("http://", "https://")) or not secret:
+        raise ValueError(code)
+    return url, secret
+
+
+def cmd_connect(args: argparse.Namespace) -> int:
+    """Connect this computer to a team server with a one-time code from its UI.
+
+    Redeems the code for an access key, stores ``server_url`` /
+    ``server_token`` / ``worker_name`` and installs + starts the worker service.
+    Refuses an unencrypted server (the key would travel in clear) unless it is
+    this computer or ``--insecure`` is given.
+    """
+    import socket  # noqa: PLC0415
+    from urllib.parse import urlsplit  # noqa: PLC0415
+
+    from ntasker import service  # noqa: PLC0415
+
+    try:
+        url, secret = parse_connect_code(args.code)
+    except (ValueError, KeyError, TypeError):
+        print(_("nTasker: that is not a connect code -- copy the whole command from Settings -> Team."),
+              file=sys.stderr)
+        return 2
+    host = urlsplit(url).hostname or ""
+    if url.startswith("http://") and host not in LOOPBACK_HOSTS and not args.insecure:
+        print(_("nTasker: {url} is not encrypted (https) -- refusing to receive an access key over it. "
+                "Pass --insecure to do it anyway.").format(url=url), file=sys.stderr)
+        return 2
+    name = args.name or get_setting("worker_name") or socket.gethostname()
+    try:
+        status, data = _api_call(url, "POST", "/api/pair", {"code": secret, "name": name}, timeout=15.0)
+    except OSError as exc:
+        print(_("nTasker: server not reachable ({err})").format(err=exc), file=sys.stderr)
+        return 1
+    if status >= 400:
+        print(_("nTasker: {detail}").format(detail=data.get("detail", status)), file=sys.stderr)
+        return 1
+    set_setting("server_url", url)
+    set_setting("server_token", data["token"])
+    set_setting("worker_name", name)
+    print(_("Connected to {url} as {user} (this computer: {name}).").format(
+        url=url, user=data["username"], name=name))
+    if args.no_service:
+        print(_("Start the worker with: ntasker worker"))
+        return 0
+    try:
+        for line in service.install("127.0.0.1", 8766, args.db or os.environ.get("NTASKER_DB"), False, worker=True):
+            print(f"nTasker: {line}")
+    except RuntimeError as exc:
+        print(f"nTasker: {exc}", file=sys.stderr)
+        print(_("Start the worker with: ntasker worker"))
+    return 0
+
+
 def cmd_worker(args: argparse.Namespace) -> int:
     """Run a team server's tasks on this machine (see :mod:`ntasker.worker`)."""
     import asyncio  # noqa: PLC0415
@@ -3250,6 +3320,17 @@ def build_parser() -> argparse.ArgumentParser:
     t_rev = token_sub.add_parser("revoke", help=_("Revoke a token"))
     t_rev.add_argument("id", type=int)
     t_rev.set_defaults(func=cmd_token_revoke)
+
+    sp_connect = sub.add_parser(
+        "connect", help=_("Connect this computer to a team server with a code from its Settings -> Team")
+    )
+    sp_connect.add_argument("code")
+    sp_connect.add_argument("--name", help=_("Name of this computer (default: worker_name setting, then host name)"))
+    sp_connect.add_argument("--no-service", action="store_true",
+                            help=_("Only store the connection; do not install the worker service"))
+    sp_connect.add_argument("--insecure", action="store_true",
+                            help=_("Allow a server without https (the access key travels unencrypted)"))
+    sp_connect.set_defaults(func=cmd_connect)
 
     sp_worker = sub.add_parser("worker", help=_("Run a team server's tasks on this computer"))
     sp_worker.add_argument("--server", help=_("Server URL (default: the server_url setting)"))

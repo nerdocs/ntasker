@@ -118,6 +118,16 @@ CREATE TABLE IF NOT EXISTS run_snapshots (
     updated_at TEXT
 );
 
+-- One-time codes that connect a computer to a team server (``ntasker connect``,
+-- see ntasker.auth). SHA-256 only; valid until ``expires_at``, spent once.
+CREATE TABLE IF NOT EXISTS pairing_codes (
+    code_hash TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at TEXT NOT NULL,
+    used_at TEXT
+);
+
 -- Bearer tokens for workers, the CLI and agent hooks (SHA-256 only; the
 -- plaintext is shown once at creation). Revoked rows stay for the record.
 CREATE TABLE IF NOT EXISTS api_tokens (

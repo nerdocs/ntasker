@@ -92,6 +92,10 @@ function settingsPage() {
         newTokenName: '',
         // Plaintext of a just-created token -- shown once, gone on reload.
         createdToken: '',
+        // "Connect a computer": the ready `ntasker connect` command and when it expires.
+        connectCommand: '',
+        connectLeft: 0,
+        _connectTimer: null,
         // User id whose "set password" field is open, and its draft.
         pwUser: null,
         pwDraft: '',
@@ -590,6 +594,38 @@ function settingsPage() {
 
         async revokeToken(token) {
             if (await this._teamCall('DELETE', `/api/tokens/${token.id}`)) await this.refreshTeam();
+        },
+
+        // A one-time code for `ntasker connect`. The server URL is this page's
+        // own origin -- behind a reverse proxy that is the public address.
+        async createConnectCode() {
+            const data = await this._teamCall('POST', '/api/pairing-codes');
+            if (!data) return;
+            const payload = JSON.stringify({u: location.origin, c: data.secret});
+            const code = 'ntc1-' + btoa(payload).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+            this.connectCommand = 'ntasker connect ' + code;
+            this.connectLeft = data.expires_in;
+            clearInterval(this._connectTimer);
+            this._connectTimer = setInterval(() => {
+                this.connectLeft -= 1;
+                if (this.connectLeft <= 0) {
+                    clearInterval(this._connectTimer);
+                    this.connectCommand = '';
+                    this.refreshTeam();
+                }
+            }, 1000);
+        },
+
+        connectLeftLabel() {
+            const m = Math.floor(this.connectLeft / 60);
+            const s = String(this.connectLeft % 60).padStart(2, '0');
+            return `${m}:${s}`;
+        },
+
+        async copyConnectCommand() {
+            try {
+                await navigator.clipboard.writeText(this.connectCommand);
+            } catch (e) { /* not a secure context -- the text stays selectable */ }
         },
 
         // Sign-in switch: turning it on ends this browser's anonymous access,

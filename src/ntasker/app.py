@@ -1951,6 +1951,41 @@ def api_notifications_read(
         return JSONResponse({"unread": collab.unread_count(conn, user["id"])})
 
 
+@app.post("/api/pairing-codes", status_code=201)
+def api_create_pairing_code(user: dict = Depends(auth.current_user)) -> JSONResponse:
+    """A one-time code that connects a computer as the acting user
+    (``ntasker connect``). Team server only; the secret is in this answer only."""
+    if not auth.auth_enabled():
+        raise HTTPException(status_code=409, detail=_("Only a team server connects computers."))
+    with get_conn() as conn:
+        secret = auth.create_pairing_code(conn, user["id"])
+    return JSONResponse({"secret": secret, "expires_in": auth.PAIRING_MINUTES * 60}, status_code=201)
+
+
+class PairIn(BaseModel):
+    code: str = Field(..., min_length=1, max_length=200)
+    name: str = Field(..., min_length=1, max_length=100)
+
+
+@app.post("/api/pair")
+def api_pair(payload: PairIn, request: Request) -> JSONResponse:
+    """Redeem a one-time code for an access key named ``name`` (the computer).
+
+    Reachable without sign-in -- the code is the credential. Rate-limited like
+    the sign-in; one answer for every kind of bad code.
+    """
+    if not auth.auth_enabled():
+        raise HTTPException(status_code=404, detail=_("Not found"))
+    if not auth.login_allowed(request.client.host if request.client else "?"):
+        raise HTTPException(status_code=429, detail=_("Too many attempts. Try again in a minute."))
+    with get_conn() as conn:
+        result = auth.redeem_pairing_code(conn, payload.code, payload.name)
+    if result is None:
+        raise HTTPException(status_code=400, detail=_("This code is invalid or has expired."))
+    user, token = result
+    return JSONResponse({"token": token, "username": user["username"]})
+
+
 class TokenIn(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
 

@@ -420,6 +420,8 @@ def install(
         _systemctl("daemon-reload")
         unit = SYSTEMD_WORKER_SERVICE if worker else SYSTEMD_SERVICE
         _systemctl("enable", "--now", unit)
+        if worker:  # a running worker must pick up a new connection
+            _systemctl("restart", unit)
         log.append(_("enabled + started {unit}").format(unit=unit))
         if auto_update:
             _systemctl("enable", "--now", SYSTEMD_UPDATE_TIMER)

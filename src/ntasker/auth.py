@@ -45,8 +45,13 @@ AUTH_MODES = ("off", "password")
 SESSION_COOKIE = "ntasker_session"
 SESSION_DAYS = 30
 
-#: Paths reachable without a login: the login page itself and what it loads.
-PUBLIC_PREFIXES = ("/login", "/healthz", "/static/", "/favicon")
+#: Paths reachable without a login: the login page itself and what it loads,
+#: and the redemption of a one-time connect code (it carries its own secret).
+#: An entry ending in ``/`` is a prefix, any other one an exact path.
+PUBLIC_PATHS = ("/login", "/healthz", "/static/", "/favicon.ico", "/api/pair")
+
+#: How long a connect code stays valid.
+PAIRING_MINUTES = 5
 
 _USER_COLUMNS = "id, username, display_name, is_admin, disabled"
 
@@ -211,6 +216,45 @@ def revoke_token(conn: sqlite3.Connection, token_id: int, user_id: int | None = 
     return conn.execute(sql, params).rowcount > 0
 
 
+def create_pairing_code(conn: sqlite3.Connection, user_id: int) -> str:
+    """A one-time secret that connects a computer as ``user_id`` (see :func:`redeem_pairing_code`).
+
+    Valid for :data:`PAIRING_MINUTES`, spent on first use, stored only as its
+    SHA-256. Spent and expired codes are cleared on the way.
+    """
+    conn.execute("DELETE FROM pairing_codes WHERE used_at IS NOT NULL OR expires_at <= datetime('now')")
+    secret = secrets.token_urlsafe(32)
+    conn.execute(
+        "INSERT INTO pairing_codes (code_hash, user_id, expires_at) "
+        f"VALUES (?, ?, datetime('now', '+{PAIRING_MINUTES} minutes'))",
+        (_digest(secret), user_id),
+    )
+    return secret
+
+
+def redeem_pairing_code(conn: sqlite3.Connection, secret: str, name: str) -> tuple[dict, str] | None:
+    """Spend a connect code: a new access key ``name`` for its user, or ``None``.
+
+    Checking and spending are one ``UPDATE``, so two simultaneous redemptions
+    cannot both succeed; an expired, spent or unknown code -- or one of a
+    disabled user -- yields ``None`` without telling which.
+    """
+    digest = _digest(secret.strip())
+    cur = conn.execute(
+        "UPDATE pairing_codes SET used_at = datetime('now') "
+        "WHERE code_hash = ? AND used_at IS NULL AND expires_at > datetime('now')",
+        (digest,),
+    )
+    if cur.rowcount != 1:
+        return None
+    row = conn.execute("SELECT user_id FROM pairing_codes WHERE code_hash = ?", (digest,)).fetchone()
+    user = get_user(conn, row["user_id"])
+    if user is None or user["disabled"]:
+        return None
+    _token_id, token = create_token(conn, user["id"], name)
+    return user, token
+
+
 def _user_for_token(conn: sqlite3.Connection, token: str) -> dict | None:
     row = conn.execute(
         "SELECT id, user_id FROM api_tokens WHERE token_hash = ? AND revoked_at IS NULL",
@@ -275,7 +319,7 @@ def login_allowed(client_ip: str) -> bool:
 
 
 def _is_public(path: str) -> bool:
-    return any(path == p.rstrip("/") or path.startswith(p) for p in PUBLIC_PREFIXES)
+    return any(path.startswith(p) if p.endswith("/") else path == p for p in PUBLIC_PATHS)
 
 
 class AuthMiddleware:

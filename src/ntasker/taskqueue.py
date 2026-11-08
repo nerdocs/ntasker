@@ -91,7 +91,7 @@ import sys
 import time
 from datetime import datetime
 
-from ntasker import lockqueue, locks, messages, usagelimit, worktrees
+from ntasker import collab, lockqueue, locks, messages, usagelimit, worktrees
 from ntasker.agents import agent_keys, get_spec, resolve_agent_key
 from ntasker.claude_runner import (
     active_session_ids,
@@ -525,12 +525,16 @@ def _notify_ended(alive: set[int]) -> None:
         return
     with get_conn() as conn:
         rows = conn.execute(
-            f"SELECT id, project FROM tasks WHERE id IN ({','.join('?' * len(gone))}) "
-            "AND status != 'done' AND project IS NOT NULL",
+            f"SELECT id, project, phase FROM tasks WHERE id IN ({','.join('?' * len(gone))}) "
+            "AND status != 'done'",
             list(gone),
         ).fetchall()
         for r in rows:
-            messages.notify_lock_released(conn, int(r["id"]), [r["project"]])
+            if r["project"] is not None:
+                messages.notify_lock_released(conn, int(r["id"]), [r["project"]])
+            # Handed off to review = finished; anything else ended unfinished.
+            if r["phase"] != "review":
+                collab.notify(conn, int(r["id"]), "run_ended", None)
 
 
 def tick() -> None:

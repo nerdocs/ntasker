@@ -40,7 +40,7 @@ from ntasker.assets import (
     local_path_for,
     resolve_mode,
 )
-from ntasker import completion, plugins, projects
+from ntasker import auth, completion, plugins, projects
 from ntasker.agents import AGENTS, agent_available, agent_keys, enabled_agents, resolve_home
 from ntasker.claude_assets import (
     install_assets,
@@ -70,6 +70,7 @@ from ntasker.paths import resolve_db_path, warn_if_missing
 from ntasker import locks, messages, taskqueue, worktrees
 from ntasker.settings import (
     delete_setting,
+    get_setting,
     get_setting_raw,
     list_settings,
     set_setting,
@@ -403,6 +404,18 @@ def cmd_serve(args: argparse.Namespace) -> int:
     # propagate that host into the guard's allow-list -- via ENV, because
     # ``--reload`` runs the app in a subprocess that never sees `args`.
     if args.host not in LOOPBACK_HOSTS:
+        # Without sign-in, anyone who reaches the port gets the board and the
+        # agents' terminals -- refuse unless the operator insists.
+        if not auth.auth_enabled() and not getattr(args, "allow_no_auth", False):
+            print(
+                _(
+                    "nTasker: refusing to listen on {host} without sign-in. "
+                    "Set `ntasker config set auth_mode password` (after `ntasker user add <name> "
+                    "--admin`), or pass --allow-no-auth."
+                ).format(host=args.host),
+                file=sys.stderr,
+            )
+            return 2
         os.environ[ALLOWED_HOSTS_ENV] = args.host
 
     # Spawned agent sessions inherit this so `ntasker hook ...` (Claude Code
@@ -695,6 +708,12 @@ def cmd_add(args: argparse.Namespace) -> int:
         print(_("nTasker: --worktree takes new, a worktree id or none"), file=sys.stderr)
         return 2
     with get_conn() as conn:
+        assignee_id = auth.LOCAL_USER_ID
+        if args.assignee:
+            user = _user_or_exit(conn, args.assignee)
+            if user is None:
+                return 2
+            assignee_id = user["id"]
         # Check dependency targets exist *before* inserting, so a bad
         # reference aborts cleanly without leaving an orphan task. A brand-new
         # task has no incoming edges, so it cannot be part of a cycle yet.
@@ -707,7 +726,8 @@ def cmd_add(args: argparse.Namespace) -> int:
                 return 2
         cur = conn.execute(
             "INSERT INTO tasks (project, title, description, phase, priority, agent, model, "
-            "locks, draft, fasttrack, fail_continue) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "locks, draft, fasttrack, fail_continue, assignee_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 args.project,
                 title_value,
@@ -720,6 +740,7 @@ def cmd_add(args: argparse.Namespace) -> int:
                 1 if args.draft else 0,
                 1 if args.fasttrack else 0,
                 1 if args.fail_continue else 0,
+                assignee_id,
             ),
         )
         # sqlite3 types lastrowid as ``int | None``; after a successful INSERT
@@ -953,11 +974,16 @@ def cmd_patch(args: argparse.Namespace) -> int:
         )
         return 2
 
-    if not fields and dep_ids is None and wt_arg is None:
+    if not fields and dep_ids is None and wt_arg is None and not args.assignee:
         print(_("nTasker: nothing to change (specify at least one field)"), file=sys.stderr)
         return 2
 
     with get_conn() as conn:
+        if args.assignee:
+            user = _user_or_exit(conn, args.assignee)
+            if user is None:
+                return 2
+            fields["assignee_id"] = user["id"]
         exists = conn.execute(
             "SELECT project, worktree_id, fasttrack FROM tasks WHERE id = ?", (args.task_id,)
         ).fetchone()
@@ -1101,6 +1127,128 @@ def cmd_stats(args: argparse.Namespace) -> int:
     else:
         for k, v in counts.items():
             print(f"  {k:<8} {v}")
+    return 0
+
+
+# Users and tokens (server host, DB-direct) ---------------------------------
+
+
+def _read_password(prompt: str) -> str:
+    """Password from the terminal (asked twice), or one line of stdin when piped."""
+    import getpass  # noqa: PLC0415
+
+    if not sys.stdin.isatty():
+        return sys.stdin.readline().rstrip("\n")
+    first = getpass.getpass(prompt)
+    if getpass.getpass(_("Repeat: ")) != first:
+        raise ValueError(_("The passwords do not match."))
+    return first
+
+
+def _user_or_exit(conn, name: str) -> dict | None:
+    user = auth.find_user(conn, name)
+    if user is None:
+        print(_("nTasker: no user {name!r}").format(name=name), file=sys.stderr)
+    return user
+
+
+def cmd_user_add(args: argparse.Namespace) -> int:
+    try:
+        password = _read_password(_("Password: "))
+        if not password:
+            raise ValueError(_("The password must not be empty."))
+        with get_conn() as conn:
+            user_id = auth.create_user(
+                conn, args.name, password, admin=args.admin, display_name=args.display_name or ""
+            )
+    except ValueError as exc:
+        print(f"nTasker: {exc}", file=sys.stderr)
+        return 2
+    print(_("User {name} created (id {id}).").format(name=args.name, id=user_id))
+    return 0
+
+
+def cmd_user_passwd(args: argparse.Namespace) -> int:
+    with get_conn() as conn:
+        user = _user_or_exit(conn, args.name)
+        if user is None:
+            return 1
+        try:
+            password = _read_password(_("New password: "))
+            if not password:
+                raise ValueError(_("The password must not be empty."))
+        except ValueError as exc:
+            print(f"nTasker: {exc}", file=sys.stderr)
+            return 2
+        auth.set_password(conn, user["id"], password)
+    print(_("Password of {name} changed.").format(name=user["username"]))
+    return 0
+
+
+def cmd_user_list(args: argparse.Namespace) -> int:
+    with get_conn() as conn:
+        users = auth.list_users(conn)
+    if args.json:
+        _print_json(users)
+        return 0
+    for u in users:
+        flags = [f for f, on in ((_("admin"), u["is_admin"]), (_("disabled"), u["disabled"])) if on]
+        print(f"  {u['id']:>3}  {u['username']:<20} {u['display_name']:<24} {', '.join(flags)}")
+    return 0
+
+
+def _cmd_user_disabled(args: argparse.Namespace, disabled: bool) -> int:
+    with get_conn() as conn:
+        user = _user_or_exit(conn, args.name)
+        if user is None:
+            return 1
+        auth.set_disabled(conn, user["id"], disabled)
+    return 0
+
+
+def cmd_user_disable(args: argparse.Namespace) -> int:
+    return _cmd_user_disabled(args, True)
+
+
+def cmd_user_enable(args: argparse.Namespace) -> int:
+    return _cmd_user_disabled(args, False)
+
+
+def cmd_token_create(args: argparse.Namespace) -> int:
+    with get_conn() as conn:
+        user = _user_or_exit(conn, args.user)
+        if user is None:
+            return 1
+        _token_id, token = auth.create_token(conn, user["id"], args.name)
+    print(token)
+    print(_("Shown only once -- store it now (e.g. `ntasker config set server_token <token>` "
+            "on the worker)."), file=sys.stderr)
+    return 0
+
+
+def cmd_token_list(args: argparse.Namespace) -> int:
+    with get_conn() as conn:
+        user_id = None
+        if args.user:
+            user = _user_or_exit(conn, args.user)
+            if user is None:
+                return 1
+            user_id = user["id"]
+        tokens = auth.list_tokens(conn, user_id)
+    if args.json:
+        _print_json(tokens)
+        return 0
+    for t in tokens:
+        state = _("revoked") if t["revoked_at"] else (t["last_used_at"] or _("never used"))
+        print(f"  {t['id']:>3}  {t['username']:<16} {t['name']:<20} {state}")
+    return 0
+
+
+def cmd_token_revoke(args: argparse.Namespace) -> int:
+    with get_conn() as conn:
+        if not auth.revoke_token(conn, args.id):
+            print(_("nTasker: no active token {id}").format(id=args.id), file=sys.stderr)
+            return 1
     return 0
 
 
@@ -1460,8 +1608,21 @@ def cmd_run(args: argparse.Namespace) -> int:
 # has to be checked against the *live* sessions, which only the server knows.
 
 
+def _local_setting(key: str) -> str | None:
+    """A setting from the local DB, or None when no DB is bound (hook commands)."""
+    from ntasker import db as _db  # noqa: PLC0415
+
+    if _db.DB_PATH is None or not _db.DB_PATH.exists():
+        return None
+    try:
+        return get_setting(key)
+    except Exception:  # noqa: BLE001 -- an unreadable DB just means "not configured"
+        return None
+
+
 def _server_base(args: argparse.Namespace) -> str:
-    """Base URL of the server: explicit ``--host/--port`` > ``NTASKER_URL`` > default.
+    """Base URL of the server: explicit ``--host/--port`` > ``NTASKER_URL`` >
+    the ``server_url`` setting (a team member's machine) > default.
 
     ``NTASKER_URL`` is what ``ntasker serve`` puts into the environment of every
     session it spawns, so an agent inside such a session reaches the right
@@ -1470,9 +1631,19 @@ def _server_base(args: argparse.Namespace) -> str:
     import os  # noqa: PLC0415
 
     host, port = getattr(args, "host", None), getattr(args, "port", None)
-    if host is None and port is None and os.environ.get("NTASKER_URL"):
-        return os.environ["NTASKER_URL"].rstrip("/")
+    if host is None and port is None:
+        url = os.environ.get("NTASKER_URL") or _local_setting("server_url")
+        if url:
+            return url.rstrip("/")
     return f"http://{host or '127.0.0.1'}:{port or 8766}"
+
+
+def _api_token() -> str | None:
+    """Bearer token for a team server: ``NTASKER_TOKEN`` (set in every session a
+    worker spawns) > the ``server_token`` setting. None = local server, no auth."""
+    import os  # noqa: PLC0415
+
+    return os.environ.get("NTASKER_TOKEN") or _local_setting("server_token")
 
 
 def _api_call(
@@ -1487,9 +1658,11 @@ def _api_call(
     import urllib.request  # noqa: PLC0415
 
     data = json.dumps(body).encode("utf-8") if body is not None else None
-    req = urllib.request.Request(
-        base + path, data=data, method=method, headers={"Content-Type": "application/json"}
-    )
+    headers = {"Content-Type": "application/json"}
+    token = _api_token()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(base + path, data=data, method=method, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
             raw = resp.read().decode("utf-8")
@@ -2772,6 +2945,10 @@ def build_parser() -> argparse.ArgumentParser:
     sp_serve.add_argument("--port", type=int, default=8766)
     sp_serve.add_argument("--reload", action="store_true")
     sp_serve.add_argument("--detach", action="store_true", help=detach_help)
+    sp_serve.add_argument(
+        "--allow-no-auth", action="store_true",
+        help=_("Listen on a non-loopback --host even though sign-in is off"),
+    )
     sp_serve.set_defaults(func=cmd_serve)
 
     # stop ----------------------------------------------------------------
@@ -2869,6 +3046,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--worktree", metavar="new|ID",
         help=_("Run in a git worktree: 'new' creates one, an id joins an open one of the project."),
     )
+    sp_add.add_argument("--assignee", help=_("User name the task is assigned to (default: you)."))
     sp_add.set_defaults(func=cmd_add)
 
     # in (inbox) ------------------------------------------------------------
@@ -2946,6 +3124,7 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("Comma-separated extra projects to lock (replaces the set; '' clears)."),
     )
     sp_patch.add_argument("--report", help=_("The agent's final report, Markdown ('' clears)."))
+    sp_patch.add_argument("--assignee", help=_("User name to assign the task to."))
     sp_patch.set_defaults(func=cmd_patch)
 
     # report --------------------------------------------------------------
@@ -3010,6 +3189,40 @@ def build_parser() -> argparse.ArgumentParser:
     sp_stats.set_defaults(func=cmd_stats)
 
     # config --------------------------------------------------------------
+    sp_user = sub.add_parser("user", help=_("Users of a team server"))
+    user_sub = sp_user.add_subparsers(dest="user_cmd", required=True)
+    u_add = user_sub.add_parser("add", help=_("Create a user (asks for the password)"))
+    u_add.add_argument("name")
+    u_add.add_argument("--admin", action="store_true")
+    u_add.add_argument("--display-name")
+    u_add.set_defaults(func=cmd_user_add)
+    u_pw = user_sub.add_parser("passwd", help=_("Set a user's password"))
+    u_pw.add_argument("name")
+    u_pw.set_defaults(func=cmd_user_passwd)
+    u_list = user_sub.add_parser("list", help=_("List users"))
+    u_list.add_argument("--json", action="store_true")
+    u_list.set_defaults(func=cmd_user_list)
+    u_dis = user_sub.add_parser("disable", help=_("Block a user from signing in"))
+    u_dis.add_argument("name")
+    u_dis.set_defaults(func=cmd_user_disable)
+    u_en = user_sub.add_parser("enable", help=_("Allow a disabled user again"))
+    u_en.add_argument("name")
+    u_en.set_defaults(func=cmd_user_enable)
+
+    sp_token = sub.add_parser("token", help=_("Access tokens for workers and the CLI"))
+    token_sub = sp_token.add_subparsers(dest="token_cmd", required=True)
+    t_create = token_sub.add_parser("create", help=_("Create a token for a user (printed once)"))
+    t_create.add_argument("user")
+    t_create.add_argument("--name", default="worker", help=_("What the token is for, e.g. laptop"))
+    t_create.set_defaults(func=cmd_token_create)
+    t_list = token_sub.add_parser("list", help=_("List tokens"))
+    t_list.add_argument("--user")
+    t_list.add_argument("--json", action="store_true")
+    t_list.set_defaults(func=cmd_token_list)
+    t_rev = token_sub.add_parser("revoke", help=_("Revoke a token"))
+    t_rev.add_argument("id", type=int)
+    t_rev.set_defaults(func=cmd_token_revoke)
+
     sp_cfg = sub.add_parser("config", help=_("Settings (KV store)"))
     cfg_sub = sp_cfg.add_subparsers(dest="config_cmd", required=True)
 
@@ -3446,6 +3659,12 @@ def main(argv: list[str] | None = None) -> int:
     # Read-only commands get a friendly hint (no auto-init), the rest run
     # ``init_db()`` themselves so e.g. ``ntasker add`` against a fresh path
     # works without a separate ``ntasker init`` step.
+    # A machine holding a team-server token runs the task commands remotely.
+    from ntasker import cli_remote  # noqa: PLC0415 -- imports this module
+
+    if args.command in cli_remote.COMMANDS and cli_remote.active():
+        return cli_remote.run(args)
+
     read_only = {"list", "show", "stats"}
     if args.command in read_only:
         warn_if_missing(db_path)

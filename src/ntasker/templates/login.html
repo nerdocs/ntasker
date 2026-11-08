@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="{{ language }}" data-bs-theme="light">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>nTasker — {{ t('Sign in') }}</title>
+    <link rel="stylesheet" href="{{ asset('tabler-css') }}"
+          integrity="{{ asset_sri('tabler-css') }}" crossorigin="anonymous">
+    <link rel="stylesheet" href="/static/style.css?v={{ static_bust('style.css') }}">
+</head>
+<body class="d-flex flex-column">
+<div class="page page-center">
+    <div class="container container-tight py-4">
+        <div class="text-center mb-4">
+            <img src="/static/logo.svg" height="36" alt="nTasker">
+        </div>
+        <form class="card card-md" method="post" action="/login" autocomplete="on">
+            <div class="card-body">
+                <h2 class="h2 text-center mb-4">{{ t('Sign in') }}</h2>
+                {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+                <div class="mb-3">
+                    <label class="form-label" for="login-username">{{ t('User name') }}</label>
+                    <input type="text" class="form-control" id="login-username" name="username"
+                           value="{{ username }}" autocomplete="username" required autofocus>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="login-password">{{ t('Password') }}</label>
+                    <input type="password" class="form-control" id="login-password" name="password"
+                           autocomplete="current-password" required>
+                </div>
+                <button type="submit" class="btn btn-primary w-100">{{ t('Sign in') }}</button>
+            </div>
+        </form>
+    </div>
+</div>
+</body>
+</html>

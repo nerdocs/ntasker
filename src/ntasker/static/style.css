@@ -1730,3 +1730,13 @@ h3 + p + .setting-row {
 .kanban-card:has(.plan-pick:checked) {
     box-shadow: inset 0 0 0 2px var(--tblr-primary);
 }
+
+/* Notification bell dropdown (topnav, team server only). */
+.notification-menu {
+    position: absolute;
+    right: 0;
+    top: 100%;
+    width: 20rem;
+    max-height: 24rem;
+    overflow-y: auto;
+}

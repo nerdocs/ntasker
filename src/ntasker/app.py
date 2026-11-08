@@ -24,8 +24,8 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Literal, cast
 
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, WebSocket
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import BackgroundTasks, Depends, FastAPI, Form, HTTPException, Query, Request, WebSocket
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
@@ -73,7 +73,7 @@ from ntasker.projects import (
 )
 from ntasker.rundiff import changed_paths, parse_baselines, run_diff
 from ntasker.transcript import context_window, conversation_for, last_activity, question_entries
-from ntasker import completion, lockqueue, locks, messages, plugins, sessions, taskqueue, triage, usagelimit, worktrees
+from ntasker import auth, collab, completion, lockqueue, locks, messages, plugins, sessions, taskqueue, triage, usagelimit, worktrees
 from ntasker.newproject import created_projects
 from ntasker.newproject import router as newproject_router
 from ntasker import db as _db_module
@@ -268,6 +268,9 @@ class TaskCreate(BaseModel):
     fail_continue: bool = False
     # Join an existing git worktree of the same project (see ntasker.worktrees).
     worktree_id: int | None = None
+    # User the task is assigned to (its runs execute on their worker).
+    # None = the creator.
+    assignee_id: int | None = None
 
 
 class TaskUpdate(BaseModel):
@@ -298,6 +301,10 @@ class TaskUpdate(BaseModel):
     locks: list[str] | None = None  # None = unchanged; [] = clear all
     # The agent's final report (Markdown). None = unchanged; "" clears it.
     report: str | None = None
+    assignee_id: int | None = None  # None when omitted = unchanged
+    # Optimistic locking: the ``version`` the client last saw. A mismatch
+    # refuses the update with 409. Omitted = last write wins.
+    version: int | None = None
 
 
 class OutcomeIn(BaseModel):
@@ -350,6 +357,8 @@ app = FastAPI(
     version=VERSION,
     docs_url="/api/docs",
     redoc_url=None,
+    # Every route with a ``{task_id}`` 404s for a task the user may not see.
+    dependencies=[Depends(auth.task_access)],
 )
 
 # Plugins register at import so their routes, settings and agents exist
@@ -925,6 +934,24 @@ def build_js_strings() -> dict[str, str]:
         "create_ok_hidden": _("Task #{id} created -- hidden by an active filter."),
         "delete_failed": _("Delete failed."),
         "save_failed": _("Save failed."),
+        "task_changed_meanwhile": _("Someone changed this task meanwhile."),
+        "sign_out": _("Sign out"),
+        "comments_label": _("Comments"),
+        "comment_placeholder": _("Write a comment (Markdown, Ctrl+Enter sends)"),
+        "add_comment": _("Comment"),
+        "delete_comment": _("Delete comment"),
+        "comment_deleted": _("Comment deleted."),
+        "task_not_found": _("Task not found"),
+        "notifications": _("Notifications"),
+        "no_notifications": _("Nothing new."),
+        "mark_all_read": _("Mark all as read"),
+        "notify_assigned": _("{actor} assigned you #{id}"),
+        "notify_commented": _("{actor} commented on #{id}"),
+        "notify_review": _("#{id} is ready for review"),
+        "notify_done": _("#{id} is done"),
+        "notify_run_ended": _("The run of #{id} ended unfinished"),
+        "reload": _("Reload"),
+        "assignee_label": _("Assignee"),
         "update_failed": _("Update failed."),
         "delete_only_archived": _("Only archived tasks can be deleted."),
         "confirm_delete": _('"{title}" -- delete permanently?'),
@@ -1169,10 +1196,12 @@ def build_js_strings() -> dict[str, str]:
 
 
 def _page_plugins() -> dict:
-    """Template context shared by every page: enabled plugin names + slot templates."""
+    """Template context shared by every page: enabled plugin names + slot
+    templates, and whether sign-in is on (the topnav's sign-out button)."""
     return {
         "plugins_enabled": plugins.enabled_names(),
         "plugin_slots": plugins.enabled_slots(),
+        "auth_enabled": auth.auth_enabled(),
     }
 
 
@@ -1214,6 +1243,11 @@ for _ctx in plugins.REGISTRY.values():
 # Starlette stack, which is exactly what we want (template rendering and
 # every endpoint sees the resolved language).
 app.add_middleware(LanguageMiddleware)
+
+# Authentication -- resolves the acting user (or refuses the request) before
+# any route runs; a no-op pass-through with ``auth_mode = off``. Inside the
+# origin guard so a cross-origin request never even reaches a DB lookup.
+app.add_middleware(auth.AuthMiddleware)
 
 # Origin guard -- added last, so it runs *outermost* and rejects a hostile
 # request before anything else touches it (including the WebSocket route,
@@ -1415,7 +1449,7 @@ def _self_terminate() -> None:
     os.kill(os.getpid(), signal.SIGTERM)
 
 
-@app.post("/shutdown")
+@app.post("/shutdown", dependencies=[Depends(auth.require_admin)])
 def shutdown(background_tasks: BackgroundTasks) -> JSONResponse:
     """Ask the server to shut itself down. Used by ``ntasker stop``.
 
@@ -1443,7 +1477,7 @@ def _self_restart() -> None:
     service.restart_service()
 
 
-@app.post("/api/service/restart")
+@app.post("/api/service/restart", dependencies=[Depends(auth.require_admin)])
 def restart(background_tasks: BackgroundTasks) -> JSONResponse:
     """Restart the supervised server via its service manager.
 
@@ -1469,7 +1503,7 @@ def restart(background_tasks: BackgroundTasks) -> JSONResponse:
     return JSONResponse({"ok": True, "restarting": True}, status_code=202)
 
 
-@app.post("/api/maintenance/cleanup")
+@app.post("/api/maintenance/cleanup", dependencies=[Depends(auth.require_admin)])
 def maintenance_cleanup() -> JSONResponse:
     """Compact the database: VACUUM + PRAGMA optimize.
 
@@ -1536,6 +1570,58 @@ def index(request: Request) -> HTMLResponse:
         },
     )
     response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+def _login_page(request: Request, error: str = "", username: str = "", status: int = 200):
+    return templates.TemplateResponse(
+        request,
+        "login.html",
+        context={"language": get_active_language(), "error": error, "username": username},
+        status_code=status,
+    )
+
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page(request: Request):
+    """Sign-in form (server mode). Local mode has nothing to sign in to."""
+    if not auth.auth_enabled():
+        return RedirectResponse("/", status_code=303)
+    return _login_page(request)
+
+
+@app.post("/login")
+def login_submit(request: Request, username: str = Form(""), password: str = Form("")):
+    """Check the credentials, set the session cookie and go to the board."""
+    if not auth.auth_enabled():
+        return RedirectResponse("/", status_code=303)
+    if not auth.login_allowed(request.client.host if request.client else "?"):
+        return _login_page(request, _("Too many attempts. Try again in a minute."), username, 429)
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT id, password_hash, disabled FROM users WHERE username = ?", (username.strip(),)
+        ).fetchone()
+        if row is None or row["disabled"] or not auth.verify_password(password, row["password_hash"]):
+            return _login_page(request, _("Wrong user name or password."), username, 401)
+        sid = auth.create_session(conn, row["id"])
+    response = RedirectResponse("/", status_code=303)
+    secure = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
+    response.set_cookie(
+        auth.SESSION_COOKIE, sid, max_age=auth.SESSION_DAYS * 86400,
+        httponly=True, samesite="lax", secure=secure,
+    )
+    return response
+
+
+@app.post("/logout")
+def logout(request: Request):
+    """End this browser's session."""
+    sid = request.cookies.get(auth.SESSION_COOKIE)
+    if sid:
+        with get_conn() as conn:
+            auth.delete_session(conn, sid)
+    response = RedirectResponse("/login" if auth.auth_enabled() else "/", status_code=303)
+    response.delete_cookie(auth.SESSION_COOKIE)
     return response
 
 
@@ -1649,7 +1735,7 @@ def api_self_update_job() -> JSONResponse:
     return JSONResponse({"job": updates.update_job()})
 
 
-@app.post("/api/self-update", status_code=202)
+@app.post("/api/self-update", status_code=202, dependencies=[Depends(auth.require_admin)])
 def api_self_update() -> JSONResponse:
     """Upgrade ntasker from PyPI in the background -- the top bar's "Install
     update" button, same command as ``ntasker self-update``. A supervised
@@ -1672,6 +1758,224 @@ def api_self_update() -> JSONResponse:
 
 
 # ---------------------------------------------------------------------------
+# Routes -- API: users
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/me")
+def api_me(user: dict = Depends(auth.current_user)) -> JSONResponse:
+    """The user this request acts as."""
+    return JSONResponse(user)
+
+
+@app.get("/api/users")
+def api_users(all: bool = False, user: dict = Depends(auth.current_user)) -> JSONResponse:  # noqa: A002
+    """Enabled users, for the assignee picker. ``?all=1`` (admins) adds disabled ones."""
+    with get_conn() as conn:
+        users = auth.list_users(conn)
+    if not (all and user["is_admin"]):
+        users = [u for u in users if not u["disabled"]]
+    return JSONResponse(users)
+
+
+class UserIn(BaseModel):
+    username: str = Field(..., min_length=1, max_length=100)
+    password: str = Field(..., min_length=1)
+    display_name: str = ""
+    is_admin: bool = False
+
+
+class UserPatch(BaseModel):
+    display_name: str | None = None
+    password: str | None = Field(None, min_length=1)
+    is_admin: bool | None = None
+    disabled: bool | None = None
+
+
+@app.post("/api/users", status_code=201, dependencies=[Depends(auth.require_admin)])
+def api_create_user(payload: UserIn) -> JSONResponse:
+    with get_conn() as conn:
+        try:
+            user_id = auth.create_user(
+                conn, payload.username, payload.password,
+                admin=payload.is_admin, display_name=payload.display_name,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return JSONResponse(auth.get_user(conn, user_id), status_code=201)
+
+
+@app.patch("/api/users/{user_id}")
+def api_update_user(
+    user_id: int, payload: UserPatch, user: dict = Depends(auth.current_user)
+) -> JSONResponse:
+    """Admins change anyone; a user may change their own name and password."""
+    fields = payload.model_dump(exclude_unset=True)
+    own = user_id == user["id"]
+    if not user["is_admin"] and not (own and set(fields) <= {"display_name", "password"}):
+        raise HTTPException(status_code=403, detail=_("Only an administrator may do this."))
+    if user_id == auth.LOCAL_USER_ID and ("disabled" in fields or "is_admin" in fields):
+        raise HTTPException(status_code=400, detail=_("The local user cannot be changed."))
+    if own and (fields.get("disabled") or fields.get("is_admin") is False):
+        raise HTTPException(status_code=400, detail=_("You cannot lock yourself out."))
+    with get_conn() as conn:
+        if auth.get_user(conn, user_id) is None:
+            raise HTTPException(status_code=404, detail=_("User not found"))
+        if "display_name" in fields:
+            conn.execute(
+                "UPDATE users SET display_name = ? WHERE id = ?",
+                ((fields["display_name"] or "").strip(), user_id),
+            )
+        if fields.get("password"):
+            auth.set_password(conn, user_id, fields["password"])
+        if fields.get("is_admin") is not None:
+            conn.execute("UPDATE users SET is_admin = ? WHERE id = ?", (int(fields["is_admin"]), user_id))
+        if fields.get("disabled") is not None:
+            auth.set_disabled(conn, user_id, fields["disabled"])
+        return JSONResponse(auth.get_user(conn, user_id))
+
+
+class ProjectMembersIn(BaseModel):
+    project: str = Field(..., min_length=1)
+    user_ids: list[int] = Field(default_factory=list)
+
+
+@app.get("/api/project-members", dependencies=[Depends(auth.require_admin)])
+def api_project_members() -> JSONResponse:
+    """Every project (with tasks or members) and the ids of its members."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT project FROM tasks WHERE project IS NOT NULL "
+            "UNION SELECT project FROM project_members"
+        ).fetchall()
+        members: dict[str, list[int]] = {r["project"]: [] for r in rows}
+        for r in conn.execute("SELECT project, user_id FROM project_members ORDER BY user_id"):
+            members[r["project"]].append(r["user_id"])
+    return JSONResponse(
+        [{"project": p, "user_ids": ids} for p, ids in sorted(members.items(), key=lambda i: i[0].casefold())]
+    )
+
+
+@app.put("/api/project-members", dependencies=[Depends(auth.require_admin)])
+def api_set_project_members(payload: ProjectMembersIn) -> JSONResponse:
+    """Replace a project's member list."""
+    with get_conn() as conn:
+        for user_id in payload.user_ids:
+            _check_assignee(conn, user_id)
+        conn.execute("DELETE FROM project_members WHERE project = ?", (payload.project,))
+        conn.executemany(
+            "INSERT INTO project_members (project, user_id) VALUES (?, ?)",
+            [(payload.project, uid) for uid in dict.fromkeys(payload.user_ids)],
+        )
+    return JSONResponse({"project": payload.project, "user_ids": list(dict.fromkeys(payload.user_ids))})
+
+
+class CommentIn(BaseModel):
+    body: str = Field(..., min_length=1, max_length=20000)
+
+
+@app.get("/api/tasks/{task_id}/comments")
+def api_comments(task_id: int) -> JSONResponse:
+    with get_conn() as conn:
+        return JSONResponse(collab.list_comments(conn, task_id))
+
+
+@app.post("/api/tasks/{task_id}/comments", status_code=201)
+def api_add_comment(
+    task_id: int, payload: CommentIn, user: dict = Depends(auth.current_user)
+) -> JSONResponse:
+    body = payload.body.strip()
+    if not body:
+        raise HTTPException(status_code=400, detail=_("Empty comment"))
+    with get_conn() as conn:
+        if conn.execute("SELECT 1 FROM tasks WHERE id = ?", (task_id,)).fetchone() is None:
+            raise HTTPException(status_code=404, detail=_("Task not found"))
+        return JSONResponse(collab.add_comment(conn, task_id, user["id"], body), status_code=201)
+
+
+def _own_comment(conn: sqlite3.Connection, comment_id: int, user: dict) -> dict:
+    """The comment, if ``user`` may change it (author or admin); 404 / 403 otherwise."""
+    comment = collab.get_comment(conn, comment_id)
+    if comment is None:
+        raise HTTPException(status_code=404, detail=_("Comment not found"))
+    task = conn.execute("SELECT project FROM tasks WHERE id = ?", (comment["task_id"],)).fetchone()
+    if not auth.can_see_project(conn, user, task["project"]):
+        raise HTTPException(status_code=404, detail=_("Comment not found"))
+    if comment["user_id"] != user["id"] and not user["is_admin"]:
+        raise HTTPException(status_code=403, detail=_("Only the author may change a comment."))
+    return comment
+
+
+@app.patch("/api/comments/{comment_id}")
+def api_edit_comment(
+    comment_id: int, payload: CommentIn, user: dict = Depends(auth.current_user)
+) -> JSONResponse:
+    with get_conn() as conn:
+        _own_comment(conn, comment_id, user)
+        conn.execute(
+            "UPDATE comments SET body = ?, edited_at = datetime('now') WHERE id = ?",
+            (payload.body.strip(), comment_id),
+        )
+        return JSONResponse(collab.get_comment(conn, comment_id))
+
+
+@app.delete("/api/comments/{comment_id}", status_code=204)
+def api_delete_comment(comment_id: int, user: dict = Depends(auth.current_user)) -> None:
+    with get_conn() as conn:
+        _own_comment(conn, comment_id, user)
+        conn.execute("DELETE FROM comments WHERE id = ?", (comment_id,))
+
+
+@app.get("/api/notifications")
+def api_notifications(unread: bool = False, user: dict = Depends(auth.current_user)) -> JSONResponse:
+    """The user's latest notifications plus the unread count (the bell)."""
+    with get_conn() as conn:
+        return JSONResponse({
+            "items": collab.list_notifications(conn, user["id"], unread),
+            "unread": collab.unread_count(conn, user["id"]),
+        })
+
+
+class NotificationsRead(BaseModel):
+    ids: list[int] | None = None  # None = all
+
+
+@app.post("/api/notifications/read")
+def api_notifications_read(
+    payload: NotificationsRead, user: dict = Depends(auth.current_user)
+) -> JSONResponse:
+    with get_conn() as conn:
+        collab.mark_read(conn, user["id"], payload.ids)
+        return JSONResponse({"unread": collab.unread_count(conn, user["id"])})
+
+
+class TokenIn(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+
+
+@app.get("/api/tokens")
+def api_tokens(user: dict = Depends(auth.current_user)) -> JSONResponse:
+    """The acting user's tokens (never their secret)."""
+    with get_conn() as conn:
+        return JSONResponse(auth.list_tokens(conn, user["id"]))
+
+
+@app.post("/api/tokens", status_code=201)
+def api_create_token(payload: TokenIn, user: dict = Depends(auth.current_user)) -> JSONResponse:
+    """A new token for the acting user; the plaintext is in this answer only."""
+    with get_conn() as conn:
+        token_id, token = auth.create_token(conn, user["id"], payload.name)
+    return JSONResponse({"id": token_id, "token": token}, status_code=201)
+
+
+@app.delete("/api/tokens/{token_id}", status_code=204)
+def api_revoke_token(token_id: int, user: dict = Depends(auth.current_user)) -> None:
+    with get_conn() as conn:
+        if not auth.revoke_token(conn, token_id, user["id"]):
+            raise HTTPException(status_code=404, detail=_("Token not found"))
+
+
+# ---------------------------------------------------------------------------
 # Routes -- API: settings
 # ---------------------------------------------------------------------------
 
@@ -1690,7 +1994,7 @@ def api_get_setting(key: str) -> JSONResponse:
     return JSONResponse(row)
 
 
-@app.put("/api/settings/{key}")
+@app.put("/api/settings/{key}", dependencies=[Depends(auth.require_admin)])
 def api_set_setting(key: str, payload: SettingUpdate) -> JSONResponse:
     try:
         row = set_setting(key, payload.value)
@@ -1701,7 +2005,7 @@ def api_set_setting(key: str, payload: SettingUpdate) -> JSONResponse:
     return JSONResponse(row)
 
 
-@app.delete("/api/settings/{key}", status_code=204)
+@app.delete("/api/settings/{key}", status_code=204, dependencies=[Depends(auth.require_admin)])
 def api_delete_setting(key: str) -> None:
     if not delete_setting(key):
         raise HTTPException(status_code=404, detail=_("Setting not found"))
@@ -1761,7 +2065,7 @@ class AssetsInstallIn(BaseModel):
     force: bool = False
 
 
-@app.post("/api/agents/{key}/assets/install")
+@app.post("/api/agents/{key}/assets/install", dependencies=[Depends(auth.require_admin)])
 def api_agent_assets_install(key: str, payload: AssetsInstallIn) -> JSONResponse:
     """Install one agent's ``/task`` integration into its config home -- the
     settings card's button, same as ``ntasker agent install <key> [--force]``.
@@ -1785,7 +2089,7 @@ def api_plugins_install_job() -> JSONResponse:
     return JSONResponse({"job": plugins.install_job()})
 
 
-@app.post("/api/plugins/{name}/install", status_code=202)
+@app.post("/api/plugins/{name}/install", status_code=202, dependencies=[Depends(auth.require_admin)])
 def api_plugins_install(name: str) -> JSONResponse:
     """Install the missing packages of a plugin's ``ntasker[<extra>]`` in the
     background -- the Plugins tab's button, same command as ``ntasker enable``.
@@ -2175,8 +2479,11 @@ async def ws_claude_run(websocket: WebSocket, task_id: int) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _queue_payload(rows: list[sqlite3.Row]) -> dict:
-    """Serialize the queue: the switch state plus the tasks in run order."""
+def _queue_payload(rows: list[sqlite3.Row], user: dict) -> dict:
+    """Serialize the queue: the switch state plus the tasks in run order
+    (only those ``user`` may see)."""
+    with get_conn() as conn:
+        rows = [r for r in rows if auth.can_see_project(conn, user, r["project"])]
     ids = [int(r["id"]) for r in rows]
     with get_conn() as conn:
         tags_by_id = load_tags_bulk(conn, ids)
@@ -2192,25 +2499,39 @@ def _queue_payload(rows: list[sqlite3.Row]) -> dict:
 
 
 @app.get("/api/queue")
-def api_get_queue() -> JSONResponse:
+def api_get_queue(user: dict = Depends(auth.current_user)) -> JSONResponse:
     """The task queue in execution order, plus its on/off state.
 
     Full task rows rather than ids: a queued task may well be filtered out of
     the board the user is looking at, and the queue panel still has to render
     its title, project and blocked state. See :mod:`ntasker.taskqueue`.
     """
-    return JSONResponse(_queue_payload(taskqueue.load_queue()))
+    return JSONResponse(_queue_payload(taskqueue.load_queue(), user))
 
 
 @app.put("/api/queue")
-def api_set_queue(payload: QueueIn) -> JSONResponse:
+def api_set_queue(payload: QueueIn, user: dict = Depends(auth.current_user)) -> JSONResponse:
     """Replace the whole queue with ``ids`` (head first).
 
     The frontend owns the ordered list and PUTs it after every drop, so adding,
     reordering and removing are one operation. Ids that are closed, archived or
     gone are dropped -- see :func:`ntasker.taskqueue.set_queue`.
+
+    A user only sees part of a shared queue: the entries they cannot see keep
+    their slots, the user's list fills the remaining ones in order.
     """
-    return JSONResponse(_queue_payload(taskqueue.set_queue(payload.ids)))
+    with get_conn() as conn:
+        auth.check_task_ids(conn, user, payload.ids)
+        ids = payload.ids
+        if not user["is_admin"]:
+            ids, mine = [], iter(payload.ids)
+            for row in taskqueue.load_queue():
+                if auth.can_see_project(conn, user, row["project"]):
+                    ids.append(next(mine, None))
+                else:
+                    ids.append(int(row["id"]))
+            ids = [i for i in ids if i is not None] + list(mine)
+    return JSONResponse(_queue_payload(taskqueue.set_queue(ids), user))
 
 
 class RunIn(BaseModel):
@@ -2218,7 +2539,7 @@ class RunIn(BaseModel):
 
 
 @app.post("/api/queue/run")
-def api_queue_run(payload: RunIn) -> JSONResponse:
+def api_queue_run(payload: RunIn, user: dict = Depends(auth.current_user)) -> JSONResponse:
     """The run button: append the task to the queue.
 
     Also the way to run an entry again whose session ended before it was done
@@ -2226,14 +2547,16 @@ def api_queue_run(payload: RunIn) -> JSONResponse:
     a plain ``PUT /api/queue`` reorder deliberately does not. 409 for a draft
     or an inbox proposal.
     """
+    with get_conn() as conn:
+        auth.check_task_ids(conn, user, [payload.id])
     if taskqueue.is_draft(payload.id):
         raise HTTPException(status_code=409, detail=_("Drafts and proposals are never started"))
 
-    return JSONResponse(_queue_payload(taskqueue.enqueue(payload.id)))
+    return JSONResponse(_queue_payload(taskqueue.enqueue(payload.id), user))
 
 
 @app.post("/api/queue/resume")
-def api_queue_resume(payload: RunIn) -> JSONResponse:
+def api_queue_resume(payload: RunIn, user: dict = Depends(auth.current_user)) -> JSONResponse:
     """The resume button on an ended entry: reopen its stored session.
 
     The worker spawns ``claude --resume <id>`` on its next tick, in the entry's
@@ -2241,13 +2564,15 @@ def api_queue_resume(payload: RunIn) -> JSONResponse:
     the session is live. 409 when the task is not queued or has nothing to
     resume (never ran, or its agent cannot resume).
     """
+    with get_conn() as conn:
+        auth.check_task_ids(conn, user, [payload.id])
     if not taskqueue.request_resume(payload.id):
         raise HTTPException(status_code=409, detail=_("Nothing to resume"))
-    return JSONResponse(_queue_payload(taskqueue.load_queue()))
+    return JSONResponse(_queue_payload(taskqueue.load_queue(), user))
 
 
 @app.post("/api/queue/start-now")
-def api_queue_start_now(payload: RunIn) -> JSONResponse:
+def api_queue_start_now(payload: RunIn, user: dict = Depends(auth.current_user)) -> JSONResponse:
     """The start-now button on a waiting entry: do not wait for the lane.
 
     The worker starts the task on its next tick although its project has a
@@ -2256,13 +2581,15 @@ def api_queue_start_now(payload: RunIn) -> JSONResponse:
     waiting queue entry, the queue is paused, a dependency is still open or its
     agent is not installed.
     """
+    with get_conn() as conn:
+        auth.check_task_ids(conn, user, [payload.id])
     if not taskqueue.request_start_now(payload.id):
         raise HTTPException(status_code=409, detail=_("This task cannot be started right now"))
-    return JSONResponse(_queue_payload(taskqueue.load_queue()))
+    return JSONResponse(_queue_payload(taskqueue.load_queue(), user))
 
 
 @app.post("/api/queue/plan", status_code=201)
-async def api_queue_plan(payload: QueueIn) -> JSONResponse:
+async def api_queue_plan(payload: QueueIn, user: dict = Depends(auth.current_user)) -> JSONResponse:
     """Start the queue planner on the tasks the user picked.
 
     The planner is a "chef", not a worker -- it reads the given tasks over this
@@ -2283,6 +2610,7 @@ async def api_queue_plan(payload: QueueIn) -> JSONResponse:
         raise HTTPException(status_code=400, detail=_("Pick at least one task to plan"))
     marks = ",".join("?" * len(ids))
     with get_conn() as conn:
+        auth.check_task_ids(conn, user, ids)
         rows = conn.execute(
             f"SELECT id FROM tasks WHERE id IN ({marks}) AND status = 'open'"
             " AND archived = 0 AND draft = 0 AND proposed = 0",
@@ -2572,7 +2900,7 @@ def api_locks_check(task: int, path: str) -> JSONResponse:
 
 
 @app.get("/api/projects")
-def api_projects() -> JSONResponse:
+def api_projects(user: dict = Depends(auth.current_user)) -> JSONResponse:
     """Sidebar feed: ``__none__`` first, then the union of every Claude Code
     project and every project name already referenced by a task, each with its
     open-task count.
@@ -2598,8 +2926,16 @@ def api_projects() -> JSONResponse:
     With the ``misc_project`` setting set, its row comes right after
     ``__none__`` -- always, even with no task at all -- flagged ``misc: true``
     and never hidden; the frontend pins it there and skips grouping/hiding.
+
+    On a team server (``auth_mode = password``) the server's own Claude
+    directories and "New project" folders mean nothing to the team: the feed
+    is the task projects plus the membership list, and a non-admin only gets
+    the projects they are a member of.
     """
+    team = auth.auth_enabled()
     with get_conn() as conn:
+        members = {r["project"] for r in conn.execute("SELECT DISTINCT project FROM project_members")}
+        mine = None if user["is_admin"] else auth.member_projects(conn, user["id"])
         # All distinct project names currently referenced by any task
         # (archived included so a project with only archived tasks still
         # appears -- the user can decide to unarchive or delete).
@@ -2626,16 +2962,22 @@ def api_projects() -> JSONResponse:
     counts: dict[str | None, int] = {row["project"]: int(row["c"]) for row in count_rows}
     totals: dict[str | None, int] = {row["project"]: int(row["total"]) for row in count_rows}
     hidden: set[str] = {row["project"] for row in hidden_rows}
-    dirs = discover_claude_project_dirs()
-    stale = stale_claude_projects(dirs)
+    if team:
+        dirs, stale, local_names = {}, set(), members
+    else:
+        dirs = discover_claude_project_dirs()
+        stale = stale_claude_projects(dirs)
+        local_names = set(dirs) | created_projects()
 
     # Union of Claude-discovered projects and names already on a task.
     # Defensively drop the reserved sentinels so a task that accidentally
     # stored one as its project value can never produce a duplicate row.
-    names = (set(dirs) | {row["project"] for row in names_rows} | created_projects()) - {
+    names = (local_names | {row["project"] for row in names_rows}) - {
         PROJECT_NONE_SENTINEL,
         PROJECT_NULL_LEGACY,
     }
+    if mine is not None:
+        names &= mine
 
     out: list[dict] = [
         {
@@ -2933,7 +3275,7 @@ class ProjectDelete(BaseModel):
     project: str
 
 
-@app.post("/api/projects/delete")
+@app.post("/api/projects/delete", dependencies=[Depends(auth.require_admin)])
 def api_delete_project(payload: ProjectDelete) -> JSONResponse:
     """Wipe a *stale* project: its Claude session directories and every task
     carrying its name -- a live agent session on one of those tasks is stopped
@@ -2960,13 +3302,15 @@ def api_delete_project(payload: ProjectDelete) -> JSONResponse:
 
 
 @app.get("/api/tags")
-def api_tags() -> JSONResponse:
+def api_tags(user: dict = Depends(auth.current_user)) -> JSONResponse:
     """All known tags with open- and total-counts, sorted by
     ``open_count DESC, name ASC``. ``total_count`` covers every task (archived
-    and done included) and drives the tag-management page."""
+    and done included) and drives the tag-management page. Counts only cover
+    the tasks the user may see."""
+    vis_clause, vis_params = auth.visibility_clause(user)
     with get_conn() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT t.name AS name,
                    COALESCE(SUM(CASE WHEN tasks.status = 'open' AND tasks.archived = 0
                                      AND tasks.proposed = 0
@@ -2974,10 +3318,11 @@ def api_tags() -> JSONResponse:
                    COUNT(tasks.id) AS total_count
             FROM tags t
             LEFT JOIN task_tags tt ON tt.tag_id = t.id
-            LEFT JOIN tasks ON tasks.id = tt.task_id
+            LEFT JOIN tasks ON tasks.id = tt.task_id {vis_clause}
             GROUP BY t.id, t.name
             ORDER BY open_count DESC, name ASC
-            """
+            """,
+            vis_params,
         ).fetchall()
     return JSONResponse(
         [
@@ -2991,7 +3336,7 @@ def api_tags() -> JSONResponse:
     )
 
 
-@app.post("/api/tags/cleanup")
+@app.post("/api/tags/cleanup", dependencies=[Depends(auth.require_admin)])
 def api_tags_cleanup() -> JSONResponse:
     """Delete dangling tags (no row in ``task_tags``). Idempotent."""
     with get_conn() as conn:
@@ -3029,7 +3374,7 @@ def api_tag_tasks(name: str) -> JSONResponse:
     )
 
 
-@app.post("/api/tags/merge")
+@app.post("/api/tags/merge", dependencies=[Depends(auth.require_admin)])
 def api_tags_merge(payload: TagMerge) -> JSONResponse:
     """Rename or merge tags: re-point every task on a source tag onto the
     target, then drop the sources. Idempotent for already-merged sets."""
@@ -3041,7 +3386,7 @@ def api_tags_merge(payload: TagMerge) -> JSONResponse:
     return JSONResponse({"target": norm_target[0], "affected": affected})
 
 
-@app.post("/api/tags/delete")
+@app.post("/api/tags/delete", dependencies=[Depends(auth.require_admin)])
 def api_tags_delete(payload: TagDelete) -> JSONResponse:
     """Delete tags outright, stripping them from every task they touch."""
     with get_conn() as conn:
@@ -3180,6 +3525,7 @@ def _query_tasks(
     archived: bool | None,
     search: str | None,
     sort: str = "priority",
+    user: dict | None = None,
 ) -> list[sqlite3.Row]:
     """Run the SELECT against the tasks table with filters applied.
 
@@ -3192,6 +3538,10 @@ def _query_tasks(
     """
     sql = "SELECT tasks.* FROM tasks WHERE proposed = 0"
     params: list[object] = []
+    if user is not None:
+        vis_clause, vis_params = auth.visibility_clause(user)
+        sql += vis_clause
+        params.extend(vis_params)
 
     proj_clause, proj_params = _build_project_filter(project)
     if proj_clause:
@@ -3258,8 +3608,9 @@ def api_list_tasks(
     archived: bool | None = None,
     search: str | None = None,
     sort: Literal["priority", "manual"] = "priority",
+    user: dict = Depends(auth.current_user),
 ) -> JSONResponse:
-    rows = _query_tasks(project, tag, phase, priority, status, archived, search, sort)
+    rows = _query_tasks(project, tag, phase, priority, status, archived, search, sort, user)
     ids = [int(r["id"]) for r in rows]
     with get_conn() as conn:
         tags_by_id = load_tags_bulk(conn, ids)
@@ -3283,6 +3634,7 @@ def api_stats(
     phase: list[str] = Query(default=[]),  # noqa: B008
     priority: list[str] = Query(default=[]),  # noqa: B008
     search: str | None = None,
+    user: dict = Depends(auth.current_user),
 ) -> JSONResponse:
     """Tab counts (open/done/archive/inbox) honoring all filters + search.
 
@@ -3294,8 +3646,8 @@ def api_stats(
     phase_clause, phase_params = _build_phase_filter(phase)
     prio_clause, prio_params = _build_priority_filter(priority)
 
-    base_params: list[object] = []
-    base_where = " WHERE 1=1"
+    base_where, base_params = auth.visibility_clause(user)
+    base_where = " WHERE 1=1" + base_where
     if proj_clause:
         base_where += proj_clause
         base_params.extend(proj_params)
@@ -3364,7 +3716,7 @@ def api_changes() -> JSONResponse:
 # NB: registered before ``/api/tasks/{task_id}`` so the literal "reorder"
 # path isn't swallowed by the int path-param route (which would 422).
 @app.patch("/api/tasks/reorder")
-def api_reorder_tasks(payload: ReorderIn) -> JSONResponse:
+def api_reorder_tasks(payload: ReorderIn, user: dict = Depends(auth.current_user)) -> JSONResponse:
     """Persist an explicit manual order for the given task ids.
 
     ``ids[0]`` becomes the topmost row (largest ``sort_order``), descending
@@ -3376,6 +3728,7 @@ def api_reorder_tasks(payload: ReorderIn) -> JSONResponse:
     ids = payload.ids
     n = len(ids)
     with get_conn() as conn:
+        auth.check_task_ids(conn, user, ids)
         for i, tid in enumerate(ids):
             conn.execute(
                 "UPDATE tasks SET sort_order = ? WHERE id = ?",
@@ -3633,6 +3986,13 @@ def _normalize_model(value: str | None) -> str | None:
     return (value or "").strip() or None
 
 
+def _check_assignee(conn: sqlite3.Connection, user_id: int) -> None:
+    """Refuse (400) an assignee that does not exist or is disabled."""
+    user = auth.get_user(conn, user_id)
+    if user is None or user["disabled"]:
+        raise HTTPException(status_code=400, detail=_("Invalid assignee"))
+
+
 def _check_worktree(conn: sqlite3.Connection, project: str | None, wt_id: int, *, join: bool) -> None:
     """400 unless a task of ``project`` may be in tree ``wt_id`` (see :func:`worktrees.check_join`)."""
     try:
@@ -3642,7 +4002,7 @@ def _check_worktree(conn: sqlite3.Connection, project: str | None, wt_id: int, *
 
 
 @app.post("/api/tasks", status_code=201)
-def api_create_task(payload: TaskCreate) -> JSONResponse:
+def api_create_task(payload: TaskCreate, user: dict = Depends(auth.current_user)) -> JSONResponse:
     if payload.priority not in PRIORITY_VALID:
         raise HTTPException(status_code=400, detail=_("Invalid priority"))
     if payload.agent is not None and payload.agent not in agent_keys():
@@ -3658,11 +4018,15 @@ def api_create_task(payload: TaskCreate) -> JSONResponse:
     with get_conn() as conn:
         if payload.worktree_id is not None:
             _check_worktree(conn, project_value, payload.worktree_id, join=True)
+        auth.claim_project(conn, user, project_value)
+        assignee = payload.assignee_id if payload.assignee_id is not None else user["id"]
+        _check_assignee(conn, assignee)
         cur = conn.execute(
             """
             INSERT INTO tasks (project, title, description, phase, priority, agent,
-                               model, locks, draft, fasttrack, fail_continue, worktree_id, sort_order)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                               model, locks, draft, fasttrack, fail_continue, worktree_id,
+                               created_by, assignee_id, sort_order)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                     (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM tasks))
             """,
             (
@@ -3678,11 +4042,16 @@ def api_create_task(payload: TaskCreate) -> JSONResponse:
                 1 if payload.fasttrack else 0,
                 1 if payload.fail_continue else 0,
                 payload.worktree_id,
+                user["id"],
+                assignee,
             ),
         )
         # sqlite3 types lastrowid as ``int | None``; after a successful INSERT
         # on a rowid table it is always set, so narrow instead of coercing.
         new_id = cast(int, cur.lastrowid)
+        auth.add_member(conn, project_value, assignee)
+        if assignee != user["id"]:
+            collab.notify(conn, new_id, "assigned", user["id"], {assignee})
         if norm_tags:
             set_task_tags(conn, new_id, norm_tags)
         dep_ids = normalize_dep_ids(payload.depends)
@@ -3703,13 +4072,16 @@ def api_create_task(payload: TaskCreate) -> JSONResponse:
 
 
 @app.patch("/api/tasks/{task_id}")
-def api_update_task(task_id: int, payload: TaskUpdate) -> JSONResponse:
+def api_update_task(
+    task_id: int, payload: TaskUpdate, user: dict = Depends(auth.current_user)
+) -> JSONResponse:
     fields = payload.model_dump(exclude_unset=True)
     if not fields:
         raise HTTPException(status_code=400, detail=_("No fields to update"))
 
     tags_raw = fields.pop("tags", None)
     deps_raw = fields.pop("depends", None)
+    version = fields.pop("version", None)
 
     if "priority" in fields and fields["priority"] not in PRIORITY_VALID:
         raise HTTPException(status_code=400, detail=_("Invalid priority"))
@@ -3752,6 +4124,30 @@ def api_update_task(task_id: int, payload: TaskUpdate) -> JSONResponse:
         fields.update(report_fields(fields["report"]))
 
     with get_conn() as conn:
+        # Optimistic locking first: the bump opens the write transaction, so
+        # nobody can slip in between this check and the rest of the update.
+        if version is None:
+            cur = conn.execute("UPDATE tasks SET version = version + 1 WHERE id = ?", (task_id,))
+        else:
+            cur = conn.execute(
+                "UPDATE tasks SET version = version + 1 WHERE id = ? AND version = ?",
+                (task_id, version),
+            )
+        if cur.rowcount == 0:
+            row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail=_("Task not found"))
+            current = row_to_task(row, load_tags_for(conn, task_id), load_deps_for(conn, task_id))
+            plugins.apply_task_hooks(conn, [current])
+            return JSONResponse(
+                {"detail": _("The task was changed meanwhile"), "task": current}, status_code=409
+            )
+        if "project" in fields:
+            auth.claim_project(conn, user, fields["project"])
+        if fields.get("assignee_id") is not None:
+            _check_assignee(conn, fields["assignee_id"])
+        elif "assignee_id" in fields:
+            fields.pop("assignee_id")  # explicit null = unchanged; a task always has one
         if "worktree_id" in fields or "project" in fields:
             # Joining needs a tree of the task's project; a task in a tree
             # cannot move to another project without leaving it first.
@@ -3798,7 +4194,9 @@ def api_update_task(task_id: int, payload: TaskUpdate) -> JSONResponse:
             fields["queue_order"] = None
             fields["session_ended_at"] = None
 
-        was = conn.execute("SELECT fasttrack FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        was = conn.execute(
+            "SELECT fasttrack, assignee_id, phase, status FROM tasks WHERE id = ?", (task_id,)
+        ).fetchone()
         if fields:
             set_clause = ", ".join(f"{k} = ?" for k in fields)
             params = [*fields.values(), task_id]
@@ -3809,6 +4207,12 @@ def api_update_task(task_id: int, payload: TaskUpdate) -> JSONResponse:
             exists = conn.execute("SELECT 1 FROM tasks WHERE id = ?", (task_id,)).fetchone()
             if exists is None:
                 raise HTTPException(status_code=404, detail=_("Task not found"))
+
+        if "assignee_id" in fields or "project" in fields:
+            stored = conn.execute(
+                "SELECT project, assignee_id FROM tasks WHERE id = ?", (task_id,)
+            ).fetchone()
+            auth.add_member(conn, stored["project"], stored["assignee_id"])
 
         if tags_raw is not None:
             set_task_tags(conn, task_id, normalize_tags(tags_raw))
@@ -3826,6 +4230,13 @@ def api_update_task(task_id: int, payload: TaskUpdate) -> JSONResponse:
         # A running session read the old flag in its seed -- tell it at once.
         if "fasttrack" in fields and was is not None and fields["fasttrack"] != was["fasttrack"]:
             messages.notify_fasttrack(conn, task_id, bool(fields["fasttrack"]))
+        if was is not None:
+            if fields.get("assignee_id") not in (None, was["assignee_id"]):
+                collab.notify(conn, task_id, "assigned", user["id"], {fields["assignee_id"]})
+            if fields.get("phase") == "review" and was["phase"] != "review":
+                collab.notify(conn, task_id, "review", user["id"])
+            if fields.get("status") == "done" and was["status"] != "done":
+                collab.notify(conn, task_id, "done", user["id"])
 
         row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         tags = load_tags_for(conn, task_id)

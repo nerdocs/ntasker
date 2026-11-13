@@ -649,7 +649,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // What has been picked / typed for the open question so far: one
         // picks list (option indexes) and one free text per question, keyed
         // so a new question starts blank.
-        convAnswerDraft: { key: null, picks: [], text: [] },
+        convAnswerDraft: { key: null, picks: [], text: [], other: [] },
         // The question just answered from the pane: its card stays hidden
         // until the session's hook has cleared it.
         convAnswered: null,
@@ -4712,7 +4712,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         ensureAnswerDraft(p) {
             const key = `${this.claudeView}:${p.id || ''}:${p.questions.length}`;
             if (this.convAnswerDraft.key === key) return;
-            this.convAnswerDraft = { key, picks: p.questions.map(() => []), text: p.questions.map(() => '') };
+            this.convAnswerDraft = { key, picks: p.questions.map(() => []), text: p.questions.map(() => ''), other: p.questions.map(() => false) };
             this.$nextTick(() => {
                 const el = this.$refs.convBody;
                 if (el) el.scrollTop = el.scrollHeight;
@@ -4720,23 +4720,42 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         },
 
         answerPicked(qi, oi) {
-            return (this.convAnswerDraft.picks[qi] || []).includes(oi);
+            return !this.answerOther(qi) && (this.convAnswerDraft.picks[qi] || []).includes(oi);
+        },
+
+        // The free-text row is the answer: picked, or typed into.
+        answerOther(qi) {
+            return !!this.convAnswerDraft.other[qi] || !!(this.convAnswerDraft.text[qi] || '').trim();
+        },
+
+        // Pick the free-text row: it replaces the options' picks, its input
+        // takes the focus.
+        pickOther(qi, el) {
+            this.typeOther(qi);
+            el.querySelector('input').focus();
+        },
+
+        typeOther(qi) {
+            this.convAnswerDraft.other[qi] = true;
+            this.convAnswerDraft.picks[qi] = [];
         },
 
         // Pick an option: a multi-select toggles it, a single-select replaces
-        // the pick. The only question of a single-select dialog is answered
-        // by the click itself, as in the terminal.
+        // the pick; either drops the free-text answer. The only question of a
+        // single-select dialog is answered by the click itself, as in the
+        // terminal.
         pickAnswer(qi, oi) {
             const p = this.convPending;
             if (!p || !p.questions[qi]) return;
             const q = p.questions[qi];
             const picks = this.convAnswerDraft.picks[qi] || [];
+            this.convAnswerDraft.other[qi] = false;
+            this.convAnswerDraft.text[qi] = '';
             if (q.multi) {
                 this.convAnswerDraft.picks[qi] = picks.includes(oi) ? picks.filter(x => x !== oi) : [...picks, oi].sort();
                 return;
             }
             this.convAnswerDraft.picks[qi] = [oi];
-            this.convAnswerDraft.text[qi] = '';
             if (p.questions.length === 1) this.submitAnswers();
         },
 

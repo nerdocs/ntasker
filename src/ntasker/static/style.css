@@ -908,6 +908,14 @@ body {
     margin-top: 0.15rem;
     color: var(--tblr-secondary);
 }
+.claude-conv-option > .form-control {
+    flex: 1;
+    min-width: 0;
+}
+/* An open question's text and options, indented under its header. */
+.claude-conv-question-body {
+    padding-left: 0.75rem;
+}
 .claude-conv-option-text {
     min-width: 0;
 }

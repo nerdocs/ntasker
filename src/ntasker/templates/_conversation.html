@@ -222,12 +222,11 @@
                 <template x-if="convPrompt === 'ask'">
                     <div class="claude-conv-ask card card-sm border-orange mb-2" x-effect="ensureAnswerDraft(convPending)">
                         <div class="card-body">
-                            <div class="fw-medium mb-2"><i class="ti ti-help-circle text-orange me-1"></i><span x-text="$i18n('conv_decision_open')"></span></div>
                             <template x-for="(q, qi) in convPending.questions" :key="qi">
                                 <div class="claude-conv-question mb-3">
                                     <span class="badge bg-orange-lt mb-1" x-show="q.header" x-text="q.header"></span>
+                                    <div class="claude-conv-question-body">
                                     <div class="fw-medium mb-1" x-text="q.question"></div>
-                                    <div class="text-secondary small mb-1" x-text="q.multi ? $i18n('conv_decision_pick_any') : $i18n('conv_decision_pick_one')"></div>
                                     <div class="claude-conv-options">
                                         <template x-for="(opt, oi) in q.options" :key="oi">
                                             <button type="button" class="claude-conv-option" :class="answerPicked(qi, oi) && 'is-picked'"
@@ -239,10 +238,16 @@
                                                 </span>
                                             </button>
                                         </template>
+                                        {# The free-text answer: its own row, picked while it is the answer. #}
+                                        <div class="claude-conv-option" :class="answerOther(qi) && 'is-picked'" @click="pickOther(qi, $el)">
+                                            <i class="ti" :class="answerOther(qi) ? (q.multi ? 'ti-square-check' : 'ti-circle-check') : (q.multi ? 'ti-square' : 'ti-circle')"></i>
+                                            <input type="text" class="form-control form-control-sm form-control-flush p-0" :placeholder="$i18n('conv_decision_other')"
+                                                   x-model="convAnswerDraft.text[qi]"
+                                                   @input="typeOther(qi)"
+                                                   @keydown.enter.prevent="submitAnswers()">
+                                        </div>
                                     </div>
-                                    <input type="text" class="form-control form-control-sm mt-2" :placeholder="$i18n('conv_decision_other')"
-                                           x-model="convAnswerDraft.text[qi]"
-                                           @keydown.enter.prevent="submitAnswers()">
+                                    </div>
                                 </div>
                             </template>
                             <div class="d-flex flex-wrap align-items-center gap-2">

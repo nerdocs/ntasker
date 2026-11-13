@@ -763,11 +763,8 @@ def build_js_strings() -> dict[str, str]:
         "conv_answer_in_terminal": _("Answer in the terminal"),
         # The agent's questions (AskUserQuestion): the open one and the answered ones
         "conv_decision": _("Decision"),
-        "conv_decision_open": _("The agent needs your decision"),
         "conv_decision_none": _("Not answered"),
         "conv_decision_other": _("Something else ..."),
-        "conv_decision_pick_one": _("Pick one"),
-        "conv_decision_pick_any": _("Pick any"),
         "conv_decision_submit": _("Send answers"),
         "conv_decision_hint": _("Your answers go into the dialog in the terminal. To discuss instead, open the terminal."),
         "conv_kind_edit": _("Edited: {n}"),

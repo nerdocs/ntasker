@@ -6,6 +6,9 @@ Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
 ## [Unreleased]
 
+## [3.22.1] — 2026-11-13
+Conversation: tidier decision card; free-text answer gets its own radio and is picked by typing.
+
 ## [3.22.0] — 2026-11-08
 Conversation: Tab takes Claude's suggested next prompt; trust and import prompts answered in the pane.
 

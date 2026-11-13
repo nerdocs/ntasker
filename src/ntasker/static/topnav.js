@@ -37,6 +37,10 @@ function topnav(pageVersion = '') {
         // integration missing or outdated (GET /api/agents) -- drives the red
         // dot on the settings cog so the fix is found without going looking.
         settingsAttention: false,
+        // Notification bell (team server only): latest items + unread count.
+        notifications: [],
+        unread: 0,
+        bellOpen: false,
 
         init() {
             this.applyTheme();
@@ -50,6 +54,44 @@ function topnav(pageVersion = '') {
             if (pageVersion) {
                 this._versionTimer = setInterval(() => this._checkServerVersion(pageVersion), 30000);
             }
+            if (this.$refs.bell) {
+                this.loadNotifications();
+                setInterval(() => this.loadNotifications(), 15000);
+            }
+        },
+
+        async loadNotifications() {
+            try {
+                const r = await fetch('/api/notifications');
+                if (!r.ok) return;
+                const data = await r.json();
+                this.notifications = data.items;
+                this.unread = data.unread;
+            } catch (e) { /* offline -- keep the last state */ }
+        },
+
+        notificationText(n) {
+            const text = window.__i18n['notify_' + n.kind] || n.kind;
+            return text.replace('{actor}', n.actor || '?').replace('{id}', n.task_id);
+        },
+
+        async openNotification(n) {
+            this.bellOpen = false;
+            if (!n.read_at) {
+                await fetch('/api/notifications/read', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ids: [n.id]}),
+                });
+            }
+            location.href = '/#/task/' + n.task_id;
+            this.loadNotifications();
+        },
+
+        async markAllRead() {
+            await fetch('/api/notifications/read', {
+                method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}',
+            });
+            this.loadNotifications();
         },
 
         // Compare the rendered page version against the live server's.

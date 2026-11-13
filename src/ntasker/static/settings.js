@@ -16,7 +16,7 @@ document.addEventListener('alpine:init', () => {
 });
 
 // Section rail entries; the URL hash addresses one directly (/settings#plugins).
-const SETTINGS_TABS = ['general', 'agents', 'plugins', 'maintenance'];
+const SETTINGS_TABS = ['general', 'agents', 'team', 'plugins', 'maintenance'];
 
 // Effective default of every boolean setting when its key is unset.
 const BOOL_DEFAULTS = {
@@ -82,6 +82,24 @@ function settingsPage() {
         // Same for ntasker's allow rule in that file
         // (GET /api/claude/permission-rule).
         permissionRule: cfg.permissionRule || {installed: false, path: '', readable: true},
+        // Team tab: the signed-in user, all users (admins) and own tokens.
+        me: null,
+        users: [],
+        tokens: [],
+        projectMembers: [],          // [{project, user_ids}] (admins)
+        workers: [],                 // connected `ntasker worker`s (GET /api/workers)
+        newUser: {username: '', display_name: '', password: '', is_admin: false},
+        newTokenName: '',
+        // Plaintext of a just-created token -- shown once, gone on reload.
+        createdToken: '',
+        // "Connect a computer": the ready `ntasker connect` command and when it expires.
+        connectCommand: '',
+        connectLeft: 0,
+        _connectTimer: null,
+        // User id whose "set password" field is open, and its draft.
+        pwUser: null,
+        pwDraft: '',
+        teamError: '',
 
         async init() {
             this.readHash();
@@ -91,6 +109,7 @@ function settingsPage() {
             await this.refreshAgents();
             await this.refreshSessions();
             await this.refreshCompletion();
+            await this.refreshTeam();
             // Keep the restart guard live -- a task may start or end while the
             // page is open. Cheap poll; the page reloads itself on restart.
             setInterval(() => this.refreshSessions(), 4000);
@@ -486,6 +505,134 @@ function settingsPage() {
             } finally {
                 this.cleaning = false;
             }
+        },
+
+        // ---- team -----------------------------------------------------------
+
+        async refreshTeam() {
+            try {
+                const me = await fetch('/api/me');
+                if (!me.ok) return;
+                this.me = await me.json();
+                const [users, tokens] = await Promise.all([
+                    fetch(this.me.is_admin ? '/api/users?all=1' : '/api/users'),
+                    fetch('/api/tokens'),
+                ]);
+                if (users.ok) this.users = await users.json();
+                if (tokens.ok) this.tokens = await tokens.json();
+                const wk = await fetch('/api/workers');
+                if (wk.ok) this.workers = await wk.json();
+                if (this.me.is_admin) {
+                    const pm = await fetch('/api/project-members');
+                    if (pm.ok) this.projectMembers = await pm.json();
+                }
+            } catch (e) { /* offline -- the tab stays empty */ }
+        },
+
+        async _teamCall(method, url, body) {
+            this.teamError = '';
+            const r = await fetch(url, {
+                method,
+                headers: {'Content-Type': 'application/json'},
+                body: body ? JSON.stringify(body) : undefined,
+            });
+            if (!r.ok) {
+                const data = await r.json().catch(() => ({}));
+                this.teamError = typeof data.detail === 'string' ? data.detail : `HTTP ${r.status}`;
+                return null;
+            }
+            return r.status === 204 ? {} : r.json();
+        },
+
+        userName(id) {
+            const u = this.users.find(u => u.id === id);
+            return u ? u.display_name : '#' + id;
+        },
+
+        async addUser() {
+            if (!this.newUser.username.trim() || !this.newUser.password) return;
+            if (await this._teamCall('POST', '/api/users', this.newUser)) {
+                this.newUser = {username: '', display_name: '', password: '', is_admin: false};
+                await this.refreshTeam();
+            }
+        },
+
+        async patchUser(user, fields) {
+            if (await this._teamCall('PATCH', `/api/users/${user.id}`, fields)) await this.refreshTeam();
+        },
+
+        // Click on a user chip in the project list: add or remove the member.
+        async toggleMember(entry, user) {
+            const ids = entry.user_ids.includes(user.id)
+                ? entry.user_ids.filter(id => id !== user.id)
+                : [...entry.user_ids, user.id];
+            const data = await this._teamCall('PUT', '/api/project-members', {project: entry.project, user_ids: ids});
+            if (data) entry.user_ids = data.user_ids;
+        },
+
+        openPassword(user) {
+            this.pwUser = this.pwUser === user.id ? null : user.id;
+            this.pwDraft = '';
+        },
+
+        async savePassword(user) {
+            if (!this.pwDraft) return;
+            await this.patchUser(user, {password: this.pwDraft});
+            if (!this.teamError) this.pwUser = null;
+        },
+
+        async createToken() {
+            const name = this.newTokenName.trim();
+            if (!name) return;
+            const data = await this._teamCall('POST', '/api/tokens', {name});
+            if (data) {
+                this.createdToken = data.token;
+                this.newTokenName = '';
+                await this.refreshTeam();
+            }
+        },
+
+        async revokeToken(token) {
+            if (await this._teamCall('DELETE', `/api/tokens/${token.id}`)) await this.refreshTeam();
+        },
+
+        // A one-time code for `ntasker connect`. The server URL is this page's
+        // own origin -- behind a reverse proxy that is the public address.
+        async createConnectCode() {
+            const data = await this._teamCall('POST', '/api/pairing-codes');
+            if (!data) return;
+            const payload = JSON.stringify({u: location.origin, c: data.secret});
+            const code = 'ntc1-' + btoa(payload).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+            this.connectCommand = 'ntasker connect ' + code;
+            this.connectLeft = data.expires_in;
+            clearInterval(this._connectTimer);
+            this._connectTimer = setInterval(() => {
+                this.connectLeft -= 1;
+                if (this.connectLeft <= 0) {
+                    clearInterval(this._connectTimer);
+                    this.connectCommand = '';
+                    this.refreshTeam();
+                }
+            }, 1000);
+        },
+
+        connectLeftLabel() {
+            const m = Math.floor(this.connectLeft / 60);
+            const s = String(this.connectLeft % 60).padStart(2, '0');
+            return `${m}:${s}`;
+        },
+
+        async copyConnectCommand() {
+            try {
+                await navigator.clipboard.writeText(this.connectCommand);
+            } catch (e) { /* not a secure context -- the text stays selectable */ }
+        },
+
+        // Sign-in switch: turning it on ends this browser's anonymous access,
+        // so go straight to the login page once it is stored.
+        async setAuthMode(value) {
+            await this.setKnown('auth_mode', value);
+            if (value === 'password' && !this.errors.auth_mode) location.href = '/login';
         },
 
         async refreshCompletion() {

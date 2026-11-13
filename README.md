@@ -112,6 +112,33 @@ ntasker agent list                             # CLI availability + integration 
 
 Full reference incl. per-agent binary paths: [docs/agents.md](docs/agents.md).
 
+## Work as a team
+
+By default nTasker is yours alone: no sign-in, agents run on your computer. For a small team, one nTasker becomes a
+**team server** -- everyone signs in, shares projects, assigns and comments tasks and gets notified -- while every
+member's tasks still run on **their own computer**, with their own agent subscription and checkouts.
+
+On the server (behind a TLS reverse proxy, e.g. Caddy or nginx):
+
+```bash
+ntasker user add alice --admin                              # asks for the password
+ntasker config set auth_mode password
+ntasker service install --allowed-host tasks.example.org    # the public name the proxy forwards
+```
+
+On each member's computer: sign in, open *Settings -> Team*, press **Connect a computer** and run the command it
+shows (a one-time code, valid 5 minutes):
+
+```bash
+uv tool install ntasker
+ntasker connect ntc1-...          # connects, installs + starts the worker service
+ntasker agent install claude      # so the agent knows how to talk to the team server
+```
+
+From then on the queue starts a task on its assignee's computer; the browser terminal, conversation and diff work as
+usual, and the `ntasker` CLI on that computer talks to the server. Users, project members, access keys and the
+protocol: [docs/team-server.md](docs/team-server.md).
+
 ## Plugins
 
 Optional features ship as plugins you can switch off individually (`/settings` -> *Plugins*):
@@ -129,7 +156,7 @@ slots: [docs/plugins.md](docs/plugins.md).
 
 | Topic | |
 |---|---|
-| [Configuration](docs/configuration.md) | Settings, DB path, `projects_dir`, language, vendor assets, **why you must not expose the port** |
+| [Configuration](docs/configuration.md) | Settings, DB path, `projects_dir`, language, vendor assets, when the port may be exposed |
 | [CLI reference](docs/cli.md) | Every subcommand and flag |
 | [HTTP API](docs/api.md) | Endpoints, SQLite schema, design notes |
 | [Agents](docs/agents.md) | The agent registry, per-task model, skill installation |
@@ -142,6 +169,7 @@ slots: [docs/plugins.md](docs/plugins.md).
 | [Inbox](docs/inbox.md) | Raw notes triaged into task proposals by a stateless `claude -p` call |
 | [Projects](docs/projects.md) | Sidebar tree, project families, search, new-project dialog, misc project |
 | [Service](docs/service.md) | systemd / launchd, auto-update, uninstall |
+| [Team server](docs/team-server.md) | Sign-in, users, project members, comments, `ntasker worker` on each member's computer |
 | [Development](docs/development.md) | Repo setup, smoke test, translations |
 
 Coming from the drfoehn fork? See [docs/migrating-from-fork.md](docs/migrating-from-fork.md).
@@ -152,7 +180,9 @@ FastAPI + uvicorn on the Python stdlib `sqlite3` -- no ORM, no migration files. 
 Tabler.io loaded from jsDelivr with pinned SRI hashes, so the wheel stays under 100 KB and there is no build step; an
 offline mode is one command away. Requires Python 3.12+.
 
-Binds to `127.0.0.1:8766` and has **no authentication** -- it is a personal local tool, not a multi-user service.
+Binds to `127.0.0.1:8766` and has **no authentication** by default -- a personal local tool. For a small team, switch
+on sign-in: one shared server, and every member's tasks run on their own computer
+([docs/team-server.md](docs/team-server.md)).
 
 ## License
 

@@ -734,6 +734,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "python-multipart" },
     { name = "uvicorn", extra = ["standard"] },
+    { name = "websockets" },
 ]
 
 [package.optional-dependencies]
@@ -762,6 +763,7 @@ requires-dist = [
     { name = "tokenizers", marker = "extra == 'voice'", specifier = ">=0.20" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
     { name = "vosk", marker = "extra == 'voice'", specifier = ">=0.3.44" },
+    { name = "websockets", specifier = ">=13.0" },
 ]
 provides-extras = ["voice"]
 

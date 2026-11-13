@@ -54,6 +54,92 @@ def title_from_description(description: str | None) -> str:
 
 
 SCHEMA = """
+-- Users (see ntasker.auth). Row 1 is the implicit ``local`` user that owns
+-- everything in local mode (``auth_mode = off``). ``password_hash`` NULL =
+-- no password login (token-only or not yet set).
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    display_name TEXT NOT NULL DEFAULT '',
+    password_hash TEXT,
+    is_admin INTEGER NOT NULL DEFAULT 0,
+    disabled INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+INSERT OR IGNORE INTO users (id, username, display_name, is_admin)
+    VALUES (1, 'local', 'Local user', 1);
+
+-- Browser login sessions. ``id`` is the SHA-256 of the cookie value, so the
+-- DB never holds a usable session. Expire after ``auth.SESSION_DAYS`` idle.
+CREATE TABLE IF NOT EXISTS auth_sessions (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    last_seen_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Who may see and work on a project's tasks (see ntasker.auth). The
+-- natural key is the project name, as in ``tasks.project``.
+CREATE TABLE IF NOT EXISTS project_members (
+    project TEXT NOT NULL,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY (project, user_id)
+);
+
+-- Comments on tasks (see ntasker.collab). ``user_id`` NULL = the author
+-- was deleted; the comment stays.
+CREATE TABLE IF NOT EXISTS comments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    body TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    edited_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_comments_task ON comments(task_id);
+
+-- In-app notifications (see ntasker.collab). Unread while ``read_at`` is NULL.
+CREATE TABLE IF NOT EXISTS notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    task_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
+    actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    kind TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    read_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, read_at);
+
+-- What a worker reported about a remote run that the server cannot compute
+-- itself: the Diff view (JSON, see ntasker.rundiff). See ntasker.workers.
+CREATE TABLE IF NOT EXISTS run_snapshots (
+    task_id INTEGER PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
+    diff TEXT,
+    updated_at TEXT
+);
+
+-- One-time codes that connect a computer to a team server (``ntasker connect``,
+-- see ntasker.auth). SHA-256 only; valid until ``expires_at``, spent once.
+CREATE TABLE IF NOT EXISTS pairing_codes (
+    code_hash TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at TEXT NOT NULL,
+    used_at TEXT
+);
+
+-- Bearer tokens for workers, the CLI and agent hooks (SHA-256 only; the
+-- plaintext is shown once at creation). Revoked rows stay for the record.
+CREATE TABLE IF NOT EXISTS api_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    last_used_at TEXT,
+    revoked_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     project TEXT,
@@ -137,7 +223,16 @@ CREATE TABLE IF NOT EXISTS tasks (
     -- The triage output that produced the proposal (JSON: title, prompt,
     -- project, candidates, ... plus ``raw`` = the inbox text). NULL for
     -- hand-made tasks.
-    triage TEXT
+    triage TEXT,
+    -- Multi-user (see ntasker.auth): who created the task and who it is
+    -- assigned to. Runs only execute on a worker of the assignee. In local
+    -- mode both are the implicit user 1 (the column default), so inserts
+    -- that do not know about users stay correct.
+    created_by INTEGER DEFAULT 1 REFERENCES users(id),
+    assignee_id INTEGER DEFAULT 1 REFERENCES users(id),
+    -- Optimistic locking: bumped on every API update. A PATCH carrying a
+    -- stale ``version`` is refused with 409 instead of overwriting.
+    version INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_archived ON tasks(archived);
 CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project);
@@ -424,6 +519,21 @@ def init_db(path: Path | None = None) -> None:
             conn.execute("ALTER TABLE tasks ADD COLUMN worktree_id INTEGER REFERENCES worktrees(id)")
         except sqlite3.OperationalError:
             pass
+        # Multi-user: ownership + optimistic-locking columns. The default
+        # hands existing tasks to the implicit local user. (A non-NULL default
+        # on a REFERENCES column is only refused with foreign keys on, which
+        # this connection does not enable.)
+        for column in ("created_by", "assignee_id"):
+            try:
+                conn.execute(
+                    f"ALTER TABLE tasks ADD COLUMN {column} INTEGER DEFAULT 1 REFERENCES users(id)"
+                )
+            except sqlite3.OperationalError:
+                pass
+        try:
+            conn.execute("ALTER TABLE tasks ADD COLUMN version INTEGER NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
         # v2.0 phase migration: legacy values `later` and NULL collapse into
         # `planned`. The new vocabulary is {planned, wip, review}; the column
         # also becomes NOT NULL. We update existing rows in-place; SQLite
@@ -634,6 +744,9 @@ def row_to_task(
         "report_at": row["report_at"],
         # A run has started -> the Diff view has a baseline to show.
         "has_diff": bool(row["run_baselines"]),
+        "created_by": row["created_by"],
+        "assignee_id": row["assignee_id"],
+        "version": row["version"],
         "tags": tags or [],
         "depends": depends or [],
     }

@@ -627,8 +627,29 @@ def validate_triage_model(value: str) -> str:
     return norm
 
 
+def validate_auth_mode(value: str) -> str:
+    """Validator for ``auth_mode``: ``off`` (local, no login) or ``password``.
+
+    Switching to ``password`` is refused while no enabled admin with a
+    password exists -- nobody could sign in to switch it back.
+    """
+    norm = (value or "").strip().lower()
+    if norm not in ("off", "password"):
+        raise ValueError(_("auth_mode must be 'off' or 'password' (got {value!r}).").format(value=value))
+    if norm == "password":
+        from ntasker import auth  # noqa: PLC0415 -- auth imports settings lazily
+
+        with get_conn() as conn:
+            if not auth.has_password_admin(conn):
+                raise ValueError(
+                    _("Create an administrator with a password first: ntasker user add <name> --admin")
+                )
+    return norm
+
+
 VALIDATORS: dict[str, Validator] = {
     "assets_mode": validate_assets_mode,
+    "auth_mode": validate_auth_mode,
     "language": validate_language,
     "default_view": validate_default_view,
     "default_agent": validate_default_agent,
@@ -672,6 +693,11 @@ HINTS: dict[str, object] = {
         "cache with `ntasker assets fetch`."
     ),
     "language": _lazy("Language of the web UI and the CLI."),
+    "auth_mode": _lazy(
+        "Off: nTasker runs for you alone on this computer, without signing in. "
+        "Password: several people share this server and sign in; their own "
+        "computers run the tasks (ntasker worker). ENV: NTASKER_AUTH_MODE."
+    ),
     "default_view": _lazy(
         "View a fresh browser opens with. The browser remembers your last "
         "choice afterwards."
@@ -817,6 +843,7 @@ LABELS: dict[str, object] = {
     "triage_enabled": _lazy("Inbox"),
     "triage_model": _lazy("Inbox triage model"),
     "dir_locks": _lazy("Directory locks"),
+    "auth_mode": _lazy("Sign-in"),
     "session_discovery": _lazy("Pick up terminal sessions"),
     "claude_permissions": _lazy("Run nTasker commands without asking"),
     "require_clean": _lazy("Require a clean git state"),
@@ -851,6 +878,10 @@ FIELD_CHOICES: dict[str, list[tuple[str, object, object]]] = {
         ("on", _lazy("On"), None),
         ("off", _lazy("Off"), None),
     ],
+    "auth_mode": [
+        ("off", _lazy("Off"), _lazy("Single user on this computer, no sign-in.")),
+        ("password", _lazy("Password"), _lazy("Team server: everyone signs in.")),
+    ],
     "require_clean": [
         ("on", _lazy("On"), None),
         ("off", _lazy("Off"), None),
@@ -884,6 +915,7 @@ FIELD_DEFAULTS: dict[str, str] = {
     "claude_idle_seconds": f"{CLAUDE_IDLE_SECONDS_DEFAULT:g}",
     "auto_archive_days": str(AUTO_ARCHIVE_DAYS_DEFAULT),
     "dir_locks": "on",
+    "auth_mode": "off",
     "require_clean": "off",
     "quicktasks_bypass_lanes": "on",
     "misc_no_memory": "off",

@@ -36,8 +36,12 @@ from ntasker.i18n import _
 # Stable reverse-DNS label for launchd; also the plist file stem.
 LAUNCHD_LABEL = "at.nerdocs.ntasker"
 LAUNCHD_UPDATE_LABEL = "at.nerdocs.ntasker-update"
+# ``ntasker worker`` (team member's machine) -- a unit of its own, so a host
+# can run a team server and a worker side by side.
+LAUNCHD_WORKER_LABEL = "at.nerdocs.ntasker-worker"
 
 SYSTEMD_SERVICE = "ntasker.service"
+SYSTEMD_WORKER_SERVICE = "ntasker-worker.service"
 SYSTEMD_UPDATE_SERVICE = "ntasker-update.service"
 SYSTEMD_UPDATE_TIMER = "ntasker-update.timer"
 
@@ -61,11 +65,15 @@ def detect_manager() -> str | None:
     return None
 
 
-def serve_command(host: str, port: int, db_path: str | None) -> list[str]:
-    """Argv for the supervised server. Absolute interpreter, no shell."""
+def serve_command(host: str, port: int, db_path: str | None, worker: bool = False) -> list[str]:
+    """Argv for the supervised daemon -- the server, or with ``worker`` a team
+    member's ``ntasker worker`` (server URL and key from its settings).
+    Absolute interpreter, no shell."""
     cmd = [sys.executable, "-m", "ntasker"]
     if db_path:
         cmd += ["--db", db_path]
+    if worker:
+        return [*cmd, "worker"]
     cmd += ["serve", "--host", host, "--port", str(port)]
     return cmd
 
@@ -271,20 +279,26 @@ class UnitFile:
 # ---------------------------------------------------------------------------
 
 
-def _systemd_units(host: str, port: int, db_path: str | None, auto_update: bool) -> list[UnitFile]:
+def _systemd_units(
+    host: str, port: int, db_path: str | None, auto_update: bool, worker: bool = False,
+    allowed_host: str | None = None,
+) -> list[UnitFile]:
     d = systemd_user_dir()
-    exec_serve = " ".join(shlex.quote(a) for a in serve_command(host, port, db_path))
+    exec_serve = " ".join(shlex.quote(a) for a in serve_command(host, port, db_path, worker))
+    what = "worker for a team server" if worker else "local task tracker"
+    # The public host name a reverse proxy forwards (see ntasker.middleware).
+    env = f"Environment=NTASKER_ALLOWED_HOSTS={allowed_host}\n" if allowed_host else ""
     units = [
         UnitFile(
-            d / SYSTEMD_SERVICE,
+            d / (SYSTEMD_WORKER_SERVICE if worker else SYSTEMD_SERVICE),
             f"""\
 [Unit]
-Description=nTasker -- local task tracker
+Description=nTasker -- {what}
 After=network.target
 
 [Service]
 Type=simple
-ExecStart={exec_serve}
+{env}ExecStart={exec_serve}
 Restart=on-failure
 RestartSec=2
 
@@ -338,15 +352,21 @@ def _systemctl(*args: str) -> subprocess.CompletedProcess:
 # ---------------------------------------------------------------------------
 
 
-def _launchd_units(host: str, port: int, db_path: str | None, auto_update: bool) -> list[UnitFile]:
+def _launchd_units(
+    host: str, port: int, db_path: str | None, auto_update: bool, worker: bool = False,
+    allowed_host: str | None = None,
+) -> list[UnitFile]:
     d = launchd_dir()
+    label = LAUNCHD_WORKER_LABEL if worker else LAUNCHD_LABEL
     serve_plist = {
-        "Label": LAUNCHD_LABEL,
-        "ProgramArguments": serve_command(host, port, db_path),
+        "Label": label,
+        "ProgramArguments": serve_command(host, port, db_path, worker),
         "RunAtLoad": True,
         "KeepAlive": True,
     }
-    units = [UnitFile(d / f"{LAUNCHD_LABEL}.plist", _plist_dumps(serve_plist))]
+    if allowed_host:
+        serve_plist["EnvironmentVariables"] = {"NTASKER_ALLOWED_HOSTS": allowed_host}
+    units = [UnitFile(d / f"{label}.plist", _plist_dumps(serve_plist))]
     if auto_update:
         update_plist = {
             "Label": LAUNCHD_UPDATE_LABEL,
@@ -376,21 +396,33 @@ def _launchctl(*args: str) -> subprocess.CompletedProcess:
 # ---------------------------------------------------------------------------
 
 
-def install(host: str, port: int, db_path: str | None, auto_update: bool) -> list[str]:
-    """Write + enable the units. Returns human-readable log lines."""
+def install(
+    host: str, port: int, db_path: str | None, auto_update: bool, worker: bool = False,
+    allowed_host: str | None = None,
+) -> list[str]:
+    """Write + enable the units. ``worker``: the ``ntasker worker`` unit instead
+    of the server's (both can live side by side). ``allowed_host``: the public
+    host name a reverse proxy forwards to the server. Returns human-readable
+    log lines.
+
+    The worker is not restarted by ``self-update``: a restart would end the
+    agent sessions it runs -- restart it by hand when no run is active."""
     mgr = detect_manager()
     if mgr is None:
         raise RuntimeError(_("Unsupported platform: only systemd (Linux) and launchd (macOS)."))
     log: list[str] = []
     if mgr == "systemd":
-        units = _systemd_units(host, port, db_path, auto_update)
+        units = _systemd_units(host, port, db_path, auto_update, worker, allowed_host)
         systemd_user_dir().mkdir(parents=True, exist_ok=True)
         for u in units:
             u.path.write_text(u.content)
             log.append(_("wrote {path}").format(path=u.path))
         _systemctl("daemon-reload")
-        _systemctl("enable", "--now", SYSTEMD_SERVICE)
-        log.append(_("enabled + started {unit}").format(unit=SYSTEMD_SERVICE))
+        unit = SYSTEMD_WORKER_SERVICE if worker else SYSTEMD_SERVICE
+        _systemctl("enable", "--now", unit)
+        if worker:  # a running worker must pick up a new connection
+            _systemctl("restart", unit)
+        log.append(_("enabled + started {unit}").format(unit=unit))
         if auto_update:
             _systemctl("enable", "--now", SYSTEMD_UPDATE_TIMER)
             log.append(_("enabled auto-update timer {unit}").format(unit=SYSTEMD_UPDATE_TIMER))
@@ -402,7 +434,7 @@ def install(host: str, port: int, db_path: str | None, auto_update: bool) -> lis
                 )
             )
     else:  # launchd
-        units = _launchd_units(host, port, db_path, auto_update)
+        units = _launchd_units(host, port, db_path, auto_update, worker, allowed_host)
         launchd_dir().mkdir(parents=True, exist_ok=True)
         for u in units:
             u.path.write_text(u.content)
@@ -422,14 +454,15 @@ def uninstall() -> list[str]:
     if mgr == "systemd":
         _systemctl("disable", "--now", SYSTEMD_UPDATE_TIMER)
         _systemctl("disable", "--now", SYSTEMD_SERVICE)
-        for name in (SYSTEMD_SERVICE, SYSTEMD_UPDATE_SERVICE, SYSTEMD_UPDATE_TIMER):
+        _systemctl("disable", "--now", SYSTEMD_WORKER_SERVICE)
+        for name in (SYSTEMD_SERVICE, SYSTEMD_WORKER_SERVICE, SYSTEMD_UPDATE_SERVICE, SYSTEMD_UPDATE_TIMER):
             p = systemd_user_dir() / name
             if p.exists():
                 p.unlink()
                 log.append(_("removed {path}").format(path=p))
         _systemctl("daemon-reload")
     else:
-        for label in (LAUNCHD_LABEL, LAUNCHD_UPDATE_LABEL):
+        for label in (LAUNCHD_LABEL, LAUNCHD_WORKER_LABEL, LAUNCHD_UPDATE_LABEL):
             p = launchd_dir() / f"{label}.plist"
             if p.exists():
                 _launchctl("unload", str(p))
@@ -517,7 +550,7 @@ def status() -> list[str]:
         return [_("Unsupported platform.")]
     lines = [_("manager: {mgr}").format(mgr=mgr)]
     if mgr == "systemd":
-        for name in (SYSTEMD_SERVICE, SYSTEMD_UPDATE_TIMER):
+        for name in (SYSTEMD_SERVICE, SYSTEMD_WORKER_SERVICE, SYSTEMD_UPDATE_TIMER):
             p = systemd_user_dir() / name
             if not p.exists():
                 lines.append(_("{name}: not installed").format(name=name))
@@ -528,7 +561,7 @@ def status() -> list[str]:
                 _("{name}: {active} ({enabled})").format(name=name, active=active, enabled=enabled)
             )
     else:
-        for label in (LAUNCHD_LABEL, LAUNCHD_UPDATE_LABEL):
+        for label in (LAUNCHD_LABEL, LAUNCHD_WORKER_LABEL, LAUNCHD_UPDATE_LABEL):
             p = launchd_dir() / f"{label}.plist"
             state = _("installed") if p.exists() else _("not installed")
             lines.append(f"{label}: {state}")

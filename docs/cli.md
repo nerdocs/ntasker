@@ -6,12 +6,12 @@ Every command honours the global flags below and resolves the database via the
 | Command                     | What it does                                                  |
 |-----------------------------|---------------------------------------------------------------|
 | `ntasker init`              | Create / migrate the schema at the active DB path             |
-| `ntasker serve` / `start`   | Run the FastAPI server (defaults: 127.0.0.1:8766); `start` is an alias |
+| `ntasker serve` / `start`   | Run the FastAPI server (defaults: 127.0.0.1:8766); `start` is an alias. Another `--host` needs sign-in on or `--allow-no-auth` |
 | `ntasker stop`              | Shut down a running server over HTTP (`POST /shutdown`)       |
 | `ntasker restart`           | Restart the server: via the installed service if there is one, else stop + start **detached**. `--foreground` keeps it in your terminal |
 | `ntasker list [filters]`    | List tasks; supports `--project`, `--tag`, `--phase`, ...     |
 | `ntasker show <id>`         | Show a single task; pair with `--json` for raw output         |
-| `ntasker add --title=...`   | Create a task; optional `--project --phase --priority --tag --agent --model` |
+| `ntasker add --title=...`   | Create a task; optional `--project --phase --priority --tag --agent --model --assignee` |
 | `ntasker in [TEXT]`         | Drop a raw note into the inbox (no argument reads stdin), see [inbox.md](inbox.md) |
 
 | `ntasker project summary <name>` | Show the project summary the triage sees; `--regenerate` / `--set TEXT` |
@@ -30,6 +30,10 @@ Every command honours the global flags below and resolves the database via the
 | `ntasker worktree list` / `merge\|keep\|discard\|undo <id>` | Git worktrees and their end decision; `--worktree new\|<id>\|none` on `add`/`patch`, see [worktrees.md](worktrees.md) |
 | `ntasker peers` / `msg <id> <text>` / `wait-for <id>` / `inbox` | Messaging between agent sessions, see [messaging.md](messaging.md) |
 | `ntasker queue plan <id...>` | Let an agent record the dependencies between these tasks, order them and start the queue |
+| `ntasker user add/passwd/list/disable/enable` | Users of a [team server](team-server.md); `add <name> --admin` asks for the password |
+| `ntasker token create <user> / list / revoke <id>` | Access keys for workers and the CLI; `create` prints the key once |
+| `ntasker connect <code>`    | Connect this computer to a team server with a one-time code from *Settings -> Team*; installs the worker service (`--name --no-service --insecure`) |
+| `ntasker worker`            | Run a team server's tasks on this computer (`--server --token --name --once`), see [team-server.md](team-server.md) |
 | `ntasker config list`       | Show all settings                                             |
 | `ntasker config get <k>`    | Read a setting                                                |
 | `ntasker config set <k> <v>`| Write a setting (validated)                                   |

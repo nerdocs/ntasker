@@ -91,7 +91,7 @@ import sys
 import time
 from datetime import datetime
 
-from ntasker import lockqueue, locks, messages, usagelimit, worktrees
+from ntasker import auth, collab, lockqueue, locks, messages, usagelimit, workers, worktrees
 from ntasker.agents import agent_keys, get_spec, resolve_agent_key
 from ntasker.claude_runner import (
     active_session_ids,
@@ -154,15 +154,28 @@ _booted = False
 # Summary of the ``ended`` outcome row -- stored data, not UI text.
 ENDED_SUMMARY = "session ended without finish"
 
+# Team server (``auth_mode = password``), read once per tick: runs go to the
+# assignee's worker, every user has lanes of their own (their own checkouts),
+# and directory locks stay off -- the server cannot see the workers' directories.
+_team = False
+
 
 def _bucket(row: sqlite3.Row) -> str:
     """Concurrency bucket for a task: its project, or ``wt:<id>`` for a task in
     a git worktree (the tree is a lane of its own, see :mod:`ntasker.worktrees`).
     ``""`` for a task without a project -- which is no lane: such tasks never
-    wait for each other."""
+    wait for each other. On a team server the lane is per assignee."""
     if row["worktree_id"]:
         return f"wt:{row['worktree_id']}"
+    if _team and row["project"]:
+        return f"{row['assignee_id']}:{row['project']}"
     return row["project"] or ""
+
+
+def _no_worker(row: sqlite3.Row) -> bool:
+    """Team server: no connected worker of the assignee can take this task
+    (none is connected, or it sits in a git worktree -- local-only for now)."""
+    return _team and (bool(row["worktree_id"]) or workers.pick(row["assignee_id"]) is None)
 
 
 def load_queue() -> list[sqlite3.Row]:
@@ -365,7 +378,7 @@ def _busy_buckets(live: set[int], conn: sqlite3.Connection) -> set[str]:
         return set()
     placeholders = ",".join("?" * len(live))
     rows = conn.execute(
-        f"SELECT project, worktree_id FROM tasks WHERE id IN ({placeholders}) AND status != 'done'",
+        f"SELECT project, worktree_id, assignee_id FROM tasks WHERE id IN ({placeholders}) AND status != 'done'",
         list(live),
     ).fetchall()
     return {b for b in map(_bucket, rows) if b}
@@ -382,6 +395,8 @@ def _runnable_agents() -> set[str]:
     :func:`~ntasker.usagelimit.hold_until`): a new run would only hit it at
     once and sit paused in its lane.
     """
+    if _team:  # the worker checks its own CLIs and refuses what it cannot run
+        return set(agent_keys())
     keys = {key for key in agent_keys() if terminal_available(get_spec(key))[0]}
     if usagelimit.hold_until() is not None:
         keys.discard("claude")
@@ -448,6 +463,8 @@ def skipped(rows: list[sqlite3.Row], live: set[int]) -> dict[int, dict]:
     """
     from ntasker.settings import get_dir_locks, get_require_clean  # noqa: PLC0415
 
+    global _team
+    _team = auth.auth_enabled()
     out: dict[int, dict] = {
         int(row["id"]): {"reason": "limit", "project": row["project"], "holder": None, "until": row["limit_until"]}
         for row in rows
@@ -466,7 +483,13 @@ def skipped(rows: list[sqlite3.Row], live: set[int]) -> dict[int, dict]:
             key = row["agent"] if row["agent"] in agent_keys() else default_agent
             if key == "claude" and int(row["id"]) not in live and int(row["id"]) not in out:
                 out[int(row["id"])] = {"reason": "limit", "project": row["project"], "holder": None, "until": until}
-    if not rows or not get_dir_locks():
+    if _team:
+        out.update({
+            int(row["id"]): {"reason": "no_worker", "project": row["project"], "holder": None}
+            for row in rows
+            if int(row["id"]) not in live and int(row["id"]) not in out and _no_worker(row)
+        })
+    if not rows or not get_dir_locks() or _team:
         return out
     require_clean = get_require_clean()
     with get_conn() as conn:
@@ -525,24 +548,29 @@ def _notify_ended(alive: set[int]) -> None:
         return
     with get_conn() as conn:
         rows = conn.execute(
-            f"SELECT id, project FROM tasks WHERE id IN ({','.join('?' * len(gone))}) "
-            "AND status != 'done' AND project IS NOT NULL",
+            f"SELECT id, project, phase FROM tasks WHERE id IN ({','.join('?' * len(gone))}) "
+            "AND status != 'done'",
             list(gone),
         ).fetchall()
         for r in rows:
-            messages.notify_lock_released(conn, int(r["id"]), [r["project"]])
+            if r["project"] is not None:
+                messages.notify_lock_released(conn, int(r["id"]), [r["project"]])
+            # Handed off to review = finished; anything else ended unfinished.
+            if r["phase"] != "review":
+                collab.notify(conn, int(r["id"]), "run_ended", None)
 
 
 def tick() -> None:
     """One pass: kill the done, grant waited-for locks, retire what is finished, start
     what is next. Never raises."""
-    global _booted
+    global _booted, _team
     from ntasker.settings import (  # noqa: PLC0415 -- lazy: avoid cycle
         get_dir_locks,
         get_queue_enabled,
         get_require_clean,
     )
 
+    _team = auth.auth_enabled()
     enabled = get_queue_enabled()
     live = set(active_session_ids())
     external = set(external_session_ids())
@@ -554,6 +582,14 @@ def tick() -> None:
         lockqueue.grant(conn, live | external)
     worktrees.sweep(live | external)
     rows = load_queue()
+    # A run flagged ended that is live again -- a worker's run the server took
+    # back after its restart (it outlives the server): it runs, nothing to resume.
+    revived = [int(r["id"]) for r in rows if r["session_ended_at"] and int(r["id"]) in live]
+    if revived:
+        clear_ended(revived)
+        RESUME.difference_update(revived)
+        LIMIT_RESUME.difference_update(revived)
+        rows = load_queue()
     queued_ids = {int(r["id"]) for r in rows}
 
     # Adopt every queued task that has a session -- ours or an external one --
@@ -643,7 +679,7 @@ def tick() -> None:
     # ``require_clean``, whose directories are git-dirty) waits as well.
     runnable = _runnable_agents()
     default_agent = resolve_agent_key(None)
-    dir_locks = get_dir_locks()
+    dir_locks = get_dir_locks() and not _team
     require_clean = dir_locks and get_require_clean()
     # External sessions occupy their lane and directories like any other; a
     # queued one counts as that entry's run (see :func:`adopt_running`).
@@ -679,7 +715,7 @@ def tick() -> None:
             bucket = _bucket(row)
             if (bucket in busy and not (laneless or force)) or not _startable(
                 row, conn, runnable, default_agent
-            ):
+            ) or _no_worker(row):
                 continue
             if dir_locks and not laneless:
                 # A resume skips the git check: the dirt is that run's own
@@ -705,8 +741,10 @@ def tick() -> None:
             seed = usagelimit.RESUME_PROMPT
         else:
             seed = None if (quick or resume) else queue_seed_for_task(task)
+        # On a team server the run goes to the assignee's worker.
+        target = {"worker": workers.pick(task["assignee_id"])} if _team else {}
         try:
-            started = start_detached_session(task_id, seed, quick=quick, resume=resume)
+            started = start_detached_session(task_id, seed, quick=quick, resume=resume, **target)
         except worktrees.WorktreeError as e:
             # No checkout, no run: flag the entry ended like a crashed run, so
             # it waits for the user instead of retrying git every tick.

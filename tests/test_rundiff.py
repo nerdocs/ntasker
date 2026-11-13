@@ -84,7 +84,7 @@ def test_diff_endpoint(client, repo):
     tid = client.post("/api/tasks", json={"title": "t"}).json()["id"]
     assert client.get(f"/api/tasks/{tid}/diff").status_code == 404   # never ran
     assert client.get(f"/api/tasks/{tid}").json()["has_diff"] is False
-    with get_conn() as conn:   # what _store_run_baselines writes at spawn
+    with get_conn() as conn:   # what record_start writes at spawn
         conn.execute(
             "UPDATE tasks SET run_baselines = ? WHERE id = ?",
             (rundiff.baselines_for([str(repo)]), tid),

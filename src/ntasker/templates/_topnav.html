@@ -64,4 +64,35 @@
         <span class="badge badge-notification bg-red" aria-hidden="true"
               x-show="settingsAttention" x-cloak></span>
     </a>
+    {% if auth_enabled %}
+    <div class="position-relative ms-1" x-ref="bell" @click.outside="bellOpen = false">
+        <button type="button" class="btn btn-icon btn-sm btn-ghost-secondary position-relative"
+                :title="$i18n('notifications')" @click="bellOpen = !bellOpen">
+            <i class="ti ti-bell fs-2"></i>
+            <span class="badge badge-notification bg-red" x-show="unread" x-cloak x-text="unread"></span>
+        </button>
+        <div class="dropdown-menu dropdown-menu-end show notification-menu" x-show="bellOpen" x-cloak>
+            <template x-for="n in notifications" :key="n.id">
+                <a href="#" class="dropdown-item d-block text-wrap" :class="!n.read_at && 'fw-bold'"
+                   @click.prevent="openNotification(n)">
+                    <div x-text="notificationText(n)"></div>
+                    <div class="small text-secondary fw-normal" x-text="n.title"></div>
+                </a>
+            </template>
+            <div class="dropdown-item-text text-secondary" x-show="!notifications.length"
+                 x-text="$i18n('no_notifications')"></div>
+            <template x-if="unread">
+                <div>
+                    <div class="dropdown-divider"></div>
+                    <a href="#" class="dropdown-item" @click.prevent="markAllRead()" x-text="$i18n('mark_all_read')"></a>
+                </div>
+            </template>
+        </div>
+    </div>
+    <form method="post" action="/logout" class="d-inline-flex ms-1">
+        <button type="submit" class="btn btn-icon btn-sm btn-ghost-secondary" :title="$i18n('sign_out')">
+            <i class="ti ti-logout fs-2"></i>
+        </button>
+    </form>
+    {% endif %}
 </div>

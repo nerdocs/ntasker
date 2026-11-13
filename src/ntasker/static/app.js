@@ -726,6 +726,10 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // caret, Delete the chip right of it. See the chip-nav helpers below.
         tagCaret: { form: -1, edit: -1 },
         editing: null,               // task object or null
+        users: [],                   // enabled users, for the assignee picker
+        me: null,                    // the signed-in user (GET /api/me)
+        comments: [],                // comments of the task in the edit modal
+        commentDraft: '',
         counts: { open: 0, done: 0, archive: 0, inbox: 0 },
         // The inbox (see ntasker.triage): the topbar field's draft and the
         // rows /api/inbox serves -- notes still being triaged (or failed) and
@@ -758,6 +762,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 this.loadOutcomes(),
                 this.loadWorktrees(),
                 this.loadInbox(),
+                this.loadUsers(),
             ]);
             // After loading projects/tags, drop stale entries silently.
 
@@ -2300,6 +2305,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             const ended = (this.queueSkipped[item.id] || {}).reason === 'ended';
             if (ended) return _i('queue_ended');   // the one the user has to act on
             if ((this.queueSkipped[item.id] || {}).reason === 'limit') return this.queueLimitNote(item);
+            if ((this.queueSkipped[item.id] || {}).reason === 'no_worker') return _i('queue_no_worker');
             if (this.isBlocked(item)) return _i('queue_blocked');
             if (!this.taskRunnable(item)) return _i('queue_agent_missing');
             const skip = this.queueSkipped[item.id];
@@ -2327,6 +2333,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 return this._toDate(this.queueSkipped[item.id].until)
                     .toLocaleTimeString(_locale(), { timeStyle: 'short' });
             }
+            if ((this.queueSkipped[item.id] || {}).reason === 'no_worker') return _i('queue_no_worker_badge');
             if (this.isBlocked(item)) return this.blockingDeps(item).map(d => `#${d.id}`).join(', ');
             if (!this.taskRunnable(item)) return '';
             const skip = this.queueSkipped[item.id];
@@ -2341,6 +2348,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         blockerDetail(item) {
             if ((this.queueSkipped[item.id] || {}).reason === 'ended') return _i('queue_ended');
             if ((this.queueSkipped[item.id] || {}).reason === 'limit') return this.queueLimitNote(item);
+            if ((this.queueSkipped[item.id] || {}).reason === 'no_worker') return _i('queue_no_worker');
             if (!this.isBlocked(item)) {
                 if (!this.taskRunnable(item)) return _i('queue_agent_missing');
                 const skip = this.queueSkipped[item.id] || {};
@@ -2730,6 +2738,52 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             await this.refreshAll();
         },
 
+        async loadUsers() {
+            try {
+                const [me, r] = await Promise.all([fetch('/api/me'), fetch('/api/users')]);
+                if (me.ok) this.me = await me.json();
+                if (r.ok) this.users = await r.json();
+            } catch (_e) { /* offline -- the picker just stays hidden */ }
+        },
+
+        async loadComments(taskId) {
+            this.comments = [];
+            try {
+                const r = await fetch(`/api/tasks/${taskId}/comments`);
+                if (r.ok && this.editing && this.editing.id === taskId) this.comments = await r.json();
+            } catch (_e) { /* offline -- no comments shown */ }
+        },
+
+        async addComment() {
+            const body = this.commentDraft.trim();
+            if (!body || !this.editing) return;
+            const r = await fetch(`/api/tasks/${this.editing.id}/comments`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ body }),
+            });
+            if (!r.ok) {
+                this.showToast(await this._errorDetail(r, 'save_failed'), 'danger');
+                return;
+            }
+            this.comments.push(await r.json());
+            this.commentDraft = '';
+        },
+
+        async deleteComment(comment) {
+            const r = await fetch(`/api/comments/${comment.id}`, { method: 'DELETE' });
+            if (!r.ok) {
+                this.showToast(await this._errorDetail(r, 'delete_failed'), 'danger');
+                return;
+            }
+            this.comments = this.comments.filter(c => c.id !== comment.id);
+            // Undo instead of a confirmation: re-post the same text.
+            this.showToast(_i('comment_deleted'), 'info', {
+                label: _i('undo'),
+                run: async () => { this.commentDraft = comment.body; await this.addComment(); },
+            });
+        },
+
         startEdit(task) {
             // Clone (incl. tags + depends arrays) so cancel doesn't leak edits into the row.
             this.editing = {
@@ -2743,6 +2797,8 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             };
             if (typeof this.pluginStartEdit === 'function') this.pluginStartEdit(this.editing, task);
             this.depSuggest = [];
+            this.commentDraft = '';
+            this.loadComments(task.id);
         },
 
         openReport(task) {
@@ -2976,12 +3032,24 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
                 draft: !!t.draft,
                 fasttrack: !!t.fasttrack,
                 fail_continue: !!t.fasttrack && !!t.fail_continue,
+                assignee_id: Number(t.assignee_id),
+                // The version the modal opened with: a concurrent edit by
+                // someone else is refused (409) instead of overwritten.
+                version: t.version,
             };
             const r = await fetch(`/api/tasks/${t.id}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body),
             });
+            if (r.status === 409) {
+                const current = (await r.json()).task;
+                this.showToast(_i('task_changed_meanwhile'), 'danger', {
+                    label: _i('reload'),
+                    run: () => this.startEdit(current),
+                });
+                return;
+            }
             if (!r.ok) {
                 this.showToast(await this._errorDetail(r, 'save_failed'), 'danger');
                 return;
@@ -3973,6 +4041,14 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         // Navigation helpers write the hash; _applyRoute (on hashchange and at
         // boot) reconciles the on-screen view to it.
         _applyRoute() {
+            // #/task/<id> (a notification link): open the task's edit dialog
+            // once, then drop the hash so closing the dialog is not undone.
+            const task = location.hash.match(/^#\/task\/(\d+)$/);
+            if (task) {
+                history.replaceState(null, '', location.pathname + location.search);
+                this._openTaskById(parseInt(task[1], 10));
+                return;
+            }
             const m = location.hash.match(/^#\/run\/(\d+)$/);
             if (!m) {
                 this.claudeView = null;
@@ -3989,6 +4065,12 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             // (the socket reattaches the server-side PTY if one is still live).
             if (this.claudeAvailable) this._openRunById(id);
             else this.claudeView = null;
+        },
+
+        async _openTaskById(id) {
+            const r = await fetch(`/api/tasks/${id}`);
+            if (r.ok) this.startEdit(await r.json());
+            else this.showToast(_i('task_not_found'), 'danger');
         },
 
         // Reveal a tab: make it active, connect its terminal if needed (a tab

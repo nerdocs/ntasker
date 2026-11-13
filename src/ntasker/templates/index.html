@@ -2292,6 +2292,15 @@
                             <option value="low">{{ t('Low') }}</option>
                         </select>
                     </div>
+                    <div class="mb-2" x-show="users.length > 1" x-cloak>
+                        <label class="form-label" x-text="$i18n('assignee_label')"></label>
+                        <select class="form-select" x-model.number="editing.assignee_id"
+                                x-init="$nextTick(() => $el.value = editing.assignee_id)">
+                            <template x-for="u in users" :key="u.id">
+                                <option :value="u.id" x-text="u.display_name"></option>
+                            </template>
+                        </select>
+                    </div>
                     <div class="mb-2" x-show="agents.length">
                         <label class="form-label" x-text="$i18n('agent_label')"></label>
                         {# x-model can't sync the initial value here: the <option>s come from x-for and aren't in the DOM when the modal mounts, so the select falls back to the first ("default") option -- re-apply editing.agent once the options exist. #}
@@ -2477,6 +2486,32 @@
                                 </template>
                             </div>
                         </div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label" x-text="$i18n('comments_label')"></label>
+                        <template x-for="c in comments" :key="c.id">
+                            <div class="card card-sm mb-2">
+                                <div class="card-body py-2">
+                                    <div class="d-flex align-items-center small text-secondary mb-1">
+                                        <strong class="me-2" x-text="c.author || '?'"></strong>
+                                        <span x-text="formatRelative(c.created_at)" :title="formatAbsolute(c.created_at)"></span>
+                                        <button type="button" class="btn btn-sm btn-ghost-danger ms-auto py-0"
+                                                x-show="c.user_id === (me && me.id) || (me && me.is_admin)"
+                                                @click="deleteComment(c)" :title="$i18n('delete_comment')">
+                                            <i class="ti ti-trash"></i>
+                                        </button>
+                                    </div>
+                                    <div class="markdown" x-html="renderMarkdown(c.body)"></div>
+                                </div>
+                            </div>
+                        </template>
+                        <textarea class="form-control" rows="2" x-model="commentDraft"
+                                  :placeholder="$i18n('comment_placeholder')"
+                                  @keydown.enter.ctrl.prevent.stop="addComment()"
+                                  @keydown.enter.meta.prevent.stop="addComment()"></textarea>
+                        <button type="button" class="btn btn-sm mt-1" @click="addComment()" :disabled="!commentDraft.trim()">
+                            <i class="ti ti-message-plus me-1"></i><span x-text="$i18n('add_comment')"></span>
+                        </button>
                     </div>
                 </div>
                 </template>

@@ -14,7 +14,7 @@ from ntasker import cli, locks, rundiff, taskqueue
 from ntasker.app import app
 from ntasker.claude_runner import queue_seed_for_task
 from ntasker.db import get_conn, init_db, set_db_path
-from ntasker.settings import FASTTRACK_RULES_DEFAULT
+from ntasker.settings import FASTTRACK_RULES_NO_REPORT_DEFAULT
 
 BASE = "http://127.0.0.1:8766"
 
@@ -272,9 +272,9 @@ def test_outcomes_list_ack_and_task_delete(env):
 
 def test_seed_fasttrack_rules_only_when_flagged(env):
     plain = {"id": 5, "title": "t", "status": "open", "priority": "normal"}
-    assert FASTTRACK_RULES_DEFAULT.replace("{id}", "5") not in queue_seed_for_task(plain)
+    assert FASTTRACK_RULES_NO_REPORT_DEFAULT.replace("{id}", "5") not in queue_seed_for_task(plain)
     seed = queue_seed_for_task({**plain, "fasttrack": True})
-    assert seed.endswith(FASTTRACK_RULES_DEFAULT.replace("{id}", "5"))
+    assert seed.endswith(FASTTRACK_RULES_NO_REPORT_DEFAULT.replace("{id}", "5"))
     assert seed.index("Tracker rules") < seed.index("Fasttrack (this task")
 
 

@@ -887,7 +887,7 @@ FIELD_DEFAULTS: dict[str, str] = {
     "require_clean": "off",
     "quicktasks_bypass_lanes": "on",
     "misc_no_memory": "off",
-    "reports": "on",
+    "reports": "off",
     "triage_enabled": "on",
     "triage_model": TRIAGE_MODEL_DEFAULT,
 }
@@ -1216,12 +1216,12 @@ def get_quicktasks_bypass_lanes() -> bool:
 
 
 def get_reports() -> bool:
-    """Whether queued runs are asked to write a report (default on).
+    """Whether queued runs are asked to write a report (default off).
 
     ENV ``NTASKER_REPORTS``. Off swaps the built-in run / fasttrack rules for
     their report-free variants and hides the report buttons in the UI.
     """
-    return _get_on_off("reports", True)
+    return _get_on_off("reports", False)
 
 
 def get_misc_project() -> str | None:

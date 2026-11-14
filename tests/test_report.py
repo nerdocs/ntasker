@@ -66,10 +66,10 @@ def test_seed_hands_off_via_finish(db):
 
 
 def test_seed_uses_agent_run_rules(db):
-    from ntasker.settings import RUN_RULES_DEFAULT, delete_setting, set_setting
+    from ntasker.settings import RUN_RULES_NO_REPORT_DEFAULT, delete_setting, set_setting
 
     task = {"id": 7, "title": "t", "status": "open", "priority": "normal", "agent": "claude"}
-    assert RUN_RULES_DEFAULT.replace("{id}", "7") in queue_seed_for_task(task)
+    assert RUN_RULES_NO_REPORT_DEFAULT.replace("{id}", "7") in queue_seed_for_task(task)
     set_setting("claude_run_rules", "Custom rules for #{id}.")
     seed = queue_seed_for_task(task)
     assert seed.endswith("Custom rules for #7.")
@@ -80,23 +80,30 @@ def test_seed_uses_agent_run_rules(db):
     assert "Tracker rules" in queue_seed_for_task(task)
 
 
-def test_seed_without_reports(db, client):
-    from ntasker.settings import delete_setting, set_setting
+def test_seed_reports_off_by_default(db, client):
+    from ntasker.settings import delete_setting, get_reports, set_setting
 
     task = {"id": 8, "title": "t", "status": "open", "priority": "normal", "agent": "claude", "fasttrack": 1}
-    seed = queue_seed_for_task(task)
-    assert "<<'EOF'" in seed and "report" in seed
-    set_setting("reports", "off")
+    # Unset: no report asked for, report buttons hidden.
+    assert get_reports() is False
     seed = queue_seed_for_task(task)
     assert "ntasker finish 8 --status ok" in seed
     assert "<<'EOF'" not in seed and "report (Markdown)" not in seed
     assert "window.__reportsEnabled = false" in client.get("/").text
+    # Switched on: the run and fasttrack rules ask for a report.
+    set_setting("reports", "on")
+    seed = queue_seed_for_task(task)
+    assert "<<'EOF'" in seed and "report (Markdown)" in seed
+    assert "window.__reportsEnabled = true" in client.get("/").text
+    # Explicitly off behaves like the default.
+    set_setting("reports", "off")
+    assert "report (Markdown)" not in queue_seed_for_task(task)
     # The user's own rules are used as they are.
     set_setting("claude_run_rules", "Custom rules for #{id}.")
     assert "Custom rules for #8." in queue_seed_for_task(task)
     delete_setting("reports")
     delete_setting("claude_run_rules")
-    assert "report (Markdown)" in queue_seed_for_task(task)
+    assert "report (Markdown)" not in queue_seed_for_task(task)
 
 
 def test_run_rules_rejects_empty(db):

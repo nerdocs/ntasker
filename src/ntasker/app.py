@@ -1064,6 +1064,11 @@ def build_js_strings() -> dict[str, str]:
             "session from there (Claude) or start it over."
         ),
         "claude_mark_done": _("Mark done"),
+        "claude_remote": _("Remote"),
+        "claude_remote_title": _(
+            "Continue this session on your phone or in the browser: runs /remote-control in the "
+            "session. The terminal then shows the link and a QR code for the Claude app."
+        ),
         "claude_connect_failed": _("Could not connect to the agent session."),
         "claude_disconnected": _("Connection to the session lost."),
         "claude_term_init_failed": _(

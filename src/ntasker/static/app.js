@@ -4445,6 +4445,15 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             return true;
         },
 
+        // The Remote button: hand the live Claude session to Claude's Remote
+        // Control, so it continues in the Claude app (phone, browser). The
+        // agent prints the link and a QR code in the terminal, so bring the
+        // terminal on screen first.
+        startRemoteControl() {
+            if (!this.runTermShown) this.showRunView(this.runConvSupported ? 'split' : 'terminal');
+            this.sendQuickPrompt('/remote-control');
+        },
+
         // ---- Conversation pane ----
 
         // False only once the server said the active task's agent has no

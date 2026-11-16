@@ -2135,6 +2135,13 @@
                             </button>
                         </template>
                         <span class="ms-auto d-flex align-items-center gap-2 flex-wrap">
+                            {# Remote Control is a Claude Code command -- other agents have no equivalent. #}
+                            <template x-if="runTask && taskAgentKey(runTask) === 'claude'">
+                                <button type="button" class="btn btn-ghost-secondary" :title="$i18n('claude_remote_title')"
+                                        :disabled="activeTab?.status === 'exited'" @click="startRemoteControl()">
+                                    <i class="ti ti-device-mobile-share me-1 fs-3"></i><span x-text="$i18n('claude_remote')"></span>
+                                </button>
+                            </template>
                             {# Solid once the agent handed the task over for review. #}
                             <button type="button" class="btn" @click="markDoneFromClaudeRun()"
                                     :class="runTask && runTask.phase === 'review' ? 'btn-success' : 'btn-outline-success'">

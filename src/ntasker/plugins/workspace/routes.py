@@ -10,7 +10,6 @@ match the host); every route 404s while the plugin is disabled.
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 from pathlib import Path
 
@@ -18,6 +17,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel
 
+from ntasker.binpath import find_tool
 from ntasker.i18n import _
 from ntasker.plugins.workspace import scan
 from ntasker.settings import get_setting
@@ -27,6 +27,15 @@ router = APIRouter()
 #: Maps a :class:`~ntasker.plugins.workspace.scan.WriteError` reason to HTTP.
 _WRITE_STATUS = {"forbidden": 403, "not_found": 404, "exists": 409, "too_large": 413, "invalid": 400}
 _PREVIEW_STATUS = {"forbidden": 403, "not_found": 404, "too_large": 413}
+
+
+def find_pandoc() -> str | None:
+    """Absolute path of the ``pandoc`` binary, or ``None`` when there is none.
+
+    Looks beyond ``PATH`` (see :mod:`ntasker.binpath`): under launchd the
+    server's ``PATH`` lacks Homebrew's directories.
+    """
+    return find_tool("pandoc")
 
 
 def _write_guard(exc: scan.WriteError) -> HTTPException:
@@ -258,16 +267,22 @@ def api_workspace_docx(payload: WorkspaceDocx) -> Response:
     Takes the text rather than a path so the viewer can export whatever it
     is showing -- a note inside the roots or a task attachment elsewhere --
     without a second authorisation scheme. pandoc is the only converter:
-    without it on PATH the endpoint answers 501 and the UI shows why.
+    without it (on PATH or in the usual install dirs, see
+    :mod:`ntasker.binpath`) the endpoint answers 501 and the UI shows why.
     ``gfm`` matches what marked renders on screen; the metadata extension
     keeps a front-matter block out of the document body.
     """
-    if shutil.which("pandoc") is None:
+    pandoc = find_pandoc()
+    if pandoc is None:
         raise HTTPException(
-            status_code=501, detail=_("pandoc is not installed -- the Word export needs it.")
+            status_code=501,
+            detail=_(
+                "pandoc was not found -- the Word export needs it. "
+                "Install it (macOS: brew install pandoc) and try again."
+            ),
         )
     proc = subprocess.run(
-        ["pandoc", "-f", "gfm+yaml_metadata_block", "-t", "docx", "-o", "-"],
+        [pandoc, "-f", "gfm+yaml_metadata_block", "-t", "docx", "-o", "-"],
         input=payload.text.encode("utf-8"),
         capture_output=True,
         timeout=60,

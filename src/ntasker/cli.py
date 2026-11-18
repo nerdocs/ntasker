@@ -405,6 +405,13 @@ def cmd_serve(args: argparse.Namespace) -> int:
     if args.host not in LOOPBACK_HOSTS:
         os.environ[ALLOWED_HOSTS_ENV] = args.host
 
+    # A service manager starts us with a bare PATH (launchd:
+    # /usr/bin:/bin:/usr/sbin:/sbin) -- add Homebrew & co. so pandoc, git,
+    # uv and node resolve, here and in every child process.
+    from ntasker.binpath import extend_path  # noqa: PLC0415
+
+    extend_path()
+
     # Spawned agent sessions inherit this so `ntasker hook ...` (Claude Code
     # hooks) can reach the server that started them, whatever it binds to.
     os.environ["NTASKER_URL"] = f"http://{args.host}:{args.port}"

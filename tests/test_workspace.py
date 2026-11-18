@@ -100,8 +100,24 @@ def test_docx_export(client, monkeypatch):
         pytest.skip("pandoc not installed")
     assert r.status_code == 200
     assert r.content[:2] == b"PK"  # a .docx is a zip container
-    monkeypatch.setattr("shutil.which", lambda name: None)
+    monkeypatch.setattr("ntasker.plugins.workspace.routes.find_pandoc", lambda: None)
     assert client.post("/api/workspace/docx", json={"text": "x"}).status_code == 501
+
+
+def test_find_pandoc_outside_path(monkeypatch, tmp_path):
+    """launchd's PATH lacks /opt/homebrew/bin -- pandoc must still be found."""
+    from ntasker import binpath
+    from ntasker.plugins.workspace import routes
+
+    pandoc = tmp_path / "bin" / "pandoc"
+    pandoc.parent.mkdir()
+    pandoc.write_text("#!/bin/sh\n", encoding="utf-8")
+    pandoc.chmod(0o755)
+    monkeypatch.setenv("PATH", str(tmp_path / "empty"))
+    monkeypatch.setattr(binpath, "TOOL_DIRS", (str(tmp_path / "nope"), str(pandoc.parent)))
+    assert routes.find_pandoc() == str(pandoc)
+    monkeypatch.setattr(binpath, "TOOL_DIRS", (str(tmp_path / "nope"),))
+    assert routes.find_pandoc() is None
 
 
 def test_scan_skills_symlinked_skill_is_read_only(tmp_path):

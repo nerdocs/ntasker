@@ -33,8 +33,9 @@ folder may be temporarily absent, and the scanners report `exists: false` instea
 - Viewer modal (sidebar and task chips): Markdown rendered through marked + DOMPurify, CSV as a table, text as-is;
   edit (Cmd/Ctrl+S), rename, create a note, move to trash, open in the desktop's default app. Editing is limited
   to `.md .markdown .txt .csv .tsv .json .log`.
-- Markdown files additionally offer **Export to Word** (`.docx` via `pandoc`, which must be on PATH -- otherwise
-  the button reports why) and **Copy text** (the raw Markdown to the clipboard).
+- Markdown files additionally offer **Export to Word** (`.docx` via `pandoc`; looked up on PATH and in the usual
+  install dirs such as `/opt/homebrew/bin`, since a launchd/systemd service gets a bare PATH -- otherwise the button
+  reports why) and **Copy text** (the raw Markdown to the clipboard).
 
 ## Security boundary
 

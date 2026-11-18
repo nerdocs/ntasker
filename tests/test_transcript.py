@@ -31,7 +31,7 @@ EVENTS = [
     json.dumps({"type": "mode", "mode": "normal"}),
     _ev("user", "# nTasker task #7: Do it\n\nProject: p | Status: open | Priority: normal\n\n"
                 "## Description\n\nplease\n\n## Tracker rules (queued run)\n\n- x"),
-    _ev("assistant", [{"type": "thinking", "thinking": "hmm"}], id="m1", usage=USAGE, stop_reason="tool_use"),
+    _ev("assistant", [{"type": "thinking", "thinking": ""}], id="m1", usage=USAGE, stop_reason="tool_use"),
     _ev("assistant", [{"type": "text", "text": "Looking."}], id="m1", usage=USAGE, stop_reason="tool_use"),
     _ev("assistant", [{"type": "tool_use", "id": "t1", "name": "Bash",
                        "input": {"command": "ls -la", "description": "List files"}}],
@@ -65,7 +65,7 @@ def test_parse_folds_events_into_turns():
     assert first["seed"] is True and turns[2]["seed"] is False
     assert first["done"] is True
     assert first["answer"] == "All done."            # the final text leads
-    assert first["progress"] == ["Looking."]         # sidechain + thinking left out
+    assert first["progress"] == ["Looking."]         # sidechain + hidden thinking left out
     assert first["tools"] == [
         {"name": "Bash", "kind": "bash", "detail": "List files", "file": None},
         {"name": "Edit", "kind": "edit", "detail": "/r/src/a.py", "file": "/r/src/a.py"},
@@ -301,3 +301,13 @@ def test_prompt_typed_mid_turn_is_kept_with_its_turn():
         {"text": "with a list", "at": "2026-09-27T10:05:00Z"},
     ]
     assert turns[0]["answer"] == "Done."
+
+
+def test_readable_thinking_counts_as_progress():
+    turns = parse_transcript([
+        _ev("user", "go"),
+        _ev("assistant", [{"type": "thinking", "thinking": "", "signature": "x"}], id="m1"),
+        _ev("assistant", [{"type": "thinking", "thinking": "Why I ask.\n\n", "signature": "x"}], id="m2"),
+        _ev("assistant", [{"type": "tool_use", "id": "q", "name": "AskUserQuestion", "input": ASK}], id="m2"),
+    ])
+    assert turns[0]["progress"] == ["Why I ask."]

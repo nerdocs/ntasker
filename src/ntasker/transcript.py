@@ -401,6 +401,19 @@ def _add_usage(total: dict, usage: dict) -> None:
     total["output"] += num("output_tokens")
 
 
+def _note(block: dict) -> str:
+    """The agent's prose in a content block, stripped, or ``""``.
+
+    A ``text`` block, or a ``thinking`` block with readable text: Claude Code
+    shows such thinking (the narration before a tool call) in the terminal like
+    text. Hidden thinking is stored with an empty ``thinking`` field.
+    """
+    kind = block.get("type")
+    if kind not in ("text", "thinking"):
+        return ""
+    return (block.get(kind) or "").strip()
+
+
 def parse_transcript(lines, rules: Iterable[str] = ()) -> list[dict]:
     """Fold transcript events into turns.
 
@@ -520,8 +533,9 @@ def parse_transcript(lines, rules: Iterable[str] = ()) -> list[dict]:
             for block in content:
                 if not isinstance(block, dict):
                     continue
-                if block.get("type") == "text" and (block.get("text") or "").strip():
-                    texts[-1].append(block["text"].strip())
+                note = _note(block)
+                if note:
+                    texts[-1].append(note)
                 elif block.get("type") == "tool_use":
                     entry = _tool_entry(block)
                     turn["tools"].append(entry)
@@ -630,8 +644,9 @@ def last_activity(home: Path, session_id: str | None) -> dict | None:
             if block.get("type") == "tool_use":
                 entry = _tool_entry(block)
                 return {k: entry[k] for k in ("name", "kind", "detail", "file")}
-            if block.get("type") == "text" and (block.get("text") or "").strip():
-                first = next(ln for ln in block["text"].strip().splitlines() if ln.strip())
+            note = _note(block)
+            if note:
+                first = next(ln for ln in note.splitlines() if ln.strip())
                 return {"text": _one_line(first.lstrip("#").strip())}
     return None
 

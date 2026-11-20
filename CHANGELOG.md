@@ -6,6 +6,9 @@ Format: [Keep a Changelog](https://keepachangelog.com), SemVer.
 
 ## [Unreleased]
 
+## [3.22.2] — 2026-11-20
+Conversation: multi-select questions take picks and free text together; their answers reach the terminal again.
+
 ## [3.22.1] — 2026-11-13
 Conversation: tidier decision card; free-text answer gets its own radio and is picked by typing.
 

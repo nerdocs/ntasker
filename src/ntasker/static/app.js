@@ -4720,28 +4720,36 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
         },
 
         answerPicked(qi, oi) {
-            return !this.answerOther(qi) && (this.convAnswerDraft.picks[qi] || []).includes(oi);
+            return (this.convAnswerDraft.picks[qi] || []).includes(oi);
         },
 
-        // The free-text row is the answer: picked, or typed into.
+        // The free-text row is part of the answer: picked, or typed into.
         answerOther(qi) {
             return !!this.convAnswerDraft.other[qi] || !!(this.convAnswerDraft.text[qi] || '').trim();
         },
 
-        // Pick the free-text row: it replaces the options' picks, its input
-        // takes the focus.
-        pickOther(qi, el) {
+        // Click on the free-text row: its input takes the focus. A click
+        // beside the input of a multi-select's picked row unpicks it.
+        pickOther(qi, el, event) {
+            const input = el.querySelector('input');
+            if (this.convPending?.questions[qi]?.multi && event.target !== input && this.answerOther(qi)) {
+                this.convAnswerDraft.other[qi] = false;
+                this.convAnswerDraft.text[qi] = '';
+                return;
+            }
             this.typeOther(qi);
-            el.querySelector('input').focus();
+            input.focus();
         },
 
+        // The free-text answer replaces a single-select's pick; a
+        // multi-select keeps its picks next to it, as in the terminal.
         typeOther(qi) {
             this.convAnswerDraft.other[qi] = true;
-            this.convAnswerDraft.picks[qi] = [];
+            if (!this.convPending?.questions[qi]?.multi) this.convAnswerDraft.picks[qi] = [];
         },
 
         // Pick an option: a multi-select toggles it, a single-select replaces
-        // the pick; either drops the free-text answer. The only question of a
+        // the pick and drops the free-text answer. The only question of a
         // single-select dialog is answered by the click itself, as in the
         // terminal.
         pickAnswer(qi, oi) {
@@ -4749,12 +4757,12 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             if (!p || !p.questions[qi]) return;
             const q = p.questions[qi];
             const picks = this.convAnswerDraft.picks[qi] || [];
-            this.convAnswerDraft.other[qi] = false;
-            this.convAnswerDraft.text[qi] = '';
             if (q.multi) {
                 this.convAnswerDraft.picks[qi] = picks.includes(oi) ? picks.filter(x => x !== oi) : [...picks, oi].sort();
                 return;
             }
+            this.convAnswerDraft.other[qi] = false;
+            this.convAnswerDraft.text[qi] = '';
             this.convAnswerDraft.picks[qi] = [oi];
             if (p.questions.length === 1) this.submitAnswers();
         },
@@ -4769,22 +4777,30 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
 
         // Answer the dialog in the terminal key by key, the way Claude Code's
         // dialog takes it: a digit picks an option (and moves on to the next
-        // question), digits toggle a multi-select's options and Tab moves on,
-        // "Type something" is the digit after the options followed by the
-        // text and Enter. A single-select-only dialog with one question is
-        // done with the digit; anything else ends on a review page that
-        // Enter submits. Keys go one at a time so the dialog keeps up.
+        // question), "Type something" is the digit after the options
+        // followed by the text and Enter. A multi-select toggles its options
+        // by digit (the cursor stays on the first row), types its free text
+        // with the cursor moved down onto the "Type something" row (a digit
+        // typed elsewhere would toggle an option) and moves on with Enter on
+        // "Next", the row below it. A single-select-only dialog with one
+        // question is done with the digit; anything else ends on a review
+        // page that Enter submits. Keys go one at a time so the dialog keeps
+        // up.
         async submitAnswers() {
             const p = this.convPending;
             if (!p || p.kind !== 'ask' || !this.answersReady()) return;
             const draft = this.convAnswerDraft;
             const keys = [];
+            const down = '\x1b[B';
             let review = p.questions.length > 1;
             p.questions.forEach((q, qi) => {
                 const text = (draft.text[qi] || '').trim();
                 const picks = draft.picks[qi] || [];
-                if (text) keys.push(String(q.options.length + 1), text, '\r');
-                else if (q.multi) keys.push(...picks.map(oi => String(oi + 1)), '\t');
+                if (q.multi) {
+                    keys.push(...picks.map(oi => String(oi + 1)), ...Array(q.options.length).fill(down));
+                    if (text) keys.push(text);
+                    keys.push(down, '\r');
+                } else if (text) keys.push(String(q.options.length + 1), text, '\r');
                 else keys.push(String(picks[0] + 1));
                 review = review || q.multi || !!text;
             });
@@ -4835,7 +4851,7 @@ function tracker(serverDefaultView, claudeOpenTerminal = true, defaultAgent = 'c
             const labels = new Set(q.options.map(o => o.label));
             const parts = q.multi ? a.split(', ') : [a];
             const picked = parts.filter(x => labels.has(x));
-            return { picked, text: picked.length === parts.length ? '' : a };
+            return { picked, text: parts.filter(x => !labels.has(x)).join(', ') };
         },
 
         decisionPicked(dec, q, label) {

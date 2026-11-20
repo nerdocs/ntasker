@@ -239,7 +239,7 @@
                                             </button>
                                         </template>
                                         {# The free-text answer: its own row, picked while it is the answer. #}
-                                        <div class="claude-conv-option" :class="answerOther(qi) && 'is-picked'" @click="pickOther(qi, $el)">
+                                        <div class="claude-conv-option" :class="answerOther(qi) && 'is-picked'" @click="pickOther(qi, $el, $event)">
                                             <i class="ti" :class="answerOther(qi) ? (q.multi ? 'ti-square-check' : 'ti-circle-check') : (q.multi ? 'ti-square' : 'ti-circle')"></i>
                                             <input type="text" class="form-control form-control-sm form-control-flush p-0" :placeholder="$i18n('conv_decision_other')"
                                                    x-model="convAnswerDraft.text[qi]"
